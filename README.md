@@ -20,9 +20,9 @@
 ## 目录
 
 ```
+├── CONTEXT.md                        术语表（含 MPC 歧义澄清）
 ├── docs/    资料与文档
 │   ├── PROJECT.md                    ★ 总纲（先读它）
-│   ├── CONTEXT.md                    术语表（含 MPC 歧义澄清）
 │   ├── LOCAL-NOTES.md                ⚠️ 本地凭据，已 gitignore，不入库
 │   ├── control/
 │   │   ├── phase1-implementation.md  ★★ Phase 1 实施清单
@@ -41,7 +41,7 @@
 └── src/     ROS2 Humble 代码（Phase 1 待建）
 ```
 
-**先读哪个**：`docs/PROJECT.md` → `docs/reference/code-inventory.md`（代码取舍）→ `docs/control/phase1-implementation.md`（动手写代码前必读）→ `docs/CONTEXT.md`（查术语）。
+**先读哪个**：`docs/PROJECT.md` → `docs/reference/code-inventory.md`（代码取舍）→ `docs/control/phase1-implementation.md`（动手写代码前必读）→ `CONTEXT.md`（查术语）。
 
 ---
 

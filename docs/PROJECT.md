@@ -2,7 +2,7 @@
 
 > **文档定位**：个人技术蓝图 + 决策记录（ADR 风格），中文为主，术语保留英文原词。
 > **读者**：作者本人、未来协作者、半年后回看的自己。
-> **配套文件**：[`CONTEXT.md`](CONTEXT.md)（术语表，**先读它**）、[`reference/code-inventory.md`](reference/code-inventory.md)（★ 代码取舍）、[`control/phase1-implementation.md`](control/phase1-implementation.md)（★★ **Phase 1 实施清单**）、[`control/phase2-implementation.md`](control/phase2-implementation.md)（★★ **Phase 2 实施清单**）、[`reference/`](reference/)（调查原始记录）、[`control/mpc-roadmap.md`](control/mpc-roadmap.md)（Phase 2 资料汇总）
+> **配套文件**：[`../CONTEXT.md`](../CONTEXT.md)（术语表，**先读它**）、[`reference/code-inventory.md`](reference/code-inventory.md)（★ 代码取舍）、[`control/phase1-implementation.md`](control/phase1-implementation.md)（★★ **Phase 1 实施清单**）、[`control/phase2-implementation.md`](control/phase2-implementation.md)（★★ **Phase 2 实施清单**）、[`reference/`](reference/)（调查原始记录）、[`control/mpc-roadmap.md`](control/mpc-roadmap.md)（Phase 2 资料汇总）
 > **后续去向**：本目录对应 [`weisama/MPC_uav`](https://github.com/weisama/MPC_uav) 仓库的 `docs/` 子目录。
 > **最后更新**：2026-09-18
 
@@ -60,7 +60,7 @@
 
 → **MPC（模型预测控制）这条线是唯一真正全新的部分。**
 
-⚠️ 但有一个陷阱必须先破除：笔记里出现的 3 处 "MPC"（`MPC_Z_VEL_MAX_UP`、`MPC_XY_VEL_MAX`、"更新其中PID（MPC_xxx）参数"）**全部是 PX4 的 PID 控制器参数，不是模型预测控制**。详见 [`CONTEXT.md`](CONTEXT.md) 开头的术语澄清。
+⚠️ 但有一个陷阱必须先破除：笔记里出现的 3 处 "MPC"（`MPC_Z_VEL_MAX_UP`、`MPC_XY_VEL_MAX`、"更新其中PID（MPC_xxx）参数"）**全部是 PX4 的 PID 控制器参数，不是模型预测控制**。详见 [`../CONTEXT.md`](../CONTEXT.md) 开头的术语澄清。
 
 ### 1.4 值得记录的复用线索：你的硬件是一个**已知平台**
 
@@ -482,7 +482,7 @@ PX4 官方 Offboard 文档明确标注了每种 setpoint 所需的**状态估计
 
 | 路径 | 内容 |
 |---|---|
-| [`CONTEXT.md`](CONTEXT.md) | **术语表（先读）**，含 `MPC` 歧义澄清 |
+| [`../CONTEXT.md`](../CONTEXT.md) | **术语表（先读）**，含 `MPC` 歧义澄清 |
 | [`control/mpc-roadmap.md`](control/mpc-roadmap.md) | MPC 路线图详细版（**资料汇总**，含 D1–D10 待决清单） |
 | [`control/phase2-implementation.md`](control/phase2-implementation.md) | ★★ **Phase 2 实施清单（MPC 接管 PID）** —— D1–D10 决议、`px4-mpc` 第一手解读与符号映射表、S1–S8 分步步骤、待实测参数——**做 Phase 2 时先读它** |
 | [`reference/hardware.md`](reference/hardware.md) | 硬件规格调查原始记录 |

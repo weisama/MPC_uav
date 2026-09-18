@@ -24,4 +24,4 @@ Issues 与 spec 存在仓库内的 **`.scratch/`**（本地 markdown，**随 git
 
 ### Domain docs
 
-单 context。术语表在 **`docs/CONTEXT.md`**（注意不在根目录）。See `docs/agents/domain.md`.
+单 context。术语表在仓库根 **`CONTEXT.md`**。See `docs/agents/domain.md`.

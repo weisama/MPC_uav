@@ -9,7 +9,7 @@
 >
 > 相关：[`phase2-implementation.md`](../../docs/control/phase2-implementation.md)（实施清单，本 spec 的工程细节来源）、
 > [`phase1/spec.md`](../phase1/spec.md)、[`mpc-roadmap.md`](../../docs/control/mpc-roadmap.md)、
-> [`CONTEXT.md`](../../docs/CONTEXT.md)（术语权威）。
+> [`CONTEXT.md`](../../CONTEXT.md)（术语权威）。
 
 ---
 
@@ -313,7 +313,7 @@ MPC 节点（seam 1）、OCP 求解模块（seam 2）、SITL（seam 3，手动�
 
 ### 术语纪律
 
-**禁止在输出中单独使用裸词 `MPC`**。本项目里 `MPC`（模型预测控制）与 PX4 的 `MPC_*` 参数前缀（Multicopter Position Controller，级联 PID）**是两个毫不相关的东西**。`MPC_THR_HOVER`、`MPC_TILTMAX_AIR` 这类标识符**一律写完整参数名并加反引号**。详见 [`../CONTEXT.md`](../../docs/CONTEXT.md) 开头。
+**禁止在输出中单独使用裸词 `MPC`**。本项目里 `MPC`（模型预测控制）与 PX4 的 `MPC_*` 参数前缀（Multicopter Position Controller，级联 PID）**是两个毫不相关的东西**。`MPC_THR_HOVER`、`MPC_TILTMAX_AIR` 这类标识符**一律写完整参数名并加反引号**。详见 [`../../CONTEXT.md`](../../CONTEXT.md) 开头。
 
 ### 本 spec 的文档来源
 

@@ -31,7 +31,7 @@
 | **机体系 (body frame)** | PX4 约定：**x 轴向前、y 轴向右、z 轴向下**（FRD, Forward-Right-Down）。 |
 | **世界系 (world / NED)** | PX4 约定：**北-东-地**（NED）。动捕与 ROS 常用 **ENU**（东-北-天），两者相差一次坐标变换。 |
 | **props-in / props-out** | 螺旋桨旋转方向布置的两种约定。**决定 MPC 模型里力矩 τ 的符号**，必须在文档里写死。 |
-| **电机序 (motor order)** | 物理输出口编号 ↔ PX4 逻辑电机编号的映射。本项目飞控为 **`3-2-1-4`**（见 `reference/params-analysis.md`）。 |
+| **电机序 (motor order)** | 物理输出口编号 ↔ PX4 逻辑电机编号的映射。本项目飞控为 **`3-2-1-4`**（见 `docs/reference/params-analysis.md`）。 |
 | **控制分配 (control allocation)** | 把期望的总推力与三轴力矩分配到各电机的过程。PX4 中由 `control_allocator` 模块与 `CA_*` 参数定义。 |
 | **涵道机 (ducted / cinewhoop)** | 桨叶被环形涵道包围的构型。本项目属此类。**建模上按普通四轴处理**，涵道影响吸收进辨识出的推力/阻力系数。 |
 
@@ -42,10 +42,10 @@
 | **推力系数 kt / KF** | 电机转速平方到推力的比例系数（N/(rad/s)² 或等价形式）。**本项目需系统辨识**。 |
 | **扭矩系数 kq / KM** | 电机转速平方到反扭矩的比例系数。**本项目需系统辨识**。 |
 | **悬停油门 (hover throttle)** | 悬停所需的归一化油门指令。**MPC 的工作点**，直接决定线性化点与推力可行域。 |
-| **推重比 (T/W)** | 最大总推力 / 整机重量。**必须区分"电机能力上限的 T/W"与"电池能供出的 T/W"** —— 本项目两者差距巨大（5.44 vs 1.60），见 `PROJECT.md` 第 2.4 节。 |
+| **推重比 (T/W)** | 最大总推力 / 整机重量。**必须区分"电机能力上限的 T/W"与"电池能供出的 T/W"** —— 本项目两者差距巨大（5.44 vs 1.60），见 `docs/PROJECT.md` 第 2.4 节。 |
 | **推力曲线 (thrust curve)** | 油门指令到实际推力的非线性映射。PX4 用 `THR_MDL_FAC` 参数化：`throttle = (1-c)·u + c·u²`。 |
 | **转动惯量 (inertia, Ixx/Iyy/Izz)** | 机体三轴转动惯量。**本项目需系统辨识或 CAD 估算**。 |
-| **电压跌落 (voltage sag)** | 大电流下电池内阻导致的端电压下降。**本项目不可忽略**（见 `PROJECT.md` 第 2.4 节）。 |
+| **电压跌落 (voltage sag)** | 大电流下电池内阻导致的端电压下降。**本项目不可忽略**（见 `docs/PROJECT.md` 第 2.4 节）。 |
 | **系统辨识 (system identification, sysid)** | 从实验数据反推模型参数的过程。用户已有**电机阶跃响应两点法**的经验。 |
 | **sim-to-real** | 把仿真里调好的策略迁移到真机。本项目的主要 gap 来源：推力曲线、电池跌落、动捕时延。 |
 
@@ -56,7 +56,7 @@
 | **Offboard 模式** | PX4 的一种飞行模式，控制指令由机载电脑（而非遥控器）给出。 |
 | **外环 / 内环** | 外环处理位置与姿态，带宽低；内环处理角速率，带宽高。本项目 **MPC 在外环（100 Hz），PX4 角速率环在内环（1 kHz）**。 |
 | **CTBR** | **Collective Thrust + Body Rate**。控制器输出"总推力 + 机体三轴角速率期望值"的形式。**是 `agilicious` 与 `px4-mpc` 共同采用的下发口径**，也是本项目 `(C)` 方案的形式。 |
-| **`(C)` 方案** | 本项目对"MPC 输出形态"的编号，指 **MPC → `VehicleRatesSetpoint`（ω + 推力）→ PX4 角速率环**。编号 `(A)(B)(C)(D)` 的定义见 `control/mpc-roadmap.md`。 |
+| **`(C)` 方案** | 本项目对"MPC 输出形态"的编号，指 **MPC → `VehicleRatesSetpoint`（ω + 推力）→ PX4 角速率环**。编号 `(A)(B)(C)(D)` 的定义见 `docs/control/mpc-roadmap.md`。 |
 | **INDI** | **Incremental Nonlinear Dynamic Inversion**，增量式非线性动态逆。**不依赖精确模型**的内环控制方法（用当前角加速度与操纵效能矩阵做增量更新），可替代 PID 做角速率跟踪。 |
 | **几何控制 (geometric control)** | 在 SO(3) 流形上直接设计姿态控制的非线性方法。是 `agilicious` 的控制器之一。 |
 | **NMPC** | 非线性模型预测控制（区别于线性 MPC）。 |
@@ -98,8 +98,8 @@
 | 术语 | 定义 |
 |---|---|
 | ★ **z0** | **本项目这台无人机的正式名称。** 构型 = OddityRC XI35 Pro 机架（152 mm 轴距）+ 微空 NxtPX4v2 飞控 + Jetson Orin NX 8GB。**全部文档中一律写 `z0`**，不再用"新机/本机/这台机"等代称。当前状态：只遥控器飞过，动捕链路与 MPC 均未上机。 |
-| **旧机** | 超维空间 S2-F290（PX4 **1.13.3** + 树莓派 4B）。**动捕定点飞行是在它上面验证通过的**——z0 上的一切动捕经验都源自它，需要重做一遍。见 `PROJECT.md` 1.2。 |
+| **旧机** | 超维空间 S2-F290（PX4 **1.13.3** + 树莓派 4B）。**动捕定点飞行是在它上面验证通过的**——z0 上的一切动捕经验都源自它，需要重做一遍。见 `docs/PROJECT.md` 1.2。 |
 | **NxtPX4v2 / Nxt-FC** | 微空科技（MicoAir）量产的 PX4 飞控，也被 HKUST 的 OmniNxt 采用。PX4 目标板名 `hkust_nxt-dual`。**z0 用的是它。** |
 | **XI35 Pro** | 怪象（OddityRC）的 3.5 英寸涵道机架，轴距 152 mm。**z0 的机架。** |
-| **`z0.params`** | **z0 的飞控参数文件**（`assets/z0.params`，928 行，其中 914 条参数）。内容逐字来自上游 `Huan-qun/Sim2real-UAV-Params-` 的 `S2R/assets/param/uav1.params`（那台机器叫 "Vehicle 1"），**尚未在 z0 的飞控上核实**——所以文档里凡说"`z0.params` 里 X 是默认值/可疑"，意思都是"**这是上游值，别当成 z0 的实测值**"。见 `reference/params-analysis.md`。 |
+| **`z0.params`** | **z0 的飞控参数文件**（`assets/z0.params`，928 行，其中 914 条参数）。内容逐字来自上游 `Huan-qun/Sim2real-UAV-Params-` 的 `S2R/assets/param/uav1.params`（那台机器叫 "Vehicle 1"），**尚未在 z0 的飞控上核实**——所以文档里凡说"`z0.params` 里 X 是默认值/可疑"，意思都是"**这是上游值，别当成 z0 的实测值**"。见 `docs/reference/params-analysis.md`。 |
 | **动捕定点飞行** | 用动捕位姿闭环、让飞机自主保持位置悬停的飞行状态。**旧机上已实现，z0 上尚未。** |

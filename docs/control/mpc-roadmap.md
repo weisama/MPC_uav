@@ -17,7 +17,7 @@
 
 **`MPC` 在本项目里指 Model Predictive Control（模型预测控制）。**
 **PX4 的 `MPC_*` 参数前缀是 Multicopter Position Controller（级联 PID），与之毫无关系。**
-详见 [`../CONTEXT.md`](../CONTEXT.md) 开头。
+详见 [`../../CONTEXT.md`](../../CONTEXT.md) 开头。
 
 ---
 

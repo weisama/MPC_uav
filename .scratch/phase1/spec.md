@@ -6,7 +6,7 @@
 >
 > 相关：[`phase1-implementation.md`](../../docs/control/phase1-implementation.md)（实施清单，本 spec 的工程细节来源）、
 > [`PROJECT.md`](../../docs/PROJECT.md)、[`mocap-setup.md`](../../docs/reference/mocap-setup.md)、
-> [`CONTEXT.md`](../../docs/CONTEXT.md)（术语权威）。
+> [`CONTEXT.md`](../../CONTEXT.md)（术语权威）。
 
 ---
 
@@ -240,7 +240,7 @@
 
 ### 术语纪律
 
-**禁止在输出中单独使用裸词 `MPC`** 指代模型预测控制或 PX4 参数。本项目里 `MPC`（模型预测控制）与 PX4 的 `MPC_*` 参数前缀（Multicopter Position Controller，级联 PID）**是两个毫不相关的东西**，裸用会在 issue 标题、测试名、commit message 里造成持续性混淆。详见 [`../CONTEXT.md`](../../docs/CONTEXT.md) 开头。
+**禁止在输出中单独使用裸词 `MPC`** 指代模型预测控制或 PX4 参数。本项目里 `MPC`（模型预测控制）与 PX4 的 `MPC_*` 参数前缀（Multicopter Position Controller，级联 PID）**是两个毫不相关的东西**，裸用会在 issue 标题、测试名、commit message 里造成持续性混淆。详见 [`../../CONTEXT.md`](../../CONTEXT.md) 开头。
 
 ### 本 spec 的文档来源
 
