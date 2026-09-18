@@ -1,8 +1,9 @@
 # Phase 1 Spec —— offboard 位置定点飞行
 
-> **状态**：待 triage（本地 markdown tracker，见 `../../docs/agents/issue-tracker.md`）。
-> **目标状态**：`ready-for-agent`
+Status: ready-for-agent
+
 > **范围**：Phase 1 only。Phase 2（MPC 接管 PID）单独立项。
+> **tracker**：本地 markdown，约定见 [`issue-tracker.md`](../../docs/agents/issue-tracker.md)、标签见 [`triage-labels.md`](../../docs/agents/triage-labels.md)。
 >
 > 相关：[`phase1-implementation.md`](../../docs/control/phase1-implementation.md)（实施清单，本 spec 的工程细节来源）、
 > [`PROJECT.md`](../../docs/PROJECT.md)、[`mocap-setup.md`](../../docs/reference/mocap-setup.md)、

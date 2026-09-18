@@ -1,8 +1,9 @@
 # Phase 2 Spec —— MPC（模型预测控制）接管 PID
 
-> **状态**：待 triage（本地 markdown tracker，见 `../../docs/agents/issue-tracker.md`）。
-> **目标状态**：`ready-for-agent`
+Status: ready-for-agent
+
 > **范围**：Phase 2 的步骤 1（10 状态模型）。步骤 2（13 状态 + `k_ω`）与 INDI 见 Out of Scope。
+> **tracker**：本地 markdown，约定见 [`issue-tracker.md`](../../docs/agents/issue-tracker.md)、标签见 [`triage-labels.md`](../../docs/agents/triage-labels.md)。
 >
 > **阻塞关系**：本 spec 的**执行**被 Phase 1 的完成所阻塞，且被一项实机测量（`hover_thrust`）硬阻塞。
 > 详见 Further Notes。

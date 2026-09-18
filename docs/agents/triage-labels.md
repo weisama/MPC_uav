@@ -13,7 +13,7 @@ The skills speak in terms of five canonical triage roles. This file maps those r
 When a skill mentions a role (e.g. "apply the AFK-ready triage label"), use the corresponding string from this table.
 
 ⚠️ **本仓库的 tracker 是本地 markdown，不是 GitHub Issues。** 这些字符串不进 GitHub label，
-而是写进 ticket 文件顶部的一行 `Status:`：
+而是写进文件顶部的一行 `Status:`：
 
 ```markdown
 # 03 verify offboard 模式切换时序
@@ -24,5 +24,13 @@ Type: task
 
 所以「打标签」这个动作 = 编辑该文件的那一行；**不要跑 `gh issue edit --add-label`**。
 载体与路径约定见 `issue-tracker.md`。
+
+**`spec.md` 同样带 `Status:` 行**（不带 `Type:`——spec 不是 ticket）。它的 H1 之后紧跟一行：
+
+```markdown
+# Phase 1 Spec —— offboard 位置定点飞行
+
+Status: ready-for-agent
+```
 
 Edit the right-hand column to match whatever vocabulary you actually use.
