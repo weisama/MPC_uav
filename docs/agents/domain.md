@@ -21,6 +21,8 @@ If any of these files don't exist, **proceed silently**. Don't flag their absenc
 | `docs/CONTEXT.md` | 术语表 | 命名/措辞有疑问时 |
 | `docs/control/phase1-implementation.md` | ★★ Phase 1 实施清单 | 写 Phase 1 代码前 |
 | `docs/control/phase2-implementation.md` | ★★ Phase 2 实施清单 | 写 Phase 2 代码前 |
+| `docs/control/phase1-spec.md` | Phase 1 spec（= GitHub issue 正文） | 查 Phase 1 的范围与验收判据 |
+| `docs/control/phase2-spec.md` | Phase 2 spec（= GitHub issue 正文） | 查 Phase 2 的范围与验收判据 |
 | `docs/control/mpc-roadmap.md` | 资料汇总（**非决策**） | 追 D1–D10 决策沿革 |
 | `docs/reference/` | **事实调查**（每个结论带第一手证据） | 结论有疑问时**回这里复核** |
 | `docs/assets/` | `z0.params`、6 篇论文 PDF | 查参数 / 查论文 |
