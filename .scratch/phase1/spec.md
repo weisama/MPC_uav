@@ -1,12 +1,12 @@
 # Phase 1 Spec —— offboard 位置定点飞行
 
-> **状态**：待发布到 GitHub Issues（`weisama/MPC_uav`）。
-> **目标 label**：`ready-for-agent`
+> **状态**：待 triage（本地 markdown tracker，见 `../../docs/agents/issue-tracker.md`）。
+> **目标状态**：`ready-for-agent`
 > **范围**：Phase 1 only。Phase 2（MPC 接管 PID）单独立项。
 >
-> 相关：[`phase1-implementation.md`](phase1-implementation.md)（实施清单，本 spec 的工程细节来源）、
-> [`../PROJECT.md`](../PROJECT.md)、[`../reference/mocap-setup.md`](../reference/mocap-setup.md)、
-> [`../CONTEXT.md`](../CONTEXT.md)（术语权威）。
+> 相关：[`phase1-implementation.md`](../../docs/control/phase1-implementation.md)（实施清单，本 spec 的工程细节来源）、
+> [`PROJECT.md`](../../docs/PROJECT.md)、[`mocap-setup.md`](../../docs/reference/mocap-setup.md)、
+> [`CONTEXT.md`](../../docs/CONTEXT.md)（术语权威）。
 
 ---
 
@@ -240,8 +240,8 @@
 
 ### 术语纪律
 
-**禁止在输出中单独使用裸词 `MPC`** 指代模型预测控制或 PX4 参数。本项目里 `MPC`（模型预测控制）与 PX4 的 `MPC_*` 参数前缀（Multicopter Position Controller，级联 PID）**是两个毫不相关的东西**，裸用会在 issue 标题、测试名、commit message 里造成持续性混淆。详见 [`../CONTEXT.md`](../CONTEXT.md) 开头。
+**禁止在输出中单独使用裸词 `MPC`** 指代模型预测控制或 PX4 参数。本项目里 `MPC`（模型预测控制）与 PX4 的 `MPC_*` 参数前缀（Multicopter Position Controller，级联 PID）**是两个毫不相关的东西**，裸用会在 issue 标题、测试名、commit message 里造成持续性混淆。详见 [`../CONTEXT.md`](../../docs/CONTEXT.md) 开头。
 
 ### 本 spec 的文档来源
 
-工程细节（包结构、话题表、FSM 转移表、参数核对清单、避坑清单）在 [`phase1-implementation.md`](phase1-implementation.md)。**该文件是实施清单，本 spec 是问题陈述与验收依据**；两者冲突时以实施清单的技术细节为准，以本 spec 的范围与判据为准。
+工程细节（包结构、话题表、FSM 转移表、参数核对清单、避坑清单）在 [`phase1-implementation.md`](../../docs/control/phase1-implementation.md)。**该文件是实施清单，本 spec 是问题陈述与验收依据**；两者冲突时以实施清单的技术细节为准，以本 spec 的范围与判据为准。

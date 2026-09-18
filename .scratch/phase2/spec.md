@@ -1,15 +1,15 @@
 # Phase 2 Spec —— MPC（模型预测控制）接管 PID
 
-> **状态**：待发布到 GitHub Issues（`weisama/MPC_uav`）。
-> **目标 label**：`ready-for-agent`
+> **状态**：待 triage（本地 markdown tracker，见 `../../docs/agents/issue-tracker.md`）。
+> **目标状态**：`ready-for-agent`
 > **范围**：Phase 2 的步骤 1（10 状态模型）。步骤 2（13 状态 + `k_ω`）与 INDI 见 Out of Scope。
 >
 > **阻塞关系**：本 spec 的**执行**被 Phase 1 的完成所阻塞，且被一项实机测量（`hover_thrust`）硬阻塞。
 > 详见 Further Notes。
 >
-> 相关：[`phase2-implementation.md`](phase2-implementation.md)（实施清单，本 spec 的工程细节来源）、
-> [`phase1-spec.md`](phase1-spec.md)、[`mpc-roadmap.md`](mpc-roadmap.md)、
-> [`../CONTEXT.md`](../CONTEXT.md)（术语权威）。
+> 相关：[`phase2-implementation.md`](../../docs/control/phase2-implementation.md)（实施清单，本 spec 的工程细节来源）、
+> [`phase1/spec.md`](../phase1/spec.md)、[`mpc-roadmap.md`](../../docs/control/mpc-roadmap.md)、
+> [`CONTEXT.md`](../../docs/CONTEXT.md)（术语权威）。
 
 ---
 
@@ -147,7 +147,7 @@ q̇ = ½ · skew(ω_des) ⊗ q      ← 用 ω_des 代替真实 ω，即「内�
 
 ### 坐标系：ENU / FLU（★ 权威来源：项目依据的两篇论文）
 
-**世界系 ENU**（z 逆重力朝上）、**机体系 FLU**（x 朝前、z 沿推力方向）。依据是项目控制路线的两篇直接参考文献——`Sun2022_TRO_NMPC_vs_DFBC` §III.A 与 `Foehn2022_SciRob_agilicious` §D.1——**它们在这一点上完全一致**。原文引用见 [`phase2-implementation.md`](phase2-implementation.md) §3.2。
+**世界系 ENU**（z 逆重力朝上）、**机体系 FLU**（x 朝前、z 沿推力方向）。依据是项目控制路线的两篇直接参考文献——`Sun2022_TRO_NMPC_vs_DFBC` §III.A 与 `Foehn2022_SciRob_agilicious` §D.1——**它们在这一点上完全一致**。原文引用见 [`phase2-implementation.md`](../../docs/control/phase2-implementation.md) §3.2。
 
 **这个选择让三件事同时成立**：论文、参考实现、动捕原生输出，**三者同一约定**。所以模型代码可逐字复用，**输入侧零转换**。
 
@@ -298,11 +298,11 @@ MPC 节点（seam 1）、OCP 求解模块（seam 2）、SITL（seam 3，手动�
 
 ### ⚠️ 本 spec 中有几处数值是**占位符**
 
-模型里的质量与悬停油门、推力上限、最坏求解耗时，在写这份 spec 时**都还没有实机实测值**（质量除外）。本 spec 给出的是**取值方法与验收判据**，不是最终数字。实施时以实测为准，并回填到 [`phase2-implementation.md`](phase2-implementation.md) §5 的待测参数清单。
+模型里的质量与悬停油门、推力上限、最坏求解耗时，在写这份 spec 时**都还没有实机实测值**（质量除外）。本 spec 给出的是**取值方法与验收判据**，不是最终数字。实施时以实测为准，并回填到 [`phase2-implementation.md`](../../docs/control/phase2-implementation.md) §5 的待测参数清单。
 
 ### ⚠️ 六个必须提前知道的坑
 
-全部已在 [`phase2-implementation.md`](phase2-implementation.md) §6 展开，此处只列名字：
+全部已在 [`phase2-implementation.md`](../../docs/control/phase2-implementation.md) §6 展开，此处只列名字：
 
 1. `px4_msgs` 版本不匹配 → **静默失败**
 2. `thrust_body` 是 `[-1, 1]`，不是 `[0,1]`、不是牛顿；**符号写反会全速砸地**
@@ -313,8 +313,8 @@ MPC 节点（seam 1）、OCP 求解模块（seam 2）、SITL（seam 3，手动�
 
 ### 术语纪律
 
-**禁止在输出中单独使用裸词 `MPC`**。本项目里 `MPC`（模型预测控制）与 PX4 的 `MPC_*` 参数前缀（Multicopter Position Controller，级联 PID）**是两个毫不相关的东西**。`MPC_THR_HOVER`、`MPC_TILTMAX_AIR` 这类标识符**一律写完整参数名并加反引号**。详见 [`../CONTEXT.md`](../CONTEXT.md) 开头。
+**禁止在输出中单独使用裸词 `MPC`**。本项目里 `MPC`（模型预测控制）与 PX4 的 `MPC_*` 参数前缀（Multicopter Position Controller，级联 PID）**是两个毫不相关的东西**。`MPC_THR_HOVER`、`MPC_TILTMAX_AIR` 这类标识符**一律写完整参数名并加反引号**。详见 [`../CONTEXT.md`](../../docs/CONTEXT.md) 开头。
 
 ### 本 spec 的文档来源
 
-工程细节（参考实现的逐行解读、D1–D10 决议表、S1–S8 实施步骤、参数清单、第一手证据索引）在 [`phase2-implementation.md`](phase2-implementation.md)。**该文件是实施清单，本 spec 是问题陈述与验收依据**；两者冲突时以实施清单的技术细节为准，以本 spec 的范围与判据为准。
+工程细节（参考实现的逐行解读、D1–D10 决议表、S1–S8 实施步骤、参数清单、第一手证据索引）在 [`phase2-implementation.md`](../../docs/control/phase2-implementation.md)。**该文件是实施清单，本 spec 是问题陈述与验收依据**；两者冲突时以实施清单的技术细节为准，以本 spec 的范围与判据为准。

@@ -14,8 +14,8 @@
 
 ### Issue tracker
 
-Issues 与 spec 存在 GitHub Issues（`weisama/MPC_uav`），用 `gh` CLI 操作。
-See `docs/agents/issue-tracker.md`.
+Issues 与 spec 存在仓库内的 **`.scratch/`**（本地 markdown，**随 git 入库**）。
+不用 GitHub Issues，不用 `gh`。See `docs/agents/issue-tracker.md`.
 
 ### Triage labels
 
