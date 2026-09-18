@@ -2,7 +2,7 @@
 
 > **文档定位**：个人技术蓝图 + 决策记录（ADR 风格），中文为主，术语保留英文原词。
 > **读者**：作者本人、未来协作者、半年后回看的自己。
-> **配套文件**：[`CONTEXT.md`](CONTEXT.md)（术语表，**先读它**）、[`reference/`](reference/)（调查原始记录）、[`control/mpc-roadmap.md`](control/mpc-roadmap.md)
+> **配套文件**：[`CONTEXT.md`](CONTEXT.md)（术语表，**先读它**）、[`reference/code-inventory.md`](reference/code-inventory.md)（★ 代码取舍）、[`control/phase1-implementation.md`](control/phase1-implementation.md)（★★ **Phase 1 实施清单**）、[`control/phase2-implementation.md`](control/phase2-implementation.md)（★★ **Phase 2 实施清单**）、[`reference/`](reference/)（调查原始记录）、[`control/mpc-roadmap.md`](control/mpc-roadmap.md)（Phase 2 资料汇总）
 > **后续去向**：本目录对应 [`weisama/MPC_uav`](https://github.com/weisama/MPC_uav) 仓库的 `docs/` 子目录。
 > **最后更新**：2026-09-18
 
@@ -394,7 +394,7 @@ PX4 官方 Offboard 文档明确标注了每种 setpoint 所需的**状态估计
 | **`acados`** | 基于 CasADi 的嵌入式 MPC 求解器，生成 C 代码 | ✅ **核心依赖**。注意 Jetson 上的 `BLASFEO_TARGET=ARMV8A_ARM_CORTEX_A76`（Orin NX 是 A78AE，**acados 无 A78 目标**）、`HPIPM_TARGET=GENERIC`、Tera 渲染器缺失会报 `EOFError` |
 | **`agilicious`** | ETH/UZH 敏捷飞行框架 | ⚠️ **公开仓库无任何源码**（只有 README + docs + bib），代码需向 UZH 申请。**只参考其文档架构 + 论文理论** |
 | **`Fast-Drone-XI35`** | ★ **同硬件**的 ROS1 自主飞行栈（控制器是 PID） | ✅ **重点参考**。取 `thrust_calibrate.py`（推力标定）、`px4ctrl` 的 FSM 状态机、`motion_capture` 的时延对齐；**ego-planner 规划链留到第二阶段** |
-| **`OmniNxt`** | 全向倾转旋翼平台 | ⚠️ **构型不同、代码不可得**（主仓库只有 README+misc，外部仓库已 404）。**唯一可取的产出是 `OmniNxt-03.params`**（同平台公开 PX4 参数） |
+| **`OmniNxt`** | **全向视觉感知**的常规四旋翼（★ 构型已更正，见下） | ❌ **零可复用代码**：仓库里**只有 4 个文件**（README + LICENSE + 论文 PDF + 一张图），16 MB 里 15 MB 是 PDF。**且 `OmniNxt-03.params` 根本不在仓库里**——README 指向 OneDrive 链接，需浏览器登录才能下。**真正的产出是它的硬件线**：`Nxt-FC` 与配套 PX4 fork |
 | **`Sim2real-UAV-Params-`** | 同配件动捕实飞资料 | ✅ **已采用其 `uav1.params`**；另有 `mocap.md`（594 行动捕/PX4/ROS2 配置手册）与 `BOM.md` 值得对照 |
 | **`MPC_uav`**（本项目仓库） | 论文资料库 | 📚 目前只有 README + 6 篇 PDF，**无代码**。论文见 [`assets/MPC_uav-README.md`](assets/MPC_uav-README.md) |
 | `DISCOWER/px4-mpc` | acados MPC + PX4 (ROS2) | ✅ **`(C)` 方案的现成蓝本**（210★，发布 `vehicle_rates_setpoint`） |
@@ -428,7 +428,9 @@ PX4 官方 Offboard 文档明确标注了每种 setpoint 所需的**状态估计
 |---|---|---|
 | **电池功率瓶颈**（见 2.4） | T/W 实际只有 1.60–2.54，敏捷飞行受限 | MPC 推力约束按电池设；考虑换更高 C 的电池 |
 | **电压 sag** | 同样油门给出不同推力，sim-to-real gap | 辨识推力-电压关系；或模型里显式建电压状态 |
-| **★★ 动捕时间戳抖动 10–100 ms** | **MPC 的延迟补偿基准失准**；50 ms 可能被低估为最坏 150 ms | 修 `vrpn_listener` 的 `stamp`（改用 `msg_time`）+ NTP 同步。**建议提前到 MPC 开发之前** —— 见 [`reference/mocap-setup.md`](reference/mocap-setup.md) 6.1 |
+| ~~**★★ 动捕时间戳抖动 10–100 ms**~~ | ✅ **【已撤销】该风险不存在** —— 抖动实际只有 ~2–5 ms，且 `stamp = now()` 是刻意设计（动捕主机与 Jetson 时钟差 ~4 秒，改成 `msg_time` 反而会毁掉 EKF2）。真实最坏延迟 ≈ 55 ms 而非 150 ms | **不需要任何缓解措施。** 详见 [`reference/mocap-setup.md`](reference/mocap-setup.md) **6.2** |
+| **飞控固件来源不明** | z0 的 PX4 1.14 是飞控自带的（MicoAir 出厂），但 `hkust_nxt-dual` 板级目标**要到 PX4 ≥1.15.0 才进官方上游**。1.14 上的这份必然是 MicoAir/HKUST fork 的构建 | **不自己刷固件**，用自带的那份。在 QGC 里记录版本号 |
+| **电池电流采样可能读错通道（★ 大概率已中招）** | `nxt-dual` 的 `board_config.h` 里 `ADC_BATTERY_CURRENT_CHANNEL = ADC12_CH(5)` 是错的。上游修复 commit `129c0f188a`（2024-11-19）改成 `ADC12_CH(8)`，但 **v1.15.0 仍带 `CH(5)`，v1.16.0/main 才修好**。**z0 是 1.14.x，连这个板级目标都还不存在（v1.15.0 才有）→ 1.14 的构建几乎必然带 `CH(5)`。** ⚠️ 修复**只针对 `nxt-dual`**，`nxt-v1` 在 main 上仍是 `CH(5)`，**不要照抄** | ★ **上电后在 QGC 里核对电流读数**（未解锁应≈0、上电后应合理；恒为 0 或恒为怪值 = 中招）。若中招，**电流/电量保护全是假的**。见 [`reference/open-source-survey.md`](reference/open-source-survey.md) §9.5 |
 | **Jetson 内存 7.4 GB** | 仿真时 Gazebo + SITL + ROS2 可能吃紧 | 仿真时关闭不必要组件；真机飞行无此问题 |
 | **PX4 版本迁移** | 旧机 1.13.3 → z0 1.14.x，EKF2 参数名全变（`EKF2_AID_MASK` v1.15 已删除、`EKF2_HGT_MODE` → `EKF2_HGT_REF`） | 用户已完成过一次该迁移（笔记里有成对对照），成本可控 |
 | **`px4_msgs` 版本不匹配** | v1.15 及以前**静默失败**（topic 名或字段错位不报错） | 用官方脚本核对：`./scripts/check-message-compatibility.py -v <px4_msgs> <PX4-Autopilot>` |
@@ -440,11 +442,11 @@ PX4 官方 Offboard 文档明确标注了每种 setpoint 所需的**状态估计
 | # | 问题 | 为什么要紧 |
 |---|---|---|
 | **O1** | **螺旋桨转向是 props-in 还是 props-out？** | 直接决定 MPC 模型里力矩 τ 的符号 |
-| **O2** | **动捕怎么接到 Jetson？** 动捕在 `10.1.1.x`，Jetson 现在只有 WiFi 在 `10.29.12.x/14`，且有线网口 DOWN | 里程碑 1 的**硬前提** |
+| **O2** | ~~**动捕怎么接到 Jetson？**~~ ✅ **已收敛**：VRPN 就是 UDP over IP，**把 Jetson 连到动捕主机所在的同一个 WiFi 即可，不需要额外网卡**。实测：z0 连 `SUSTech-802.1x`（`10.29.12.59/14`）时，到 `10.1.1.198` 的路由经校园网网关（`10.31.255.254`）绕出，ping 与 TCP 3883 **均不通**；换到动捕所在网络后即通 | **剩一个动作**：连对 WiFi。不是硬件问题 |
 | **O3** | **`CA_ROTORx_PX/PY` 实际值是多少？** | 控制分配的几何基础 |
 | **O4** | `EKF2_EV_POS_X/Y/Z` 外参（动捕刚体 → IMU 偏移） | 外参错会导致位置估计有常值偏移 |
 | **O5** | `MPC_THR_HOVER` 是默认值还是实测值？ | MPC 线性化工作点 |
-| **O6** | **通信中间件最终选"混合"还是"全 mavros"？** | 见 3.3 |
+| **O6** | ~~**通信中间件最终选"混合"还是"全 mavros"？**~~ ✅ **已定（分阶段）**：**Phase 1 全走 mavros2**（`/mavros/vision_pose/pose` + `/mavros/setpoint_raw/local`），**完全不碰 uXRCE-DDS**（`UXRCE_DDS_CFG` 都不用改）；**uXRCE-DDS 推迟到 Phase 2** 引入 MPC 时再上。理由：每个阶段只引入一个新变量 —— Phase 1 验动捕链路（中间件零新增），Phase 2 才引入新中间件（此时动捕已验证）。同时避开 `px4_msgs` 版本不匹配的静默失败陷阱 | 见 3.3 与本项目 Phase 1 决策记录 |
 | **O7** | 里程碑 5（INDI）是第一版就做，还是留到第二阶段？ | 影响模型复杂度 |
 | **O8** | `EKF2_GPS_CTRL = 7` 是否需要改成 0？ | 室内飞行的估计纯净度 |
 
@@ -481,12 +483,15 @@ PX4 官方 Offboard 文档明确标注了每种 setpoint 所需的**状态估计
 | 路径 | 内容 |
 |---|---|
 | [`CONTEXT.md`](CONTEXT.md) | **术语表（先读）**，含 `MPC` 歧义澄清 |
-| [`control/mpc-roadmap.md`](control/mpc-roadmap.md) | MPC 路线图详细版 |
+| [`control/mpc-roadmap.md`](control/mpc-roadmap.md) | MPC 路线图详细版（**资料汇总**，含 D1–D10 待决清单） |
+| [`control/phase2-implementation.md`](control/phase2-implementation.md) | ★★ **Phase 2 实施清单（MPC 接管 PID）** —— D1–D10 决议、`px4-mpc` 第一手解读与符号映射表、S1–S8 分步步骤、待实测参数——**做 Phase 2 时先读它** |
 | [`reference/hardware.md`](reference/hardware.md) | 硬件规格调查原始记录 |
 | [`reference/params-analysis.md`](reference/params-analysis.md) | `z0.params` 逐项分析 |
 | [`reference/px4-interface.md`](reference/px4-interface.md) | 动捕 / PX4 / Offboard 接口事实 |
 | [`reference/mocap-setup.md`](reference/mocap-setup.md) | ★ **动捕链路搭建手册**（操作规程 + `vrpn_relative_pose` 源码 + z0 适配清单） |
-| [`reference/open-source-survey.md`](reference/open-source-survey.md) | 5 个开源项目包级取舍 |
+| [`reference/open-source-survey.md`](reference/open-source-survey.md) | 开源项目包级取舍（**全部第一手 `git clone` 核实**；§9 = Nxt-FC / 固件线） |
+| [`reference/code-inventory.md`](reference/code-inventory.md) | ★★ **逐文件盘点（✅/🔶/❌ + 理由）+ 落到哪个包**（代码取舍的权威来源） |
+| [`control/phase1-implementation.md`](control/phase1-implementation.md) | ★★ **Phase 1 实施清单**（包与文件、话题接口、坐标系、FSM、轨迹与判据、参数核对、验证顺序、避坑清单、4 件物理操作）——**写 Phase 1 代码前先读它** |
 | [`assets/z0.params`](assets/z0.params) | **z0 的飞控参数文件**（928 行 / 914 条参数） |
 | [`assets/papers/`](assets/papers/) | 6 篇参考文献 PDF + [中文索引](assets/papers/README.md)（命名规则、研究内容、用处） |
 | [`LOCAL-NOTES.md`](LOCAL-NOTES.md) | ⚠️ **本地凭据，已 gitignore，不入库** |

@@ -1,0 +1,18 @@
+# ⚠️ 注意：docs/LOCAL-NOTES.md 曾在此排除，2026-09-18 作者决定随 docs/ 一起上传（见该文件头部说明）。
+# 若将来要重新排除，恢复下面这行即可（但已进入 git 历史的内容不会被清除）。
+# docs/LOCAL-NOTES.md
+
+# 构建产物
+build/
+install/
+log/
+__pycache__/
+*.pyc
+c_generated_code/
+
+# acados 生成物
+*.so
+acados_ocp.json
+
+# Claude Code 本地设置（个人、不入库）
+.claude/settings.local.json

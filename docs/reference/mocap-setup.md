@@ -98,7 +98,16 @@ echo "source ~/ws_livox/install/setup.bash" >> ~/.bashrc
 | **ROS / 动捕 `map`** | **ENU**（东-北-上） | `/mavros/odometry/out`、动捕标定、刚体创建 |
 | **ROS `base_link`** | **FLU**（前-左-上） | 机体坐标系，随飞机旋转 |
 
-> 📌 **mavros 会自动把 `/mavros/odometry/out` 的 ENU 转成 NED 给飞控。**
+> ⚠️ **已纠正的表述**：早先这里写的是"mavros 会自动把 `/mavros/odometry/out` 的 **ENU 转成 NED 给飞控**"。**方向写反了。**
+>
+> **`mavros` 在边界上有两个方向的转换，容易记反**（已读 mavros 源码确认，见 [`px4-interface.md`](px4-interface.md) 5.1）：
+>
+> | 话题 | 方向 | mavros 做什么 |
+> |---|---|---|
+> | `/mavros/vision_pose/pose`（**我们 → PX4**） | 入 | **ENU→NED** + **FLU→FRD** |
+> | `/mavros/odometry/out`（**PX4 → 我们**） | 出 | **NED→ENU** |
+>
+> **★ 对本项目的直接影响**：`/mavros/vision_pose/pose` 走的是**入方向**，所以**动捕节点应该发原生 ENU/FLU 值，不要自己先转**。自己转了 mavros 会再转一次 → **转两次**，症状是"能飞但方向不对/持续飘"。
 
 ### 3.2 ★ 人為设定的"东"
 
@@ -114,6 +123,13 @@ echo "source ~/ws_livox/install/setup.bash" >> ~/.bashrc
 ```
 
 > ✅ **本项目也是无磁罗盘（`SYS_HAS_MAG = 0`），可以用同一套手法。** 但要记住：**这是一个约定，不是物理真值。** 文档里应写死"本项目的'北'指房间的哪个方向"。
+
+> ⚠️ **本项目 Phase 1 对该流程有一处放宽 —— 但只放宽了一半**（详见 [`phase1-implementation.md`](../control/phase1-implementation.md) §3.4）：
+>
+> - ✅ **"机头必须朝向某个特定方向"不再必要** —— EKF2 融合动捕的 yaw（`EKF2_EV_CTRL = 11` 含 yaw 位）后，会把世界系对齐到动捕坐标系，**PX4 的"北"就是动捕 map 的 +x**，机头朝哪都行
+> - ❌ **但"从节点启动到解锁之间不要移动/转动飞机"仍然是硬要求** —— 因为原点在**解锁上升沿**才最终锁定；启动到解锁之间若移动了飞机，原点切换就会产生一个位置/姿态阶跃，EKF2 会把它当成真实运动
+>
+> **一句话**：**朝向自由了，"摆好后别动它"没自由。**
 
 ### 3.3 动捕标定（L 校准 / T 校准）
 
@@ -199,32 +215,55 @@ ros2 topic echo /mavros/vision_pose/pose   # 看位姿
 
 **★ 不转发的原因（关键）**：
 
-> `vrpn_listener` 的 `stamp` 用的是 `listener->now()`，**比真实采样时刻晚 10–100 ms 且带抖动**。
+> `vrpn_listener` 的 `stamp` 用的是 `listener->now()`（ROS 接收时刻），**而不是 VRPN 的 `msg_time`**。
 > **喂给 EKF2 反而引入偏差。**
 
-**要改的前置条件**：
-1. 先做 **NTP 同步**
-2. 把 `stamp` 还原成 `msg_time`
+**★ 但注意：这是一个刻意的设计，不是 bug。** 见 6.2。
 
 ---
 
-### 6.1 ★★★ 这一条对本项目 MPC 路线的影响（重要）
+### 6.2 ★★★ `stamp = now()` 是刻意的设计，**不要改**（本节推翻旧结论）
 
-上游只是"不转发速度"，但**根因是 `stamp` 有 10–100 ms 抖动** —— 这对 MPC 是**直接威胁**：
+> ⚠️ **本节更正了本文档 2026-09-18 早先版本的错误结论。** 旧版本称 `stamp` 用 `now()` 是缺陷、"比真实采样时刻晚 **10–100 ms** 且带抖动"，并建议"把 `stamp` 还原成 `msg_time`"。**该结论是错的，照做会毁掉 EKF2。**
 
-| 影响 | 说明 |
+**第一手证据**：上游 `vrpn_listener.zip` 的 `src/vrpn_listener.cpp` 第 37–40 行**原样写着理由**：
+
+```cpp
+    pose_msg.header.frame_id = listener->_frame_id;
+    // Use ROS receive time, not VRPN msg_time, because the mocap PC clock is
+    // not NTP-synced with the Jetson (~4s offset observed). Adds ~2-5ms jitter
+    // but keeps the stamp in the same clock domain as IMU/MAVROS for fusion.
+    pose_msg.header.stamp = listener->now();
+```
+
+`twist`（第 62 行）与 `accel`（第 93 行）同样如此，理由相同。
+
+**更正对照**：
+
+| | 旧结论（❌ 错） | 实际情况 |
+|---|---|---|
+| 抖动量 | 10–100 ms | **~2–5 ms** |
+| 性质 | 缺陷，应改掉 | **刻意的 workaround** |
+| 原因 | 未提 | ★ **动捕主机与 Jetson 时钟未同步，实测偏移 ~4 秒** |
+| 改法 | "还原成 `msg_time`" | ⚠️ **直接改会引入 ~4 s 误差，彻底毁掉 EKF2** |
+
+**为什么必须用 `now()`**：`msg_time` 是**动捕主机的时钟**。两台机器差 ~4 秒，把这个时间戳交给 EKF2，等于谎报数据是 4 秒前/后的。`now()` 是 ROS 接收时刻——**必真实采样时刻略晚（VRPN 传输 + 轮询间隔）**，但**与 IMU、mavros 在同一个时钟域**，EKF2 才能正确做时间对齐。用 2–5 ms 的精度损失换时钟域一致性，是**正确的工程取舍**。
+
+**连带失效的两条旧推论**：
+
+| 旧说法 | 更正 |
 |---|---|
-| **MPC 的延迟补偿会被削弱** | [`../control/mpc-roadmap.md`](../control/mpc-roadmap.md) 第 7 节计划显式补偿 50 ms 动捕延迟。**但如果时间戳本身抖动 10–100 ms，补偿的基准就是错的。** |
-| **状态外推会失准** | MPC 用时间戳做状态外推时，抖动会直接变成位置误差 |
-| **50 ms 这个数可能被低估** | 用户实测的 50 ms 是"动捕→IMU 四元数"的对比，**不含 stamp 抖动**。真实的最坏延迟可能是 50 + 100 = **150 ms** |
+| "真实最坏延迟可能是 50 + 100 = **150 ms**" | ❌ 不成立。实际 ≈ 50 + 2~5 ≈ **55 ms** |
+| [`../control/mpc-roadmap.md`](../control/mpc-roadmap.md) 第 7 节把"时戳抖动"列为 **★★ 最高风险**，建议"提前到 MPC 开发之前"修 | ❌ **该风险不存在**，不需要为它排任何工期 |
 
-**→ 建议把"stamp 修复 + NTP 同步"提前到 MPC 开发之前做。** 这是本文件中**对项目影响最大的一条发现**。
+**因此本节的正确结论是**：
 
-**具体动作**：
-1. 查 `vrpn_listener` 源码里 `stamp` 的赋值方式，确认是否真的是 `now()`
-2. 若确认，改成用 VRPN 消息里的原始时间戳（`msg_time`）
-3. 动捕主机与 z0 做 **NTP / PTP 同步**
-4. 重新测一次端到端延迟，**测最坏值而不是平均值**
+1. ✅ **保持 `stamp = now()` 不动。** 这是经过实机验证的配置。
+2. ❌ **不要**把 `stamp` 改成 `msg_time`——除非**先完成 NTP/PTP 同步**（那是唯一的前置条件，也是它的意义所在）。
+3. 🔶 **NTP 同步降级为"可选"**：只有在将来确实需要**真实采样时刻**（如多源融合里要精确对齐时间）时才必须做。**Phase 1 和 Phase 2 都不需要它。**
+4. ✅ **一个安全的清理**（可选，与上面无关）：本项目重写的动捕节点应当**转发 `vrpn_listener` 的时间戳**，而**不要像 `vrpn_relative_pose` 那样用 `now()` 再打一次戳**（见 7.3）。两次打戳会让 EKF2 认为数据比实际更新，削弱它的延迟补偿。这仍然是**同一时钟域内**的操作，不涉及 4 秒偏移。
+
+> 📌 **旧版本的待办"查源码确认 `stamp` 是否真的是 `now()`"——已关闭。答案：是，且是刻意的。**
 
 ---
 
@@ -341,8 +380,11 @@ int main(int argc, char * argv[])
 ```
 
 > ⚠️ **注意第 353 行：`relative_pose->header.stamp = this->get_clock()->now();`**
-> **这一行重新打了一个时间戳，把动捕的原始时间戳丢掉了。**
-> → **这正是第 6.1 节所说问题的一个具体实例。** 本项目做 MPC 时**必须改成转发原始 stamp**（或至少记录两者之差）。
+> **它覆盖掉了 `vrpn_listener` 刚打的时间戳**（第 307 行的 `relative_pose->header = msg->header;` 本来已经拷贝了）。
+> → 后果是 EKF2 认为数据比实际更新，**削弱它的延迟补偿**。量级很小（毫秒级），不是致命的。
+> → **正确做法是删掉这一行、直接转发 `vrpn_listener` 的 stamp**（同一时钟域，**不是**改成 `msg_time`——见 6.2）。
+>
+> 📌 **本项目已决定重写这个节点**（原点是"解锁上升沿"而非"启动后 10 帧"，且只归零 yaw），重写时直接按上面的做法处理时间戳。本节的旧源码仅作参考。
 
 ### 7.4 `launch/vrpn_relative.launch.py`
 
@@ -535,13 +577,13 @@ ros2 topic hz /mavros/vision_pose/pose
 | # | 项 | 上游值 | z0 要做什么 |
 |---|---|---|---|
 | 1 | **刚体命名** | `r11` / `r22` | 改成自己的单机命名 |
-| 2 | **串口设备** | `/dev/ttyTHS3` | ⚠️ **实测确认**（`ls /dev/ttyTHS*` / `ttyUSB*`） |
-| 3 | **工作空间路径** | `~/ws_livox` | 改成自己的（Livox 是历史遗留） |
+| 2 | **串口设备** | `/dev/ttyTHS3` | ✅ **已实测**：z0（Jetson Orin NX）上**只有 `/dev/ttyTHS1` 和 `/dev/ttyTHS2`**，`THS3` 与 `THS0` 都不存在。接线时确认是哪一个 |
+| 3 | **工作空间路径** | `~/ws_livox` | 改成 `~/ros_ws`（z0 的实际工作空间） |
 | 4 | **`gcs_url`** | `udp://@10.1.1.103` | 改成自己的地面站 IP |
-| 5 | **动捕网段** | `10.1.1.x` | ⚠️ **★ z0 的 WiFi 在 `10.29.12.x/14`，有线口是 DOWN 的** → **需要额外网卡或调整网络规划**（[`../PROJECT.md`](../PROJECT.md) O2） |
+| 5 | **动捕网段** | `10.1.1.x` | ✅ **不需要额外网卡**。VRPN 就是 UDP over IP，**把机载电脑连到动捕主机所在的同一个 WiFi 即可**。z0 曾连 `SUSTech-802.1x`（`10.29.12.x/14`），到 `10.1.1.198` 的路由经校园网网关绕出、不通；换到动捕所在网络后即通 |
 | 6 | **EKF2 参数** | 见手册第 3 节 | 用 [`../assets/z0.params`](../assets/z0.params)，见 [`params-analysis.md`](params-analysis.md) |
 | 7 | **`EKF2_EV_POS_Z`** | `0` | ⚠️ z0 用铝柱架动捕球，**必须量出 Z 偏移** |
-| 8 | **计时同步** | 未做 | ⚠️ **★ 建议补 NTP/PTP，见第 6.1 节** |
-| 9 | **`vrpn_relative_pose` 的 stamp** | 用 `now()` 重新打戳 | ⚠️ **★ MPC 版本必须转发原始 stamp** |
+| 8 | **计时同步** | 未做 | 🔶 **可选，不再强制**。见 6.2：`stamp = now()` 是刻意设计，2–5 ms 抖动可接受。**只有想让 `msg_time` 可用时才必须补 NTP** |
+| 9 | **动捕节点的 stamp** | `now()` 重新打戳 | ✅ 重写时**转发 `vrpn_listener` 的 stamp，不要二次打戳**（同一时钟域，见 6.2） |
 
-**第 5、8、9 项是本项目相对上游的额外要求**，因为 MPC 对时延与时戳的敏感度远高于 PID。
+**第 5、8、9 项已根据第一手证据更正**：第 5 项不是硬件问题而是"连对 WiFi"；第 8 项从"必须"降级为"可选"；第 9 项只是避免二次打戳，与 `msg_time` 无关。

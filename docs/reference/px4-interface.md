@@ -200,6 +200,27 @@ PX4 官方 Offboard 文档明确列出每种 setpoint 需要什么估计：
 >
 > **建议**：在文档里**用文字写死符号约定**（不只用公式），并在实飞前用一个"打正杆看飞机往哪边滚"的测试确认。这是用户已有经验里的老坑。
 
+### 5.1 ★★ `mavros` 在哪些话题上帮你转、往哪个方向转（已读源码）
+
+**`mavros` 的坐标转换只发生在它的输入/输出边界上，且两个方向都有**——**容易记反**：
+
+| 话题 | 方向 | mavros 做什么 | 源码依据 |
+|---|---|---|---|
+| `/mavros/vision_pose/pose`（**我们 → PX4**） | 入 | **ENU→NED**（位置）、**ENU→NED + FLU→FRD**（姿态） | `mavros_extras/src/plugins/vision_pose_estimate.cpp` `send_vision_estimate()`：`ftf::transform_frame_enu_ned(tr.translation())` + `ftf::transform_orientation_enu_ned(ftf::transform_orientation_baselink_aircraft(q))` |
+| `/mavros/odometry/out`（**PX4 → 我们**） | 出 | **NED→ENU** | `mavros/src/plugins/odometry.cpp` |
+
+> ⚠️ **已纠正的错误认知（来自项目自身的旧笔记）**：早先笔记写的是"mavros 会把 `/mavros/odometry/out` 的 **ENU 转成 NED** 给飞控"。**方向写反了**——那是 **PX4→ROS 的出方向（NED→ENU）**，不是入方向。
+>
+> **为什么这个方向很重要**：因为 `/mavros/vision_pose/pose` 走的是**入方向（ENU→NED）**，所以**我们的动捕节点应该发原生 ENU/FLU 值，不要自己先转一遍**。自己转了 mavros 会再转一次 → **转两次**，症状是"能飞但方向不对/持续飘"。
+
+**★ `send_vision_estimate()` 还有一个隐藏行为**：
+
+```cpp
+if (last_transform_stamp == stamp) { /* dropped */ return; }
+```
+
+**时间戳不前进的消息会被静默丢弃。** → 这是"**不要给动捕数据一个固定时间戳**"的第二个理由（第一个是时钟域问题，见 [`mocap-setup.md`](mocap-setup.md) 6.2）。
+
 ---
 
 ## 6. 时延预算
@@ -213,12 +234,21 @@ PX4 官方 Offboard 文档明确列出每种 setpoint 需要什么估计：
 | uXRCE-DDS 传输 | ~1 ms | — |
 | PX4 角速率环 | 1 kHz → **1 ms** | — |
 | **MPC 求解** | **目标 ≤ 10 ms**（100 Hz） | 待实测 |
+| **动捕时间戳抖动** | ✅ **~2–5 ms** | ★ 已更正，见下 |
+
+> ⚠️ **已更正的错误认知**：本文档早先版本把动捕时间戳抖动记为 **±10–100 ms**，并据此推断"真实最坏延迟可能是 150 ms"。**该数字是错的。**
+>
+> 第一手证据（`vrpn_listener.cpp` 第 37–40 行的源码注释）：抖动实际只有 **~2–5 ms**，因为 `stamp = now()` 用的是 **ROS 接收时刻**、与 IMU/mavros **同一时钟域**。**用 `msg_time` 才会出大问题**——动捕主机与 Jetson 时钟差 **~4 秒**。
+>
+> → **正确的最坏端到端延迟 ≈ 50 + 5 ≈ 55 ms**，不是 150 ms。
+> → 详细论证与源码原文见 [`mocap-setup.md`](mocap-setup.md) **6.2**。
 
 **含义**：
 
 - 动捕链路 50 ms 的延迟**是 MPC 外部状态输入的固有延迟**。MPC 若不做延迟补偿，这 50 ms 会直接变成跟踪误差。
 - **MPC 的预测时域天然能吃下这个延迟**——把 50 ms 的延迟显式建模成"状态滞后 N 步"，是 NMPC 相对 PID 的一个真实优势。
 - → 📌 **值得做的一个实验**：在 MPC 里显式补偿 50 ms 延迟，对比不补偿的效果。这是一个有论文价值的对比。
+- ✅ **时延预算是干净的**：唯一的显著延迟就是那 50 ms 本身，时间戳抖动可以忽略。**不需要为抖动另做任何事。**
 
 ---
 
@@ -233,6 +263,8 @@ PX4 官方 Offboard 文档明确列出每种 setpoint 需要什么估计：
 | 3 | `px4_ros_com` 是本项目可用的中间件 | ❌ **错**。v1.14+ 已废弃，见 4.1。 |
 | 4 | `CA_ROTORx_KM` 的正负号 = 螺旋桨物理转向 | ❌ **错**。那是 PX4 模板默认值（`CT=6.5`、`KM=±0.05` 对全部 12 个槽位一视同仁）。见 [`params-analysis.md`](params-analysis.md) 3.3。 |
 | 5 | 用 HTTPS / GitHub API 探测 private 仓库，返回 404 就认为仓库不存在 | ❌ **错**。GitHub 对未授权 private 仓库**故意返回 404**。有 SSH key 时应用 `git ls-remote`。详见 [`../LOCAL-NOTES.md`](../LOCAL-NOTES.md) 第 3 节。 |
+| 6 | "mavros 会把 `/mavros/odometry/out` 的 **ENU 转成 NED** 给飞控" | ❌ **方向写反了**。那是 **PX4→ROS 的出方向（NED→ENU）**。`/mavros/vision_pose/pose` 走的是**入方向（ENU→NED）**。★ **搞反的后果**：动捕节点自己先转一遍，mavros 再转一遍 → **转两次**，症状是"能飞但方向不对/持续飘"。源码依据见 5.1 |
+| 7 | "给动捕数据一个固定/恒定时间戳" | ❌ **错**。`VisionPoseEstimatePlugin::send_vision_estimate()` 里 `if (last_transform_stamp == stamp) return;` —— **时间戳不前进的消息会被静默丢弃**。这是"不要动 `stamp`"的第二个理由 |
 
 ---
 
