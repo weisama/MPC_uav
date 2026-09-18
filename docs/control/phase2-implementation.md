@@ -245,27 +245,50 @@ ubu = np.array([+Fmax,     wmax,       wmax,      +0.5*wmax])
 | **D4** | 中间件 | ✅ **已定** | **混合**：uXRCE-DDS 发指令 + mavros2 收动捕（G2） |
 | **D5** | `T_max` 取值 | ✅ **方向已定** | **按电池**（≈11.8 N）。是否换高 C 电池 → **本文给出量化依据，见 §3.3，仍可再议** |
 | **D6** | MPC 频率 | 🔶 **待实测** | 先按 **100 Hz** 写，但**以实测最坏耗时为准**降档。验收线：最坏 ≤ 10 ms 保 100 Hz；10–20 ms 降 50 Hz；> 20 ms 停下优化 |
-| **D7** | MPC 内部世界系 | ⚠️ **本文改建议** | **改成 ENU/FLU**（原倾向 NED/FRD）。理由见 §3.2，**需用户确认** |
+| **D7** | MPC 内部世界系 | ✅ **已定** | **ENU/FLU**（世界 z 朝上 + 机体 x 前 / z 沿推力）—— **用户选定「参考论文里的坐标系」，两篇论文一致**，见 §3.2 |
 | **D8** | 状态源 | ✅ **已定** | **动捕直出**（G3） |
 | **D9** | 50 ms 延迟补偿 | 🔶 **仍开放** | 建议**第二版再做**。步骤 1 先用「状态外推 `x + v·τ`, τ=50 ms」这一行代码顶住，够用且零风险 |
 | **D10** | 参考轨迹来源 | ✅ **已定** | **手写**（G9）；`ego-planner` 不在本项目范围 |
 
-### 3.2 ★ D7 决议（本文主张改动原倾向）
+### 3.2 ★ D7 决议：**ENU / FLU**（依据：两篇论文的坐标系）
 
-**原倾向**：内部用 NED/FRD，理由是「与 PX4 一致，少一次变换」。
+**用户决定：「参考论文里的坐标系」。** 本项目控制路线的两篇直接依据 `Sun2022`（`(C)`+INDI）与 `Foehn2022`（CTBR），**它们用的坐标系完全一致，且就是 ENU/FLU**。
 
-**改成**：**内部用 ENU/FLU。**
+**第一手证据（原文引用）**：
 
-**理由（三条，按权重排序）**：
+> **`Sun2022_TRO_NMPC_vs_DFBC` §III.A Notations**：
+> *"Two right-handed coordinate frames are used in this paper: the inertial frame **`F_I`**: `{x_I, y_I, z_I}` with **`z_I` pointing upward opposite to the gravity**, and the body-frame **`F_B`**: `{x_B, y_B, z_B}` with **`x_B` pointing forward** and **`z_B` aligned with the collective thrust direction**."*
 
-1. **★ 动捕原生就是 ENU/FLU。** 状态源是 `/mocap/pose_enu`（G3/G11），**输入侧零转换**。若选 NED/FRD，反而要在输入侧做 ENU→NED + FLU→FRD，其中包括**最难写对的那一行四元数变换**（px4-mpc 的 `1/√2·[w+z, x+y, x−y, w−z]`）。
-2. **模型代码可以逐字复用。** px4-mpc 的 `multirotor_rate_model.py` 在 ENU/FLU 下**一个字都不用改**（`g=[0,0,−9.81]`、`force=[0,0,F]`）。选 NED/FRD 就要改重力符号和推力符号 —— 这正是 §2.2 指出的、roadmap 自己都写矛盾了的地方。
+> **`Foehn2022_SciRob_agilicious` §D.1 Pilot**：
+> *"...we use a right-handed coordinate system located in the center of gravity, with the **`e_g` pointing in body-relative upward thrust direction**, and **`e_x` pointing along the drone's forward direction**. Motion is represented with respect to an inertial world frame with **`e_z` pointing against the gravity direction**, where **translational derivatives (e.g. velocity) are expressed in the world frame and rotational derivatives (e.g. bodyrate) are expressed in the body frame**."*
+
+**两张表读出来的约定**：
+
+| | 论文 | PX4 | z0 的 MPC 内部 |
+|---|---|---|---|
+| **世界系** | 惯性系 **z 朝上**（逆重力） | NED，z 朝**下** | **ENU**（z 朝上） |
+| **机体系** | x 朝前、**z 沿推力方向** | FRD，z 朝**下** | **FLU**（x 前 / z 上 = 推力） |
+| **平移量** | 世界系 | 世界系 | ENU |
+| **旋转量（ω）** | **机体系** | 机体系（FRD） | 机体系（FLU） |
+| **重力** | `g = [0,0,−9.81]` | — | **`g = [0,0,−9.81]`** |
+| **推力** | 沿机体 **+z** | 沿机体 −z | **`force = [0,0,F]`** |
+
+**这三条恰好就是 §2.2 里 px4-mpc 用的那一套**（`g=[0,0,−9.81]`、`force=[0,0,F]`）。**论文、px4-mpc、动捕原生输出，三者同一约定** —— 所以模型代码可以逐字复用，输入侧零转换。
+
+**与本文原先的建议一致的另外三条理由（保留供追溯）**：
+
+1. **动捕原生就是 ENU/FLU。** 状态源是 `/mocap/pose_enu`（G3/G11），**输入侧零转换**。若选 NED/FRD，反而要在输入侧做 ENU→NED + FLU→FRD，其中包括**最难写对的那一行四元数变换**（px4-mpc 的 `1/√2·[w+z, x+y, x−y, w−z]`）。
+2. **模型代码可以逐字复用。** px4-mpc 的 `multirotor_rate_model.py` 在 ENU/FLU 下**一个字都不用改**。选 NED/FRD 就要改重力符号和推力符号 —— 这正是 §2.2 指出的、roadmap 自己都写矛盾了的地方。
 3. **转换总数相同，但风险不同。** 两种方案都恰好 1 处物理转换：
    - ENU/FLU：输出侧 `[+ω_x, −ω_y, −ω_z]` —— **纯符号翻转，4 行，肉眼可验**。
    - NED/FRD：输入侧 ENU→NED 四元数 + FLU→FRD 姿态 —— **需要矩阵/四元数推导，出错概率高一个数量级**。
 
 > **结论：把误差风险挪到「纯符号翻转」那一侧，而不是「四元数变换」那一侧。**
-> **代价**：`[`mpc-roadmap.md`](mpc-roadmap.md) §4.1/§4.2 的 NED/FRD 表述需要同步改写。本文确认后一并改。
+> **代价**：`[`mpc-roadmap.md`](mpc-roadmap.md) §4.1/§4.2 的 NED/FRD 表述需要同步改写 —— **已完成**（见该文件 §4.2 的更正注记）。
+
+**★ 顺带一个对 §2.1 的旁证**：**两篇论文都把 `ω` 作为状态**。
+`Sun2022` 的 NMPC 状态是 `x = [ξ, ξ̇, q, Ω^B]`；`Foehn2022` 的状态是 `x = [p, q, v, ω, a, τ, s, b_ω, b_a, f_d, f]`。
+→ **本文 §2.1 的「步骤 1 用 10 状态（ω 不作状态）」是简化，不是论文的标准做法。** 这不改变结论（先抄 px4-mpc 跑通、再上 13 状态），但**说明步骤 1→步骤 2 的升级方向与论文一致**，不是我们在自创。
 
 ### 3.3 ★ 推力上限：为什么必须按电池
 
@@ -297,7 +320,7 @@ ubu = np.array([+Fmax,     wmax,       wmax,      +0.5*wmax])
 
 **若按电机 `T_max = 40 N` 归一化**（即抄 px4-mpc 的推导方式），悬停值变成 −0.184，**MPC 会以为自己有大量剩余推力，而电池给不出来** → 期望加速度与实际严重不符，表现为"指令下去飞机不动"甚至振荡。
 
-> **决议：`T_max` 按电池（11.8 N）设，并把倾角上限从 45° 收到 30°**（30° 时需 8.5 N，占 72 %）。
+> **✅ 决议（已确认）：`T_max` 按电池（11.8 N）设，`MPC_TILTMAX_AIR` 从 45° 收到 30°**（30° 时需 8.5 N，占 72 %）。
 > **D5 的后续问题**：换高 C 电池能把 T/W 提到 2.54（`T_max` = 18.7 N），倾角就能放回 40°+。**但换电池是硬件改动，不影响本文件的实施步骤** —— 参数化即可。
 
 ### 3.4 控制流总览
@@ -539,8 +562,8 @@ S1 环境 ──> S2 acados ──> S3 离线 OCP ──> S4 节点 ──> S5 S
 
 | # | 开放项 | 本文主张 | 谁来定 |
 |---|---|---|---|
-| O1 | **D7：内部坐标系改 ENU/FLU** | 改（§3.2，三条理由） | **用户确认** |
-| O2 | **`MPC_TILTMAX_AIR` 从 45° 收到 30°** | 收（§3.3，电池裕度不够） | **用户确认** |
+| ~~O1~~ | ~~D7：内部坐标系~~ | ✅ **已关闭** —— **ENU/FLU**，用户选定「参考论文里的坐标系」，`Sun2022` + `Foehn2022` 一致（§3.2） | 已定 |
+| ~~O2~~ | ~~`MPC_TILTMAX_AIR` 45°→30°~~ | ✅ **已关闭** —— 收到 30°（§3.3） | 已定 |
 | O3 | D6：MPC 频率 | 待 P3 实测 | 实测数据 |
 | O4 | D9：延迟补偿 | 步骤 1 只用一行状态外推；完整补偿留第二版 | 用户 |
 | O5 | `R` 改罚 `u − u_ref`（M6）的具体参考量 | 用上一帧解或前馈 | 实现时定 |

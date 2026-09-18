@@ -7,7 +7,7 @@
 > ✅ **决策已落地 → 见 [`phase2-implementation.md`](phase2-implementation.md)**（Phase 2 实施清单）。
 > 该文件回答了本文第 9 节的 D1–D10，并**修正了本文的两处问题**：
 > - **§4.1/§4.2 的状态数与坐标系** —— 第一版用 10 状态（`ω` 不是状态，见该文件 §2.1）；坐标系决议为 **ENU/FLU**（见该文件 §3.2），本文原倾向的 NED/FRD 已改。
-> - **§4.2 的动力学公式自相矛盾** —— 该节写「`T` 沿机体 **−z**（FRD）」，公式却是 `v̇ = g + (1/m)R(q)e_z T`。**这个 `+e_z` 形式只在 FLU/ENU 下成立**；FRD 下应为 `v̇ = g − R(q)e_z T/m` 且 `g = [0,0,+9.81]`。两行只能对一个。以该文件 §3.2 的 ENU/FLU 表述为准。
+> - **§4.2 的动力学公式自相矛盾**（**已更正**，见 §4.1/§4.2 的注记） —— 该节写「`T` 沿机体 **−z**（FRD）」，公式却是 `v̇ = g + (1/m)R(q)e_z T`。**这个 `+e_z` 形式只在 FLU/ENU 下成立**；FRD 下应为 `v̇ = g − R(q)e_z T/m` 且 `g = [0,0,+9.81]`。两行只能对一个。以该文件 §3.2 的 ENU/FLU 表述为准。
 >
 > 相关：[`../PROJECT.md`](../PROJECT.md) 第 4 节、[`../reference/px4-interface.md`](../reference/px4-interface.md)、[`../reference/mocap-setup.md`](../reference/mocap-setup.md)、[`../reference/hardware.md`](../reference/hardware.md) 第 9 节
 
@@ -175,15 +175,20 @@ PX4 官方 Offboard 文档明确标注：**attitude / body_rate / thrust_and_tor
    ω    ∈ ℝ³    机体角速率
 
 输入 u ∈ ℝ⁴:
-   T     ∈ ℝ    总推力（沿机体 -z 方向，即 FRD 的 z 轴负方向）
+   T     ∈ ℝ    总推力（沿机体 +z 方向，即推力方向；见下方更正）
    ω_des ∈ ℝ³   机体角速率期望值  ← 直接下发给 PX4
 ```
+
+> ⚠️ **【已更正 2026-09-18】本节原先写「`T` 沿机体 `-z` 方向，即 FRD 的 z 轴负方向」，与下面的公式自相矛盾。**
+> 决议后的约定是 **ENU/FLU**（依据 `Sun2022` §III.A 与 `Foehn2022` §D.1，见 [`phase2-implementation.md`](phase2-implementation.md) §3.2）：
+> **世界系 z 朝上、机体 z 沿推力方向**。所以 `T` 沿机体 **+z**，`g = [0,0,−9.81]`。
+> 原文的 `-z`（FRD）表述若成立，下面的 `v̇` 公式必须写成 `v̇ = g − (1/m)R(q)e_z T` 且 `g = [0,0,+9.81]` —— **两行只能对一个**。
 
 ### 4.2 动力学
 
 ```
 ṗ = v
-v̇ = g + (1/m)·R(q)·e_z·T
+v̇ = g + (1/m)·R(q)·e_z·T                ← ENU/FLU 约定；g = [0,0,-9.81]，T ≥ 0 沿机体 +z
 q̇ = ½·q ⊗ [0, ω_des]                    ← 用 ω_des 代替真实 ω
 ω̇ = k_ω·(ω_des − ω)                     ← 内环一阶模型
 ```
@@ -202,7 +207,7 @@ q̇ = ½·q ⊗ [0, ω_des]                    ← 用 ω_des 代替真实 ω
 |---|---|---|---|
 | **推力上下限** | `T_min ≤ T ≤ T_max` | ⚠️ **`T_max` 按电池设，不按电机设！** | [`hardware.md`](../reference/hardware.md) 6.2 |
 | 角速率上限 | `|ω_des,i| ≤ ω_max,i` | 横滚/俯仰 **3.84 rad/s**，偏航 **6.28 rad/s** | `MC_*RATE_MAX` |
-| 倾角上限 | `R(q)·e_z · e_z ≥ cos(θ_max)` | **45°**（可放宽） | `MPC_TILTMAX_AIR` |
+| 倾角上限 | `R(q)·e_z · e_z ≥ cos(θ_max)` | ⚠️ **从 45° 收到 30°**（45° 需 10.4 N = 电池上限的 88 %） | 已定，见 [`phase2-implementation.md`](phase2-implementation.md) §3.3 |
 | 位置/速度（软） | 代价项而非硬约束 | 最大 12 m/s | `MPC_XY_VEL_MAX` |
 
 > ★★ **`T_max` 的取值是本文件最重要的一条工程判断。**
@@ -349,9 +354,9 @@ nlp   = SQP_RTI           ← 实时迭代：每周期只做一次 SQP，延迟�
 | **D2** | `(D)` 何时做 | **第二阶段**，`(C)+INDI` 稳定之后 | 是否能接受失去 PX4 安全网 |
 | **D3** | INDI 是否第一版就做 | **否**，作为步骤 2 | `Sun2022` 的 78 % 提升是否值得提前投入 |
 | **D4** | 中间件：混合 vs 全 mavros | **混合**（uXRCE-DDS 发指令 + mavros 收动捕） | 是否能接受两个中间件 |
-| **D5** | `T_max` 取值 | **按电池（11.8~18.7 N）** | 是否要先换高 C 电池 |
+| **D5** | `T_max` 取值 | ✅ **已定：按电池（11.8 N 保守端）** | 已定；是否换高 C 电池见 [`phase2-implementation.md`](phase2-implementation.md) §9 O6 |
 | **D6** | MPC 频率 | **100 Hz** | 取决于 Jetson 实测的最坏耗时 |
-| **D7** | MPC 内部世界系用什么 | **NED**（与 PX4 一致，少一次变换） | 或统一用 ENU 再加一次变换 |
+| **D7** | MPC 内部世界系用什么 | ✅ **已定：ENU/FLU**（**改本表的原倾向**） | 依据 = `Sun2022` §III.A + `Foehn2022` §D.1 的坐标系，见 [`phase2-implementation.md`](phase2-implementation.md) §3.2 |
 | **D8** | 状态输入：动捕直出 vs 过 EKF2 | **动捕直出**（延迟更低） | 是否接受"MPC 与安全网用不同的估计源" |
 | **D9** | 是否显式补偿 50 ms 延迟 | **建议做**（有论文价值） | 用外推还是用滞后状态建模 |
 | **D10** | 参考轨迹来源 | **第一阶段手写**（阶跃/圆/八字） | 何时接入 `ego-planner` |
