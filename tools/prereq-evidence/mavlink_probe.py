@@ -230,9 +230,19 @@ def _decode_git_hash_bytes(raw):
         b = bytes(raw)
     except Exception:
         return "（无法按字节解）", None
+    if not b:
+        return "", None
     prefix = b[3:8][::-1].hex()
     # 全 0 = 该字段没被填充（非 PX4 固件 / 老版本 / 未定义），不要当成 hash
-    if not b or set(b) == {0} or set(prefix) == {"0"}:
+    if set(b) == {0} or set(prefix) == {"0"}:
+        return b.hex(), None
+    # ★★ 2026-09-21 在 z0 的飞控上补的第二道闸：这 5 个字节按上游源码应当是 git hash 的
+    #   **ASCII 字符**（只可能是 `0-9a-f`）。实测 z0 报的是 `00 00 00 33 f2 65 0e 4a`，
+    #   含 `0x0e` / `0xf2` 这类**不可打印**字节 —— **不可能是 hash**。
+    #   初版只挡了"全 0"，于是把这一串硬打成 16 进制（`4a0e65f233`）当成 hash 打了出去，
+    #   还配上「与 5ba2e91f 不一致 → §2.5 的结论要重开」的判词 ——
+    #   **那是一份会被抄进文档的假证据**。宁可报"取不到"，也不要给一个假 hash。
+    if any(c not in b"0123456789abcdef" for c in b[3:8]):
         return b.hex(), None
     return b.hex(), prefix
 
@@ -304,8 +314,9 @@ def probe_port(port: str, baud: int, wait: float, samples: int = 6) -> int:
             raw_bytes_hex, git_prefix = _decode_git_hash_bytes(ver.flight_custom_version)
             print(f"     flight_custom_version 原始字节 = {raw_bytes_hex}")
             if git_prefix is None:
-                print("       → 该字段全 0：**取不到 git hash**（非 PX4 固件，或该版本未填充）")
-                print("         → 那就只以 flight_sw_version 的原文为准。")
+                print("       → **取不到 git hash** —— 该字段要么全 0，要么不是 git hash 的 ASCII 形态")
+                print("         （非 PX4 固件 / 该版本未填充 / 厂商改写了填充方式）。")
+                print("         → 那就只以 flight_sw_version 的原文为准，**不要**从这 8 个字节里硬凑 hash。")
             else:
                 print(f"       → git hash 前 10 位 ≈ `{git_prefix}`"
                       f"   （二进制的**前 5 字节**，**前 3 字节已被厂商版本覆盖**）")
@@ -316,6 +327,8 @@ def probe_port(port: str, baud: int, wait: float, samples: int = 6) -> int:
                   "`5ba2e91f`（v1.15 世代）。")
             if git_prefix is None:
                 print("       ⚠️ 取不到 hash，这一栏无法核对 —— **不要**据此改动 §2.5。")
+                print("          但注意：**上面 `flight_sw_version` 的原文仍是一个独立证据** ——")
+                print("          若它解出的世代与 §2.5 的结论不符，那本身就要记进 §2.5。")
             elif "5ba2e91f".startswith(git_prefix) or git_prefix.startswith("5ba2e91f"):
                 print(f"       ✅ `{git_prefix}` 与 `5ba2e91f` **一致** → §2.5 的判定得到实测支持。")
             else:

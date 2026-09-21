@@ -5,7 +5,10 @@ Type: task
 
 **What to build:** 一条能跑的 SITL 链路，且它与 `px4_msgs` **同出于 z0 固件真身**。这是 Phase 2 全部后续工作的地基 —— 也是 Phase 3 重编固件（ADC 一行修复）要复用的构建环境，所以它顺手交付的东西比它自己看起来多。
 
-**Blocked by:** 无（可立即开工）
+**Blocked by:** ⚠️ **2026-09-21 起新增一条**：[phase1/11 飞控自报 1.14.3 vs 文档的「v1.15 世代」](../../phase1/issues/11-firmware-version-conflict.md)。
+本张的**整个地基**是 `5ba2e91f` = z0 固件真身，而飞控第一手报出的是 **1.14.3**（[`refs-manifest.md` §2.5(c)](../../../docs/reference/refs-manifest.md)）。
+**在那条冲突定案前，本张的"从 fork 生成 `px4_msgs`"这个前提不能算已确立** —— 若实际是 1.14 系，
+`OffboardControlMode`（offboard 心跳必需的那条）的定义**是反的**。
 
 **为什么必须是 fork 而不是上游 `px4_msgs`**：v1.15 及以前，`px4_msgs` 与固件不匹配时**话题存在、能发布、无报错，但 PX4 不理会** —— 排查时你会怀疑 MPC（模型预测控制）、怀疑符号、怀疑一切，唯独不会怀疑消息定义。而 `release/1.14` 作基准**已被实测否决**（184 个共用消息里 28 个字段布局不同，**含 `OffboardControlMode` —— offboard 心跳必需**）；`release/1.15` 也不必试，因为 `5ba2e91f` 早于 v1.15.0 发布，是走向 v1.15 的中间 commit。
 

@@ -9,6 +9,7 @@ The skills speak in terms of five canonical triage roles. This file maps those r
 | `ready-for-agent`         | `ready-for-agent`     | Fully specified, ready for an AFK agent  |
 | `ready-for-human`         | `ready-for-human`     | Requires human implementation            |
 | `wontfix`                 | `wontfix`             | Will not be actioned                     |
+| —（上面五个角色之外，本仓库自加） | `done` | 该 ticket 的验收项**全部勾上**且结论已落进文档。**不是"没人管了"** —— 未决事项必须另开 ticket 并在本文里点名，不能靠 `done` 掩盖 |
 
 When a skill mentions a role (e.g. "apply the AFK-ready triage label"), use the corresponding string from this table.
 
