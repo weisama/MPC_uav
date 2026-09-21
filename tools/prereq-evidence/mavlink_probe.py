@@ -53,6 +53,26 @@ DEFAULT_BAUDS = [57600, 115200, 921600]
 FC_SYS_DEFAULT = 1
 FC_COMP_DEFAULT = 1
 
+# --- 心跳来源筛除：★ 2026-09-21 实测（ticket 01 ④ / 02 期间）------------------
+# 这条链路上**同时**有两个心跳源：飞控 `(sysid=1, compid=1, type=2, autopilot=12)`
+# 与另一个地面站 `(255, 190, 6, 8)`（255/190 是地面站系软件的署名）。
+# 2026-09-21 实测：25 s 内**各 25 条**，都是 1 Hz。
+# ⚠️ 而 `conn.wait_heartbeat()` 只认「收到一条 HEARTBEAT」，**不筛来源** ——
+# 先到哪条就返回哪条。于是后续指令会发给 255 号系统（飞控从没被要求推消息，
+# 表现是「读得到 HEARTBEAT，却一条遥测都收不到」），GCS 的 base_mode 还会被
+# 当成飞控状态读出来。09-21 的两次误判都属于这个形状。
+# ⚠️ 那条 `255/190` 心跳**不是我们自己发的**：pymavlink 的自署名是 compid=**0**
+# （`mavutil.py` → `mavfile.__init__(source_system=255, source_component=0)`），
+# 实测 compid=190 ⟹ 是**另一台地面站（QGC 系）经飞控转发**到这个口上的。
+# 转发还是环回，对本判据**无影响**：它不是飞控，就必须筛掉。
+GCS_SYSID = 255             # 地面站系软件的惯用 sysid（也是 pymavlink 的自署名）
+# 后两个是 MAVLink 标准枚举，不是本地魔数：`MAV_TYPE_GCS = 6`、`MAV_AUTOPILOT_INVALID = 8`，
+# 出自 `common.xml` 的 enum `MAV_TYPE` / `MAV_AUTOPILOT`（pymavlink 生成在
+# `dispatches`/`dialects/v20/common.py`）。★ 自检里有一条**直接跟 pymavlink 的方言对值**，
+# 免得哪天标准改了这里静默失配。
+MAV_TYPE_GCS = 6
+MAV_AUTOPILOT_INVALID = 8   # 地面站用的 autopilot 值；真飞控不会是它
+
 # 我们只发这两条指令（见文件头安全纪律）
 MAV_CMD_SET_MESSAGE_INTERVAL = 511
 MAV_CMD_REQUEST_MESSAGE = 512
@@ -274,6 +294,46 @@ def _decode_git_hash_bytes(raw):
     return b.hex(), prefix
 
 
+def is_foreign_heartbeat(hb) -> bool:
+    """（纯函数）这条 HEARTBEAT 是不是「我们自己 / 别的地面站」，而不是飞控。
+
+    ⚠️ 必须**先筛掉**再拿去当飞控用 —— 见文件上方 `GCS_SYSID` 那段踩坑记录。
+    取不到字段时返回 True（**宁可跳过**：不可信的来源不能当飞控）。
+    """
+    try:
+        if hb.get_srcSystem() == GCS_SYSID:
+            return True
+        if hb.type == MAV_TYPE_GCS:
+            return True
+        if hb.autopilot == MAV_AUTOPILOT_INVALID:
+            return True
+    except Exception:
+        return True
+    return False
+
+
+def wait_fc_heartbeat(conn, timeout: float):
+    """等到一条**飞控**心跳（跳过自己/别的地面站的心跳）。返回 `(hb, 跳过的条数)`。
+
+    超时或对端静默 → `(None, 跳过的条数)`。
+    ⚠️ 不要退回裸 `conn.wait_heartbeat()` —— 那正是 09-21 两次误判的成因。
+    读串口的异常照旧向上抛，由调用方按各自的话术描述（probe_port 与 scan_ports 措辞不同）。
+    """
+    deadline = time.monotonic() + timeout
+    skipped = 0
+    while True:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return None, skipped
+        hb = conn.wait_heartbeat(timeout=remaining)
+        if hb is None:
+            return None, skipped
+        if is_foreign_heartbeat(hb):
+            skipped += 1
+            continue
+        return hb, skipped
+
+
 def probe_port(port: str, baud: int, wait: float, samples: int = 6) -> int:
     """读单个端口的 ③ 与 ④。返回 0 = 至少拿到一项。"""
     conn, err = _open(port, baud)
@@ -286,14 +346,17 @@ def probe_port(port: str, baud: int, wait: float, samples: int = 6) -> int:
         # 打开成功 ≠ 能读到。pymavlink 用 timeout=0 + nonblocking() 打开，
         # 所以"口被别人占着"不会在 open 时抛错，而是在这里读不到东西。
         try:
-            hb = conn.wait_heartbeat(timeout=wait)
+            hb, skipped = wait_fc_heartbeat(conn, wait)
         except Exception as exc:
             print(f"     ⚠️ 读串口出错：{type(exc).__name__}: {exc}")
             print("       最可能：**mavros 正占着这个口**（同一台 Jetson 上跑 mavros 会抢字节流）"
                   "→ 先停掉 mavros 再采。")
             return 1
+        if skipped:
+            print(f"     ℹ️ 已跳过 {skipped} 条**非飞控**心跳"
+                  "（sysid=255 / type=6 = 另一台地面站，本机飞控不是它）")
         if hb is None:
-            print("     ⚠️ 未收到 HEARTBEAT —— 这个口上没听到飞控（或波特率不对）")
+            print("     ⚠️ 未收到**飞控** HEARTBEAT —— 这个口上没听到飞控（或波特率不对）")
             print("       也可能是 mavros 正占着这个口把字节流抢走了 —— 确认它没在跑。")
             return 1
 
@@ -460,8 +523,9 @@ def scan_ports(ports: list[str], bauds: list[int], wait: float) -> int:
                 print(f"    {port} @ {baud:<7} ❌ {err}")
                 continue
             read_err = None
+            skipped = 0
             try:
-                hb = conn.wait_heartbeat(timeout=wait)
+                hb, skipped = wait_fc_heartbeat(conn, wait)
             except Exception as exc:
                 # 别让一个口读崩就掀翻整个扫描 —— 记下来继续试下一个
                 hb = None
@@ -476,14 +540,20 @@ def scan_ports(ports: list[str], bauds: list[int], wait: float) -> int:
                 print("      （若 mavros 正跑着，它会占住串口 —— 先停掉）")
                 continue
             if hb is None:
-                print(f"    {port} @ {baud:<7} — 无心跳")
+                # ⚠️ 「只有 GCS 心跳」与「完全静默」是**两种不同的故障**（前者说明本机
+                # 自己那半条链路是通的，后者说明线/口/电有问题），措辞必须分开。
+                if skipped:
+                    print(f"    {port} @ {baud:<7} — **只有地面站心跳**（{skipped} 条），没有飞控心跳")
+                else:
+                    print(f"    {port} @ {baud:<7} — 无心跳")
                 char = _raw_characterize(port, baud)
                 if char is not None:
                     _explain_raw(char)
             else:
                 # 从心跳本身取 sysid —— conn 上面已经 close 了，别再依赖它的属性
+                note = f"，已跳过 {skipped} 条 GCS 心跳" if skipped else ""
                 print(f"    {port} @ {baud:<7} ✅ **飞控在此** "
-                      f"(sysid={hb.get_srcSystem()}, type={hb.type})")
+                      f"(sysid={hb.get_srcSystem()}, type={hb.type}{note})")
                 hits.append((port, baud))
             print()
 
@@ -559,6 +629,60 @@ def _selftest() -> int:
     check("encode → decode 往返",
           _decode_git_hash_bytes(_encode_git_hash_bytes("30e763b" + "0" * 33))[1],
           "30e763b000")
+
+    print("  【自检】心跳来源筛除（不需要飞控 / 串口）")
+    # 这几条是 2026-09-21 那两次误判的回归保护：链路上同时有飞控心跳和一条
+    # 地面站心跳（1 Hz 各一条），而 `wait_heartbeat()` 不筛来源、先到先返回。
+
+    class _HB:
+        """假心跳。（compid 只是为了让 fixture 读起来跟实测一致，判据不看它。）"""
+
+        def __init__(self, sysid, compid, mtype, autopilot):
+            self._sysid = sysid
+            self.type, self.autopilot = mtype, autopilot
+
+        def get_srcSystem(self):
+            return self._sysid
+
+    class _Conn:
+        """假连接：按顺序吐心跳，吐完就静默。`calls` 用来验「有没有真去取」。"""
+
+        def __init__(self, seq):
+            self._seq = list(seq)
+            self.calls = 0
+
+        def wait_heartbeat(self, timeout=None):
+            self.calls += 1
+            return self._seq.pop(0) if self._seq else None
+
+    gcs = _HB(255, 190, 6, 8)   # 实测链路上那条地面站心跳
+    px4 = _HB(1, 1, 2, 12)      # 真飞控（z0 实测：sysid=1 / type=2 / autopilot=12）
+    check("地面站心跳（255/190/6/8）→ 判为「非飞控」（必须跳过）", is_foreign_heartbeat(gcs), True)
+    check("真 PX4 心跳 → 不跳过", is_foreign_heartbeat(px4), False)
+    check("别的地面站（sysid=250 / type=6 / autopilot=8）→ 也跳过",
+          is_foreign_heartbeat(_HB(250, 190, 6, 8)), True)
+    check("取不到字段 → 跳过（不可信来源不当飞控用）", is_foreign_heartbeat(object()), True)
+
+    # 常数不是魔数：直接跟 pymavlink 的方言对值（装不上 pymavlink 就跳过，不算失败）
+    try:
+        from pymavlink.dialects.v20 import common as _common
+        check("MAV_TYPE_GCS 与 pymavlink 方言一致", MAV_TYPE_GCS, _common.MAV_TYPE_GCS)
+        check("MAV_AUTOPILOT_INVALID 与 pymavlink 方言一致",
+              MAV_AUTOPILOT_INVALID, _common.MAV_AUTOPILOT_INVALID)
+    except ImportError:
+        print("  ⏭  未装 pymavlink —— 跳过「枚举对值」2 项（不算失败）")
+
+    hb, skipped = wait_fc_heartbeat(_Conn([gcs, gcs, px4]), 1.0)
+    check("前面 N 条 GCS 心跳：跳过并等到真飞控", (hb is px4, skipped), (True, 2))
+    hb, skipped = wait_fc_heartbeat(_Conn([gcs]), 1.0)
+    check("只有 GCS 心跳（对端静默）→ None，但报出跳过条数", (hb, skipped), (None, 1))
+    hb, skipped = wait_fc_heartbeat(_Conn([]), 1.0)
+    check("全程静默 → None，跳过 0 条", (hb, skipped), (None, 0))
+
+    conn = _Conn([gcs])   # 预算已耗尽：必须立刻返回，**不取也不消费**那条心跳
+    hb, skipped = wait_fc_heartbeat(conn, 0.0)
+    check("时间预算已耗尽（0 s）→ 立即返回，且没动过那条心跳",
+          (hb, skipped, conn.calls, len(conn._seq)), (None, 0, 0, 1))
 
     print("  ✅ 自检全部通过" if not bad else f"  ❌ 自检有 {bad} 项失败")
     return 1 if bad else 0

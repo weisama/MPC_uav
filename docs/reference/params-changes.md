@@ -11,9 +11,14 @@
 >   **→ 本表第 0 步永远是「导出 z0 自己的参数并 diff」**（`params-analysis.md` §5），
 >   差异才是真正要改的东西。本表是**预期差异的清单**，不是可以直接导入的参数文件。
 >
-> ⚠️ **还有一个新暴露的前提问题**：本轮已判定 z0 固件是 **v1.15 世代**而非 1.14
-> （见 [`refs-manifest.md`](refs-manifest.md) §2.5）。**下表中凡依赖「1.14 默认值」的判断都要打折**，
-> 实测时以飞控自己报的版本为准。
+> ☠️ **2026-09-21 更正（本行原先整个反了）**：这里原写「本轮已判定 z0 固件是 **v1.15 世代**而非 1.14」。
+> **不成立** —— 真身是 **`Minderring/PX4-Autopilot` @ `4a0e65f2`**，属 **v1.14.3 系**的 MicoAir
+> 厂商构建；「v1.15 世代」那个判定是拿 **fork**（`5ba2e91f`）当参照物得出的，**作废**
+> （[`refs-manifest.md`](refs-manifest.md) §2.5(d)）。
+> ⟹ **但"都要打折"这个谨慎态度仍然成立，理由换成另一条**：真身是**厂商构建**，不是上游 v1.14.3
+> 原版 —— 厂商可能改过默认值。不过 `msg/` 已实测与上游 v1.14.3 逐字节相同（185 个文件 blob 全同），
+> 所以**依赖"1.14 消息布局/默认值"的判断可以按上游 v1.14.3 走**，无需打折。
+> 实测时仍以飞控自己报的版本为准（F3）。
 
 ---
 
@@ -126,8 +131,8 @@
 |---|---|---|---|
 | F1 | 电池**电流**采样读错通道 | ❌ **只能重编重刷固件** —— `ADC_CHANNELS` 是编译期宏，带 `#ifndef`/`#error` 守卫，board_adc 模块**没有任何参数**，也从不采样通道 8。`BAT1_I_CHANNEL = 8` 这条"工作区猜想"已**被证伪**（board_adc 根本不产通道 8 的样本）。★ **但"重编"的代价已查明是 1 行**：fork 的 `pr_fix_hkust_nxt_dual` @ `8161c4cd` = `main` + 一行 `CH(5)`→`CH(8)`。**要不要做，是 Phase 1 的一个独立决策（Q37）** | §3.5.1 / refs-manifest §2.7(b) |
 | F2 | `z0.params` 本身不是 z0 的参数 | ⚠️ 它是**另一台参考机**导出的。**唯一的解法是导出 z0 自己的参数做 diff**，不是改哪一条 | §5 |
-| F3 | 固件版本标签 | ⚠️ `z0.params` 头的 `Version: 1.14.3 dev` / `Git Revision: 4a0e65f2` **来自上游参数文件**，与固件真身 `5ba2e91f` 不一致。**唯一终审 = 在 QGC 里读飞控实际报出的版本号** | refs-manifest §2.5 |
-| F4 | `px4_msgs` 选版 | ❌ **`release/1.14` 已判定不兼容**（28/184 字段布局不同）。★ **已定（Q31=a）：从 fork 自身 `msg/`+`srv/` 生成**。SITL 被控对象同样从 fork `5ba2e91f` 构建 | refs-manifest §2.5 / §2.6 |
+| F3 | 固件版本标签 | ☠️ **2026-09-21 更正**：本行原写「参数头的 `4a0e65f2` 与固件**真身 `5ba2e91f`** 不一致」—— **真身已被推翻**。经 git 实测，**`4a0e65f2` 才是飞控真身**（v1.14.3 系的 MicoAir 厂商构建，2024-11-18，`add micoair743-aio to PX4-Autopilot v1.14.3`），`5ba2e91f` 是 fork 上另一个 commit。⟹ 参数头与真身**本来就是一致的**，不是"不一致"。**唯一终审仍 = 在 QGC 里读飞控实际报出的版本号** | §H 的复核方式 + refs-manifest §2.5 |
+| F4 | `px4_msgs` 选版 | ☠️ **2026-09-21 更正**：「`release/1.14` 不兼容」这个**判定本身仍成立**（28/184 字段布局不同），但把它归因于"1.14.x 标签"的说法**作废** —— 真身 `4a0e65f2` 属 **1.14.3 系的厂商构建**。★ 结论不变（Q31=a）：**从 fork 自身 `msg/`+`srv/` 生成**；SITL 被控对象从**同一个真身**构建。⚠️ 本行与 Phase 2 文档里所有 `5ba2e91f` 的引用都是**待改的**，已列入 [ticket 10](../../.scratch/phase1/issues/10-docs-1-14-sweep.md) | §H 的复核方式 + refs-manifest §2.5 / §2.6 |
 
 ---
 
@@ -137,6 +142,214 @@
 2. **改 `NAV_RCL_ACT = 1`（Hold）**，并**上电核实电池电流是否中招**（A1 / A4）。
 3. **量电机位置 + 量 `EKF2_EV_POS_*` 外参 + 实测悬停油门**（A2 / C2 / C1）——
    然后**判断几何是否只是均匀缩放**（若是，A3 不用重调）。
+
+---
+
+## H. ★★★ 遥控通道分配 —— **已定案**（ticket [02](../../.scratch/phase1/issues/02-rc-channel-decision.md)，2026-09-21 用户裁定）
+
+> 本节**不是参数改动**：开始通道在**遥控器（EdgeTX）侧**分配，PX4 侧**一行参数都不用改**
+> （急停沿用既有的 `RC_MAP_KILL_SW = 8`；开始要用的 ch9 在本机 `RC_MAP_*` 里**本来就没被占**）。
+> 写在这里是因为它是 **Phase 1 FSM 的输入**（`start_channel`），且它**推翻了 §3.15(a)** 的
+> 「只剩 ch7 空闲」—— 见 H.3。
+> **取舍过程**（含被否掉的方案、以及一条被用户当场否掉的次要设计）留在 ticket 02 里，本节只放结论与依据。
+>
+> 🔍 **本节固件引用的复核方式**（本节所有 `*.cpp:行号` 都出自固件真身 `4a0e65f2`，本地可复现）：
+>
+> ```bash
+> git -C ~/refs/px4-z0 show 4a0e65f2331b23b9c8352656e9ccb6edeaea5d6c:src/modules/commander/rc_update.cpp | sed -n '236p;558,571p'
+> ```
+>
+> ⚠️ 那个 clone 是 **blobless 部分克隆** ⟹ **`git grep` 全树会超时且结果不可信**（零结果不能当证据），
+> 要按路径 `git show <sha>:<path>` 取文件后再过滤。（复核 `refs-manifest.md` §1 里 `px4-z0/`
+> 那一行的 commit 时注意：那行还钉在 fork 的 `5ba2e91f`，与本节的 `4a0e65f2` 不是同一个 —— 见 F3 的 ☠️ 注。）
+
+### H.1 结论
+
+| 项 | 定案 | 落地在哪 |
+|---|---|---|
+| **开始信号** | **ch9**（`/mavros/rc/in` → `channels[8]`，**0-based**） | 遥控器侧：EdgeTX 里给 ch9 **分配一个开关**（H.4） |
+| 开始判据 | **上升沿**：先 `< 0.25`（低）、再 `> 0.75`（高），**去抖 200 ms** | FSM：`start_channel=9` / `start_threshold=0.75` / `release_threshold=0.25` / `debounce_ms=200` |
+| **急停** | **ch8 高值 = PX4 硬件杀车**（**沿用现有** `RC_MAP_KILL_SW=8` + `RC_KILLSWITCH_TH=0.75`）；**不新增软急停通道**；程序**不读**急停通道 | PX4 侧零改动；**FSM 侧也没有代码** —— 这是 D2 的取舍，代价见 H.7 |
+| **解锁** | **程序解锁**（`/mavros/cmd/arming` → `MAV_CMD_COMPONENT_ARM_DISARM`） | FSM 的 `STANDBY → TAKEOFF` |
+| 解锁触发 | **ch9 第 1 次上升沿**：解锁 → 起飞到 1 m → 悬停观察；**拨下再拨上 = 第 2 次上升沿 = 开始轨迹**（`WAIT_START → TRACK`） | FSM 须记住「这条边沿已用掉」（H.5） |
+| `RC_MAP_ARM_SW = 5` | **保留**（冗余的硬件解锁路径） | PX4 侧零改动；FSM 须把「不是自己发起的 armed 变化」当异常（H.6） |
+| 「开始 / 急停」共用一条通道？ | **否** —— 分开（ch9 / ch8） | —— |
+
+> ⚠️ **阈值用归一化 [0,1] 表述，不用 µs** —— 与 PX4 自己的 `*_TH` 同一把尺（见 H.7 的换算依据）。
+> 等价的 µs 值 ≈ `1750 / 1250`，**但那个换算要以 H.8 的台架实读为准**：本轮实测的
+> `chan*_raw` 数值**落不到一条能自洽的 µs 刻度上**（ch13/14 = 880 低于 CRSF 的 988 下限），
+> 所以**不在这张表里写死 µs**。
+
+### H.2 与 `RC_MAP_FLTMODE` 不冲突（显式确认 —— ticket 02 的第 ④ 项）
+
+`z0.params` 里**非 0 的 `RC_MAP_*` 只有 7 条**（逐条第一手）：
+
+| 通道 | 功能 | 参数 | 值 |
+|---|---|---|---|
+| ch1–ch4 | 横滚 / 俯仰 / 油门 / 偏航 | `RC_MAP_ROLL` / `PITCH` / `THROTTLE` / `YAW` | 1 / 2 / 3 / 4 |
+| ch5 | 解锁开关 | `RC_MAP_ARM_SW` | 5 |
+| **ch6** | **飞行模式开关** | **`RC_MAP_FLTMODE`** | **6** |
+| ch8 | 杀车开关 | `RC_MAP_KILL_SW` | 8 |
+
+**其余 `RC_MAP_*` 全为 `0`**（含 `OFFB_SW` / `POSCTL_SW` / `MODE_SW` / `RETURN_SW` / `LOITER_SW` / `ACRO_SW` /
+`STAB_SW` / `MAN_SW` / `RATT_SW` / `GEAR_SW` / `FLAPS` / `TRANS_SW` / `AUX1..6` / `FLTM_BTN` / `PARAM1..3` / `FAILSAFE`）。
+
+⟹ **未被任何 `RC_MAP_*` 占用的通道 = ch7 与 ch9…ch16**（`RC_CHAN_CNT = 16`）。
+**ch9 不在这张占用表里** ⟹ 拨 ch9 **不会**切模式、不会解锁、不会杀车。
+**与 `RC_MAP_FLTMODE`（ch6）的冲突问题就此排除**（这一条正是 ticket 02 里"不可协商"的那条约束）。
+
+### H.3 为什么不是 ch7 —— 「只剩 ch7 空闲」是**错的**（连带更正 §3.15(a)）
+
+§3.15(a) 原来写「z0 上**只有 ch7 是空的**」。这句**只在"看 `RC_MAP_*` 占用了哪些通道"这个意义上**成立，
+**推不出"新增通道只能放 ch7"**：PX4 侧未被映射的通道有 **9 个**（ch7、ch9…ch16）。
+真正的约束是**另一件事**：**遥控器上给哪个物理开关分配了通道** —— 那是 EdgeTX 侧的事，不是 PX4 参数表能回答的。
+
+2026-09-21 实测（`/dev/ttyTHS1` @ 921600，75 s 窗口，**751 条** `RC_CHANNELS`）——
+
+| 通道 | 读数 | 判读 |
+|---|---|---|
+| ch1 / ch2 / ch4 | 1500 / 1500 / 1498 | 摇杆在中位 |
+| ch3 | 989 | 油门在最低 |
+| ch5 / ch6 / ch8 | **999 恒定** | 未拨动（本轮窗口内） |
+| **ch7** | **2000 恒定** | **像是一只开关停在高端** —— ⚠️ **这是推断，不是实测**：本轮窗口里没人拨动它 |
+| **ch9** | **999 恒定** | **没有证据表明 ch9 上有开关** ⟹ H.4 那条必须先做 |
+| ch10 | 1519 | 中位附近 |
+| ch11 / ch12 | 1503 / 1503 | 中位附近 |
+| ch13 / ch14 | 880 | —— |
+| ch15 / ch16 | 2012 恒定 | —— |
+
+> ⏱ **上表与 H.9 不是同一次采集，别混读**：本表来自 **RC 链路还活着**的那个 75 s 窗口
+> （751 条 `RC_CHANNELS`）；H.9 的 `RC_CHANNELS = 0 条` 是**之后**的窗口，那时链路已经断了。
+> 两个窗口同日，但**先后顺序如上** —— H.9 的"0 条"不能拿来质疑本表的读数。
+> 这两个窗口都**没做成**"物理开关 ↔ 通道"的对照（原因见 H.9 末行）。
+
+⚠️ **单位未定案**：上表是 `chan*_raw` **原样读数**。ch13/14 的 `880` 低于 CRSF 的 µs 映射下限（988），
+所以**不能**断言这一列是 µs。PX4 内部用的是归一化值（H.7 的 `getRCSwitchOnOffPosition`），
+**本节的结论不依赖这个刻度**。
+
+**选 ch9 而不是 ch7** 是用户裁定（D1）。两个事实供复核：ch7 上**看起来**已经有开关，
+ch9 上**还没有** ⟹ 选 ch9 的代价是**必须先做一次遥控器侧分配**（H.4），选 ch7 的代价是
+要去查清 ch7 上那只开关原本是干什么的（**未查**）。
+
+### H.4 必须在遥控器上做的一件事（阻塞 ticket 09 的台架核对）
+
+1. 在 **EdgeTX** 里给 **CH9 分配一个二段（或三段）开关**，端点设到常规行程（低 / 高）。
+2. 别给 ch9 加混控或别的用途；**别动 ch6**（模式开关）。
+3. ch7 上**疑似**已有一只开关（H.3）—— 留着无害（PX4 侧 ch7 未映射），但**在查清它原本用途之前不要用它**。
+
+⚠️ **这一步没做，H.8 的台架核对就无从谈起**，ticket 09 里那个勾选框**必须留空**。
+
+### H.5 FSM 侧的三条实现要求（下游：ticket 05 / 09）
+
+1. **边沿计数**：ch9 的**第 1 次**上升沿 = 解锁 + 起飞；**第 2 次** = 开始轨迹。
+   **电平本身不携带含义** —— 拨下去停在那儿 = 什么都不做。
+2. **上电即在高位不算边沿**：必须先见到低位（`< release_threshold`）才允许识别下一次上升沿。
+   ⟹ 上电时若 ch9 已在高位，FSM 停在 `INIT/STANDBY` **不许自动解锁**。
+3. **照旧参数化**（ticket 09 原文要求不变）：`start_channel` / `start_threshold` /
+   `release_threshold` / `debounce_ms` 从配置读，**但值已定**（H.1）。
+
+### H.6 D3（程序解锁）：合法性、前置、与 ch5 的关系
+
+- **在 OFFBOARD 里解锁是合法的（第一手）**：`mode_requirements.cpp:121-124` 给
+  `NAVIGATION_STATE_OFFBOARD` 设的三条要求是 `angular_velocity` + `attitude` + `offboard_signal`，
+  **不含"已解锁"**；且 OFFBOARD **不在** `mode_req_prevent_arming` 名单里
+  （该名单在 `mode_requirements.cpp:106/116/119/142/149/…`，含 RTL / Descend / Termination /
+  Land / Follow / Precision Land，**没有 OFFBOARD**）。⟹ 程序解锁这条路成立。
+- **前置**：先切到 OFFBOARD（ch6 拨到第 6 档）+ setpoint 流已跑 ≥1 s，再发解锁。
+- **解锁被拒是预期事件，不是故障**：动捕没数据 / 位置无效时 `offboardCheck` 判 offboard 不可用
+  ⟹ `modeCheck` 的 `checkArmingRequirement` 报 `armingCheckFailure`。
+  **FSM 必须读 `COMMAND_ACK`** 并把拒绝原因报出来，**不许静默重试**。
+- **「摇杆手势误解锁」这条路径不存在**（第一手 + 双保险）：本机 `MAN_ARM_GESTURE = 0`；
+  且固件在 `RC_MAP_ARM_SW > 0` 时**自己会**把它置 0（`ManualControl.cpp:96-113`，
+  日志 `Arm stick gesture disabled if arm switch in use`）⟹ 保留 ch5 的代价比看上去小。
+- **FSM 的策略**：armed 只认自己发起的命令；若 armed 变化**不是自己造成的**（飞行员拨了 ch5）
+  ⟹ **停发 setpoint + 告警**，转入异常/`RC_OVERRIDE` 态，**不试图纠正**。
+
+### H.7 ⚠️ D2 的取舍写清楚：**急停 = 停桨**，不是"停发指令"
+
+**语义链（第一手，固件 `4a0e65f2`）**：
+
+```
+RC_MAP_KILL_SW = 8                         → rc_update.cpp:236  FUNCTION_KILLSWITCH = 8-1
+RC_KILLSWITCH_TH = 0.75, getRCSwitchOnOffPosition()  → rc_update.cpp:637 / 558-571
+      判据 value（归一化 [0,1]）> threshold ⟹ **高值 = SWITCH_POS_ON**
+      → ManualControl.cpp:229-234   SWITCH_POS_ON → ACTION_KILL（对应 OFF → ACTION_UNKILL）
+      → Commander.cpp:1532-1548     ACTION_KILL(rc_switch) → _actuator_armed.manual_lockdown = true
+                                    （= **立即停桨**）
+      → Commander.cpp:2156-2171     过 COM_KILL_DISARM = 5 s → disarm(kill_switch, forced=true)
+```
+
+⟹ **在空中拨 ch8 = 飞机失去动力掉下来。** 它是**最后手段**，**不是"取消任务"**。
+
+⟹ 本方案下**没有**"节点停发指令"式的软急停通道。停任务的两条既有路径：
+
+| 路径 | 参数基础 | 结果 |
+|---|---|---|
+| **(a) 打杆接管** | `COM_RC_OVERRIDE = 3` + `COM_RC_STICK_OV = 20` → 交回手动 | mavros 不再被需要 ⟹ offboard 信号丢失 ⟹ `COM_OBL_RC_ACT = 0` → **Position 模式** |
+| **(b) 模式开关** | ch6 拨离第 6 档 | 离开 OFFBOARD，PX4 用它自己的控制器 |
+
+⚠️ **遥控链路本身断掉时，(a)(b) 都不存在**（打杆和拨开关都要遥控器）。此时只剩
+**offboard 信号丢失保护**（mavros 停发 > `COM_OF_LOSS_T = 1.0 s` → `COM_OBL_RC_ACT = 0` → Position；
+触发点是 `failsafe/failsafe.cpp:483-487` 的 `offboard_control_signal_lost`，与 RC 无关）。
+
+> 已排除的一个可疑点：`failsafe.cpp:357` 拿 **`COM_RC_IN_MODE`** 去和
+> `offboard_loss_failsafe_mode::Land_mode`（= **4**）比较（`failsafe.h:70-79`），值相等就跳过 RC 丢失保护。
+> z0 的 `COM_RC_IN_MODE = 3 ≠ 4` ⟹ **没被它挡掉**。这处比较疑似上游笔误，但**本机不受影响**，不当缺陷立票。
+
+### H.7.1 ★ 连带发现：**RC 丢失保护有前提，且当前配置下它去"返航"**
+
+- `failsafe.cpp:352-359`：RC 丢失且未被 `COM_RCL_EXCEPT` 豁免时，动作 = **`NAV_RCL_ACT`**。
+  本机 `COM_RCL_EXCEPT = 0`（无豁免）、`COM_RC_LOSS_T = 0.5 s`、而 **`NAV_RCL_ACT = 2` = Return**。
+  ⟹ **室内无 GPS，遥控一丢 PX4 会试图返航** —— 这正是 **A1** 已列为**首飞阻塞项**的那条
+  （A1 建议改 `1 = Hold`）。
+- `failsafe.cpp:340-357`：`_manual_control_lost_at_arming` —— **如果解锁那一刻 RC 就已经是丢的**，
+  PX4 把 manual control 当成"可选"，**RC 丢失保护被忽略**，直到 RC 重新出现。
+
+**⟹ 两条具体后果（写给首飞检查单）**：
+
+1. **首飞前遥控器必须开机、且链路已建立** —— 否则 D2 的 ch8 急停、(a)(b) 两条停任务路径
+   **从解锁那一刻起就是空的**，而 PX4 **不会**因为"遥控丢了"做任何事。
+   ⚠️ 这一条是**新增的**：A1 原本只覆盖"飞行途中丢遥控"，**盖不住"解锁时就没遥控"**。
+2. **A1（`NAV_RCL_ACT 2 → 1`）本来就是 ★阻塞项，本节不是把它"升级"** —— 本节补的是它的
+   **第二重理由**：A1 表里写的理由是"室内无 GPS 会返航"，那是**遥控在飞行途中丢失**的场景；
+   `_manual_control_lost_at_arming` 又说明了**另一种**场景（解锁时就没遥控）**连保护都不触发**。
+   ⟹ 两条要分别落实：**A1 改参数** + **首飞检查单里"解锁前确认 RC 在场"**。缺任一条都不够。
+
+（本张**不动手改参数**，只把依赖关系写明；改参数走 A1 自己的流程。）
+
+### H.8 台架核对（归 ticket [09](../../.scratch/phase1/issues/09-track-mission-script.md)）
+
+- 手段：`/mavros/rc/in`，看 `channels[8]`（ch9）在拨开关时**由低到高**；顺手拨 ch6 确认模式切换只认 ch6。
+- ⚠️ **要试 ch8 杀车必须先拆桨**。
+- **不符就回 ticket 02 改决定，不要就地改代码**（ticket 02 原文要求）。
+- ⚠️ **当前做不了** —— 遥控链路现在是断的，见 H.9。
+
+### H.9 2026-09-21 的实测状态（诚实交代）
+
+| 项 | 读数 |
+|---|---|
+| 心跳来源 | 飞控 `(1,1,2,12)` 与地面站 `(255,190,6,8)` **各 25 条 / 25 s**（都是 1 Hz） |
+| `RC_CHANNELS` | **0 条 / 20 s**；`SET_MESSAGE_INTERVAL(65)` 被飞控 **ACCEPTED**（`COMMAND_ACK result=0`）⟹ 不是"没要到流"，是 **`input_rc` 不更新** |
+| `SYS_STATUS` 的 `RC_RECEIVER` 位（`1<<7`） | `present=0 enabled=0 health=0` ⟹ **PX4 自己就知道 RC 不在** |
+| `HEARTBEAT`(飞控) | `base_mode=0x51`（bit7 未置位 ⟹ **未解锁**）、`custom_mode=0x00030000`、`system_status=3` |
+| `EXTENDED_SYS_STATE` | `landed_state=1`（在地面） |
+| 电池 | `voltages[0] = 20.22 V`、`current_consumed = 441 mAh`、`battery_remaining = 18 %` |
+| 遥控器物理开关 ↔ 通道对照 | **没做成**（本轮两个窗口：一次操作者未在窗口内拨动，一次是我自己的脚本缺陷；等修好时 RC 链路已断） |
+
+★ **撤回一条**：本节早先我曾判「PX4 报 RC 健康却收不到数据 ⟹ 飞控谎报」。**错了** —— 见上表
+`RC_RECEIVER` 三位全 0，PX4 的读数是**对的**，"健康"是我自己读错。同期的**真**缺陷是另一个：
+`wait_heartbeat()` 不筛来源，会把**另一台地面站**的心跳当成飞控（已修，见
+[`tools/prereq-evidence/README.md`](../../tools/prereq-evidence/README.md)）。
+
+⟹ **本轮没有发现任何缺陷**：RC 链路是断的（最可能就是遥控器没开机 / 没连上），
+这不影响本节结论 —— H.1 的每一条都来自**固件源码与参数表**，只影响 H.8 的台架复核排期。
+
+### H.10 未决（不靠 `done` 掩盖）
+
+- **H.4 的遥控器侧分配还没做**（需人工，在 EdgeTX 里给 ch9 配开关）；
+- **H.8 的台架复核没做**（被 RC 链路状态阻塞）⟹ ticket 09 对应勾选框**留空**；
+- **H.7.1 的两条连带要求**须落进首飞检查单：① **解锁前确认 RC 在场**（新增，A1 盖不住这个场景）；
+  ② **A1 改 `NAV_RCL_ACT = 1`**（本来就是 ★阻塞项，本节只是补了第二重理由）。
 
 ---
 

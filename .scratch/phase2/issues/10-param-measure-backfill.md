@@ -22,4 +22,4 @@ Type: task
 
 **为什么是 `ready-for-human`**：需要真飞机与拉力台/悬停日志，且核心是"哪一条读数才是可信的"这种人的判断，不是给定条件下的推导。
 
-**P6（遥控器急停通道的实测读数）不在这里** —— 通道分配的决定在 [`.scratch/phase1/issues/02`](../../phase1/issues/02-rc-channel-decision.md)，实机安全项归 Phase 3。
+**P6 不在这里** —— 通道分配的决定已由 [`.scratch/phase1/issues/02`](../../phase1/issues/02-rc-channel-decision.md) **定案**（**开始 = ch9**；急停 = ch8 硬件杀车，不改通道；见 [`params-changes.md` §H](../../../docs/reference/params-changes.md)）。P6 现在只剩「把 **ch9 的实读行程**读出来」，且**前置是先在 EdgeTX 里给 CH9 配开关**，实机安全项归 Phase 3。

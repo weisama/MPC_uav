@@ -31,7 +31,7 @@
 | G3 | MPC 状态输入 | **动捕直出**（不经 EKF2） | 用户 Q9 + roadmap D8；延迟更低 |
 | G4 | 求解器 | **acados** + `SQP_RTI` + `PARTIAL_CONDENSING_HPIPM` | roadmap §4.5，与 px4-mpc 一致 |
 | G5 | 代码骨架 | **`DISCOWER/px4-mpc`**（复制改造，不引依赖） | 第一手读过三个核心文件，见 §2 |
-| G6 | 固件版本 | **不刷固件**（Q12 的决策不变）+ ★ **版本基准统一到 fork `5ba2e91f`（Q31=a）** —— SITL 从 fork 构建、`px4_msgs` 从 fork 的 `msg/` 生成。⚠️ 「**1.14.x**」这个标签已被 2026-09-20 第一手推翻（固件是 **v1.15 世代**） | 用户 Q12 + **Q31=a** + [`refs-manifest.md`](../reference/refs-manifest.md) §2.5–§2.6 |
+| G6 | 固件版本 | ☠️ **2026-09-21 整行作废，待 [ticket 10](../../.scratch/phase1/issues/10-docs-1-14-sweep.md) 重写**：本行原写「版本基准统一到 fork `5ba2e91f`（Q31=a）」+「固件是 **v1.15 世代**」—— **两句都反了**。真身 = `Minderring/PX4-Autopilot` @ `4a0e65f2`（**v1.14.3 系**的 MicoAir 构建），fork `5ba2e91f` **与 z0 无关**；`px4_msgs` 基准 = **`release/1.14` @ `ffb6e80e`**（与真身共有的 184 个 `msg/` blob 全同）—— 见 [`refs-manifest.md`](../reference/refs-manifest.md) §2.5(d) 与 §2.6 执行版。⚠️ **「不刷固件」这条决定本身不变** | 用户 Q12 + [`refs-manifest.md`](../reference/refs-manifest.md) §2.5(d) / §2.6 |
 | G7 | 上线顺序 | **先 SITL 验证 MPC，再实机** | 用户 Q8(b) |
 | G8 | INDI | **第一版不做**，作为步骤 2 | roadmap D3 |
 | G9 | 参考轨迹 | **第一阶段手写**（悬停 / 正方形 / 八字），与 Phase 1 同一套 | 用户 Q15 |
@@ -537,7 +537,7 @@ ROS 侧：  ros2 interface show px4_msgs/msg/VehicleRatesSetpoint
 |---|---|
 | **遥控器夺权** | RC 任一杆动 → PX4 自动退出 offboard。**这是最后一道防线，飞前必须实测有效** |
 | **失效保护** | offboard 心跳丢失 → PX4 触发 `COM_OBL_RC_ACT` / failsafe。**确认参数已配且测得** |
-| **软急停** | 遥控器按键（用户 Q22 第 8 条）→ 节点停发指令。⚠️ ★ **通道号留到 ticket 层决定（Q19 / 2026-09-20）** —— 实现必须**参数化**，不写死通道；已知只剩 **ch7** 空闲（ch5=解锁、ch6=模式、ch8=杀车） |
+| **软急停** | 遥控器按键（用户 Q22 第 8 条）→ 节点停发指令。★ **2026-09-21：Phase 1 已定案 —— 没有"软急停通道"这回事**（急停 = **ch8 高值 = PX4 硬件杀车**，程序不读急停通道）⟹ "节点停发"只能走**两条既有路径**：打杆接管（`COM_RC_OVERRIDE=3` → PX4 退 offboard）或 ch6 模式开关。☠️ 原先那句「只剩 ch7 空闲」**已作废**（未映射通道有 9 个）。完整结论见 [`../reference/params-changes.md`](../reference/params-changes.md) **§H.7** |
 | **求解器兜底** | 连续 N 次求解失败 → 切悬停推力 + 零角速率，并置标志 |
 | **数值守卫** | 发布前 `np.isfinite()` 全量校验（坑 3） |
 | **回退到 Phase 1** | **两个节点都在跑，只是不发布** —— 一个 `ros2 param set` 就能切回 `(A)` 级 |
@@ -555,11 +555,12 @@ ROS 侧：  ros2 interface show px4_msgs/msg/VehicleRatesSetpoint
 | P3 | **最坏求解耗时** | SITL 跑 1000 次取 max | **D6（频率）** | 先按 100 Hz 写 |
 | P4 | **`k_ω`** | 角速率阶跃 + IMU 拟合 | S7 | 步骤 1 完全不需要 |
 | P5 | **动捕实测延迟** | 已知：**50 ms** | D9 | 已有数 |
-| P6 | 遥控器急停通道 | 实飞看遥控型号 | S8 | **不影响飞行，但影响安全**。⚠️ ★ **通道分配本身已定留到 ticket 层（Q19）** —— 本行只负责"实飞时把遥控器实际的通道号读出来"，不负责决定它 |
+| P6 | 遥控器**开始键**（ch9）的实读行程 | `/mavros/rc/in` 看 `channels[8]` | S8 | **不影响飞行，但影响安全**。★ **2026-09-21：通道分配已定 = ch9**（[ticket 02](../../.scratch/phase1/issues/02-rc-channel-decision.md)）—— 本行只剩"把 ch9 的实读行程读出来"，用来校准 `start_threshold`。⚠️ **前置**：先在 EdgeTX 里给 CH9 配一个开关，否则读出来永远是常数 |
 
-> ★ **Q19（2026-09-20）：遥控通道分配 / 解锁方式 / "开始"通道的决定留到 ticket 层解决。**
-> 本表 P6 只记录**实测读数**；**决定**由后续的 ticket 做出。
-> 约束与完整占用表见 [`../reference/params-analysis.md`](../reference/params-analysis.md) §3.15。
+> ★ **Q19（2026-09-20）→ ✅ 2026-09-21 resolved**（ticket [02](../../.scratch/phase1/issues/02-rc-channel-decision.md)）：
+> **开始 = ch9 上升沿；急停 = ch8 高值（硬件杀车，不新增软急停通道）；解锁 = 程序解锁（触发 = ch9 第 1 次上升沿）。**
+> 结论、依据与连带要求见 [`../reference/params-changes.md`](../reference/params-changes.md) **§H**；
+> 约束与完整占用表见 [`../reference/params-analysis.md`](../reference/params-analysis.md) §3.15（其中「只剩 ch7」已更正）。
 
 **⚠️ P1 是唯一真正的阻塞项。** 其余都有可用的初值。
 

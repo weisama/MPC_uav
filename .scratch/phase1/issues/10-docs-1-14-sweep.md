@@ -32,11 +32,35 @@ Type: task
 **已污染、待本张清扫的落点（2026-09-21 grep 实测，非穷举）**：
 
 - [`README.md`](../../../README.md)：第 4 行（"v1.15 世代"）、第 78/79 行（★ 那两行整块）
-- [`docs/PROJECT.md`](../../../docs/PROJECT.md)：**第 437 行**（"固件版本标签错误" 那一行，判词整条反了）
-- [`docs/control/phase2-implementation.md`](../../../docs/control/phase2-implementation.md)：第 587 行
+- [`docs/PROJECT.md`](../../../docs/PROJECT.md)：**第 437 行**（"固件版本标签错误" 那一行，判词整条反了）；
+  ★ **2026-09-21 新增另外两处同源落点**：**第 50 行**（风险表头「固件真身实为 **v1.15 世代**」）
+  与 **第 233 行**（架构图里 "PX4 1.15世代"）—— 与 :437 是**同一个错判的三处落点**，改时要一起改
+- [`docs/reference/refs-manifest.md`](../../../docs/reference/refs-manifest.md)：**第 141–142 行**
+  （「`5ba2e91f` 是走向 v1.15 的一个中间 commit → `release/1.15` 也未必逐字节相同」）——
+  ⚠️ 这几行在**本文件自己**的 §2.5(d) 已作废，但它们还留在 §2.5(b) 正文里没标。
+  清理时**只动 (a)(b) 的遗留正文，别碰 §2.5(d) 与 §2.6 的定案**
+- [`docs/control/phase2-implementation.md`](../../../docs/control/phase2-implementation.md)：第 587 行；
+  ★ **2026-09-21 新增两处**：**第 34 行（G6 那一行）** —— 它同时带着「基准统一到 fork `5ba2e91f`」
+  与「固件是 v1.15 世代」两个错判，且是**决策表里的一行**（会向下游派生）。ticket 02 已就地
+  加了 ☠️ 作废标记，**重写归本张**（连同 Q31=a 这个 Phase 2 决策本身）；
+  以及**第 279 行（M8）**的旁述 "fork（v1.15 世代）" —— ⚠️ **M8 那个结论本身仍成立**
+  （`_v1` 话题机制在**真身**里同样不存在），**只改世代标签**
 - [`docs/reference/params-changes.md`](../../../docs/reference/params-changes.md)：第 14 行
+  ✅ **2026-09-21 已由 ticket 02 就地改完**（同页 F3/F4 也改了）—— 它就在 §H 上方几行，
+  不改会让**同一份文件**自打嘴巴
 - [`.scratch/phase2/spec.md`](../../phase2/spec.md)：第 298 行；[`.scratch/phase2/issues/06`](../../phase2/issues/06-mpc-node-fake-px4-fixture.md)：第 12 行
   （这两处是 "fork（v1.15 世代）" 的旁述，改的时候注意 M8 那个结论本身**仍然成立** —— `_v1` 话题机制在**真身**里同样不存在）
+- ★ **2026-09-21 新增（做 ticket 02 时顺带 grep 到的）**：[`.scratch/phase1/spec.md`](../../phase1/spec.md)：**第 229 行**
+  —— 「明确决定留在 **z0 固件真身** `Peize-Liu/PX4-Autopilot` @ `5ba2e91f`，**不追上游**（Q12）。
+  ① 固件是 **v1.15 世代**」整句都已反了（真身 = `Minderring/PX4-Autopilot` @ `4a0e65f2`，**v1.14.3 系**）。
+  ⚠️ **Q12"不追上游"这个决定本身仍然成立**，要改的只是**真身的对象**与**世代标签**。
+  ✅ **2026-09-21 已由 ticket 02 就地改完**（做 02 时发现它与 §H 直接矛盾，留着会让同一份文档自打嘴巴）——
+  真身改写为 `4a0e65f2` / v1.14.3 系，`px4_msgs` 基准写为 `release/1.14`，并注明「本句已改完」。
+  ⟹ **本张不必再动这一行**，但它仍可作为「反了的判据长什么样」的样例。
+- ★ **2026-09-21 新增（同上，已由 ticket 02 就地改完）**：[`.scratch/phase1/spec.md`](../../phase1/spec.md)
+  的**第 18 行**（Problem Statement 里那段「固件版本（2026-09-20 更正）」，整段判词反了）
+  与**第 298–301 行那块**（ADC 缺陷的版本边界表 + 「z0 固件是 v1.15 世代，且 fork 上一直有 `nxt-dual`」）。
+  这两处与 :229 是**同一份文件里的三个落点**，只改一个会让 spec 自相矛盾 —— 都已就地改正
 
 ✅ **2026-09-21：② 已签字，本张不再有等待项。** 基准已定死（[§2.6 执行版](../../../docs/reference/refs-manifest.md)）：
 `px4_msgs` = `release/1.14` @ `ffb6e80e`；SITL = 上游 v1.14.3；**fork 与 z0 无关**。

@@ -391,13 +391,17 @@ if (last_transform_stamp == stamp) { /* dropped */ return; }
 → **开始按键必须选一个未映射的通道**（或用未被 `RC_MAP_*` 占用的开关位）。否则按下去会**同时切换 PX4 飞行模式**，把我们踢出 OFFBOARD。
 → 参数化实现：`start_channel`（`rc/in` 的 `channels[]` 索引）+ `start_threshold` + 200 ms 去抖。
 
-> ⚠️ **本节只给了约束，没给通道号。** 完整占用表（含 **ch5 解锁**、**ch8 杀车** —— 本节原先漏了这两个）
+> ⚠️ **本节原先只给约束、没给通道号。** 完整占用表（含 **ch5 解锁**、**ch8 杀车** —— 本节原先漏了这两个）
 > 见 [`../reference/params-analysis.md`](../reference/params-analysis.md) §3.15；
-> 实际只剩 **ch7** 空闲。
+> ~~实际只剩 ch7 空闲~~ ☠️ **该句已作废（2026-09-21）**：未映射的通道是 **ch7 与 ch9…ch16**（共 9 个）。
 >
-> ★ **已定（Q19 / 2026-09-20）：具体通道分配的决定留到 ticket 层解决。**
-> **→ 后续的 ticket 化步骤须产出一张 ticket**，在实施到 FSM 的「开始信号」之前 resolved。
-> 在那之前，本节按**参数化**实现（`start_channel` 可配），不要写死任何通道号。
+> ★ **2026-09-21 已定案**（ticket [02](../../.scratch/phase1/issues/02-rc-channel-decision.md)）：
+> **开始 = ch9 上升沿**（`channels[8]`）、**急停 = ch8 高值（沿用现有硬件杀车）**、**解锁 = 程序解锁**。
+> 完整结论/依据/连带要求见 [`../reference/params-changes.md`](../reference/params-changes.md) **§H**
+> （含一条要紧的连带结论：**首飞前遥控必须开机**，否则急停与打杆接管从解锁那刻起就是空的 —— §H.7.1）。
+>
+> **实现上仍然参数化**（`start_channel` / `start_threshold` / `release_threshold` / 200 ms 去抖，
+> 值取 §H.1），且**边沿语义、上电即在高位不算边沿**这两条要照 §H.5 实现。
 
 ### 8.5 ⚠️ `TrajectorySetpoint` 没有 `thrust` 字段
 

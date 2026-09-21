@@ -23,7 +23,8 @@ Type: task
 - [ ] **状态外推** `x + v·τ`（τ = 50 ms）一行实现；不做完整延迟补偿
 - [ ] RViz：预测轨迹与参考点发布，能肉眼判断"MPC 是否在发疯"
 - [ ] **回退**：本张之后 Phase 1 的 `(A)` 级链仍完整可用，一条参数命令即可切回 —— Phase 2 是**加一条支路，不是替换**
-- [ ] **软急停接口参数化**（通道号不写死）—— ★ 通道号的**决定**由 [`.scratch/phase1/issues/02`](../../phase1/issues/02-rc-channel-decision.md) 产出；**本张不决定、不实测**（RC 夺权与失效保护的实机实测归 Phase 3）
+- [ ] **软急停接口参数化**（通道号不写死）—— ★ 通道号的**决定**由 [`.scratch/phase1/issues/02`](../../phase1/issues/02-rc-channel-decision.md) 产出；**本张不决定、不实测**（RC 夺权与失效保护的实机实测归 Phase 3）。
+      ✅ **2026-09-21 该 ticket 已 resolved**，结论里有一条**改变本张前提**：**急停 = ch8 高值 = PX4 硬件杀车，程序不读急停通道**，即**没有"软急停通道"** ⟹ 本张的"软急停接口"要按 [`phase2-implementation.md`](../../../docs/control/phase2-implementation.md) §4 那张表里的**两条既有路径**（打杆接管 / ch6 模式开关）来理解，别去假设有一个专属通道
 - [ ] 夹具能在 `colcon test` 里跑起来且至少一个冒烟场景通过；**能按指定时刻注入故障**（为 [07](07-solver-failure-fallback.md) 准备好）
 - [ ] **不需飞机的静态自检**：一个在装桨之前就能跑的检查流程，使参数与符号错误在这一步暴露
 - [ ] M7 / M8 / M9 的改动编号、理由与第一手依据已记入 [`phase2-implementation.md`](../../../docs/control/phase2-implementation.md)
