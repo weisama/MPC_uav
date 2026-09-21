@@ -240,3 +240,32 @@ Type: task
 
 `RESULT: <port> <baud>` 机器可读行**未改动**（`capture.sh` 依赖它）。
 
+---
+
+### 2026-09-21 —— 第四轮：★「串口0」是**调试口**，不是 `ttyTHS1`
+
+操作者做了物理回环（短接），但**测不到回环**。查 device tree 的 aliases 后，
+原因不是接线，而是**短接的不是同一个控制器**：
+
+| alias | 指向 | `compatible` | 对应设备 |
+|---|---|---|---|
+| **`serial0`** | `/serial` | **`nvidia,tegra234-tcu`** | **调试串口**（combined UART）—— `console=ttyTCU0,115200`，**无 `/dev` 节点** |
+| `serial1` | `/bus@0/serial@3100000` | serial-tegra | **`/dev/ttyTHS1`** ← 飞控所在 |
+| `serial2` | `/bus@0/serial@3140000` | serial-tegra | `/dev/ttyTHS2` |
+
+`/proc/device-tree/chosen/stdout-path` = **`serial0:115200n8`** —— 与 `serial0` = TCU 吻合。
+
+> ⚠️ **`serial0` 不在 `bus@0` 下**，`compatible` 也完全不同（`tegra234-tcu` vs `serial-tegra`）。
+> **"串口0"和"串口1"不是同一类东西** —— 前者是调试口，后者才是接飞控的 SoC UART。
+> 这与操作者的编号习惯一致（他说"串口1"时，活动的正是 `serial1` = `ttyTHS1`）。
+
+**排除项**：`/dev/ttyS0`–`ttyS3` 是 `serial8250` 的平台占位
+（`/sys/devices/platform/serial8250`，无真实硬件 backing），**不要**把它们当成候选串口。
+`serial@3110000` 是 `disabled`。
+
+**要人重做的**：把短接改到**接飞控的那个口（串口1 = 排针上对应 `ttyTHS1` 的两针）**，
+飞控侧两线先拔掉，再跑 `uart_loopback.py`。这一次的结果才是有效的判据：
+
+- **收到回显** ⟹ Jetson 侧全通 ⟹ 毛病在飞控/接线侧（回到第三轮的 TX/RX 交叉假设）
+- **收不到** ⟹ 该口的引脚 / pinmux 有问题 ⟹ 与飞控无关
+
