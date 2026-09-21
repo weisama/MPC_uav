@@ -21,6 +21,9 @@ Type: task
 
 - [x] Jetson 在动捕网段内，`ping 10.1.1.198` **0% 丢包**（不再走校园网关）—— ✅ 2026-09-21 实测 5/5，见下方第二轮
 - [ ] 记录飞控实际使用的串口设备节点，并确认它可用
+  - 节点**已定案**：`/dev/ttyTHS1`（= `serial@3100000` = 载板丝印**串口1**），见第五、六、七轮
+  - **但仍不可用** —— 接收通路 DMA 缺陷把 ≥8 字节打成 0。**修法已定，施工图在第八轮**，
+    尚未执行（差一次改设备树 + 重启）
 - [ ] QGC 读到的飞控版本号**原文**记入 [`refs-manifest.md`](../../../docs/reference/refs-manifest.md) §2.5
 - [ ] 未解锁时的电池电流读数记录在案，并给出"是否中招"的判定，结论记入 [`params-changes.md`](../../../docs/reference/params-changes.md) A4
 - [ ] 四条结论**全部落进文档** —— 不能只留在对话或记忆里
@@ -448,4 +451,163 @@ serial@3140000（= ttyTHS2）同样带 dmas / dma-names = "rx tx"
 | 串口1 现在能正常通信吗？ | **能"通"，不能"用"** —— 物理层全好，但 ≥8 字节的接收内容被打成 0；≤7 字节短包完全正常 | 第六轮长度扫描 |
 | 能和飞控 TELEM2 通信吗？ | **现在不行**。MAVLink 帧最短 17 字节 ⟹ 全部被打成 0 ⟹ 一个心跳都解不出。**修掉 DMA 后应该能**（待验证） | 第六轮 + `--scan` 全灭 |
 | 串口0 能测通信吗？ | **测不了** —— `serial@3110000` 是 `disabled`，内核未创建 platform device，`/dev` 下无节点。**没有东西可以打开** | `/sys/bus/platform/devices/` 无 `3110000.serial` |
+
+---
+
+### 2026-09-21 —— 第八轮：★★ **设备树改动的施工图**（照此执行，不必回溯前七轮）
+
+> **本节是给「新开一个对话来把 ② 做完」用的。** 前七轮是诊断过程，本轮是**施工件**：
+> 结论、确切改法、逐条命令、验证判据、回退方式，全部自足。
+> 配套脚本：[`tools/prereq-evidence/dtb_pio_fix.sh`](../../../tools/prereq-evidence/dtb_pio_fix.sh)
+
+#### 0. 一句话现状
+
+飞控 TELEM2 接在**串口1**（= 模组 203/205 = `/dev/ttyTHS1` = DT 的 `serial@3100000`）。
+该口**物理层全通**（物理短接的字节数分毫不差），但**接收方向 ≥8 字节的内容会被内核驱动打成 0**
+（第一手：发 16 字节 `01..10`，收回 16 个 `0x00`）。MAVLink 帧**最短 17 字节**
+⟹ 所有帧被全部打成 0 ⟹ **一个心跳都解不出来**。这就是 ② 至今不通过的**唯一原因**，与接线无关。
+
+**修法 = 设备树里删掉该节点的 `dmas` / `dma-names`，让驱动退回 PIO。**
+
+#### 1. 本轮新采的第一手事实
+
+`dtc` 解开的 DT 原文（全部串口节点，`/boot/dtb/kernel_tegra234-p3768-0000+p3767-0001-nv.dtb`，
+md5 `fcc01bf9a07489a32b636443804d6bb2`，与 `/boot/kernel_…-nv.dtb` **字节相同**）：
+
+| 节点 | `/dev` | `compatible` | 驱动 | `dmas` | `status` |
+|---|---|---|---|---|---|
+| `serial@3100000` | `ttyTHS1` | `nvidia,tegra194-hsuart` | `serial-tegra` | **有** | okay |
+| `serial@3140000` | `ttyTHS2` | `nvidia,tegra194-hsuart` | `serial-tegra` | **有** | okay |
+| `serial@31d0000` | `ttyAMA0` | `arm,sbsa-uart` | `sbsa-uart` | 无 | okay |
+| `serial@3110000` | *（无节点）* | `nvidia,tegra234-uart` + `nvidia,tegra20-uart` | `8250_tegra` | 无 | **disabled** |
+| `/serial`（顶层） | `ttyTCU0` | `nvidia,tegra234-tcu` | `tegra-tcu` | 无 | okay |
+
+★★ **DT 里只有两个 hsuart 节点带 `dmas`，而恰好只有这两个口有接收缺陷。** 这条相关性把
+第六轮的结论钉死了。
+
+内核配置（`/proc/config.gz` 第一手）—— 两套驱动都在内核里，**启用任何串口都不需要重编内核**：
+
+```
+CONFIG_SERIAL_8250=y          CONFIG_SERIAL_8250_TEGRA=y
+CONFIG_SERIAL_TEGRA=y         CONFIG_SERIAL_TEGRA_TCU=y
+```
+
+目标节点改动前后的确切原文：
+
+```dts
+// 改动前
+serial@3100000 {
+        compatible = "nvidia,tegra194-hsuart";
+        reg = <0x00 0x3100000 0x00 0x10000>;
+        interrupts = <0x00 0x70 0x04>;
+        clocks = <0x03 0x9b>;
+        resets = <0x03 0x64>;
+        dmas = <0xed 0x08 0xed 0x08>;      // ← 删
+        dma-names = "rx\0tx";              // ← 删
+        status = "okay";
+        reset-names = "serial";
+        phandle = <0x21f>;
+};
+```
+
+#### 2. 官方留存方法 —— 已核实，是 `extlinux.conf` 的 `FDT` 行
+
+NVIDIA 官方文档（*Jetson Linux Developer Guide* → **Jetson Orin NX and Nano Series**）原文要点：
+
+1. UEFI 默认就是 **extlinux 启动**，会去找 `/boot/extlinux/extlinux.conf` 里的 **`FDT` 条目**；
+2. 在那里指定的 image / dtb **优先级高于**烧录在分区里的 dtb；
+3. **没写、或文件不存在**时，才回落到**烧录分区**里的 dtb。
+
+⟹ **官方留存的改法 = 在 `extlinux.conf` 里加一行 `FDT /boot/dtb/…-pio.dtb`。**
+持久（重启、断电都在），**不需要主机电脑、不需要 recovery 模式、不需要重刷**。
+
+- <https://docs.nvidia.com/jetson/archives/r36.2/DeveloperGuide/HR/JetsonModuleAdaptationAndBringUp/JetsonOrinNxNanoSeries.html>
+- <https://forums.developer.nvidia.com/t/device-tree-dtbo-how-does-it-work/338605>
+- <https://forums.developer.nvidia.com/t/jetson-orin-nx-r36-3-rs485/328497>（同款「缺 FDT 行」案例）
+
+**本机现状（第一手）**：`/boot/extlinux/extlinux.conf` 里**没有 `FDT` 行**，
+所以现在跑的是**分区兜底**的 dtb；而 `/boot/dtb/kernel_…-nv.dtb` 与 `/boot/kernel_…-nv.dtb` 是同一份。
+**这正是"要加 FDT 行"的原因。**
+
+⚠️ **唯一的例外**：安全启动开着时 `FDT` 行会被忽略、只能重刷签名分区。
+**本机实测 `SecureBoot` efivar 值 = 0 ⟹ 未启用**，所以这条路对本机成立。
+
+#### 3. 本轮明确**不做**的事（免得新对话再绕进去）
+
+| 不做 | 理由 |
+|---|---|
+| 折腾 `/dev/ttyAMA0` | 操作者 2026-09-21 明示**放弃这条线**。它内部回环连**短模式**都收不回来（驱动不实现 `TIOCM_LOOP`），**任何结论都得不出来**，是纯粹的坑 |
+| 启用 `serial@3110000`（串口0） | **它不解决任何当前问题** —— 飞控线在**串口1**上。等 ② 用串口1 打通后，如确需备用口再单开一轮（那会是**独立的一次改动**，便于区分成败） |
+| 调波特率 / 再检接线 | 已被长度扫描排除：物理回环字节数分毫不差 ⟹ 接线与波特率都是对的 |
+
+#### 4. 施工步骤（就这三步）
+
+```bash
+cd /home/chen/ros_ws
+
+# ① 生成改好的 dtb + 自校验（**不需要 sudo，不碰 /boot**）
+bash tools/prereq-evidence/dtb_pio_fix.sh build
+
+# ② 装进 /boot/dtb/ 并往 extlinux.conf 加 FDT 行（**需要 sudo**；自动备份、保留原 LABEL）
+sudo bash tools/prereq-evidence/dtb_pio_fix.sh install
+
+# ③ 重启
+sudo reboot
+```
+
+`install` 做的事：备份 `extlinux.conf` → 拷 dtb 到 `/boot/dtb/kernel_…-nv-pio.dtb`
+→ **在最前面新增** `LABEL primary-pio`（含 `FDT` 行）→ 把 `DEFAULT` 指过去。
+**原有的 `LABEL primary` 一字不动**，作为开机菜单里的回退项。
+
+#### 5. 验证判据（重启后立刻跑，两条都要看）
+
+```bash
+# a) 芯片侧：长模式 16 字节能不能原样收回
+python3 tools/prereq-evidence/uart_loopback.py --internal --port /dev/ttyTHS1
+#    修好前：发 01..10，收回 16 个 0x00
+#    ★ 修好后：**16 字节原样收回**
+
+# b) DT 侧：dmas 属性是不是真的没了
+bash tools/prereq-evidence/dtb_pio_fix.sh status
+
+# c) 端到端：飞控心跳
+python3 tools/prereq-evidence/mavlink_probe.py --port /dev/ttyTHS1 --baud 921600
+```
+
+- **a 通过 ⟹ 驱动缺陷已修好**（这是必要条件，与飞控无关）。
+- **a 通过但 c 仍无心跳** ⟹ Jetson 侧无罪，问题才轮到飞控侧（上电？`MAV_1_CONFIG`？
+  TX/RX 是否交叉？）—— **这时才该去查别的东西**。
+- **a 不过** ⟹ 改动没生效（`status` 看 FDT 行；看 `dmesg | grep 3100000` 有没有 `PIO mode`）→ 回退。
+
+#### 6. 回退（两种，任一即可）
+
+```bash
+# A. 开机时在 extlinux 菜单里选 "primary kernel"（TIMEOUT 30 秒，来得及）
+# B. 盲操作还原：
+sudo bash tools/prereq-evidence/dtb_pio_fix.sh rollback && sudo reboot
+```
+
+`LABEL primary` 与分区里的原 dtb **全程未被动过**，所以最坏情况是"回到现在这个状态"，
+**不会把机器弄成不能启动**。
+
+#### 7. 已经做过的干跑证据（本轮，零风险）
+
+| 验的东西 | 结果 |
+|---|---|
+| `拆 → 编 → 再拆` 能否无损往返 | ✅ 重编前后 dts 文本完全一致 |
+| 删属性后节点原文 | ✅ `dmas` / `dma-names` 消失，`status = "okay"`、`compatible` **原样保留** |
+| 除目标节点外是否零改动 | ✅ 全文 `diff` 零差异 |
+| 体积 | 250051 → 250003 字节（正好少了那两个属性） |
+| `SecureBoot` efivar | ✅ 值 = 0 ⟹ `FDT` 行会被采用 |
+| `dtb_pio_fix.sh build` | ✅ **已实跑通过**（含全部断言） |
+
+⚠️ **诚实交代**：`install` 与 `rollback` 两条路径**尚未在真机上执行过** ——
+它们是照官方文档写的，`build` 已验证。首次 `install` 前请注意有没有报错。
+中间产物（dtb/dts）落在 `tools/prereq-evidence/dtb-work/`，**已加进 `.gitignore`**（可随时由脚本重建）。
+
+#### 8. 还需人给的（不阻塞本轮施工）
+
+- TELEM2 的 TX/RX **具体接到哪两针**（此前只确认"接在串口1 上"）。若 5-a 通过而 5-c 仍无心跳，
+  这一条就是下一个要问的。
+- 飞控那端的接线**是否交叉**（Jetson TX → 飞控 RX）。
 
