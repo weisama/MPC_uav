@@ -37,9 +37,17 @@ import time
 
 # 候选端口与波特率：PX4 的 TELEM 默认 57600；机载电脑链路常被改成 115200/921600
 # FC_SCAN_PORTS 可覆盖（逗号分隔）—— 主要给自动化测试用，也可在非 THS 的机器上复用
+#
+# ⚠️ 为什么把 /dev/ttyAMA0 也列上（2026-09-21 补）：
+#   Jetson Orin 上有**第三个 UART** —— `serial@31d0000`，`arm,sbsa-uart` 驱动，
+#   设备名是 `ttyAMA0`（ARM PL011/SBSA 系）。**前六轮全把它漏了。**
+#   它的 DT 节点**没有 `dmas`/`dma-names`**，因此**不受**那个接收 DMA 缺陷影响，
+#   是个潜在绕开方案。
+#   ⚠️ 它**不认** 8250 的 TIOCM_LOOP，所以 `uart_loopback.py --internal` 对它不适用，
+#   只能靠物理短接判定。
 DEFAULT_PORTS = [
     p for p in os.environ.get("FC_SCAN_PORTS", "").split(",") if p.strip()
-] or ["/dev/ttyTHS1", "/dev/ttyTHS2"]
+] or ["/dev/ttyTHS1", "/dev/ttyTHS2", "/dev/ttyAMA0"]
 DEFAULT_BAUDS = [57600, 115200, 921600]
 
 FC_SYS_DEFAULT = 1
