@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import struct
 import sys
 import time
 
@@ -73,6 +74,100 @@ def _open(port: str, baud: int):
         elif "device reports readiness" in msg or "busy" in msg.lower():
             hint = "\n     → 端口被占用（mavros 在跑？先停掉再采）。"
         return None, msg + hint
+
+
+# ---------------------------------------------------------------------------
+# 原始流刻画 —— 区分「波特率错」和「线上根本不是数据」
+#
+# `--scan` 报「无心跳」时，背后其实是三种情况，而它们对操作者的指示**完全相反**：
+#   (a) 读不到任何字节        → 线路静默：飞控没在发 / 这口没接线
+#   (b) 有字节，但成不了帧    → **线上不是数据**（噪声 / 串扰 / RX 没被驱动）→ 去查接线
+#   (c) 有字节且是完整帧块    → 是数据，只是波特率不对            → 去换波特率
+#
+# 判据是**非零字节的最长连续段**：MAVLink v2 最短的帧（心跳，无 payload）也有 17 字节，
+# 任何真数据流必然出现 ≥17 的非零长段；而噪声 / 容性串扰只传边沿、没有直流电平，
+# 非零段会被切得很碎。
+#
+# 2026-09-21 在 z0 的 Jetson 上第一手实测到 (b) 这种最误导的形状：
+# ttyTHS1 @ 921600 读到 ~13 kB/s、**帧错误为 0**（接收器锁住了位时钟，看着"完全正常"），
+# 但非零字节最长只有 **9 字节** —— 一个 MAVLink 帧都不可能有。
+# 当时只看"有没有字节"就报了"有信号、线接对了"，是**误判**；本函数就是为此加的。
+# ---------------------------------------------------------------------------
+TIOCGICOUNT = 0x545D          # /usr/include/asm-generic/ioctls.h:99
+_ICOUNT_FMT = "4i 2i 4i i 9i"  # struct serial_icounter_struct, /usr/include/linux/serial.h:102
+_ICOUNT_SZ = struct.calcsize(_ICOUNT_FMT)
+
+MAVLINK_MIN_FRAME = 17        # v2 最短帧：12 B 包头 + 2 B CRC + 心跳 payload 3 B
+
+
+def _raw_characterize(port: str, baud: int, seconds: float = 1.0):
+    """无 MAVLink 帧时，看线上到底是什么。返回 dict；取不到则 None。"""
+    try:
+        import fcntl
+        import serial
+    except ImportError:
+        return None
+    try:
+        s = serial.Serial(port, baud, timeout=0.2)
+    except Exception:
+        return None
+
+    def _ic():
+        v = struct.unpack(_ICOUNT_FMT,
+                          fcntl.ioctl(s.fileno(), TIOCGICOUNT, b"\x00" * _ICOUNT_SZ)[:_ICOUNT_SZ])
+        return v[4], v[6], v[9]          # rx, frame, brk
+    try:
+        s.reset_input_buffer()
+        rx0, fr0, bk0 = _ic()
+        data = b""
+        deadline = time.time() + seconds
+        while time.time() < deadline:
+            data += s.read(65536)
+        rx1, fr1, bk1 = _ic()
+    except Exception:
+        return None
+    finally:
+        try:
+            s.close()
+        except Exception:
+            pass
+
+    longest = cur = 0
+    for b in data:
+        if b:
+            cur += 1
+            longest = max(longest, cur)
+        else:
+            cur = 0
+    return {
+        "bytes": len(data),
+        "frame": fr1 - fr0,
+        "brk": bk1 - bk0,
+        "null_pct": (data.count(0) / len(data)) if data else 0.0,
+        "max_run": longest,
+        "seconds": seconds,
+    }
+
+
+def _explain_raw(c: dict) -> None:
+    """把「无心跳」细化成三种可操作的情况。"""
+    if c["bytes"] == 0:
+        print(f"        └ {c['seconds']:.1f}s 内**一个字节都没有** ⟹ 线路静默")
+        print("          → 这个口没接线，或飞控没在发。**先确认线接的是哪个口**。")
+        return
+
+    print(f"        └ 读到 {c['bytes']} 字节（{c['null_pct']:.0%} 是 0x00；帧错误 {c['frame']}，"
+          f"break {c['brk']}；非零最长连续 **{c['max_run']} 字节**）")
+    if c["max_run"] < MAVLINK_MIN_FRAME:
+        print(f"          ⚠️ **这不是数据流** —— 真 MAVLink 必然出现 ≥{MAVLINK_MIN_FRAME} 字节的"
+              f"非零连续段，这里最长只有 {c['max_run']}。")
+        print("             ⟹ 线上是**噪声 / 串扰 / RX 引脚没被驱动**。")
+        print("             → 查接线：Jetson 的 **RX 要接飞控的 TX**（必须交叉），"
+              "并确认 **GND 共地**。")
+        print("             ⚠️ **不要**因此去改波特率 —— 波特率错会给出长帧块，不是这个形状。")
+    else:
+        print(f"          → 像**真数据**（存在 ≥{MAVLINK_MIN_FRAME} 字节的长段）"
+              " ⟹ 大概率只是波特率不匹配，继续试别的波特率。")
 
 
 def _decode_flight_sw_version(raw: int) -> str:
@@ -303,6 +398,9 @@ def scan_ports(ports: list[str], bauds: list[int], wait: float) -> int:
                 continue
             if hb is None:
                 print(f"    {port} @ {baud:<7} — 无心跳")
+                char = _raw_characterize(port, baud)
+                if char is not None:
+                    _explain_raw(char)
             else:
                 # 从心跳本身取 sysid —— conn 上面已经 close 了，别再依赖它的属性
                 print(f"    {port} @ {baud:<7} ✅ **飞控在此** "
@@ -313,8 +411,12 @@ def scan_ports(ports: list[str], bauds: list[int], wait: float) -> int:
     print("  ===== ② 结论 =====")
     if not hits:
         print("  未在任何候选端口/波特率上听到飞控。")
-        print("  可能：① 飞控没上电；② 线没接；③ 波特率不在这三个里")
-        print("        ④ 当前用户在不在 dialout 组？不在就打不开串口（见上面报错）。")
+        print("  **每一格的判据在上面**（静默 / 不是数据流 / 只是波特率不对），"
+              "三者对应完全不同的动作：")
+        print("    · 静默          → 飞控没上电，或线没接到这个口")
+        print("    · 不是数据流    → 查 TX/RX 是否交叉、GND 是否共地（**别去调波特率**）")
+        print("    · 只是波特率不对→ 换波特率再试")
+        print("  另：当前用户在不在 dialout 组？不在就打不开串口（见上面报错）。")
         print("  若 mavros 正在跑，它会占住串口 —— 先停掉再扫。")
         # 机器可读结果行：capture.sh 用它把 ② 的结果喂给 ③④，避免两边端口不一致
         print("RESULT: none")
