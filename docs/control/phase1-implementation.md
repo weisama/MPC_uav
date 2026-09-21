@@ -40,11 +40,13 @@ src/
 │   ├── launch/sync_entity_state.launch
 │   └── VENDORED.md          ← ★ 新增：写明来源 zip、"勿替换"、stamp 不可改
 │
-├── mocap/                             🔄 重写
-│   ├── src/mocap_rel_pose_node.cpp    ← 相对位姿（核心）
-│   ├── include/mocap/mocap_rel_pose.hpp
-│   ├── config/mocap.yaml
-│   └── launch/mocap.launch.py
+├── mocap/                             ✅ 已实现（2026-09-21，ticket 04）
+│   ├── src/mocap_rel_pose_node.cpp    ← 相对位姿节点（ROS 边界：话题进出）
+│   ├── include/mocap/mocap_rel_pose.hpp  ← ★ 三个纯函数，**零 ROS 依赖**（seam 2）
+│   ├── test/test_mocap_rel_pose.cpp   ← ★ 全项目唯一的纯函数单测（20 例）
+│   ├── config/mocap.yaml              ← 刚体名 + 话题名都在这（多机改参数复用）
+│   ├── launch/mocap.launch.py
+│   └── README.md                      ← 参数表 + 运行纪律 + 两阶段原点的理由
 │
 ├── traj/                              🆕 新写
 │   ├── src/traj_node.cpp
@@ -111,8 +113,19 @@ src/
 > ⚠️ **本文旧版曾让本节点额外发布一条 `/mocap/pose_ned`（NED/FRD）给"本项目控制器"用，
 > 并警告"两路约定不一样、搞反了会飘"。该话题已按 Q14=a 删除** —— 理由：
 > ① Phase 1 的控制器工作在 **EKF2 的 local NED** 里（§3.3），位置直接读 `/mavros/local_position/*`，
-> **根本不需要** mocap 的 NED 值；② Phase 2 的 MPC 用 ENU（§3.2 / G3）。
+> **不需要** mocap 的 NED 值；② Phase 2 的 MPC（模型预测控制）用 ENU（§3.2 / G3）。
 > 即**没有任何消费者**。删掉它同时消灭了"转两次 / 一次都没转"这一整类 bug。
+
+> ✅ **已实现（2026-09-21，[ticket 04](../../.scratch/phase1/issues/04-mocap-relative-pose.md)）= [`src/mocap/`](../../src/mocap/)。**
+> 实现细节（参数表、两阶段原点的理由、运行纪律）见 [`src/mocap/README.md`](../../src/mocap/README.md)。三条与本表有关的补充：
+> - **刚体名走参数文件**（`config/mocap.yaml` 的 `body_name`）——它是**变量**不是常量（一天内实测到 `Z0`/`z0` 两个值），
+>   且**多台无人机换一份 yaml 即可复用**，代码不动。抄错名字时节点会在 5 s 后把 graph 里**有发布者**的
+>   `/vrpn/*/pose` 连"只差大小写"一起列出来（只订阅、无人发布的不算候选 —— 否则会出现"名字没错"的假象）。
+> - **动捕数据看门狗**（spec 用户故事 10）：数据中断超 `no_data_warn_s`（默认 5 s）就 ERROR 一句
+>   "EKF2 的视觉输入已失效，不要再起飞"，恢复时 WARN 一句；每次中断只报一次，不刷屏。
+>   ⚠️ 这是"数据到没到"，与 §4.3-3 的 `msg_timeout`（"**消费**是否超时"，归 `control`）不是同一个东西。
+> - **`<刚体>_Marker1..5` 这些 per-marker 话题不屏蔽**（本节点按名字精确订阅，多余话题无订阅开销；屏蔽要改 vendored 的
+>   `vrpn_listener`，那是 ticket 03 明令不许的）。真嫌带宽就在 Nokov 侧关掉 marker 输出。
 
 ## 3. 坐标系与符号（★ 写死，不靠记忆）
 
@@ -163,7 +176,7 @@ z_ned = -z_enu
     q_off = quat_from_euler(0, 0, -ψ0)             ← 纯 yaw 旋转
 
 之后每帧：
-    p_rel = p - p0                                 （再做 §3.2 的 ENU→NED）
+    p_rel = p - p0                                 （★ 到此为止，**不做**坐标转换，见 §3.5）
     q_rel = q_off ⊗ q                              ← ★ 左乘，只绕世界 z
 ```
 

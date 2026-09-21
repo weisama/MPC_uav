@@ -1,0 +1,26 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>mocap</name>
+  <version>0.1.0</version>
+  <description>
+    动捕刚体位姿 → 相对位姿（两阶段原点 + 仅归零 yaw），输出动捕原生 ENU / 机体 FLU。
+    ★ 本包不做任何坐标转换：ENU→NED 与 FLU→FRD 全由 mavros 在自己的边界上完成。
+  </description>
+  <maintainer email="127371350+weisama@users.noreply.github.com">weisama</maintainer>
+  <license>TODO: License declaration</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <depend>rclcpp</depend>
+  <depend>geometry_msgs</depend>
+  <depend>std_msgs</depend>
+  <!-- 只用到 mavros_msgs/State（检测解锁上升沿），不需要整个 mavros -->
+  <depend>mavros_msgs</depend>
+
+  <test_depend>ament_cmake_gtest</test_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

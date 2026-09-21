@@ -1,0 +1,95 @@
+# `mocap` —— 动捕刚体位姿 → 相对位姿
+
+把 `/vrpn/<刚体>/pose` 变成**以我摆放飞机的位置为原点的相对位姿**，喂给 EKF2，
+使 **QGC 在解锁之前就已经有稳定收敛的位置估计**。
+
+```
+/vrpn/<刚体>/pose ──▶ mocap 节点 ──▶ /mavros/vision_pose/pose   （→ PX4 EKF2，mavros 负责 ENU→NED、FLU→FRD）
+                                 └─▶ /mocap/pose_enu           （Phase 1 只用于记录；Phase 2 的 MPC（模型预测控制）状态源）
+```
+
+**本节点是全栈唯一一个「不做任何坐标转换」的节点** —— 它只做两件事：**减原点** + **只归零 yaw**，
+输出**动捕原生 ENU / 机体 FLU**。ENU→NED 与 FLU→FRD 全部由 mavros 在自己的边界上完成
+（已读 mavros 源码确认，见 [`phase1-implementation.md`](../../docs/control/phase1-implementation.md) §3.5）。
+所以这里**没有** NED 话题 —— 那个话题没有任何消费者，删掉它同时消灭了"转两次 / 一次都没转"这一整类 bug。
+
+## ★ 运行纪律（比代码重要）
+
+| 时刻 | 做什么 |
+|---|---|
+| 动捕侧 | 先确认 `/vrpn/<刚体>/pose` **有数据**（`ros2 topic hz`），再起本节点 |
+| 配置前 | **现场核对刚体名**：`ros2 topic list \| grep vrpn` —— 名字是变量，别抄常量 |
+| 节点启动 | 把飞机**摆好、静止**，然后起节点 |
+| 启动 → 解锁 | ★ **不要搬动、不要转动飞机**（两阶段原点的切换量 = 这段时间里动的量） |
+| 解锁瞬间 | 自动切原点：位置原点换成"起飞前静止帧"，姿态开始归零 yaw |
+
+**朝向不重要**（EKF2 融合视觉 yaw 后会把世界系对齐到动捕坐标系，PX4 的"北"就是动捕的 +x，机头朝哪都行）；
+**静止才重要**。老文档里"机头必须朝假定东"的仪式已被这条纪律取代。
+
+## 两阶段原点：为什么不是"解锁那一刻才开始发"
+
+| 阶段 | 何时 | 位置 | 姿态 |
+|---|---|---|---|
+| **A** | 节点启动 → 解锁前 | `p − p_boot`（启动原点 = 启动后 30 帧均值） | **绝对** q，不归零 yaw |
+| **B** | 解锁上升沿后 60 帧起 | `p − p_arm`（起飞前静止帧 = 解锁后 60 帧均值） | `Rz(−ψ₀) ⊗ q`，只归零 yaw |
+
+- **阶段 A 存在的理由**：EKF2 在解锁前就**没有任何视觉数据**的话，解锁那一刻才第一次喂 vision_pose，
+  EKF2 能否干净地初始化并收敛是**未验证**的，而 PX4 解锁与进入 OFFBOARD 都要求已收敛的估计。
+  ⟹ 从节点启动起就持续发，与旧机上验证过的那条链路一致。
+- **只归零 yaw 的理由**：解锁时飞机停在地面，roll/pitch 通常不是精确的 0（地面不平、起落架软）。
+  整个姿态做相对之后，"水平"的定义变成了"解锁时那个姿态"——解锁时若有几度横滚，PX4 认为的
+  竖直方向就偏这么多，**飞机持续往一个方向飘，而 EKF2 认为误差是零，控制器看不出来**。
+  左乘纯 yaw 旋转在 ZYX 分解下等价于"只减 yaw"：roll/pitch **精确不变**，推力方向不被人为改变。
+- **切换不许有跳变**：前提就是"启动到解锁之间别动飞机"。跳变量 = `|p_arm − p_boot|`，
+  节点会**把它打日志**，超过 `jump_warn_m` 还会 WARN。
+- ★ **切换后永不重锁**：飞行中再锁一次原点 = 给 EKF2 一记位置跳变。上锁→再解锁也**不会**重锁。
+
+## 参数（`config/mocap.yaml`）
+
+| 参数 | 默认 | 说明 |
+|---|---|---|
+| `body_name` | `z0` | ★ **变量不是常量**（一天内实测到 `Z0` 与 `z0` 两个值）。话题名原样取自 VRPN sender 名，只换空格、**不做大小写归一化** |
+| `input_topic` | `""` | 留空 = `/vrpn/<body_name>/pose`；填了以此为准 |
+| `vision_pose_topic` | `/mavros/vision_pose/pose` | 喂 EKF2 |
+| `pose_enu_topic` | `/mocap/pose_enu` | 记录 / Phase 2 状态源 |
+| `state_topic` | `/mavros/state` | 检测**解锁上升沿** |
+| `boot_samples` | `30` | 阶段 A 采样帧数（动捕 ~196 Hz ⟹ ≈0.15 s） |
+| `arm_samples` | `60` | 阶段 B 采样帧数（≈0.3 s，对应 §3.4 的"约 30–120 帧"） |
+| `jump_warn_m` | `0.05` | 两阶段原点差超过它就 WARN |
+| `no_data_warn_s` | `5.0` | 动捕数据健康看门狗：启动后一直没数据 → ERROR（并列出 graph 里的候选话题）；**运行中中断超时 → ERROR，恢复 → WARN** |
+
+**多台无人机复用：改参数、不改代码。** 复制一份 yaml 改 `body_name` 与三个话题名，
+`ros2 launch mocap mocap.launch.py params_file:=<那份 yaml> namespace:=z1`。
+
+## 三条不许碰的约定（与 `src/mocap_rel_pose_node.cpp` 文首逐条对应）
+
+1. **`stamp` 原样转发，不二次打戳。** mavros 的 `send_vision_estimate()` 开头
+   `if (last_transform_stamp == stamp) return;` —— 时间戳不前进的消息会被**静默丢弃**。
+   也**不要**改成 VRPN 的 `msg_time`（动捕主机与本机有 ~4 s 时钟差，改了直接毁掉 EKF2 融合）。
+2. **不做坐标转换**（见文首）。
+3. **姿态只归零 yaw**，roll/pitch 保持绝对（理由见上文"只归零 yaw 的理由"）。
+
+## 测试
+
+```bash
+colcon test --packages-select mocap && colcon test-result --verbose
+```
+
+`test/test_mocap_rel_pose.cpp` 是本项目**唯一的一组纯函数单测**（seam 2），
+针对三个纯函数：**原点减法 / 仅归零 yaw / 两阶段原点切换**。
+它们**零 ROS 依赖**（测试二进制 `ldd` 里没有 `librclcpp`），CMake 里也刻意不链接 rclcpp。
+
+**为什么值得单独有这组测试**：位姿处理错误**在话题层面没有诊断分辨率** —— 飞机往反方向飞时，
+话题上分不出是原点锁错、yaw 归零错，还是 mavros 的边界转换不如预期。
+测试侧走**完全独立的另一条路**：构造输入用矩阵连乘 → Shepperd 法转四元数，断言用四元数 → 矩阵 → ZYX 反解，
+**一次都不调用**被测的 `normalize` / `quat_mul` / `yaw_of`。这条独立性做过**变异验证**：把左乘改成右乘、
+把 `yaw_of` 符号取反、把位置相对化去掉，分别有 4 / 3 / 4 个用例失败。
+
+## 一个顺带做的决定：`<刚体>_Marker1..5` 这些话题不屏蔽
+
+`vrpn_listener` 给**每个 sender** 都建 publisher，那台服务器上有 27 个 sender（含别的项目的刚体，
+以及 z0 五颗反光球**各自**成的独立 sender）⟹ 81 个话题。**本节点按名字精确订阅，多余话题不产生订阅开销。**
+
+不屏蔽的理由：屏蔽要改 `vrpn_listener`（**vendored，一行都不能改**，见
+[`VENDORED.md`](../vrpn_listener/VENDORED.md)）。若将来真嫌带宽，正确的落点是**在 Nokov 侧关掉 marker 输出**，
+那是一次人的操作，不是这里的代码改动。

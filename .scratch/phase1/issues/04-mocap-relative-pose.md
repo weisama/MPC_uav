@@ -1,7 +1,14 @@
 # 04: `mocap` 节点 —— 相对位姿 + 两阶段原点 + 仅归零 yaw
 
-Status: ready-for-agent
+Status: ready-for-human
 Type: task
+
+> ⚠️ **2026-09-21：代码完成并提交，但本张还差两条验收 —— 别读成"飞控已经吃到动捕了"。**
+> 剩下两条（① QGC 的 `LOCAL_POSITION_NED` 稳定 + `VISION_POSITION_ESTIMATE`；⑥ 坐标系确认实验的 **QGC 那一半**）
+> **需要飞控上电 + `mavros` 装好 + QGC 打开**，且要有人把飞机平移 0.5 m / 升高 0.3 m。
+> 当前**飞控未上电**，且本机**还没装 `mavros`**（只有 `mavros_msgs`）⟹ 已另开
+> [ticket 13](13-mavros-bench-vision-pose.md) 承接（它同时是 [ticket 05](05-control-offboard-skeleton.md) 的前置）。
+> **其余 6 条已用"假 `/vrpn/z0/pose` + 假 `/mavros/state`"在无飞控条件下验完**，读数见 Comments §三。
 
 **What to build:** 动捕位姿变成「以我摆放飞机的位置为原点的相对位姿」并喂给 EKF2，使 **QGC 在解锁之前就已经有稳定收敛的位置估计**。
 
@@ -39,14 +46,190 @@ Type: task
 **Blocked by:** 03（已 `done`）
 
 - [ ] **未解锁时** QGC 的 `LOCAL_POSITION_NED` **已稳定**，且有 `VISION_POSITION_ESTIMATE`（台架上可验，不用飞、不用解锁）
-- [ ] 解锁上升沿切原点，**切换瞬间位置无跳变**；原点锁定时刻记入日志
-- [ ] 位置输出**逐轴独立** —— 不受姿态处理影响
-- [ ] 姿态归零后**机体 z 轴方向不变**；roll/pitch 未被归零
-- [ ] **时间戳原样转发** `vrpn_listener` 的 stamp，**不二次打戳**（mavros 会静默丢弃时间戳不前进的消息）
+      —— ⏳ **未勾：QGC/飞控那一半需要飞控上电 + `mavros`**（→ [ticket 13](13-mavros-bench-vision-pose.md)）。
+      ✅ **节点侧已验**：**未解锁时就已在持续发布** —— 第一帧 `vision_pose` 出现在解锁前 **0.855 s**（Comments §三 第 4 条）
+- [x] 解锁上升沿切原点，**切换瞬间位置无跳变**；原点锁定时刻记入日志
+      —— ✅ 静止段（含切换瞬间）**逐帧最大位置差 1.67e-16 m**；日志逐帧记录了切换时刻（帧 stamp + 本机时刻，见 §三 第 6 条读数）
+- [x] 位置输出**逐轴独立** —— 不受姿态处理影响
+      —— ✅ 单测 `RelativePosition.位置输出不受姿态影响`（同一位置配 3 种姿态，输出**逐位相同**）
+      + 端到端"只动 x/z 时 y 轴一动不动"
+- [x] 姿态归零后**机体 z 轴方向不变**；roll/pitch 未被归零
+      —— ✅ 端到端：机体 z 轴的**竖直分量 0.999238615 → 0.999238615**（精确不变）；roll/pitch **1.00° / −2.00° 前后一致**（脚本设定正是 1 / −2）
+- [x] **时间戳原样转发** `vrpn_listener` 的 stamp，**不二次打戳**（mavros 会静默丢弃时间戳不前进的消息）
+      —— ✅ 收到的 **530 帧 stamp 全部命中**发出的 stamp 集合（`header` 整块拷贝，含 `frame_id: world`）
 - [ ] **坐标系确认实验**：把飞机向动捕 **+x 方向（东）平移 0.5 m** → QGC 的 **`y` 变化 0.5**；再**升高 0.3 m** → QGC 显示**向上**
-- [ ] 三个纯函数（原点减法 / 仅归零 yaw / 两阶段原点切换）各自有单测，**零 ROS 依赖**
-- [ ] `/mocap/pose_enu` 发布（Phase 1 只用于记录；Phase 2 拿它当状态源）
+      —— ⏳ **未勾：QGC 那一半需要飞控上电**（→ [ticket 13](13-mavros-bench-vision-pose.md)）。
+      ✅ **节点侧那一半已验**（假输入）：+x 平移 0.5 m ⟹ 输出 **Δx = 0.5000 m**；升高 0.3 m ⟹ 输出 **Δz = +0.3000 m**
+      ⟹ **输出确实是动捕原生 ENU**，本节点里没有多转一次（这正是本实验要抓的那类错）
+- [x] 三个纯函数（原点减法 / 仅归零 yaw / 两阶段原点切换）各自有单测，**零 ROS 依赖**
+      —— ✅ **21 例全过**；测试二进制 `ldd | grep -c "rclcpp\|rmw"` = **0**（CMake 里也刻意不链接 rclcpp）
+- [x] `/mocap/pose_enu` 发布（Phase 1 只用于记录；Phase 2 拿它当状态源）
+      —— ✅ 与 `/mavros/vision_pose/pose` **逐帧同值**（530 帧逐帧比对）
 
 ---
 
 **关于"只归零 yaw"的一个连带结论**（记在这里以免后人重新论证）：因为 EKF2 融合视觉 yaw 后会把世界系对齐到动捕坐标系，所以 PX4 的"北"就是动捕的 +x，**机头朝哪都行**。旧文档里"机头必须朝假定东"的仪式不再必要 —— 但「启动到解锁之间保持静止」这条纪律**仍然必要**。
+
+---
+
+## Comments
+
+### 2026-09-21 —— 代码完成并提交（agent，在 z0 的 Jetson `orin-nx` 上）。**6/8 验收项已验；差的 2 项要飞控上电，交 [ticket 13](13-mavros-bench-vision-pose.md)**
+
+#### 一、产出
+
+| 文件 | 说明 |
+|---|---|
+| `src/mocap/include/mocap/mocap_rel_pose.hpp` | ★ **纯转换**：三个纯函数 + 两阶段原点选择器。**零 ROS 依赖**（不 include 任何 ROS 头，自带 POD 类型） |
+| `src/mocap/src/mocap_rel_pose_node.cpp` | 节点 = ROS 边界（话题进出 + 参数 + 诊断日志）。**不做任何坐标转换** |
+| `src/mocap/test/test_mocap_rel_pose.cpp` | ★ **全项目唯一**一组纯函数单测（seam 2），21 例 |
+| `src/mocap/config/mocap.yaml` | 刚体名 + 三个话题名 + 采样数/阈值 —— **多机换一份 yaml 即复用** |
+| `src/mocap/launch/mocap.launch.py` | 含 `params_file` / `namespace` 两个 launch 参数 |
+| `src/mocap/README.md` | 🆕 参数表 + 运行纪律 + 两阶段原点的理由 + per-marker 的决定 |
+| `src/mocap/{package.xml,CMakeLists.txt}` | `mavros_msgs` 只为 `State` 一个消息（**不需要整个 mavros**） |
+
+#### 二、四条实现决定（都写进了代码注释与 README，以免后人重新论证）
+
+1. **只做「减原点 + 归零 yaw」，不做任何坐标转换**（本张已定）。输出动捕原生 ENU/FLU；`/mocap/pose_ned` 不存在。
+2. **两阶段原点，外加三条边沿纪律** —— 后两条是本张新增的、**用单测钉住的安全性质**：
+   - 未收到 `/mavros/state` 时**当未解锁**（若当成已解锁，启动瞬间就会伪造出一个"上升沿"）；
+   - **上电即在高位不算边沿**（同 RC 通道的语义）；
+   - ★ **切换后永不重锁** —— 飞行中再锁一次原点 = 给 EKF2 一记位置跳变。上锁→再解锁也**不会**重锁。
+3. **刚体名走参数文件**（`body_name`），因为它是**变量**（ticket 12）。按用户 2026-09-21 的要求，
+   **多台无人机复用 = 换一份 yaml**（`params_file` + `namespace` 两个 launch 参数，代码不动）。
+   抄错名字时节点在 5 s 后把 graph 里**有发布者**的 `/vrpn/*/pose` 列出来，并**标出"只差大小写"的那个**（§四有实测）。
+4. **`<刚体>_Marker1..5` 这些 per-marker 话题不屏蔽**（本张交代的权衡项，落 README §末）：
+   本节点**按名字精确订阅**，多余话题不产生订阅开销；真要屏蔽得改 vendored 的 `vrpn_listener`
+   （ticket 03 明令不许）。落点在 **Nokov 侧关掉 marker 输出** —— 那是人的操作，不是这里的代码。
+
+#### 三、验收证据（无飞控条件：假 `/vrpn/z0/pose` + 假 `/mavros/state`）
+
+> 脚本 `/tmp/mocap_node_check.py`（**刻意不入住仓库**：可复用的夹具归 [ticket 05](05-control-offboard-skeleton.md)）。
+> 200 Hz；姿态恒为 roll 1° / pitch −2° / yaw 37°；位置起点用 ticket 12 实测的 `(-1.2804, -0.1397, 0.0883)`；
+> `t=1.0 s` 发**解锁上升沿**，`1.6 s` 起**+x 平移 0.5 m**，`2.0 s` 起**升高 0.3 m**。逐帧留档 `/tmp/mocap_node_check.json`。
+
+| # | 断言 | 读数 | 对应验收项 |
+|---|---|---|---|
+| 1 | 两条输出话题逐帧同值 | 530 / 530 帧一致 | `/mocap/pose_enu` |
+| 2 | **stamp 原样转发** | 530 帧 stamp **全部命中**发出集合 | 时间戳 |
+| 3 | `frame_id` 原样保留 | 全部 `world` | — |
+| 4 | **未解锁时就已在发** | 第一帧 `vision_pose` 出现在解锁前 **0.855 s** | ①（节点侧） |
+| 5 | **静止段逐帧位置无跳变** | 逐帧最大差 **1.67e-16 m**（339 个静止帧，含切换瞬间） | ② |
+| 6 | 切换时刻入日志 | `★ 阶段 B：…切换发生在此刻（帧 stamp = 650.744617545，本机 1789989129.626183271）` + `p_arm/p_boot/归零的 yaw 37.00°/跳变 0.0000 m` | ② |
+| 7 | 阶段 A 姿态**绝对** | yaw = **37.000°**（脚本设定值） | ④ |
+| 8 | 阶段 B **yaw 已归零** | yaw = **−0.000°** | ④ |
+| 9 | roll/pitch **未被归零** | 前 (1.00, −2.00) → 后 (1.00, −2.00) | ④ |
+| 10 | **机体 z 轴竖直分量不变** | 0.999238615 → 0.999238615（差 < 1e-9） | ④ |
+| 11 | **+x 平移 0.5 m ⟹ 输出 Δx = 0.5000 m** | 且 y 轴一动不动 | ⑥（节点侧） |
+| 12 | **升高 0.3 m ⟹ 输出 Δz = +0.3000 m** | ENU 向上为正 | ⑥（节点侧） |
+
+★ 第 11/12 条正是 **⑥ 坐标系确认实验**要抓的东西的**节点侧那一半**：它证明**本节点没有多转一次**
+（输出仍是动捕原生 ENU）。QGC 里 `y` 是否跟着变 0.5，只剩 mavros 那一段没验。
+
+**单测（seam 2）**：`colcon test --packages-select mocap` → **21/21 通过**（3 个 suite：原点减法 4 例 / 归零 yaw 5 例 / 两阶段 12 例）。
+测试二进制 `ldd | grep -c "rclcpp\|rmw"` = **0** ⟹ 「零 ROS 依赖」不是口号。
+断言与**构造输入**都走完全独立的另一条路（欧拉角 → 矩阵连乘 → Shepperd 法转四元数 → 被测函数 →
+四元数转矩阵 → ZYX 反解），**一次都不调用**被测的 `normalize` / `quat_mul` / `yaw_of`。
+★ 这条独立性做过**变异验证**（§八）：把左乘改右乘 / `yaw_of` 符号取反 / 去掉位置相对化，
+分别有 **4 / 3 / 4** 个用例失败 —— 不是"用同一段错代码验证自己"。
+
+#### 四、名字写错时的诊断（实测，用真实踩过的 `Z0`/`z0` 场景）
+
+把 `body_name` 填成小写 `z0`、而 graph 里实际只有 `/vrpn/Z0/pose` 时（**2026-09-21 审查后重测**的原始输出）：
+
+```
+[ERROR] [mocap_rel_pose]: 启动 3.0 s 内 /vrpn/z0/pose 一帧数据都没有。graph 里现有的 /vrpn/*/pose：
+    /vrpn/Z0/pose   ←★ 与 body_name 只差大小写？
+  ⟹ 用 ros2 topic list | grep vrpn 现场核对，把 body_name 改成实际名字
+```
+
+★ **审查中改掉的一处误导**：改之前这份列表里会出现 `/vrpn/z0/pose`（本节点**自己的订阅**）——
+它让操作者看到"名字没错"的假象。现在按 **`count_publishers() > 0`** 过滤：没有发布者的话题
+**不算候选**，单独一句说明（"多半就是本节点自己的订阅"）。实测（无人发布任何话题时）：
+
+```
+[ERROR] … graph 里**没有任何有发布者**的 /vrpn/*/pose（下列话题没有发布者，多半就是本节点自己的订阅，**不算候选**）：
+    /vrpn/z0/pose
+  ⟹ vrpn_listener 起了吗？（ros2 topic list | grep vrpn；ros2 topic info <话题> 看 Publisher count。
+     ★ 刚起的发布者 DDS 发现还要 1–3 s，本机实测约 2.5 s，不是协议问题）
+```
+
+⟹ 「名字是变量」这条教训有了**机器可执行的落点**，不再只靠文档提醒。
+
+#### 五、构建与测试的边界（两处必须说清）
+
+- `colcon build --packages-select mocap`：**0 warning / 0 error**（沿用 `-Wall -Wextra -Wpedantic`）。
+- **本包刻意不加 `ament_lint_auto`**：仓库里唯一的 lint 先例是 vendored 包的**既有失败**
+  （全仓库 `colcon test` 现有 176 条失败，**全部来自 `vrpn_listener` 的 lint**，与本张无关）。
+  把 lint 噪音混进来会淹没 seam 2 的信号。
+- ⚠️ **本张一字未动 `vrpn_listener`**：`git status` 只有 `?? src/mocap/`（该包的 lint 失败是既有状态）。
+
+#### 六、文档落点
+
+| 文档 | 改了什么 |
+|---|---|
+| [`phase1-implementation.md`](../../../docs/control/phase1-implementation.md) §1 | `mocap/` 从「🔄 重写」改成实际文件树（含 `test/` 与 `README.md`），并点名 seam 2 |
+| 同上 §2 | 新增落点段：**刚体名走参数文件 + 多机复用**、**per-marker 不屏蔽** |
+| [`mocap-setup.md`](../../../docs/reference/mocap-setup.md) §7.3 | 旧节点那节补「✅ 已实现」+ 指出**实际做法比原计划多一段**（两阶段原点：§7.1 的"启动后 10 帧"没覆盖"解锁前必须已经在发"） |
+| 同上 §10 第 9 项 | stamp 那项标注 **已实现并实测** |
+| [`README.md`](../../../README.md) 目录树 | `src/` 下补 `mocap/`；构建段补测试命令 |
+| [`CONTEXT.md`](../../../CONTEXT.md) §五 | 🆕 三个术语：**两阶段原点 / 启动原点 / 起飞前静止帧原点** |
+
+#### 七、遗留（**已另开 [ticket 13](13-mavros-bench-vision-pose.md)**，不在本张里"done 掉"）
+
+1. ⏳ 两条验收的 **QGC 那一半**（① `VISION_POSITION_ESTIMATE` 有数 + `LOCAL_POSITION_NED` 稳定；⑥ `y` 变化 0.5 / 高度向上）
+   —— 需**飞控上电 + mavros + QGC**，且需人把飞机平移/升高。
+2. ⚠️ **`mavros` 与 `mavros-extras` 本机都未安装**（只有 `mavros_msgs`）。★ **`vision_pose_estimate` 插件在 `mavros_extras` 里**
+   （`mavros_extras/src/plugins/vision_pose_estimate.cpp`，§3.5 引的就是它）⟹ **只装 `ros-humble-mavros` 不够**。
+   这也是 [ticket 05](05-control-offboard-skeleton.md) 的前置。
+3. ⏳ **`EKF2_EV_POS_Z` 仍未实测**（§10 第 7 项）。本节点做「减原点」后，静止在原点时输出 z = 0，
+   刚体原点与飞控 IMU 的 z 向偏移仍要实测填参 —— 属参数核对清单（`phase1-implementation.md` §6），不在本张代码范围内。
+4. ⚠️ **一条本张无法第一手核实的输入：`/mavros/state` 的发布频率**（本机没装 mavros，外网也抓不到源码 ——
+   这台 Jetson 在动捕网段上）。**若它是 1 Hz（mavros `sys_status` 的常见口径），"解锁上升沿"最多会晚 1 s 被检出**
+   ⟹ 阶段 B 的"起飞前静止帧"就会在**已经开始爬升**的时候采到，原点被带偏。
+   - 好消息是这种情形**会被本节点自己抓到**：切换跳变量会超 `jump_warn_m` 而打 WARN，日志里同时有 `p_boot`/`p_arm` 可对照；
+   - 纪律上再加一条：**解锁后到起飞之间留出 ≥1.5 s 余量**（Phase 1 的实际流程本来就有：`control` 要等
+     `state.armed` ∧ `mode == OFFBOARD` 两个条件，各自都有一次 state 往返）；
+   - ⟹ **已交给 [ticket 13](13-mavros-bench-vision-pose.md) 用 `ros2 topic hz /mavros/state` 定案**。
+
+#### 八、代码审查（两轴，2026-09-21，`git diff e482825`）与随之做的改动
+
+**Standards 轴（仓库书写约定 + Fowler 坏味道基线）：**
+
+| 发现 | 处理 |
+|---|---|
+| ★ **硬违规**：新写的 `README.md` / 节点文首注释里出现**裸 `MPC`**（违反 `CONTEXT.md` 一、书写约定） | ✅ 已改 `MPC（模型预测控制）`（node.cpp:5、README.md:8）；顺带改掉本 diff 重写过的 `phase1-implementation.md:116` 同一处 |
+| 坏味道：boot/arm 两套「累加 → 计数 → 取均值」重复 | ✅ 抽 `detail::Vec3Window` / `detail::QuatWindow`（半球对齐也收进窗口里） |
+| 坏味道：两个 bool（`has_state` + `armed`）成组传递 | ✅ 换 `enum class ArmedState{Unknown,Disarmed,Armed}`（三态而不是两 bool） |
+| 坏味道：`Origin::zero_yaw` 与 `switched_`/`OriginStage` 两处状态须手工同步 | ✅ 删 `Origin::zero_yaw`，归零与否**只由阶段决定**（`apply()` 里读 `stage()`） |
+| 坏味道：手写范数 `sqrt(dx²+dy²+dz²)` | ✅ 加 `norm(Vec3)`，跳变量改用 `norm(relative_position(...))` |
+| 坏味道：README 写「**两条**不许碰的约定」，节点注释写「**三条**」 | ✅ 对齐成三条（补上"姿态只归零 yaw"），README 里写明与节点注释逐条对应 |
+| 参数默认值在代码 / yaml / README 三处重复 | ⏸ **保留**：ROS2 的惯例就是"代码里 declare 默认值 + yaml 覆盖"（否则 `ros2 run` 不带 yaml 就起不来），README 表是文档。已在节点里把默认值与 yaml 注释对齐 |
+
+**Spec 轴（对照 `spec.md` 与本张）：**
+
+| 发现 | 处理 |
+|---|---|
+| ⚠️ **spec 用户故事 10**（"动捕数据**中断超过阈值**时看到明确告警"）**无人认领**：原实现只在**启动后**查一次，之后永远不再告警 | ✅ **本轮补上**（见下） |
+| ⚠️ seam 2 的"仅归零 yaw ⟹ 位置输出不受影响"只在**阶段 A**（不归零 yaw）验过；真正做姿态变换的阶段 B 没验 | ✅ 新增单测 `TwoStageOrigin.阶段B姿态处理不污染位置输出`：切换后用 3 种姿态探测，输出位置**逐位相同**且 = `p − p_arm`（并断言姿态确实变了，防止"姿态被整体忽略"式假通过） |
+| ⚠️ `phase1-implementation.md:176` 的伪代码仍写着 `p_rel = p - p0 （再做 §3.2 的 ENU→NED）`，与 §3.5（本节点**不做**转换）**直接冲突** | ✅ 已改 `（★ 到此为止，**不做**坐标转换，见 §3.5）`——留着会让人重新引入"转两次" |
+| ⚠️ 本张结语称断言用"独立的第二实现…不复用被测代码的中间量"，但 `rot()` / `quat_zyx()` 当时仍调 `mocap::normalize` / `mocap::quat_mul`（**标注失实**，非覆盖漏洞） | ✅ 测试侧改成**真正自足**：自带 `mat_mul` / Shepperd 法 `quat_of`，欧拉角→矩阵→四元数；不再调用任何被测中间量。并用变异验证钉住（上表 §三 尾） |
+| 防御性增量（`jump_warn_m` WARN、`switch_jump()`/`boot_origin()` 观测口、**切换后永不重锁**）超出本张契约 | ⏸ **保留**：都是**安全性质**（"永不重锁"有单测钉住），且已在 §二 写明是本张新增决定 |
+
+**用户故事 10 的落地与实测**（`no_data_warn_s` 从"启动时查一次"变成**看门狗**，每阈值/5 秒查一次）：
+
+```
+① 无数据            → [ERROR] 启动 3.0 s 内 /vrpn/z0/pose 一帧数据都没有。<候选话题…>
+② 数据到达          → [INFO]  收到第一帧…            + [INFO] ★ 阶段 A：启动原点已锁定
+③ 中断 3.4 s        → [ERROR] ★ 动捕数据已中断 3.4 s（共收到 412 帧，最后一帧在本机时刻 …）
+                              —— EKF2 的视觉输入已失效，**不要再起飞 / 应立即切回手动**
+④ 恢复              → [WARN]  动捕数据已恢复（中断了约 5.4 s）—— 期间 EKF2 没有视觉输入
+```
+
+- **每次中断只报一次**（`logged_stale_`），恢复时报一次 —— 不会刷屏。
+- 传感器不可见性：定位失效时操作者必须看到**一句话**，而不是"日志里什么都没有"。
+- ⚠️ 本节点做的是**"数据到没到"**这一侧；`control` 侧的"**消费**是否超时"仍归 [ticket 05](05-control-offboard-skeleton.md)（`phase1-implementation.md` §4.3-3 的 `msg_timeout`）——**两者不是同一个东西**。
+- 实测是在**无飞控**条件下做的（假 `z0` 发布者按 200 Hz 发、中途 kill 再重启）；日志原文见上面四行。
+
+**审查后再跑一遍的结论**：`colcon build --packages-select mocap` 0 warning；`colcon test --packages-select mocap` **22 项（21 gtest + 1 ctest 包装）0 失败**；
+全仓库 176 条失败**仍全部来自 vendored `vrpn_listener` 的 lint**（既有，ticket 03 不许动）。

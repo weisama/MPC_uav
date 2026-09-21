@@ -1,0 +1,30 @@
+# z0 的 mocap 节点参数。
+#
+# ★ 多台无人机复用：**复制这份文件**（如 mocap_z1.yaml），只改 body_name 与三个话题名，代码一行不动：
+#     ros2 launch mocap mocap.launch.py params_file:=<那份 yaml> namespace:=z1
+#   （yaml 里的 ros__parameters 键 `mocap_rel_pose` 与节点名对应，多机时也**不用改**。）
+
+mocap_rel_pose:
+  ros__parameters:
+    # ★★ 刚体名是「变量」不是「常量」—— 2026-09-21 一天之内实测到 `Z0`（大写）与 `z0`（小写）两个值。
+    #    话题名原样取自 VRPN 的 sender 名（只把空格换成 `_`，**不做大小写归一化**），
+    #    所以 Nokov 侧重命名一次，这里就得跟着改。
+    #    ⟹ **任何一次配置前先现场核对**：ros2 topic list | grep vrpn
+    #    ⟹ 若填错，节点会在 5 s 后把 graph 里实际存在的 /vrpn/*/pose 全列出来（含"只差大小写"的提示）。
+    body_name: "z0"
+    # 留空 = 由 body_name 推出 "/vrpn/<body_name>/pose"；填了就以此为准（逃生口）。
+    input_topic: ""
+
+    vision_pose_topic: "/mavros/vision_pose/pose"
+    pose_enu_topic: "/mocap/pose_enu"
+    state_topic: "/mavros/state"
+
+    # 两阶段的采样帧数。动捕实测 ~196 Hz ⟹ 30 帧 ≈ 0.15 s，60 帧 ≈ 0.3 s（§3.4 的"约 30–120 帧"）。
+    boot_samples: 30
+    arm_samples: 60
+
+    # 两阶段原点切换量超过它就在日志里告警：说明「启动到解锁之间飞机被移动/转动了」。
+    jump_warn_m: 0.05
+
+    # 启动后这么久还没有一帧动捕数据 → 打 ERROR 并列出 graph 里的候选话题。
+    no_data_warn_s: 5.0

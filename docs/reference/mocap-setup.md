@@ -439,6 +439,12 @@ int main(int argc, char * argv[])
 > → **正确做法是删掉这一行、直接转发 `vrpn_listener` 的 stamp**（同一时钟域，**不是**改成 `msg_time`——见 6.2）。
 >
 > 📌 **本项目已决定重写这个节点**（原点是"解锁上升沿"而非"启动后 10 帧"，且只归零 yaw），重写时直接按上面的做法处理时间戳。本节的旧源码仅作参考。
+>
+> ✅ **2026-09-21 已实现（[ticket 04](../../.scratch/phase1/issues/04-mocap-relative-pose.md)）= [`src/mocap/`](../../src/mocap/)**，
+> 且实际做法比上面的计划**多了一段**：**两阶段原点** ——
+> ① 节点启动就锁定「启动原点」并**持续发布**（否则解锁前 EKF2 断粮，§7.1 的"启动后 10 帧"只覆盖了位置偏移，没覆盖"解锁前必须已经在发"这一点）；
+> ② **解锁上升沿**再切到「起飞前静止帧原点」。连带的新纪律是「**启动到解锁之间不要搬动飞机**」。
+> 参数表、运行纪律与理由见 [`src/mocap/README.md`](../../src/mocap/README.md)。
 
 ### 7.4 `launch/vrpn_relative.launch.py`
 
@@ -638,7 +644,7 @@ ros2 topic hz /mavros/vision_pose/pose
 | 6 | **EKF2 参数** | 见手册第 3 节 | 用 [`../assets/z0.params`](../assets/z0.params)，见 [`params-analysis.md`](params-analysis.md) |
 | 7 | **`EKF2_EV_POS_Z`** | `0` | ⚠️ z0 用铝柱架动捕球，**必须量出 Z 偏移** |
 | 8 | **计时同步** | 未做 | 🔶 **可选，不再强制**。见 6.2：`stamp = now()` 是刻意设计，2–5 ms 抖动可接受。**只有想让 `msg_time` 可用时才必须补 NTP** |
-| 9 | **动捕节点的 stamp** | `now()` 重新打戳 | ✅ 重写时**转发 `vrpn_listener` 的 stamp，不要二次打戳**（同一时钟域，见 6.2） |
+| 9 | **动捕节点的 stamp** | `now()` 重新打戳 | ✅ 重写时**转发 `vrpn_listener` 的 stamp，不要二次打戳**（同一时钟域，见 6.2）。**已实现并实测**：`src/mocap/` 把入参 `header` 整块拷贝到出参（2026-09-21，ticket 04） |
 
 **第 5、8、9 项已根据第一手证据更正**：第 5 项不是硬件问题而是"连对 WiFi"；第 8 项从"必须"降级为"可选"；第 9 项只是避免二次打戳，与 `msg_time` 无关。
 

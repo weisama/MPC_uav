@@ -26,7 +26,7 @@ Type: task
 1. `type_mask` 用 **2552**（忽略速度 / 加速度 / yaw_rate，即"位置 + yaw"），`coordinate_frame = FRAME_LOCAL_NED`，`position.z` 向下为正，`yaw` 用弧度。
 2. **切进 OFFBOARD 之前** setpoint 必须已以 ≥2 Hz 持续发布 **≥1 s**（本项目 50 Hz、`STANDBY` 阶段就在发）。**断流 PX4 会自动退出 OFFBOARD**（`COM_OF_LOSS_T = 1.0 s`）。
 
-**Blocked by:** 04
+**Blocked by:** 04（代码已就绪）、[13](13-mavros-bench-vision-pose.md)（★ 本张整条建在 mavros 上，而**本机还没装 mavros**）
 
 - [ ] `INIT→STANDBY` 的守卫逐条生效：`connected` ∧ 动捕有数据 ∧ `local_position` 有效 —— 缺任一条就**不发 setpoint**
 - [ ] 台架上节点把 PX4 拉进 OFFBOARD，setpoint 以 **50 Hz** 持续流出，`type_mask` / 坐标系 / 时间戳单位（**微秒**）字段正确
@@ -61,3 +61,14 @@ sudo usermod -aG dialout "$(id -un)"
 > ⚠️ 注意：这条**不是**本张的验收项，只是环境前提。它也不解决 ticket 01 的 ②
 > （飞控到底接 THS1 还是 THS2），那一问仍需现场认定，或用
 > [`tools/prereq-evidence/mavlink_probe.py --scan`](../../../tools/prereq-evidence/mavlink_probe.py) 自动判定。
+
+### 2026-09-21 —— 一条与本张有关的边界：动捕"数据中断"的告警已被 ticket 04 做掉一半
+
+spec 用户故事 10（"动捕数据中断超过阈值时看到明确告警"）有**两半**，别重复实现、也别以为没人管：
+
+| 哪一半 | 归谁 | 状态 |
+|---|---|---|
+| **数据到没到**（动捕/VRPN 侧断了） | [`mocap` 节点](04-mocap-relative-pose.md) | ✅ **已实现并实测**（看门狗，中断超 `no_data_warn_s` 报 ERROR，恢复报 WARN；见 04 §八） |
+| **消费是否超时**（`/mavros/local_position`、`/mavros/state` 静默） | **本张**（`phase1-implementation.md` §4.3-3 的 `msg_timeout`） | ⏳ 待做 |
+
+⟹ 本张仍需要自己的超时判据：`mocap` 那一侧正常不代表 mavros 那一侧正常（两个话题来自不同进程）。

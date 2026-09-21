@@ -50,14 +50,16 @@
 │       └── papers/                   6 篇参考文献 + 中文索引
 ├── tools/prereq-evidence/            ★ 前置条件取证脚本（只读）—— 服务 ticket 01
 └── src/                              ★ ROS2 工作区（**colcon 根 = 仓库根**，构建产物已被 .gitignore 挡住）
-    └── vrpn_listener/                ✅ 动捕链路，vendored 原样 —— 读它的 VENDORED.md，**别读它的 README.md**
+    ├── vrpn_listener/                ✅ 动捕链路，vendored 原样 —— 读它的 VENDORED.md，**别读它的 README.md**
+    └── mocap/                        ✅ 相对位姿（两阶段原点 + 仅归零 yaw）→ `/mavros/vision_pose/pose` → EKF2
 ```
 
 > **构建**（`colcon build` 在**仓库根**跑，不是 `src/`）：
 > ```bash
 > source /opt/ros/humble/setup.bash && cd ~/ros_ws && colcon build
 > ```
-> 依赖与运行方式见 [`src/vrpn_listener/VENDORED.md`](src/vrpn_listener/VENDORED.md) §5。
+> 依赖与运行方式见 [`src/vrpn_listener/VENDORED.md`](src/vrpn_listener/VENDORED.md) §5；
+> `mocap` 与它的测试见 [`src/mocap/README.md`](src/mocap/README.md)（`colcon test --packages-select mocap`）。
 
 **先读哪个**：`docs/PROJECT.md` → `docs/reference/code-inventory.md`（代码取舍）→ `docs/control/phase1-implementation.md`（动手写代码前必读）→ `CONTEXT.md`（查术语）。
 **要动手做哪一阶段**：先读对应的 `.scratch/phase{1,2,3}/spec.md` —— 它定义该阶段的范围与验收判据。
