@@ -322,53 +322,59 @@ memcpy(&msg.flight_custom_version, &fw_vendor_version, fw_vendor_version_length)
   **对这块固件不适用，要重定**。
 - **`CLAUDE.md` 里「PX4 1.14.x」这个标签反而一直是对的** —— 09-20/21 一度把它判成错的，是误判。
 
-#### ④ 仍未定（**要人拍板，别自动往下改**）
+#### ④ 待拍板项（**2026-09-21 已裁定**）
 
-1. **硬件到底是哪块板**：固件树里只有 `micoair/h743-*`，而本项目文档一直写「飞控 = MicoAir NxtPX4v2」
-   （NxtPX4v2 的 PX4 目标名是 `hkust_nxt-dual`）。飞控报出的 `vendor_id=7052 / product_id=54`
-   对不上上游任何板（上游 5 块 `hkust/*`、`micoair/*` 板的 `default.px4board` 都不写这两个 id，
-   它们由厂商分支的 Kconfig 决定，上游看不到）。
-   → **看实物/订单**，或读参数表（`SER_*` 端口的集合可区分板型）。
-2. **§2.6 怎么改**：见 §2.6 的 ⚠️ 块 —— 属于用户决策，**签字前不要按旧表动手**。
+1. **硬件到底是哪块板** → ✅ **MicoAir NxtPX4v2**（用户看实物/订单，第一手）。
+   ⚠️ **但张力没消，反而更尖锐**：NxtPX4v2 的上游目标名是 `hkust_nxt-dual`，
+   而飞控固件树里**只有 `micoair/h743-*`、没有 `hkust/`** ⟹ 要么「板名 ≠ 固件目标名」，
+   要么标签与固件不符。**Phase 3 重编前必须查清该编哪个目标**（按 `hkust_nxt-dual` 编 = 换板级目标，
+   会连引脚/传感器/ADC 通道一起换，**不是打一行补丁**）。
+   ☠️ **附带更正**：本文原先拿「`micoair/h743-aio` 是 BMI270」当"不是 NxtPX4v2"的判据 ——
+   **错的**：三块 micoair 板**全都带 BMI088**（实测 `default.px4board`），只剩气压计（DPS310 vs SPL06）有差。
+   要把 ① 钉死到能指导 Phase 3，唯一便宜的硬办法是**只读**读参数表的 `CAL_ACC*_ID` / `CAL_BARO0_ID`。
+2. **§2.6 怎么改** → ✅ **用户已签字**，见 §2.6「执行版」。
 
 > 📌 **方法教训（与 §0 那两条同源）**：09-21 那次错，错在**拿"我以为的编码"去否证"实测的字节"**，
 > 而不是去查源码。结果是把一份**正确**的读数（`4a0e65f233`）当成假证据作废，
 > 还顺手加了一道会把真数据全挡掉的闸门。**先读源码，再判读数。**
 
-## 2.6 ★★ 已定决策（用户 Q31=a，2026-09-20）：**版本基准统一到 fork `5ba2e91f`**
+## 2.6 ★★ 已定决策（用户 Q31=a，2026-09-20；**2026-09-21 用户签字改基准**）：**~~fork `5ba2e91f`~~ → `px4_msgs release/1.14` @ `ffb6e80e` + 上游 v1.14.3 做 SITL**
 
-> ⚠️⚠️ **2026-09-21：本决策的前提已被推翻（见 §2.5(d)），下表不可再照着执行。**
-> 原则「以 z0 固件真身为准」**仍然成立**；但**真身不是 fork `5ba2e91f`**，而是
-> **`4a0e65f2`（commit `4a0e65f2331b23b9c8352656e9ccb6edeaea5d6c`，v1.14.3 系的 MicoAir 构建）**。
-> ⟹ 下表「从 fork 构建 SITL」「从 fork 生成 `px4_msgs`」两条**都不再成立**；
-> 正确基准是 **`px4_msgs release/1.14` @ `ffb6e80e`**（已实测：与真身**共有的 184 个 `msg/`
-> 文件 blob 全同**，唯一集合差异是 `msg/CMakeLists.txt`）。
-> **改法待用户签字** —— 见 ticket [11](../../.scratch/phase1/issues/11-firmware-version-conflict.md)
-> （`Status: needs-triage`）。**签字前不要按本表动手。**
+> ✅✅ **2026-09-21 用户已签字 —— 按下面「执行版」表动手。**
+> 用户的裁定（第一手）：① **硬件 = MicoAir NxtPX4v2**（看实物/订单）；
+> ② **`px4_msgs` 钉 `release/1.14` @ `ffb6e80e`**。
 
-> 这一条同时解决了 Q12（SITL 被控对象）与 Q24（`px4_msgs` 选版）的**共同上游问题** ——
-> 它们的争执根源就是"以哪个 PX4 版本为准"。现在的答案是：**以 z0 固件真身为准。**
+#### ✅ 执行版（2026-09-21 签字后）
 
 | 项目 | 决定 |
 |---|---|
-| **SITL 被控对象** | **从 fork `5ba2e91f` 构建**（不是上游 v1.14.3）。Q12 的 **gazebo-classic 选择照旧可用** |
-| **`px4_msgs`** | **从 fork 的 `msg/` + `srv/` 生成**，逐字节一致。**`release/1.14` 已否决**；`release/1.15` 也不必试 |
-| **Q24=a 的原表述** | 「锁定 `release/1.14` @ `ffb6e80e`，验收时 diff 若不同则改为匹配 fork」→ **验收失败，现在直接执行"改为匹配 fork"这半句** |
-| **Q12「留在 1.14.x」** | 决策本身（**不刷固件**）不变；**「1.14」这个标签作废**，改为"留在 z0 固件真身 `5ba2e91f`" |
+| **`px4_msgs`** | **`release/1.14` @ `ffb6e80e`** — ✅ **用户签字**。已实测与真身**共有的 184 个 `msg/` 文件 blob 全同**（唯一集合差异是 `msg/CMakeLists.txt`，PX4 自己的构建文件）。**不要从任何 fork 生成** |
+| **SITL 被控对象** | **上游 `PX4-Autopilot` tag `v1.14.3`（`1dacb4c`）** — ⚠️ **此项用户未单独表态，是我按 §2.5(d)④ 的建议取的默认**（更好复现；且它与真身的 `msg/` 逐字节相同，对 `px4_msgs` 兼容性**两者无差别**）。要改成"直接编真身 `4a0e65f2`"只需说一声 |
+| **~~从 fork 构建 SITL~~** | ❌ **作废** — 飞控不跑 fork |
+| **~~从 fork 生成 `px4_msgs`~~** | ❌ **作废** — 同上 |
+| **Q24=a 的原表述** | 「锁定 `release/1.14` @ `ffb6e80e`」→ **原表述是对的，直接执行**；09-20 那轮「已被实测否决」是拿 **fork 的 `msg/`** 比出来的，作废 |
+| **Q12「留在 1.14.x」** | 决策本身（**不刷固件**）不变；**「1.14.x」这个标签恢复有效** —— 真身就是 v1.14.3 系（09-20/21 一度判它错，是误判） |
 
-**可行性已核实（第一手）**：fork 支持两套 SITL ——
+> 原则「以 z0 固件真身为准」**始终成立**，只是真身换了人：**不是 fork `5ba2e91f`**，而是
+> **`4a0e65f2`（v1.14.3 系的 MicoAir 构建，见 §2.5(d)）**。
+> 这一条同时解决了 Q12（SITL 被控对象）与 Q24（`px4_msgs` 选版）的**共同上游问题** ——
+> 它们争执的根源就是"以哪个 PX4 版本为准"。
 
-| | fork `5ba2e91f` | 上游 v1.14.3 |
+**可行性已核实（第一手）**：两套 SITL 都在 ——
+
+| | ~~fork `5ba2e91f`~~（不再需要） | **上游 v1.14.3（执行版选它）** |
 |---|---|---|
-| `4001_gz_x500`（gz-sim） | ✅ 有 | ✅ 有 |
-| `Tools/simulation/gazebo-classic` | ✅ 有 | ✅ 有 |
-| `ROMFS/.../init.d-posix/airframes/` 条目数 | **63 个**（两套仿真都在） | 较少 |
+| `4001_gz_x500`（gz-sim） | ✅ 有 | ✅ **有** |
+| `Tools/simulation/gazebo-classic` | ✅ 有 | ✅ **有** |
+| `ROMFS/.../init.d-posix/airframes/` 条目数 | 63 个 | **"较少"** ⚠️ 动手前实测条目数，确认 Phase 2 要用的机型在不在 |
 
-**构建代价**：`~/refs/px4-z0` 是 **fetch-only**（无工作树 / 无 submodule），**不能直接构建** ——
-需要**带 `--recursive` 的完整 clone**（fork 有 **23 个 submodule**）。
-其中对本项目要紧的三个都在：`src/modules/uxrce_dds_client/Micro-XRCE-DDS-Client`、
-`Tools/simulation/gazebo-classic/sitl_gazebo-classic`、`Tools/simulation/gz`。
-**建议新目录 `~/refs/px4-z0-build/`，与本表的 fetch-only 副本并存**（后者继续承担"读源码"职责，不需要 submodule）。
+**构建代价**：本地现有副本**都还不能直接构建**，且现在要 clone 的是**上游**：
+
+- `~/refs/px4-z0`：fork 的 **fetch-only**（无工作树 / 无 submodule）—— 保留，但**只承担"读 fork 源码"职责**（ticket 10 的清扫还要用）
+- `~/refs/px4-v1.14.3`：**`--depth 1 --filter=blob:none`**，**不能直接构建**
+- ⟹ 需要**带 `--recursive` 的完整 clone 上游 v1.14.3**（tag `1dacb4c`），落在**仓库外的构建目录**（如 `~/refs/px4-v1.14.3-build/`）
+- 要紧的 submodule 三个：`src/modules/uxrce_dds_client/Micro-XRCE-DDS-Client`、
+  `Tools/simulation/gazebo-classic/sitl_gazebo-classic`、`Tools/simulation/gz`
 
 ## 2.7 ★ fork 分支拓扑 + **ADC bug 的一行修复就藏在 fork 里**（2026-09-20 新增）
 
