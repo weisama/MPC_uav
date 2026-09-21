@@ -39,6 +39,8 @@
 from __future__ import annotations
 
 import argparse
+import fcntl
+import struct
 import sys
 import time
 
@@ -53,6 +55,87 @@ DEFAULT_PORTS = ["/dev/ttyTHS1", "/dev/ttyTHS2"]
 
 # 已知模式：0x55 是 0101…，在任意波特率下都最容易看出"收到了但速率不对"
 PATTERN = bytes([0x55, 0xAA] * 32)
+
+# ---------------------------------------------------------------------------
+# 内部回环（不需要任何跳线）
+#
+# 8250 系 UART 的 MCR bit4 = LOOP，把 TX **在芯片内部**接回 RX。
+# Linux 通过 ioctl(TIOCMBIS, TIOCM_LOOP) 暴露。
+# 数值取自本机头文件，**不凭记忆**：
+#   TIOCM_LOOP = 0x8000  ← /usr/include/asm-generic/termios.h:46
+#   TIOCMBIS   = 0x5416  ← /usr/include/asm-generic/ioctls.h:41
+#   TIOCMBIC   = 0x5417  ← 同上 :42
+#
+# ⚠️ **它能证明什么、不能证明什么**（关键）：
+#   内部回环在**芯片内部**成环，**完全绕过引脚**。所以
+#     通过 ⟹ 控制器 + 驱动 + 时钟活着；**仍然完全不知道引脚有没有被 pinmux 接出去**
+#     失败 ⟹ 控制器/驱动本身有问题，**与接线无关**
+#   要判定引脚/pinmux，**只有物理短接那一条路**。
+# ---------------------------------------------------------------------------
+TIOCMBIS, TIOCMBIC, TIOCM_LOOP = 0x5416, 0x5417, 0x8000
+
+# ⚠️ 实测已知行为（2026-09-21，z0 的 Jetson，两个口都一样）：
+#   发 1–7 字节 → 原样收回 ✅
+#   发 ≥8 字节  → **前 8 字节被抹成 0，第 8 字节之后正确**
+#                （发 01..0c 收回 0000000000000000 09 0a 0b 0c）
+#   机制未查明（形似 RX DMA 路径的产物），**不下结论、也不外推到正常收发**。
+#   所以本函数用 **≤7 字节** 的短模式，避开这段未知行为。
+INTERNAL_PATTERN = bytes(range(1, 8))  # 7 字节递增，避开已知的 8 字节边界
+
+
+def internal_loopback(port: str, baud: int) -> bool:
+    """**不需要跳线**：用 UART 内部回环验控制器。
+
+    返回 True = 控制器/驱动可用（**不代表引脚是通的**）。
+    """
+    try:
+        s = serial.Serial(port, baud, timeout=0.2)
+    except Exception as exc:
+        print(f"  ❌ 打不开 {port}：{type(exc).__name__}: {exc}")
+        return False
+
+    fd = s.fileno()
+    try:
+        try:
+            fcntl.ioctl(fd, TIOCMBIS, struct.pack("I", TIOCM_LOOP))
+        except OSError as exc:
+            print(f"  ⚠️ {port}：ioctl(TIOCMBIS, TIOCM_LOOP) 被拒 —— "
+                  f"{exc.strerror}（errno {exc.errno}）")
+            print("     ⟹ 该驱动不支持内部回环，此法不适用 → 改做物理短接")
+            return False
+
+        time.sleep(0.15)
+        s.reset_input_buffer()
+        s.write(INTERNAL_PATTERN)
+        s.flush()
+
+        got = b""
+        deadline = time.time() + 1.5
+        while len(got) < len(INTERNAL_PATTERN) and time.time() < deadline:
+            got += s.read(len(INTERNAL_PATTERN) - len(got))
+
+        if got == INTERNAL_PATTERN:
+            print(f"  ✅ {port}：**内部回环成功**（{len(INTERNAL_PATTERN)} 字节原样收回）")
+            print("     ⟹ 控制器 + 驱动 + 时钟正常")
+            print("     ⚠️ 但内部回环**绕过引脚** —— 它**不能**说明引脚/pinmux 是通的。")
+            print("        要判定引脚，**只能物理短接**（不加 --internal 再跑一次）。")
+            return True
+        if got:
+            print(f"  ⚠️ {port}：收到 {len(got)} 字节但内容不符：{got.hex()}")
+            print("     ⟹ 收发了但数据不对 —— 驱动异常，或命中了已知的 ≥8 字节边界行为")
+            return False
+        print(f"  ✗ {port}：ioctl 被接受，但**一个字节都没收回**")
+        print("     ⟹ 控制器/驱动有问题（或该驱动只是接受了 ioctl 却没真接内部回环）")
+        return False
+    finally:
+        try:
+            fcntl.ioctl(fd, TIOCMBIC, struct.pack("I", TIOCM_LOOP))
+        except Exception:
+            pass
+        try:
+            s.close()
+        except Exception:
+            pass
 
 
 def test_port(port: str, baud: int, expect_loopback: bool, wait: float) -> bool:
@@ -115,10 +198,31 @@ def main() -> int:
     ap.add_argument("--wait", type=float, default=2.0, help="每口等待秒数（默认 2）")
     ap.add_argument("--no-loopback", action="store_true",
                     help="对照组：**未短接**时跑。此时「收不到」才算通过")
+    ap.add_argument("--internal", action="store_true",
+                    help="**不需要跳线**：用 UART 内部回环（TIOCM_LOOP）验控制器。"
+                         "⚠️ 它绕过引脚，**不能**判定 pinmux/接线")
     args = ap.parse_args()
 
     ports = args.port or DEFAULT_PORTS
     expect = not args.no_loopback
+
+    if args.internal:
+        print("=" * 72)
+        print("UART **内部**回环自检 —— 不需要任何跳线")
+        print("=" * 72)
+        print()
+        print(f"  波特率 {args.baud}　端口 {', '.join(ports)}")
+        print()
+        results = [internal_loopback(p, args.baud) for p in ports]
+        print()
+        print("=" * 72)
+        if all(results):
+            print("结论：**控制器/驱动可用** ⟹ 静默的原因不在芯片。")
+            print("      ⚠️ 但内部回环绕过引脚，所以**下一步必须物理短接**才能判定引脚：")
+            print("        把你接飞控的那两针短接，再跑 `uart_loopback.py`（不加 --internal）。")
+        else:
+            print("结论：至少一个口的内部回环没过 —— 先查该口的驱动/控制器，这一条与接线无关。")
+        return 0 if all(results) else 1
 
     print("=" * 72)
     if expect:

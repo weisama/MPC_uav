@@ -52,20 +52,27 @@ python3 tools/prereq-evidence/mavlink_probe.py --port /dev/ttyTHS1 --baud 921600
 `uart_loopback.py` 用**回环**把 C（以及"针脚认错"）从 A/B 里摘出来：
 
 ```bash
-# 把你接飞控的那两针短接（飞控侧两线先拔掉），然后：
+# ① 先做**不需要跳线**的一步：内部回环，验控制器活不活
+python3 tools/prereq-evidence/uart_loopback.py --internal
+
+# ② 把你接飞控的那两针短接（飞控侧两线先拔掉），验引脚/pinmux：
 python3 tools/prereq-evidence/uart_loopback.py
 
 # 对照组：未短接时跑，预期「收不到」—— 用来排除自激噪声
 python3 tools/prereq-evidence/uart_loopback.py --no-loopback
 ```
 
-> **收到** ⟹ Jetson 侧一路全通（引脚 + pinmux + 驱动 + 电平）⟹ 问题必在 **A 或 B**，
+> **`--internal` 通过** ⟹ 控制器 + 驱动 + 时钟正常。
+> ⚠️ **但它绕过引脚**（在芯片内部成环），所以**不能**说明 pinmux/接线是通的。
+>
+> **物理短接后收到** ⟹ Jetson 侧一路全通（引脚 + pinmux + 驱动 + 电平）⟹ 问题必在 **A 或 B**，
 > **不要再怀疑 Jetson**。
 > **收不到** ⟹ 问题在 **C** 或针脚认错，**与飞控无关**。
 
 ⚠️ 做回环时请先把飞控侧那两根线从排针上拔掉，否则你发的字节会进飞控的 RX（PX4 当垃圾丢弃、无害，但回环测不准）。
 
-安全性：只往 TX 发 64 字节固定模式（`0x55 0xAA` 重复）并读回，**不发任何 MAVLink 指令**。
+安全性：只往 TX 发一小段固定模式（物理回环 64 字节 `0x55 0xAA` 重复；内部回环 7 字节递增）并读回，
+**不发任何 MAVLink 指令**。即使线还接在飞控上，飞出去的也只是几个无意义的字节。
 
 ## 输出都去哪
 
