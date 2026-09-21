@@ -118,7 +118,7 @@ VENDORED 时的基线（`sha256sum` 全量）：
 | 为何可用 apt 那份 | 本包自带的 `cmake/FindVRPN.cmake` + `Findquatlib.cmake` 能在 `CMAKE_PREFIX_PATH` 下直接找到它（`libvrpn.a` / `libquat.a` / `include/vrpn_*.h` / `include/quat.h`），**因此不需要改动本包的 CMake 文件** |
 | ★ **还必须搭一座桥** | 本包 `CMakeLists.txt` 里另有一行 `target_link_libraries(vrpn_listener vrpn)` —— **裸名字**，链接器会展开成 `-lvrpn`，**这要求 `libvrpn` 落在 ld 的默认搜索路径里**。apt 那份在 `/opt/ros/humble/lib`，**不在**默认路径 ⟹ 报 `cannot find -lvrpn`。**这一行是 vendored 的，不能改**，所以只能在系统侧搭桥：<br>`sudo ln -sfn /opt/ros/humble/lib/libvrpn.a /usr/local/lib/libvrpn.a`<br>（`/usr/local/lib` 在 ld 的默认 `SEARCH_DIR` 里，已核实；且上游本就是 `sudo make install` 到 `/usr/local` 的布局。**只需 `libvrpn`，`libquat` 全程以绝对路径引用、不需要**。） |
 | 动捕主机 | `10.1.1.198:3883`（见 `config/params.yaml`）。该参数是**唯一**要改的地方（换个场地才需要） |
-| 刚体名 | ★ **自动发现，不在配置里写死** —— `refresh_trackers()` 每秒遍历 VRPN 连接的 `sender_name(i)`，发现新 sender 才建 publisher（`src/vrpn_listener.cpp:109-125`）。话题名格式 `/vrpn/<刚体名>/pose`，刚体名里的空格会被换成 `_`（`replaceSpace()`）。<br>⚠️ **大小写照抄 VRPN，不做任何规范化** —— 实测 z0 的发送名是 **`Z0`**，所以话题是 `/vrpn/Z0/pose`（见 [`mocap-setup.md`](../../docs/reference/mocap-setup.md) 文末「ticket 03 实测」§二） |
+| 刚体名 | ★ **自动发现，不在配置里写死** —— `refresh_trackers()` 每秒遍历 VRPN 连接的 `sender_name(i)`，发现新 sender 才建 publisher（`src/vrpn_listener.cpp:109-125`）。话题名格式 `/vrpn/<刚体名>/pose`，刚体名里的空格会被换成 `_`（`replaceSpace()`）。<br>⚠️ **大小写照抄 VRPN，不做任何规范化** —— 发什么名就出什么话题。<br>★★ **正因为不归一化，这个名字是「变量」而不是「常量」**：同一天里实测到过 **`Z0`（大写，ticket 03）** 和 **`z0`（小写，ticket 12 重测）** —— 操作者在 Nokov 里改一次，下游硬编码的名字就全错。<br>⟹ **配置前现场核对**：`ros2 topic list \| grep vrpn`。当下是 **`/vrpn/z0/pose`**（另见 [`mocap-setup.md`](../../docs/reference/mocap-setup.md) 文末两节实测） |
 
 ```bash
 source /opt/ros/humble/setup.bash
@@ -139,4 +139,6 @@ ros2 launch vrpn_listener sync_entity_state.launch
 | vendored 源码一行未改 | ✅ 9 个文件逐个 sha256 与 zip 一致（§4 表） |
 | 刚体名自动发现 | ✅ 实测发现 **28 个 sender** → 自动生成 **84 个话题**，`params.yaml` 里没有任何名字 |
 | `ros2 topic hz` 100–400 Hz | ✅ **199.9 Hz**（在正在出数的 `U_Tracker0` 上实测） |
-| ★ 对 **z0 本体**（`/vrpn/Z0/pose`）的速率 | ⏳ **未验成 —— `Z0` 当前 0 数据流**，见 [`mocap-setup.md`](../../docs/reference/mocap-setup.md) 文末 §三。**速率上限本身已由 `U_Tracker0` 证明达标**，缺的是"把 z0 放进动捕棚/在 Nokov 里开流"这个物理动作 |
+| ★ 对 **z0 本体**的速率 | ✅ **已补齐（2026-09-21 重测，ticket 12）**：`/vrpn/z0/pose` **190.9 – 197.0 Hz**；五颗球 `z0_Marker1..5` 各 ≈196 Hz。**注意话题名是小写 `z0`**（ticket 03 那次测到的是大写 `Z0`）。详见 [`mocap-setup.md`](../../docs/reference/mocap-setup.md) 文末「ticket 12 重测」 |
+| `stamp = now()` 定制在真机上生效 | ✅ 5 帧逐帧核对：**严格递增、相邻间隔 < 50 ms**，`frame_id: world` |
+| `handleTwist` 角速度留零（§2b）在真机上生效 | ✅ `twist.angular` 恒为全 0，`linear` 有噪声级读数 |

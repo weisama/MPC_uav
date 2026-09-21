@@ -88,6 +88,11 @@ Type: task
 
 ##### (b) ☠️ 刚体名是 **`Z0`（大写）**，且 **`Z0` 当前没有数据流**
 
+> ☠️☠️ **2026-09-21 当天稍后重测：本节两条结论（名字、无流）都被推翻** ——
+> 名字变成小写 **`z0`**（话题 `/vrpn/z0/pose`），本体速率 **190.9–197.0 Hz**，
+> 五颗球 `z0_Marker1..5` 各 ≈196 Hz。见 [ticket 12](12-z0-mocap-stream-check.md)（已 `done`）与其
+> Comments §一/§二。**本节保留原文，因为它记的读数当时是真的 —— 它要教的是"这个名字是变量"。**
+
 `sender` 名单里与 z0 相关的：**`Z0`**（本体）+ `Z0_Marker1`…`Z0_Marker5`（**单颗反光球各自也是独立 sender**，
 各自会生成 `/vrpn/Z0_MarkerN/{pose,twist,accel}`）。同服务器上还有别的项目的
 `robot0/robot1` 及其 markers、`U_Tracker0..9`、`VRPN Control`。
