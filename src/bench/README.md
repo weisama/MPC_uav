@@ -132,7 +132,7 @@ with Scenario(dut=("control", "control_node"), params={"yaw": 0.0}) as sc:
 |---|---|
 | `mute(*keys)` / `unmute(*keys)` | 让话题**停止发布**。可选 `state` `local_position` `local_velocity` `rc` `battery` |
 | `set_state(**fields)` | 改 `connected` / `armed` / `mode` / `guided` / `manual_input` |
-| `set_position(x, y, z)` | 搬动假 EKF（NED，z 向下为正） |
+| `set_position(x, y, z)` | 搬动假 EKF（**ROS/ENU，z 向上为正**；⚠️ 不是 NED —— 见 `fake_mavros.py` 的 docstring） |
 | `set_voltage(v)` / `set_rc(channels)` / `set_rc_channel(ch, v)` | 电压、整组遥控通道、单路（**通道号从 1 起算**） |
 | `set_mode_policy('ok'\|'fail'\|'absent')` | `set_mode` 应答：接受 / `mode_sent=False` / **服务不存在** |
 | `set_mode_service_available(bool)` | 运行时增删服务（⚠️ 要等 DDS 发现传播，断言前用 `wait_for`） |
@@ -181,6 +181,22 @@ sc.timeline.add(sc.t() + 0.5, sc.stop_dut, "杀掉 DUT")
 
 时序的错误（漏触发 / 重复触发 / 早触发）在集成测试里表现为"偶尔抽风"，
 所以 `Timeline` 本身是**零 ROS 的纯逻辑**并被 `test/test_timeline.py` 单独钉死。
+
+### ⏳ 还没被任何测试用过的能力
+
+夹具比 ticket 05 的需求做得多 —— 下面这些**能跑但没人调过**，第一次用的人请**先写一条
+自检**（`test/test_bench_selftest.py` 就是干这个的），别把"夹具没生效"当成"被测节点行为正确"：
+
+| 能力 | 谁会用 |
+|---|---|
+| `set_voltage` / `voltage_drop` / `battery_timeout_s` 判据 | ticket 09（低压保护） |
+| `set_rc` / `set_rc_channel` / `rc_change` | ticket 06（RC 夺权） |
+| `arming_requests` / `set_mode_policy` 的 `'absent'` 分支 | ticket 08（解锁） |
+| `VrpnSource` 的 `rewind` / `hold_stamp` / `set_trajectory` | ticket 06/07（时间戳倒退、轨迹跟随） |
+| `Scenario(start_dut=False)`（只起夹具，手动起节点） | 台架排障时好用，自动化里没用过 |
+
+★ 反过来，`mute` / `pause` / `set_position` / `set_state` / `wait_for_control_state` /
+`setpoint_rate_hz` / `evidence` 这些**已被 `control` 的测试真实调用过**，可以照着抄。
 
 ## 三条写测试的纪律
 

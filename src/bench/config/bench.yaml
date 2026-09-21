@@ -30,7 +30,8 @@ topics:
   arming: "/mavros/cmd/arming"
 
 initial:
-  # 假 EKF 的位置（local NED，z 向下为正）。默认在原点；要辨认坐标轴时由测试显式 set_position。
+  # 假 EKF 的位置（**ROS/ENU，z 向上为正** —— 它进的是 /mavros/local_position/pose）。
+  # 默认在原点；要辨认坐标轴时由测试显式 set_position。
   position: [0.0, 0.0, 0.0]
   connected: true
   armed: false

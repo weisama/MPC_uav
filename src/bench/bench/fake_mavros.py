@@ -377,7 +377,13 @@ class FakeMavros:
             setattr(self, key, value)
 
     def set_position(self, x: float, y: float, z: float) -> None:
-        """搬动假 EKF 的位置（NED，z 向下为正）。用它可以造"飞机被移动"的场景。"""
+        """搬动假 EKF 的位置（**ROS/ENU 口径，z 向上为正**）。用它可以造"飞机被移动"的场景。
+
+        ⚠️ 是 ENU 不是 NED：它进的是 `/mavros/local_position/pose`，而 mavros 出向已做过
+        NED→ENU（`local_position.cpp:157`）⟹ 这里的 z 就是"离地多高"。
+        真 PX4 内部的 local NED 是 z 向下为正，**在 ROS 这一侧看不到那个口径**
+        （DUT 把这个位置原样转给 setpoint 时，mavros 入向会再转回 NED，两边恰好抵消）。
+        """
         self.position = (float(x), float(y), float(z))
 
     def set_voltage(self, voltage: float) -> None:

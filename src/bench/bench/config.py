@@ -37,7 +37,8 @@ DEFAULTS: Dict[str, Any] = {
         "arming": "/mavros/cmd/arming",
     },
     "initial": {
-        # 假 EKF 的位置（local NED，z 向下为正）。默认在原点 ——
+        # 假 EKF 的位置（**ROS/ENU，z 向上为正** —— 它进的是 `/mavros/local_position/pose`，
+        # 那条话题在 mavros 出向已转过 NED→ENU）。默认在原点 ——
         # 台架上的飞机就在地上，"原点"是最不该引起歧义的值；
         # 需要辨认坐标轴时由测试显式 `set_position(...)` 搬到三个轴都不同的位置。
         "position": [0.0, 0.0, 0.0],

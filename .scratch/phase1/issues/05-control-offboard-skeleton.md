@@ -21,6 +21,13 @@ Type: task
 任务态：   IDLE ─▶ TAKEOFF ─▶ HOVER ─▶ TRACK ─▶ LAND
 ```
 
+> ☠️ **这段是设计讨论期的原型，不是最终口径（2026-09-21，实现后被审查发现）**，两处不一致：
+> ①**任务态缺 `INIT` 与 `STANDBY`**（见下方"本张只实现"那两行——那才是本张实现的），
+> 本段里的 `IDLE` 大致对应 `INIT`；②**"开始信号"不是进入 `AUTO` 的边沿**：
+> `AUTO` = "本项目正在发会驱动飞机的指令（已解锁的 offboard）"，而**切 OFFBOARD 不等于交出控制权**
+> （那时飞机还没解锁）⟹ 进入 `AUTO` 的边沿是**解锁**（归 ticket 08）。
+> 现口径下 `MANUAL/STANDBY` 是**正常的稳定态**，不是过渡态。
+
 本张只实现：
 
 - `INIT` —— 等 mavros 连接、动捕有数据、`local_position` 有效；**不发 setpoint**
@@ -29,6 +36,13 @@ Type: task
 **两件必须做对的事：**
 
 1. `type_mask` 用 **2552**（忽略速度 / 加速度 / yaw_rate，即"位置 + yaw"），`coordinate_frame = FRAME_LOCAL_NED`，`position.z` 向下为正，`yaw` 用弧度。
+   > ☠️☠️ **更正（2026-09-21，本张实现后被审查发现）：`position.z` 向下为正是错的。**
+   > mavros 对入向的 `FRAME_LOCAL_NED` setpoint 做 **ENU→NED** 转换（`setpoint_raw.cpp:231`），
+   > 所以**我们填进去的是 ROS/ENU 口径 —— `z` 向上为正**；`FRAME_LOCAL_NED` 只是**协议枚举名**，
+   > 不代表填写口径。同理 **`yaw = 0` 到了 PX4 是 +90°（机头朝东），不是"保持当前机头"**。
+   > 完整论证与行号见下方 Comments 的 ☠️☠️ 条与
+   > [`docs/control/phase1-implementation.md`](../../../docs/control/phase1-implementation.md) §3.1/§3.3。
+   > **照 NED 去翻 z 的符号会得到一架往地里钻的飞机。**
 2. **切进 OFFBOARD 之前** setpoint 必须已以 ≥2 Hz 持续发布 **≥1 s**（本项目 50 Hz、`STANDBY` 阶段就在发）。**断流 PX4 会自动退出 OFFBOARD**（`COM_OF_LOSS_T = 1.0 s`）。
 
 **Blocked by:** 04（代码已就绪）、[13](13-mavros-bench-vision-pose.md)（★ 本张整条建在 mavros 上，而**本机还没装 mavros**）
@@ -45,7 +59,8 @@ Type: task
 - [x] 脚本化 `/vrpn/<刚体>/pose` 发布者可用（或 rosbag 回放）—— 两种喂法都实现了
       （`VrpnSource(target='vrpn')` 发上游、`target='mocap'` 直接发 `/mocap/pose_enu`）
 - [x] 夹具跑得进 `colcon test`，至少一个冒烟场景通过
-      （`control` 9 条 + 夹具自检 9 条 + 时序纯逻辑 6 条 = **24 条全绿**）
+      （`control` 话题级 9 条 + `control` 纯函数 12 条 + 夹具自检 9 条 + 时序纯逻辑 6 条 = **36 条全绿**；
+      审查后补了 seam 2 那一档，见下方 Comments）
 - [x] FSM 的两个维度在代码里是**显式分开**的，不是扁平枚举
       （`Authority{MANUAL,AUTO}` × `Phase{INIT,STANDBY,TAKEOFF,HOVER,TRACK,LAND}`，
       `/control/state` 发 `"MANUAL/STANDBY"`）
