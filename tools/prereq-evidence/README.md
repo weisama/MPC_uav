@@ -248,7 +248,7 @@ MAVLink v2 的 CRC 带 per-message `CRC_EXTRA` 种子。种子写错**不会报�
 | `uart_loopback.py --internal --port /dev/ttyAMA0` | ⚠️ **试过，作废** —— 该驱动（`sbsa-uart`）不实现 `TIOCM_LOOP`，**短模式**就收不回来，得不出任何结论。操作者已决定**放弃这条线** |
 | `dtb_pio_fix.sh build` | ✅ **2026-09-21 在 z0 上实跑通过**（含全部断言）：往返无损、除 `serial@3100000` 外全文零差异、体积 `250051 → 250003` 字节 |
 | `dtb_pio_fix.sh install`（空跑） | ✅ **2026-09-21 实跑通过**（含副本上的三条自校验测试：正常路径 / 幂等挡板 / 缺 `APPEND` 拒绝） |
-| `dtb_pio_fix.sh install`（真装） | ✅ **2026-09-21 在 z0 上执行成功** —— `DEFAULT` 改成 `primary-pio`、末尾追加 `LABEL primary-pio`（含 `FDT`）、备份落在 `extlinux.conf.bak-20260921-082331`。**⚠️ 改动的效果（能否开机、`dmas` 是否真没了）要等重启后才算验证** |
+| `dtb_pio_fix.sh install`（真装 + 重启） | ✅ **2026-09-21 在 z0 上端到端验证通过**：`DEFAULT` → `primary-pio`、末尾追加 `LABEL primary-pio`（含 `FDT`）⟹ **能正常开机**（`root=PARTUUID=…` 没丢）⟹ 重启后 `dmas`/`dma-names` **已消失**、内核日志打出 **`RX in PIO mode` / `TX in PIO mode`** ⟹ 缺陷修复被 `uart_loopback.py` 双向证实（长模式 16 字节、物理回环 64 字节均原样收回） |
 | `dtb_pio_fix.sh rollback` | ❌ **尚未在真机上执行过** —— 照官方文档写的，首次 rollback 请注意有无报错 |
 
 所以：**首次对真飞控跑时，请留意脚本有没有报错或给不出读数**，那是预期内的首跑风险，
