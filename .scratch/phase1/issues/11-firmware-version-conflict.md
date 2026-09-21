@@ -1,45 +1,84 @@
-# 11: 飞控自报 1.14.3 vs 文档的「v1.15 世代」—— 冲突未决
+# 11: 飞控自报 1.14.3 vs 文档的「v1.15 世代」—— **2026-09-21 定案：文档错了，真身是 v1.14.3 系的厂商构建**
 
 Status: needs-triage
 Type: research
 
-**要从哪来：** ticket [01](01-hardware-prereqs.md) 的 ③ 第一次拿到**飞控自己报出的版本号**
-（第十一轮，2026-09-21）。它是 §2.5 里被指定为「唯一终审」的那个读数 —— 而**终审与 (b) 不符**。
+**定案一句话：** z0 飞控里跑的固件 = commit
+**`4a0e65f2331b23b9c8352656e9ccb6edeaea5d6c`**（`Minderring/PX4-Autopilot`，
+"add micoair743-aio to PX4-Autopilot v1.14.3"，2024-11-18），
+**其 `msg/` 与上游 v1.14.3 逐字节相同，也与 `px4_msgs release/1.14` 逐字节相同。**
 
-**冲突（两边都是第一手，不是转述）：**
+⟹ [`refs-manifest.md`](../../../docs/reference/refs-manifest.md) §2.5 的 (a)(b) **作废**（参照物选成了 fork），
+§2.6 的决策前提被推翻。**完整证据链在 §2.5(d)，本文件不重复。**
 
-| 来源 | 结论 | 依据 |
-|---|---|---|
-| 飞控 `AUTOPILOT_VERSION` | **`1.14.3`** | `flight_sw_version = 17695488 = 0x010e0300`，按 PX4 编码 `(major<<24)\|(minor<<16)\|(patch<<8)` |
-| [`refs-manifest.md`](../../../docs/reference/refs-manifest.md) §2.5(b) | **v1.15 世代** | fork `5ba2e91f` 的**源码** `msg/`：`OffboardControlMode` 带 `thrust_and_torque` + `direct_actuator`，与 v1.15.0 一致、与 v1.14.3 不一致 |
+**它是怎么定下来的**（原先计划的"第一步 = 读参数表"**用不上了** —— 没读参数表就定案了）：
 
-**逐字读数与三种未验证的假设已在 [`refs-manifest.md`](../../../docs/reference/refs-manifest.md) §2.5(c) 记全**，
-不在本文件重复。**该节刻意没有挑一个假设当结论。**
-
-**为什么它不能就这么悬着：**
-
-- §2.6 的决策（版本基准统一到 fork `5ba2e91f`）以 §2.5(b) 为前提
-- **Phase 2 的 [phase2/01](../../phase2/issues/01-sitl-px4-msgs-baseline.md) `px4_msgs` 版本基准锁定**整张 ticket 的地基就是它 ——
-  §2.5(a) 那张「`release/1.14` 不兼容」的表是拿 **fork 源码**比的；
-  若飞控实际跑的是 1.14.3 系固件，**该结论可能反过来**
-  （1.14 系下 `OffboardControlMode` 是 `bool actuator` —— 而它是 offboard 心跳必需的那条消息）
-
-**建议的第一步（§2.5(c) 里列的代价最低、信息量最大的一条）：**
-
-- [ ] **用 MAVLink 读飞控的完整参数表**，与 [`docs/assets/z0.params`](../../../docs/assets/z0.params) 对照
-  - 该文件头自标「**尚未在 z0 的飞控上核实**」⟹ 这一步能把那句话**第一手结掉**
-  - 顺带第一手核实 `MAV_1_CONFIG = 102` 与 `SER_TEL2_BAUD = 921600`（至今只有"强证据、非第一手"，见 ticket 01 第三轮）
-  - 判世代：看参数表里有没有只属于某一代的参数
-  - ⚠️ **只读**（`PARAM_REQUEST_LIST`），**不写任何参数**
-- [ ] 分支源码侧：看 `version.h` / `px4_firmware_vendor_version()` 的语义（假设 2 与 3 要它才能验）
-- [ ] 定案，并按结果回头改 §2.5 / §2.6 / phase 2 的 [phase2/01](../../phase2/issues/01-sitl-px4-msgs-baseline.md)
-  - 若结论是「1.14 系」⟹ **Phase 2 的 `px4_msgs` 选版要整个重判**，且 §2.5(a) 的表要重做
-  - 若结论是「1.15 世代、版本号是厂商覆写」⟹ §2.5(b) 保住，但要在 §2.5(c) 里写明**为什么**版本号不可信
-
-**Blocked by:** 无 —— 需要飞控上电并接在串口1 上（Phase 1 ticket 01 已完成，链路已通）
+| 环节 | 结果 |
+|---|---|
+| `AUTOPILOT_VERSION.flight_custom_version` 的 8 字节 | `00 00 00 33 f2 65 0e 4a` |
+| 解出 git hash 前 10 位 | **`4a0e65f233`**（源码链见 §2.5(d)①，**用的是运行固件自己那棵树**） |
+| 反向验证 | 由该 sha 前 16 字符正向推出的字节 **逐字等于**飞控实测字节 |
+| 该 commit 的 `msg/`（185 个） vs 上游 v1.14.3 | **0 个不同**（blob SHA 全量比对） |
+| 该 commit 的 `msg/` vs `px4_msgs release/1.14` @ `ffb6e80e` | **0 个不同**（唯一差异是 `msg/CMakeLists.txt`，那是 PX4 的构建文件） |
+| 该 commit 的 `boards/` | 有 `micoair/{h743, h743-v2, h743-aio}`，**没有 `hkust/`** |
 
 ---
 
-**为什么不是 `ready-for-agent`：** 第一步（读参数表）agent 能做；
-但**末了一步是判断**（这批参数表到底对应哪一代、要不要推翻 §2.5/§2.6），
-属于 `needs-triage` —— 先由人决定按哪条路走、以及本张要不要拆成「取证」+「决策」两张。
+## 剩余：两件**要人拍板**的事
+
+- [ ] **① 硬件到底是哪块板？**
+  固件那棵树里只有 `micoair/h743-*`，而本项目文档（含 `CLAUDE.md`）一直写「飞控 = **MicoAir NxtPX4v2**」，
+  而 NxtPX4v2 的 PX4 目标名是 **`hkust_nxt-dual`** —— 两者对不上：
+  - `hkust/nxt-dual`（NxtPX4v2）：TEL2=`/dev/ttyS3`、气压计 SPL06、IMU 双 BMI088
+  - `micoair/h743-aio`：TEL2=`/dev/ttyS1`、气压计 DPS310、IMU **BMI270**
+  - 飞控报 `vendor_id=7052 / product_id=54`，但**上游 5 块板**（`hkust/*`、`micoair/*`）的
+    `default.px4board` 都不写这两个 id（由厂商分支的 Kconfig 决定，上游看不到）⟹ 这条查不出来
+
+  **→ 看实物 / 看订单 / 看机架上的丝印**（最快）。若要间接判：读飞控参数表，
+  看 `SER_*` 端口的集合（板型不同则端口不同）——**只读**（`PARAM_REQUEST_LIST`），不写任何参数。
+  ⚠️ **这条不是学究**：它决定 §2.7 那个 ADC 缺陷**到底该不该修**、以及 Phase 3 重编固件时该编哪块板。
+
+  **已经试过、判定为「判不出来」的两条（别重复劳动）**：
+  - `vendor_id=7052 / product_id=54` —— 上游 5 块板（`hkust/*`、`micoair/*`）的 `default.px4board`
+    都不写这两个 id（由厂商分支的 Kconfig 决定），**查不出来**。
+  - [`docs/assets/z0.params`](../../../docs/assets/z0.params) 的 `SER_*` 集合只有
+    `SER_GPS1_BAUD` / `SER_TEL1_BAUD` / `SER_TEL2_BAUD`，与三块 `micoair/*` 及 `hkust/nxt-dual`
+    **都不吻合** —— 但该文件是上游 `Sim2real-UAV-Params-` 的存档、**不是 z0 飞控导出的**
+    （自标「尚未在 z0 的飞控上核实」），所以它**不能用来定板**；且参数文件只记**已配置**的端口，
+    缺席本身也不构成证据。**⟹ 只能靠实物/订单，或真去读一次飞控的参数表。**
+
+- [ ] **② §2.6 怎么改（用户决策）**
+  原则「以 z0 固件真身为准」不变，但真身换了人。建议：
+  - `px4_msgs` 基准 = **`release/1.14` @ `ffb6e80e`**（已实测逐字节相同）——即回到 Q24=a 最初的表述
+  - SITL 被控对象 = 改为**上游 v1.14.3**（或直接编那个 MicoAir commit）；
+    ⚠️ 需先确认它带得起 Phase 2 要用的机型（§2.6 表里记过 v1.14.3 的 airframe 条目"较少"）
+  - **签字前不要按 §2.6 旧表动手**
+
+## 连带要改的地方（★ 2026-09-21 逐条复核过，标注已按实际状态校正）
+
+- [x] [`refs-manifest.md`](../../../docs/reference/refs-manifest.md)：§2.5 头部判定（**已改**）、§2.5(d)（**已写**）、
+      **§2.5(c) 的作废标记（已加 —— 本条原先漏了，是 code-review 查出来的）**、
+      §2.6 的决议表（只加了 ⚠️，**表本身还没改** —— 那是 ② 签字后的事）、
+      §2.7 的 ADC 修复途径（**已加 ⚠️**）
+- [x] [`phase2/01`](../../phase2/issues/01-sitl-px4-msgs-baseline.md)：Blocked-by 与「为什么必须是 fork」
+      那一段**已重写**；`Status` 已从 `ready-for-agent` 改成 **`needs-info`**（等 ② 签字）
+- [x] [`params-changes.md`](../../../docs/reference/params-changes.md) A4：「修复 = 重编重刷 fork 的
+      `pr_fix_hkust_nxt_dual`」**已划掉并标作废**（对这块固件不适用）
+- [x] `CLAUDE.md` 的「PX4 1.14.x」标签 —— **复查后确认它一直是对的**（09-20/21 一度判它错，是误判），
+      **故不改**。但「MicoAir NxtPX4v2」这个**板名**待 ① 定
+- [x] [`phase1/01`](01-hardware-prereqs.md)：它的 ③ 一节与头部摘要**已按本票更正**
+      （原先写着「解不出 hash」「未决冲突」「工具已补第二道闸」——三处都已标作废）
+- [x] [`mavlink_probe.py`](../../../tools/prereq-evidence/mavlink_probe.py)：错误的「必须是 ASCII」闸门已移除，
+      补了 `--self-test`（用上面那对真值做交叉验证）
+- [ ] ⚠️ **跨文档清扫 = 票 [10](10-docs-1-14-sweep.md) 的活，本票不代劳**：条「v1.15 世代 / 基准统一到 fork」
+      还写进了 `README.md`(4,78,79)、`docs/PROJECT.md:437`、`docs/control/phase2-implementation.md:587`、
+      `.scratch/phase2/spec.md:298`、`.scratch/phase2/issues/06:12`、`docs/reference/params-changes.md:14`。
+      **票 10 的作业方向已按其实际状态反转**（它原先会指挥 agent 往错的方向扫）——
+      详见该票顶部那段 ☠️ 更正。**本票只负责把证据与票据层面的事实定死。**
+
+**Blocked by:** 无 —— 需要人看一眼实物/拍一个板（①），以及同意 §2.6 的改法（②）
+
+---
+
+**为什么不是 `ready-for-agent`：** 取证部分**已经做完并定案**；剩下两件都是
+「agent 判不了」的（① 要接触实物，② 是用户已定决策的改法）。

@@ -170,13 +170,18 @@ sudo reboot
 | ③ 版本 | [`docs/reference/refs-manifest.md`](../../docs/reference/refs-manifest.md) §2.5 | 版本号**原文**，不要转述 |
 | ④ 电流 | [`docs/reference/params-changes.md`](../../docs/reference/params-changes.md) A4 | **必须带「当时未解锁」这个前提**，否则作废 |
 
-### ③ 的一个额外收获：能从读数里核对固件真身
+### ③ 的一个额外收获：**从读数里直接读出固件真身**
 
-`AUTOPILOT_VERSION.flight_custom_version` 里有 git hash，脚本能解出来，
-**直接核对**它是不是 [`refs-manifest.md`](../../docs/reference/refs-manifest.md) §2.5 判定的 fork `5ba2e91f`。
+`AUTOPILOT_VERSION.flight_custom_version` 里带 git hash，脚本解出来就是**固件的 commit 前 10 位**。
+2026-09-21 这一步**真的定案了**：解出 `4a0e65f233` ⟹ commit
+`4a0e65f2331b23b9c8352656e9ccb6edeaea5d6c`（`Minderring/PX4-Autopilot`，
+"add micoair743-aio to PX4-Autopilot v1.14.3"）——
+**推翻了 [`refs-manifest.md`](../../docs/reference/refs-manifest.md) §2.5 原先"fork `5ba2e91f`"的判定**
+（全链见该节 §2.5(d)）。
 
-> ⚠️ **它不是 ASCII 字符串**（这一点坑过一次，第一手核实于上游 v1.15.0 tag `30e763b`，
-> `src/modules/mavlink/mavlink_main.cpp:1082-1087`）：
+> ⚠️ **它不是 ASCII 字符串**（第一手核实于**运行固件自己那棵树**的
+> `src/lib/version/px_update_git_header.py:93`、`version.c:343`、
+> `src/modules/mavlink/mavlink_main.cpp:1073-1078`）：
 >
 > ```c
 > const uint64_t fw_git_version_binary = px4_firmware_version_binary() & 0xFFFFFFFFFF000000;
@@ -186,17 +191,38 @@ sudo reboot
 > ```
 >
 > 即：塞进去的是 **uint64 的二进制镜像（小端）**；低 3 字节已被掩码砍掉；
-> **前 3 字节又被厂商版本覆盖**。所以只有 `[3:8]` 这 5 个字节是 hash，
+> **前 3 字节又被厂商版本号覆盖**。所以只有 `[3:8]` 这 5 个字节是 hash，
 > 逆序后得到 hash 的**前 10 个十六进制字符**。
 >
-> 脚本两种都打印：**原始字节 hex** + 解出的 hash 前缀。若原始字节全 0，会明说"取不到"，
-> 并提示**不要**据此改动 §2.5 —— 免得把解码失败当成"版本不符"。
+> ⚠️⚠️ **本脚本中途曾写反过这道判据**：一度断言 `[3:8]` 应当是 **ASCII** 的 `0-9a-f`，
+> 于是把上面那份**正确**的读数判成"取不到 hash"。**那道闸门是反向的错** ——
+> `[3:8]` 本来就是二进制，它会挡掉任何真固件。已移除，并补了下面的自检。
+
+### 自检（**不需要飞控、不需要串口**）
+
+```bash
+python3 tools/prereq-evidence/mavlink_probe.py --self-test
+```
+
+用真值对做交叉验证：**由 commit `4a0e65f2…` 正向推出的 8 字节，必须逐字等于飞控实测的
+`00 00 00 33 f2 65 0e 4a`**，且解码必须还原出 `4a0e65f233`。
+若有人再往里加"必须是 ASCII"之类的闸门，这里会立刻红。
+
+共 **7 项**：正向编码、解码那 8 字节、hash 前 10 位、厂商版本号只覆盖前 3 字节**不污染**
+hash 段、`encode → decode` 往返，以及**两条不同的**「取不到 hash」路径
+（整段全 0 / 只有 `[3:8]` 全 0）—— 后者原先没被自检覆盖，是 2026-09-21 的 code-review 查出来的。
 
 ### ④ 的判定规则
 
-未解锁时电流应 ≈0。**恒为 0 或恒为怪值 = 中招**（`nxt-dual` 的 ADC 通道缺陷）。
-中招后电流/电量保护全是空转，且**参数无法绕过**（编译期宏），只能重编重刷固件
-（修复 = fork 自带的 `pr_fix_hkust_nxt_dual` @ `8161c4cd`，相对 `main` 只差一行）。
+未解锁时电流应 ≈0。**恒为 0 或恒为怪值 = 中招**（`boards/hkust/nxt-dual` 的 ADC 通道缺陷）。
+中招后电流/电量保护全是空转，且**参数无法绕过**（编译期宏）。
+
+> ⚠️ **2026-09-21 修正「怎么修」**：原先写"修复 = fork 自带的 `pr_fix_hkust_nxt_dual`
+> @ `8161c4cd`，只差一行" —— **对 z0 的固件不适用**。飞控跑的固件树里**没有 `hkust/`**，
+> 它的 `boards/micoair/h743-*` 把电流通道写在 `/* PC1 */ ADC1_CH(11)`，**与引脚相符、无此缺陷**。
+> ⟹ 本机「未中招」不是因为运气，**是这条缺陷不在这块固件里**。
+> Phase 3 要重编固件时，**该编哪块板还是个待定项**（见 ticket 11 的 ①）。
+
 **电压通道未受影响**，Phase 1 可用「电压 + 计时」兜底。
 
 ## 安全纪律
@@ -239,7 +265,8 @@ MAVLink v2 的 CRC 带 per-message `CRC_EXTRA` 种子。种子写错**不会报�
 | Tier A：网络 / 串口枚举 / 权限 | ✅ **已在 z0 的 Jetson（`orin-nx`）上实跑验证**，含 `dialout` 权限被拒的真实报错路径。**2026-09-21 二次实跑**：复现了 `pyserial` 缺失的真实报错（见「依赖」），并暴露出旧的 `pymavlink`-only 预检会误报 —— 两处均已修 |
 | Tier B：`--port` 读 ③④ | ✅ 已用 **pymavlink 在 pty 上模拟的假飞控**端到端验证（含 git hash 解码、电流为 0 的「疑似中招」判定） |
 | Tier B：`--scan` 找端口 | ✅ 同上验证（假飞控 + 真实权限报错两种路径都走到） |
-| Tier B：**对真飞控** | ⚠️ **跑过，但还没成功** —— 2026-09-21 在 z0 上实跑，飞控未听到（原因见下条） |
+| Tier B：**对真飞控** | ✅ **2026-09-21 端到端成功**：`/dev/ttyTHS1` @ 921600 听到 `HEARTBEAT`（`autopilot=12`、`type=2`），并读到 `AUTOPILOT_VERSION`（③）与 6 个 `BATTERY_STATUS` 样本（④）。**首跑失败的真正原因是接收通路 DMA 缺陷**（见下两条），修完才通 |
+| `mavlink_probe.py --self-test` | ✅ **2026-09-21 通过**：按源码规则由 commit `4a0e65f2…` **正向推出**的 8 字节与飞控实测逐字相同，解码还原出 `4a0e65f233`；全 0 字节仍正确报"取不到" |
 | Tier B：**「不是数据流」判据** | ✅ **2026-09-21 在 z0 上第一手触发**：`ttyTHS1` 接到飞控线后读到 ~13 kB/s、帧错误 0，但非零段最长仅 **9 B** → 正确判为「**不是数据流**」，**没有**误报成「波特率不对」。这正是加这条判据的理由。<br>⚠️ **该判据当前的分档已不能只按"噪声"讲** —— 后来查明成因是**接收通路的 DMA 缺陷把真数据打坏**（见下条与 ticket 第六/九轮），所以「非零段 < 17 B」这一档既可能是噪声，**也可能是真 MAVLink 被打坏**。判词已据此加了前提（先跑 `--internal` 排除驱动缺陷，再谈接线） |
 | `uart_loopback.py`：对照组（`--no-loopback`） | ✅ **已在 z0 的 Jetson 上实跑**：未短接时两口均收不到，符合预期 |
 | `uart_loopback.py`：**内部回环短模式** | ✅ **已在 z0 的 Jetson 上实跑**：两口 7 字节均原样收回 ⟹ 控制器/驱动/时钟正常（⚠️ **它绕过引脚，证明不了 pinmux/接线**） |

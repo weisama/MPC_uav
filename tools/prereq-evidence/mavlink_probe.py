@@ -205,11 +205,34 @@ def _decode_flight_sw_version(raw: int) -> str:
     return f"{major}.{minor}.{patch}"
 
 
+def _encode_git_hash_bytes(sha_hex: str, vendor: int = 0) -> bytes:
+    """把 sha（十六进制字符串）按 PX4 的规则编成 `flight_custom_version` 的 8 字节。
+
+    这是 `_decode_git_hash_bytes` 的**逆函数**，两边互为交叉验证（见 `--self-test`）。
+    ⚠️ 只吃 `sha_hex` 的**前 16 个字符** —— 传完整的 40 位亦可（多余的会被掩码砍掉），
+    但别指望它区分前 10 位相同的两个 commit。
+
+    规则出自运行固件自身的源码（commit `4a0e65f2331b23b9c8352656e9ccb6edeaea5d6c`）：
+
+      * `px_update_git_header.py:93` → `PX4_GIT_VERSION_BINARY = 0x` + sha 的**前 16 个字符**
+      * `version.c:343`             → `px4_firmware_version_binary()` 原样返回它
+      * `mavlink_main.cpp:1074`     → `& 0xFFFFFFFFFF000000`：**只留高 5 字节**（= 前 10 个字符）
+      * `mavlink_main.cpp:1077`     → 小端 memcpy 整个 8 字节
+      * `mavlink_main.cpp:1078`     → 前 3 字节再被厂商版本号覆盖
+    """
+    v = int(sha_hex[:16], 16) & 0xFFFFFFFFFF000000
+    b = bytearray(v.to_bytes(8, "little"))
+    b[0:3] = (vendor & 0xFFFFFF).to_bytes(3, "little")
+    return bytes(b)
+
+
 def _decode_git_hash_bytes(raw):
     """从 flight_custom_version 解出 git hash 前缀。
 
-    ⚠️ **不是 ASCII 字符串** —— 这是第一手核实过的（上游 v1.15.0，tag `30e763b`，
-    `src/modules/mavlink/mavlink_main.cpp:1082-1087`）::
+    ⚠️ **不是 ASCII 字符串** —— 第一手核实用的是**运行固件自己那棵树**
+    （commit `4a0e65f2331b23b9c8352656e9ccb6edeaea5d6c`，`mavlink_main.cpp:1073-1078`，
+    行号与 `_encode_git_hash_bytes` 的 docstring 一致）。
+    上游 v1.15.0（tag `30e763b`）同一处是 `mavlink_main.cpp:1082-1087`，**编码相同**，可作交叉验证：
 
         /* use only first 5 bytes of git hash for firmware version */
         const uint64_t fw_git_version_binary = px4_firmware_version_binary() & 0xFFFFFFFFFF000000;
@@ -224,6 +247,14 @@ def _decode_git_hash_bytes(raw):
 
     `[3:8]` 逆序（小端还原）后得到 hash 的**前 10 个十六进制字符**。
 
+    ⚠️⚠️ **2026-09-21 的修订史（别再把这道闸门加回来）**：
+    本函数中间那版曾断言 `b[3:8]` 应当是 **ASCII** 的 `0-9a-f`，并因此把 z0 的真实读数
+    `00 00 00 33 f2 65 0e 4a` 判成「取不到 git hash」。**那个断言是错的**：
+    `b[3:8]` 是 hash 的**二进制**，本来就不该是 ASCII，所以那道闸门会把**任何**真固件都挡掉。
+    解出来就是 `4a0e65f233` —— 与仓库里 commit `4a0e65f2331b23b9c8352656e9ccb6edeaea5d6c`
+    （`Minderring/PX4-Autopilot`，"add micoair743-aio to PX4-Autopilot v1.14.3"）逐字对上。
+    教训：**拿"我以为的编码"去否证"实测的字节"，而不是去查源码** —— 与 §0 那两条同源。
+
     返回 (原始 8 字节的 hex, 解出的 hash 前缀或 None)。
     """
     try:
@@ -232,17 +263,13 @@ def _decode_git_hash_bytes(raw):
         return "（无法按字节解）", None
     if not b:
         return "", None
-    prefix = b[3:8][::-1].hex()
-    # 全 0 = 该字段没被填充（非 PX4 固件 / 老版本 / 未定义），不要当成 hash
-    if set(b) == {0} or set(prefix) == {"0"}:
+    if set(b) == {0}:
+        # 全 0 = 该字段没被填充（非 PX4 固件 / 未定义），不要当成 hash
         return b.hex(), None
-    # ★★ 2026-09-21 在 z0 的飞控上补的第二道闸：这 5 个字节按上游源码应当是 git hash 的
-    #   **ASCII 字符**（只可能是 `0-9a-f`）。实测 z0 报的是 `00 00 00 33 f2 65 0e 4a`，
-    #   含 `0x0e` / `0xf2` 这类**不可打印**字节 —— **不可能是 hash**。
-    #   初版只挡了"全 0"，于是把这一串硬打成 16 进制（`4a0e65f233`）当成 hash 打了出去，
-    #   还配上「与 5ba2e91f 不一致 → §2.5 的结论要重开」的判词 ——
-    #   **那是一份会被抄进文档的假证据**。宁可报"取不到"，也不要给一个假 hash。
-    if any(c not in b"0123456789abcdef" for c in b[3:8]):
+    prefix = b[3:8][::-1].hex()          # 小端还原 → hash 的前 10 个十六进制字符
+    if set(prefix) == {"0"}:
+        # `[3:8]` 全 0 = 掩码后那几个字节本来就是 0（非 PX4 固件 / 厂商版本号占了整段），
+        # 这不是 hash。⚠️ 注意这跟上面「整段全 0」不是同一回事，报错措辞要分开。
         return b.hex(), None
     return b.hex(), prefix
 
@@ -314,26 +341,37 @@ def probe_port(port: str, baud: int, wait: float, samples: int = 6) -> int:
             raw_bytes_hex, git_prefix = _decode_git_hash_bytes(ver.flight_custom_version)
             print(f"     flight_custom_version 原始字节 = {raw_bytes_hex}")
             if git_prefix is None:
-                print("       → **取不到 git hash** —— 该字段要么全 0，要么不是 git hash 的 ASCII 形态")
-                print("         （非 PX4 固件 / 该版本未填充 / 厂商改写了填充方式）。")
-                print("         → 那就只以 flight_sw_version 的原文为准，**不要**从这 8 个字节里硬凑 hash。")
+                rawb = bytes(ver.flight_custom_version) if ver.flight_custom_version else b""
+                if not rawb:
+                    why = "该字段为空（长度 0）"
+                elif set(rawb) == {0}:
+                    why = "该字段**整段 8 字节全 0**（非 PX4 固件 / 未填充）"
+                elif set(rawb[3:8]) == {0}:
+                    why = "掩码该留 hash 那 5 个字节（`[3:8]`）**全是 0**"
+                else:
+                    why = "字节形态无法解释（见上）"
+                print(f"       → **取不到 git hash** —— {why}。")
+                print("         → 那就只以 flight_sw_version 的原文为准，**不要**硬凑 hash。")
             else:
-                print(f"       → git hash 前 10 位 ≈ `{git_prefix}`"
-                      f"   （二进制的**前 5 字节**，**前 3 字节已被厂商版本覆盖**）")
+                print(f"       → git hash 前 10 位 = `{git_prefix}`"
+                      f"   （`[3:8]` 小端还原；前 3 字节 `{raw_bytes_hex[0:6]}` 是**厂商版本号**，不是 hash）")
+                print(f"       ★ 拿 `{git_prefix[:8]}` 去查：`git log --oneline -1 {git_prefix[:8]}`，"
+                      "或 `https://github.com/<owner>/<repo>/commit/" + git_prefix[:8] + "`")
             print(f"     vendor_id={ver.vendor_id} product_id={ver.product_id}")
             print(f"     capabilities=0x{ver.capabilities:x}")
             print()
-            print("     ★ 与 refs-manifest.md §2.5 的对照：文档判 z0 固件真身是 fork "
+            print("     ★ 与 refs-manifest.md §2.5 的对照：文档原先假定 z0 固件真身是 fork "
                   "`5ba2e91f`（v1.15 世代）。")
             if git_prefix is None:
                 print("       ⚠️ 取不到 hash，这一栏无法核对 —— **不要**据此改动 §2.5。")
                 print("          但注意：**上面 `flight_sw_version` 的原文仍是一个独立证据** ——")
                 print("          若它解出的世代与 §2.5 的结论不符，那本身就要记进 §2.5。")
-            elif "5ba2e91f".startswith(git_prefix) or git_prefix.startswith("5ba2e91f"):
-                print(f"       ✅ `{git_prefix}` 与 `5ba2e91f` **一致** → §2.5 的判定得到实测支持。")
+            elif "5ba2e91f".startswith(git_prefix[:8]):
+                print(f"       ✅ `{git_prefix[:8]}` 与 `5ba2e91f` **一致** → §2.5 的判定得到实测支持。")
             else:
-                print(f"       ⚠️ `{git_prefix}` 与 `5ba2e91f` **不一致** → "
-                      "**以飞控报出的为准，§2.5 的结论要重开**。")
+                print(f"       ⚠️ `{git_prefix[:8]}` 与 `5ba2e91f` **不一致** —— "
+                      "**以飞控报出的为准**：去查这个 commit 属于哪个仓库/分支，")
+                print("          它才是真正的「z0 固件真身」；§2.5/§2.6 要以它为准。")
             got += 1
 
         # --- ④ 电流 ---------------------------------------------------------
@@ -391,8 +429,13 @@ def probe_port(port: str, baud: int, wait: float, samples: int = 6) -> int:
             print("     ⚠️ 电压通道未受该缺陷影响，所以电压读数可作 Phase 1 兜底。")
             print("     ⚠️ 该缺陷的后果：电流/电量保护全是空转，**参数无法绕过**"
                   "（编译期宏）。")
-            print("        修复 = 重编重刷 fork 的 `pr_fix_hkust_nxt_dual` @ `8161c4cd`"
-                  "（相对 `main` 只差一行 `CH(5)`→`CH(8)`）。")
+            print("     ⚠️⚠️ 但 2026-09-21 查明：那个 `CH(5)` 缺陷属于 fork 的 "
+                  "`boards/hkust/nxt-dual`，")
+            print("        而 z0 飞控实际跑的固件（v1.14.3 系，见 §2.5(d)）里没有 `hkust/` 这块板；")
+            print("        它的 `boards/micoair/h743-*` 把电流通道写在 "
+                  "`/* PC1 */ ADC1_CH(11)`，**与引脚相符、无该缺陷**。")
+            print("        ⟹ 「未中招」不是因为运气，也不是「本该中招却没事」；"
+                  "**别把它当成一个待修的缺陷**。")
             got += 1
 
         return 0 if got else 1
@@ -475,11 +518,59 @@ def scan_ports(ports: list[str], bauds: list[int], wait: float) -> int:
     return 1
 
 
+# ---------------------------------------------------------------------------
+# 自检 —— **不需要飞控、不需要串口**：
+#   python3 tools/prereq-evidence/mavlink_probe.py --self-test
+#
+# 用真值做交叉验证：z0 的飞控 2026-09-21 报出的 8 字节是
+#   `00 00 00 33 f2 65 0e 4a`
+# 而它的固件 commit 是 `4a0e65f2331b23b9c8352656e9ccb6edeaea5d6c`
+# （`Minderring/PX4-Autopilot`，"add micoair743-aio to PX4-Autopilot v1.14.3"，2024-11-18）。
+# 编码函数按源码规则从 sha 推出字节，解码函数再从字节推回 sha 前缀 —— 两者必须互逆，
+# 且**必须与飞控实测的字节逐字相同**。这条断言就是 09-21 那次误判的反例保护：
+# 若有人再往里加"必须是 ASCII"之类的闸门，这里会立刻红。
+# ---------------------------------------------------------------------------
+SELFTEST_FW_SHA = "4a0e65f2331b23b9c8352656e9ccb6edeaea5d6c"
+SELFTEST_FW_BYTES = bytes([0x00, 0x00, 0x00, 0x33, 0xF2, 0x65, 0x0E, 0x4A])
+
+
+def _selftest() -> int:
+    bad = 0
+
+    def check(name, got, want):
+        nonlocal bad
+        ok = got == want
+        bad += 0 if ok else 1
+        print(f"  {'✅' if ok else '❌'} {name}：{got!r}" + ("" if ok else f"   ← 期望 {want!r}"))
+
+    print("  【自检】flight_custom_version 的编解码（不需要飞控 / 串口）")
+    check("按源码规则由 sha 编出的 8 字节 == 飞控实测字节",
+          _encode_git_hash_bytes(SELFTEST_FW_SHA), SELFTEST_FW_BYTES)
+    check("解码：原始 8 字节 hex", _decode_git_hash_bytes(SELFTEST_FW_BYTES)[0],
+          SELFTEST_FW_BYTES.hex())
+    check("解码：hash 前 10 位", _decode_git_hash_bytes(SELFTEST_FW_BYTES)[1],
+          SELFTEST_FW_SHA[:10])
+    check("厂商版本号只覆盖前 3 字节、不污染 hash 段",
+          _decode_git_hash_bytes(_encode_git_hash_bytes(SELFTEST_FW_SHA, 0x010E03))[1],
+          SELFTEST_FW_SHA[:10])
+    check("全 0 字节 → 取不到 hash（不许硬凑）", _decode_git_hash_bytes(bytes(8))[1], None)
+    check("`[3:8]` 全 0 但前面非 0 → 也取不到 hash（这是**另一条** None 路径）",
+          _decode_git_hash_bytes(bytes([0xAA, 0xBB, 0xCC, 0, 0, 0, 0, 0]))[1], None)
+    check("encode → decode 往返",
+          _decode_git_hash_bytes(_encode_git_hash_bytes("30e763b" + "0" * 33))[1],
+          "30e763b000")
+
+    print("  ✅ 自检全部通过" if not bad else f"  ❌ 自检有 {bad} 项失败")
+    return 1 if bad else 0
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(
         description="z0 前置条件取证 —— 只读 MAVLink 探针",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
+    ap.add_argument("--self-test", action="store_true",
+                    help="只验 flight_custom_version 的编解码 —— 不需要飞控，也不需要串口")
     ap.add_argument("--scan", action="store_true",
                     help="② 扫描候选端口/波特率，找出飞控挂在哪个串口")
     ap.add_argument("--port", help="③④ 直接指定串口，如 /dev/ttyTHS1")
@@ -488,6 +579,10 @@ def main() -> int:
     ap.add_argument("--samples", type=int, default=6,
                     help="④ 电池电流采几个样本（默认 6）；A4 判据是「恒」，样本太少不给判定")
     args = ap.parse_args()
+
+    # 自检不需要 pymavlink（也不碰串口），所以放在依赖检查之前
+    if args.self_test:
+        return _selftest()
 
     try:
         import pymavlink  # noqa: F401
