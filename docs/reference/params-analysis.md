@@ -63,7 +63,7 @@
 | `CA_ROTOR2_PX` / `_PY` | **0.15** / **-0.15** |
 | `CA_ROTOR3_PX` / `_PY` | **-0.15** / **0.15** |
 | `CA_ROTOR_COUNT` | 4 |
-| `CA_METHOD` | 2（归一化分配） |
+| `CA_METHOD` | **2（Auto）** —— ⚠️ 旧版本文档写「2（归一化分配）」是**错的**，见下方更正 |
 
 **推导**：Rotor 0 位于 `(+0.15, +0.15)`，到机体中心的距离 = `√(0.15² + 0.15²)` = **0.2121 m**，即臂长 **212 mm** → 轴距 **424 mm**。
 
@@ -75,7 +75,7 @@
 
 | 场景 | 影响 |
 |---|---|
-| **PX4 自带角速率环 + `(C)` 方案** | ✅ **基本无影响**。`(C)` 方案下 MPC 输出的是**角速率期望值**，不碰控制分配。而 PX4 的 `MC_ROLLRATE_K/P` 等增益是在真机上试出来的——**几何写大 2.8 倍导致的增益偏差，已经被调参吸收掉了**。 |
+| **PX4 自带角速率环 + `(C)` 方案** | ✅ **确实无影响 —— 但本节原先给的理由是错的。** 正确理由见下方「★★ 2026-09-20 更正」。 |
 | **(D) 方案（MPC/INDI 直接出电机指令）** | ❌ **必须修正**。那时 MPC 要自己建"力矩 → 电机"的映射，几何错了整个映射就错了。 |
 | MPC 建模中的**力矩饱和估计** | ⚠️ 有影响。若要估计"最大可输出横滚力矩"，需要真实几何。 |
 
@@ -92,6 +92,68 @@ param show CA_ROTOR*
 ```bash
 # 或者导出你自己的参数文件，和参考文件做 diff（推荐，见第 5 节）
 ```
+
+#### ★★ 2026-09-20 更正：为什么几何错了却真的没影响（原由是错的）
+
+**原由（现已被推翻）**：「`MC_ROLLRATE_K/P` 等增益是在真机上试出来的，几何偏差已被调参吸收」。
+**推翻依据（两条，均第一手）**：
+
+**① z0 的角速率环增益全是 PX4 出厂默认值 —— 根本没有"被调过"的痕迹。**
+
+| 参数 | z0 值 | 固件默认值（`Peize-Liu/PX4-Autopilot @ 5ba2e91f`，`src/modules/mc_rate_control/mc_rate_control_params.c`） |
+|---|---|---|
+| `MC_ROLLRATE_P` | `0.15` | `PARAM_DEFINE_FLOAT(MC_ROLLRATE_P, 0.15f)` @ `:51` |
+| `MC_ROLLRATE_I` | `0.2` | `PARAM_DEFINE_FLOAT(MC_ROLLRATE_I, 0.2f)` @ `:63` |
+| `MC_ROLLRATE_D` | `0.003` | `PARAM_DEFINE_FLOAT(MC_ROLLRATE_D, 0.003f)` @ `:88` |
+| `MC_PITCHRATE_P` | `0.15` | `PARAM_DEFINE_FLOAT(MC_PITCHRATE_P, 0.15f)` @ `:132` |
+| `MC_YAWRATE_P` | `0.2` | `PARAM_DEFINE_FLOAT(MC_YAWRATE_P, 0.2f)` @ `:212` |
+
+**逐条相符。** 所以"偏差被调参吸收"这个机制**不可能存在**。
+
+**② 真正的原因：控制分配器会按几何自身的范数归一化，绝对臂长被约掉。**
+
+`ControlAllocator::update_allocation_method()`（`src/modules/control_allocator/ControlAllocator.cpp:142-205`）
+把 `CA_METHOD` 交给各 effectiveness 源；而 `CA_METHOD = 2` 的语义是 **Auto**，不是"归一化分配"
+（`src/modules/control_allocator/module.yaml:35-46` 逐字：`0: Pseudo-inverse with output clipping` /
+`1: Pseudo-inverse with sequential desaturation technique` / `2: Automatic`，`default: 2`）。
+
+`ActuatorEffectivenessMultirotor::getNormalizeRPY()`
+（`ActuatorEffectiveness/ActuatorEffectivenessMultirotor.hpp:52-55`）**无条件**返回
+`normalize[0] = true`（基类 `ActuatorEffectiveness.hpp:156-161` 的默认值是全 `false`）：
+
+```cpp
+void getNormalizeRPY(bool normalize[MAX_NUM_MATRICES]) const override
+{
+	normalize[0] = true;
+}
+```
+
+于是 `ControlAllocationPseudoInverse::updateControlAllocationMatrixScale()`
+（`ControlAllocation/ControlAllocationPseudoInverse.cpp:73-105`）按**每一列自身的范数**缩放：
+
+```cpp
+// Same scale on roll and pitch
+if (_normalize_rpy) {
+	...
+	roll_norm_scale = sqrtf(_mix.col(0).norm_squared() / (num_non_zero_roll_torque / 2.f));
+	...
+	_control_allocation_scale(0) = fmaxf(roll_norm_scale, pitch_norm_scale);
+	_control_allocation_scale(1) = _control_allocation_scale(0);
+```
+
+roll 列的元素正比于各 rotor 的 `CA_ROTOR*_PY`，**所以 `roll_norm_scale` 正比于 `PY`** ——
+`±0.15 → ±0.0537` 是一个**纯均匀缩放**，归一化后**完全约掉**。
+**→ 对对称 X 型机架，绝对臂长不影响分配结果。**
+
+**⚠️ 三处推论（这是本轮对 Q21 决策前提的实质修正）**：
+
+1. **§3.1 的结论（对 (C) 无影响）成立，理由换成上面这条。**
+2. **Q21=a 里「改几何必须同时重调 `MC_*RATE_P*`」的前提不成立** —— 若实测几何只是 `±0.15/±0.15`
+   的**均匀缩放**，改与不改在分配器里等价，**不需要重调**。（增益本来就是默认值，也没"调好的"可弄坏。）
+3. **但"实测电机位置"这件事仍然值得做，理由变了**：只有当实测几何**不是均匀缩放**
+   （例如 `PX ≠ PY`、或不是正 X 布局）时，分配矩阵的**比例**才变、才需要重调。
+   **→ 所以 Q21 的正确动作是「先量，再判断是否均匀缩放」，而不是「量完必改必重调」。**
+   （另：`(D)` 方案与力矩饱和估算**仍然**需要真实几何，见上表。）
 
 ### 3.2 ⚠️★ `PWM_MAIN_FUNC1..4 = 103, 102, 101, 104` —— 电机序 `3-2-1-4` ✅
 
@@ -159,6 +221,86 @@ listener battery_status -n 5
 # 看 voltage_v / current_a / remaining 是否有真实数据
 ```
 
+#### 3.5.1 ★★★ 更深的病根：固件的 ADC 电流通道写在错误的引脚上（**本轮第一手验证**）
+
+上面说的是"链路没配起来"。但 **2026-09-20 这一轮查到了更硬的事实：z0 固件里电流采样读的是错误的 ADC 通道**，
+这不是"没配"，是"配错了"。
+
+**取证**（全部第一手，非二手总结）：
+
+**第一步，先找到 z0 固件的真身。** `HKUST-Aerial-Robotics/Nxt-FC` **不是固件源码仓库**（只有 51 个文件，
+是硬件 + 预览版二进制 + 两个 submodule）。其 `.gitmodules` 给出真身：
+
+```
+url = https://github.com/Peize-Liu/PX4-Autopilot.git    branch = develop
+Nxt-FC/main 钉在 commit  5ba2e91ff227fe4da0133371e88dc81b038bb81e   (2024-07-02)
+```
+
+**第二步，读该 commit 的板级配置**（`boards/hkust/nxt-dual/src/board_config.h:89-102`，逐字）：
+
+```c
+#define ADC12_CH(n)		(n)
+
+#define PX4_ADC_GPIO  \
+	/* PC4  */  GPIO_ADC12_INP4,   \
+	/* PC5  */  GPIO_ADC12_INP8        ← 电流采样物理接在 PC5，即通道 8
+
+#define ADC_BATTERY_VOLTAGE_CHANNEL             ADC12_CH(4)
+#define ADC_BATTERY_CURRENT_CHANNEL             ADC12_CH(5)   ← 宏却写通道 5
+
+#define ADC_CHANNELS \
+	((1 << ADC_BATTERY_VOLTAGE_CHANNEL) | \
+	 (1 << ADC_BATTERY_CURRENT_CHANNEL))
+```
+
+**硬件层的根因清清楚楚**：电流采样线接在 **PC5**，而 PC5 是 `ADC12_INP8`（**通道 8**）；
+固件却让电流去读**通道 5**。板内注释与通道号自相矛盾 —— 这就是 bug。
+
+**第三步，确认版本边界**（对照 PX4 上游三个 tag 的同一文件）：
+
+| 固件 | `ADC_BATTERY_CURRENT_CHANNEL` |
+|---|---|
+| `Peize-Liu/PX4-Autopilot @ 5ba2e91f`（**z0 实际在跑的**） | `ADC12_CH(5)` |
+| PX4 上游 **v1.14.3** | 无 `boards/hkust`（该板级目标尚不存在） |
+| PX4 上游 **v1.15.0** | `ADC12_CH(5)` ← **仍带 bug** |
+| PX4 上游 **v1.16.0** | `ADC12_CH(8)` ← **已修** |
+
+电压通道全程为 `ADC12_CH(4)` 未动，**上游的修复只针对电流通道**。
+（附带一条旧文档遗漏的对照：`nxt-v1` 的电压通道是 `ADC12_CH(9)`，**与 `nxt-dual` 的 `CH(4)` 不同**，
+两者不可互相照抄。）
+
+**第四步，能否靠参数绕过？—— 不能。** 曾有一条诱人的推测：`analog_battery.cpp` 的
+`get_current_channel()`（`src/modules/battery_status/analog_battery.cpp:109-117`）是
+
+```cpp
+if (_analog_params.i_channel >= 0) return _analog_params.i_channel;
+else return DEFAULT_I_CHANNEL[_index - 1];   // 板级宏 → ADC12_CH(5)
+```
+
+即 `BAT1_I_CHANNEL` 只要给非负值就能**覆盖**板级默认，而 z0 现在正是 `-1`（回落到错值）。
+**但这条路被编译期掩码堵死了**（`src/drivers/adc/board_adc/ADC.hpp:58-67`，逐字）：
+
+```cpp
+#ifndef ADC_CHANNELS
+#error "board needs to define ADC_CHANNELS to use this driver"
+#endif
+ADC(uint32_t base_address = SYSTEM_ADC_BASE, uint32_t channels = ADC_CHANNELS, bool publish_adc_report = true);
+```
+
+`ADC_CHANNELS` 是**编译期宏**（`#ifndef`/`#error` 守卫即证明），作为构造参数默认值传入，
+`_samples[]` 由它定容填充，**该驱动模块内无任何参数、无运行期覆盖**。
+所以 `board_adc` **只采样通道 4 和 5**，而 `analog_battery` 只能从 `adc_report` 里已采样的通道中挑。
+**通道 8 永远不会出现在 `adc_report` 里 → 把 `BAT1_I_CHANNEL` 设成 `8` 拿不到任何有效读数。**
+
+> **→ 结论：这个 bug 无法用参数绕过，必须重编重刷固件。**
+> 附带一个**待台架验证的次要猜测**（**不是修复方案**）：把 `BAT1_I_CHANNEL` 设成 `8`
+> 也许能把"读到错误引脚的天晓得的垃圾值"变成"干净的 0"，即把**不可判定**的坏读数变成
+> **可判定**的"无电流采样"。这可能比现在好（假电流会骗过库仑计），但**只能在台架上试**，
+> 且改之前要确认它不会让 `battery_status` 整条报错。
+
+**对 Q15 的影响**：用户已在 Q15 接受了「加一条电压下限」的修正 —— **现在这条修正的必要性被第一手证实了**，
+因为**电流/库仑计数这条路是假的，唯一可信的电池观测量是电压**。
+
 ### 3.6 ⚠️ `EKF2_EV_POS_X/Y/Z = 0` —— 外参可能没标
 
 **事实**：三个都是 `0.000`。
@@ -188,21 +330,45 @@ listener battery_status -n 5
 
 **⚠️ 这同时说明**：`z0.params` 里**没有**任何 uXRCE-DDS 的配置经验可参考。uXRCE-DDS 这条路要自己从零配。
 
-### 3.9 ⚠️ `COM_RC_IN_MODE = 3` —— 含义必须核实（安全相关）
+### 3.9 ✅ `COM_RC_IN_MODE = 3` —— **已结案**（本轮第一手核实，原疑虑解除）
 
-**事实**：`COM_RC_IN_MODE = 3`，同时 `COM_RC_OVERRIDE = 3`（打杆强制退出 Offboard，用户笔记明确记载这是**安全设置**）。
+**原文的疑虑**：枚举值在不同 PX4 版本间变过，`3` 可能是 "MAVLink RC"，若是则物理遥控器被忽略，
+与 `COM_RC_OVERRIDE` 的安全意图冲突。
 
-**疑虑**：PX4 文档中 `COM_RC_IN_MODE` 的枚举值在不同版本间**变过**，`3` 有可能是 "MAVLink RC"。**如果是 MAVLink RC，物理遥控器接收机就被忽略了**——这就和 `COM_RC_OVERRIDE` 想达到的"安全员随时接管"目的直接冲突。
+**→ 已对照 z0 固件源码结案**（`Peize-Liu/PX4-Autopilot @ 5ba2e91f`，
+`src/modules/commander/commander_params.c`，逐字）：
 
-**但反过来说**：用户明确说 z0 已经用遥控器飞过，说明接收机是通的。所以要么是本枚举的另一层含义，要么 z0 上的值与此不同。
-
-**→ 这是一个必须对着 PX4 1.14 官方参数表核实的项，且有安全影响。** 核实命令：
-
-```bash
-param show COM_RC_IN_MODE
-param show COM_RC_OVERRIDE
-# QGC 参数页里把鼠标悬停在参数名上会显示该版本枚举的完整含义
 ```
+/**
+ * RC control input mode
+ *
+ * A value of 0 enables RC transmitter control (only). A valid RC transmitter calibration is required.
+ * A value of 1 allows joystick control only. RC input handling and the associated checks are disabled.
+ * A value of 2 allows either RC Transmitter or Joystick input. The first valid input is used, will fallback to other sources if the input stream becomes invalid.
+ * A value of 3 allows either input from RC or joystick. The first available source is selected and used until reboot.
+ * A value of 4 ignores any stick input.
+ *
+ * @value 0 RC Transmitter only
+ * @value 1 Joystick only
+ * @value 2 RC and Joystick with fallback
+ * @value 3 RC or Joystick keep first
+ * @value 4 Stick input disabled
+ */
+PARAM_DEFINE_INT32(COM_RC_IN_MODE, 3);
+```
+
+**结论**：
+
+1. `3` = **"RC or Joystick keep first"**，**不是** MAVLink RC。**物理遥控器是通的**，原疑虑解除。
+2. `3` **同时是 PX4 的默认值**（`PARAM_DEFINE_INT32(COM_RC_IN_MODE, 3)`）——所以这一条**不是**被人改过的。
+3. ⚠️ **但引入一个新的操作坑**：「**第一个可用源被选中并用到重启为止**」。
+   若**开机时 joystick / MAVLink 源先就绪**，遥控器就会被**锁定到重启**为止。
+   这与 Nxt-FC 上游刚修的那个 bug 是**同类风险**（上游 commit `b7aeebb`：
+   "宿主机开机太快导致 autostart.service 启动得太早，Wi-Fi/VRPN 是 not ready"）。
+   **→ z0 的启动流程必须保证：遥控器链路先于任何 joystick 源就绪，否则安全员的接管能力会在本次上电期间失效。**
+4. **仍待核实**（见 §3.10）：物理接收机到底接在哪个口、走 CRSF 还是 MAVLink。`COM_RC_IN_MODE` 只决定
+   "接受哪类源"，不决定"接收机接在哪"。
+
 
 ### 3.10 ⚠️ `MAV_0` / `SER_TEL1_BAUD` 与遥控器接收机的关系
 
@@ -280,6 +446,183 @@ param show COM_RC_OVERRIDE
 | `BAT_AVRG_CURRENT` | **`15.0`** | ★ **恰好等于 VTC6 的实测持续放电能力** —— 说明这个值被认真设过 |
 | `MOT_SLEW_MAX` | `0` | 无油门变化率限制 |
 | `MPC_USE_HTE` | `1` | 悬停推力估计器开启 |
+
+### 3.15 ★★★ 本轮新发现的参数（旧版本文档完全没有；全部第一手核实）
+
+以下参数在旧版 `params-analysis.md` 中**一条都没有出现**，是本轮（2026-09-20）重验 `z0.params` 时挖出的。
+
+#### (a) ★★★ 遥控器通道占用 —— 旧文档说「ch5 空闲」是**错的**
+
+`RC_MAP_*` 的完整占用（`z0.params` 逐条）：
+
+| 通道 | 功能 | 参数 |
+|---|---|---|
+| ch1 | 横滚 | `RC_MAP_ROLL = 1` |
+| ch2 | 俯仰 | `RC_MAP_PITCH = 2` |
+| ch3 | 油门 | `RC_MAP_THROTTLE = 3` |
+| ch4 | 偏航 | `RC_MAP_YAW = 4` |
+| **ch5** | **解锁开关** | **`RC_MAP_ARM_SW = 5`** |
+| ch6 | 飞行模式开关 | `RC_MAP_FLTMODE = 6` |
+| **ch8** | **杀车开关** | **`RC_MAP_KILL_SW = 8`** |
+| ch7 | — | **唯一空闲** |
+
+其余 `RC_MAP_*`（`ACRO_SW` / `MODE_SW` / `OFFB_SW` / `POSCTL_SW` / `RETURN_SW` / `LOITER_SW` / …）**全为 `0`（未分配）**。
+
+**后果（安全相关）**：z0 上 **只有 ch7 是空的**。任何新增的「开始 / 停止」通道**只能放 ch7**，
+否则会与**解锁（ch5）**或**杀车（ch8）**撞车。旧文档 §8.4 只警告了 ch6，**漏了 ch5 和 ch8**。
+
+> ★ **已定（Q19 / 2026-09-20）：具体通道分配的决定留到 ticket 层解决**，不在文档或 spec 层拍板。
+> 上面这张表是**约束**（事实）；ticket 要决定的是**在这组约束下怎么分配** ——
+> 「开始」与「急停」是否复用同一通道、解锁方式（遥控 vs 程序），目前**均未定**。
+> **→ 后续的 ticket 化步骤须产出一张 ticket**（「决定遥控通道分配：开始 / 急停 / 解锁」），
+> 在 Phase 1 实施到 FSM 的「开始信号」之前 resolved。见 [`../../.scratch/phase1/spec.md`](../../.scratch/phase1/spec.md) 的阻塞项第 4 条。
+
+#### (b) ★ 飞行模式开关的实际分配（枚举值第一手来自固件 `COM_FLTMODE${i}`）
+
+`z0.params`：`COM_FLTMODE1 = 2`、`COM_FLTMODE4 = 1`、`COM_FLTMODE6 = 7`，其余 `-1`（未分配）。
+
+固件里的枚举（`Peize-Liu/PX4-Autopilot @ 5ba2e91f`，`src/modules/commander/module.yaml`，逐字）：
+
+```
+-1: Unassigned          0: Manual          1: Altitude        2: Position
+ 9: Position Slow       3: Mission         4: Hold            10: Takeoff
+11: Land                5: Return          6: Acro             7: Offboard
+ 8: Stabilized         12: Follow Me      13: Precision Land
+```
+
+**所以 z0 的模式开关实际是**：
+
+| 档位 | 模式 |
+|---|---|
+| 1 | **Position** |
+| 4 | **Altitude** |
+| 6 | **Offboard** |
+| 2 / 3 / 5 | 未分配（拨过去无反应） |
+
+**两个含义**：
+
+1. ★ **第 6 档就是 Offboard** —— 飞行员有一条**纯硬件**路径进出 OFFBOARD，
+   与 `COM_RC_OVERRIDE`/`COM_OBL_RC_ACT` 是**两套独立机制**。设计 Q5 的接管逻辑时必须把这条算进去。
+2. ⚠️ **`0: Manual` 在 z0 上并未分配**（旧文档和我本人在讨论中都曾误以为手动模式可用）。
+   z0 上最"手动"的退路只有 **Altitude**（第 4 档）或 **Position**（第 1 档），
+   **没有一个真正的手动油门模式**。这会影响应急程序的写法。
+
+#### (c) ★ 两条与 Q5 直接相关的安全参数（旧文档只提了名字，没给基准）
+
+| 参数 | z0 值 | PX4 默认 | 判定 |
+|---|---|---|---|
+| `COM_RC_OVERRIDE` | **`3`** | `1` | **刻意改过**（放宽了打杆接管的适用范围） |
+| `COM_RC_STICK_OV` | **`20`** | `30.0` | **刻意收紧**（打杆 20% 即接管，比默认灵敏） |
+
+→ 两条合起来说明：**「打杆接管」在 z0 上是被人有意配强过的**，是 Q5 方案的真实参数基础。
+
+#### (d) ★★★ `NAV_RCL_ACT = 2` —— 遥控丢失时**返航**（旧文档完全没有）
+
+`NAV_RCL_ACT` 的语义是「遥控链路丢失后的动作」，`2` = **Return（返航）**。
+
+**⚠️ 对室内动捕飞行是个真实风险**：返航需要 **home 点**，而室内**无 GPS**、home 点不可靠。
+遥控一掉，PX4 会尝试返航而不是就地悬停/降落。
+（对照 `NAV_DLL_ACT = 0` = 数传丢失无动作。）
+
+> ### ⛔ 本小节有一个**我自己写错的建议**，已更正
+>
+> 本节曾建议「改为 **`0`（无动作）**」—— **`NAV_RCL_ACT` 根本没有 `0` 这个值。**
+>
+> **第一手证据**（`Peize-Liu/PX4-Autopilot @ 5ba2e91f`，`src/modules/commander/commander_params.c:651-668`，逐字）：
+>
+> ```
+> /**
+>  * Set RC loss failsafe mode
+>  * ...
+>  * @value 1 Hold mode
+>  * @value 2 Return mode
+>  * @value 3 Land mode
+>  * @value 5 Terminate
+>  * @value 6 Disarm
+>  * @min 1
+>  * @max 6
+>  */
+> PARAM_DEFINE_INT32(NAV_RCL_ACT, 2);
+> ```
+>
+> **合法值只有 `1 / 2 / 3 / 5 / 6`（`@min 1`）** —— 与 `NAV_DLL_ACT` 不同，
+> **后者才有 `@value 0 Disabled`**（`commander_params.c:634-649`）。**两者枚举不对称，我先前把它们类比错了。**
+>
+> **→ 修正后的正确建议：`NAV_RCL_ACT` 改为 `1`（Hold mode）** —— 室内动捕飞行时，
+> 遥控丢失后**让 PX4 的位置控制器就地保持当前位置**，这是最符合 `(A)`/`(C)` 级飞行的行为。
+> （`3` Land = 就地降落，也可接受，视飞行计划定。）
+> **`5` Terminate / `6` Disarm` 绝对不要用** —— 那是**停桨坠落**。
+>
+> ⚠️ 另注：`2` 是 PX4 的**出厂默认值**（`PARAM_DEFINE_INT32(NAV_RCL_ACT, 2)`），
+> 所以这不是"被人改坏的"，而是"用默认值带来的室内风险"。
+> 且该参数**只在 `COM_RC_IN_MODE` 未禁用 RC 输入检查时才会触发**（见参数注释）。
+
+#### (e) ★ 控制分配的几何：`CA_ROTOR_COUNT = 4`（一条排除性发现）
+
+`CA_ROTOR_COUNT = 4`、`CA_METHOD = 2`（= **Auto**，见 §3.1 的更正中关于 `CA_METHOD` 语义的部分）。所以 `CA_ROTOR4..9_*` 那一串**全零是残留、无害** ——
+分配器只用前 4 个。**旧文档隐含担心过这点，可以排除。**
+
+但这**不改变** §3.1 的结论：`CA_ROTOR0..3_PX/PY = ±0.15` 仍是错的几何，且现在**可以量化**：
+
+- `±0.15 / ±0.15` → 臂长 `√(0.15²+0.15²) = 0.212 m` → **轴距 424 mm**
+- 若 z0 的 152 mm 是电机对电机对角线 → 正确值应为 `±76/√2 = ±0.0537 m`
+- **当前值偏大 `0.15 / 0.0537 ≈ 2.79×`**
+
+> ⚠️ **本小节原先的"连带后果"论述已被 §3.1 的「★★ 2026-09-20 更正」推翻**，摘要如下：
+> 原来说「`MC_*RATE_P*` 是配着这个错的几何调出来的，单独改几何会把调好的姿态环弄坏」——
+> **两处都不成立**：① `MC_*RATE_P*` 实测**全是 PX4 出厂默认值**（`0.15 / 0.15 / 0.2`），**没有"调好的"可弄坏**；
+> ② 多旋翼控制分配器**按几何自身范数归一化**，均匀缩放**会被完全约掉**，改几何对分配结果**无影响**。
+>
+> **→ 修正后的动作（对 Q21 决策前提的实质修改）**：Q21 应为
+> **「先实测电机位置 → 判断是否只是 `±0.15/±0.15` 的均匀缩放 → 是则无需改动；
+> 不是（`PX≠PY` 或非正 X 布局）才需要改几何并重调」**。
+> 实测本身仍是**首飞前阻塞项**（`(D)` 方案与力矩饱和估算**必须**用真实几何）。详见 §3.1 的更正块。
+
+#### (f) ⚠️ uXRCE-DDS 无串口可用（Phase 2/3 的实际障碍）
+
+`UXRCE_DDS_CFG = 0`（禁用）、`MAV_2_CONFIG = 0`（无第三个 MAVLink 口）、
+`MAV_0_CONFIG = 101`（TELEM1）、`MAV_1_CONFIG = 102`（TELEM2，Onboard = mavros 在用）。
+
+→ **没有任何串口被分配给 uXRCE-DDS。** 旧文档只说"要开这个参数"，
+**没说开在哪个物理口上** —— 这是 Phase 2 落地时必须先解决的实际问题。
+
+> ### ⛔ 这里有一处已更正的事实（我先前写错了）
+>
+> 本文曾写「`SER_GPS1_BAUD = 0` 说明 GPS 口是关的，理论上可以挪用」—— **错。**
+>
+> **第一手证据**（`Peize-Liu/PX4-Autopilot @ 5ba2e91f`，`Tools/serial/serial_params.c.jinja:11-13`，逐字）：
+>
+> ```
+>  * Note: certain drivers such as the GPS can determine the Baudrate automatically.
+>  *
+>  * @value 0 Auto
+> ```
+>
+> **`0 = Auto`（自动波特率），不是"关闭"。** 而 GPS 子系统在 z0 上其实是**完整开着的**：
+>
+> | 参数 | 值 | 含义 |
+> |---|---|---|
+> | `SYS_HAS_GPS` | **`1`** | 声明**有** GPS |
+> | `GPS_1_CONFIG` | **`201`** | GPS1 端口**已分配** |
+> | `GPS_1_PROTOCOL` | `1` | u-blox |
+> | `EKF2_GPS_CTRL` | `7` | 经纬度 + 高度 + 速度**全开** |
+> | `EKF2_GPS_CHECK` | `245` | 检查全开 |
+> | `SENS_GPS_MASK` | `7` | — |
+> | `SER_GPS1_BAUD` | `0` | **Auto**（默认值） |
+>
+> **→ 两个后果**：① 「GPS 口是空的、可以挪给 uXRCE-DDS」这条**线索不成立**，
+> `GPS_1_CONFIG` 已经被占用；② 与 §3.14 的 `SYS_HAS_MAG = 0`（明确声明无磁罗盘）形成对比 ——
+> **无磁罗盘是显式声明的，而 GPS 是显式开着的**，室内纯动捕飞行时这才是 §3.7 那句"建议设 0"的真正理由。
+>
+> **⚠️ 但仍有一条可查的路**：`SER_GPS1_BAUD = 0` 是**默认值**，说明这个口可能从来没接过东西
+> （否则会填具体波特率）。**实际有没有 GPS 硬件，要看 `GPS_1_CONFIG = 201` 对应的物理口上接了什么** ——
+> 这需要看硬件走线，不是参数能回答的。（`2026-09-20` 未核实。）
+
+#### (g) `CBRK_SUPPLY_CHK = 894281` —— 电源检查被旁路
+
+魔术值，**禁用电源预检**（无电池也能解锁）。对一台**真装了电源模块**的机器，这条**没有必要**，
+且会**掩盖电池没接/没读**的情况 —— 与 §3.5.1 的 ADC 问题叠加，风险更高。
+**建议首飞前评估是否恢复检查。**
 
 ---
 

@@ -17,7 +17,7 @@
 ## 0. 先读这一段：Phase 2 的三个"一句话"
 
 1. **Phase 2 = MPC 输出「角速率 + 推力」，PX4 只跑角速率环 + 混控。** 消息是 `/fmu/in/vehicle_rates_setpoint`（uXRCE-DDS），**不是** mavros。这是 `(C)` 级。
-2. **代码骨架取 [`PX4/px4-mpc`](https://github.com/PX4/px4-mpc)**（BSD 3-Clause，可自由改）。但它是为 x500 写的，有 **6 处必须改**（§2.5），其中 2 处改错会直接摔机。
+2. **代码骨架取 [`DISCOWER/px4-mpc`](https://github.com/DISCOWER/px4-mpc)**（BSD 3-Clause，可自由改）。但它是为 x500 写的，有 **6 处必须改**（§2.5），其中 2 处改错会直接摔机。
 3. **Phase 2 引入 4 个新东西**：acados 求解器、uXRCE-DDS 中间件、MPC 节点、`px4_msgs` 版本绑定。**它们在 SITL 里全部跑通之前，实机一行都不许上。**
 
 ---
@@ -30,21 +30,81 @@
 | G2 | 中间件 | **混合**：mavros2 收动捕 / uXRCE-DDS 发指令 | 用户 Q7：「Phase 1 全走 mavros2，uXRCE-DDS 推迟到 Phase 2」 |
 | G3 | MPC 状态输入 | **动捕直出**（不经 EKF2） | 用户 Q9 + roadmap D8；延迟更低 |
 | G4 | 求解器 | **acados** + `SQP_RTI` + `PARTIAL_CONDENSING_HPIPM` | roadmap §4.5，与 px4-mpc 一致 |
-| G5 | 代码骨架 | **`PX4/px4-mpc`**（复制改造，不引依赖） | 第一手读过三个核心文件，见 §2 |
-| G6 | 固件版本 | **留在 PX4 1.14.x，不刷固件** | 用户 Q12 + [`open-source-survey.md`](../reference/open-source-survey.md) §9.3 |
+| G5 | 代码骨架 | **`DISCOWER/px4-mpc`**（复制改造，不引依赖） | 第一手读过三个核心文件，见 §2 |
+| G6 | 固件版本 | **不刷固件**（Q12 的决策不变）+ ★ **版本基准统一到 fork `5ba2e91f`（Q31=a）** —— SITL 从 fork 构建、`px4_msgs` 从 fork 的 `msg/` 生成。⚠️ 「**1.14.x**」这个标签已被 2026-09-20 第一手推翻（固件是 **v1.15 世代**） | 用户 Q12 + **Q31=a** + [`refs-manifest.md`](../reference/refs-manifest.md) §2.5–§2.6 |
 | G7 | 上线顺序 | **先 SITL 验证 MPC，再实机** | 用户 Q8(b) |
 | G8 | INDI | **第一版不做**，作为步骤 2 | roadmap D3 |
 | G9 | 参考轨迹 | **第一阶段手写**（悬停 / 正方形 / 八字），与 Phase 1 同一套 | 用户 Q15 |
 | G10 | 动捕原点 | **未起飞时静止帧为原点**，yaw 只归零偏航 | 用户 Q16 / Q21(b) |
-| G11 | 动捕输出 | 同时给 **`/mocap/pose_ned`（给 Phase 1）** 和 **`/mocap/pose_enu`（给 Phase 2）** | 本文 §3.2（Phase 2 新增的第二条话题） |
+| G11 | 动捕输出 | **只发 `/mocap/pose_enu`（ENU / 原生）**；~~`/mocap/pose_ned`~~ **不发布**（Q14=a 已删） | 本文 §3.2 + 用户 Q14 |
 
 ---
 
-## 2. 参考实现 `PX4/px4-mpc` 第一手解读
+## 2. 参考实现 `DISCOWER/px4-mpc` 第一手解读
 
-> 仓库 `https://github.com/PX4/px4-mpc`，HEAD `3e541af`（2026-06-15），**BSD 3-Clause**，Python `ament_python` 包，40 个文件。
+> 仓库 `https://github.com/DISCOWER/px4-mpc`，HEAD `3e541af`（2026-06-15），**BSD 3-Clause**，Python `ament_python` 包，40 个文件。
 > 依赖 `PX4/px4_msgs` + `Jaeyoung-Lim/px4-offboard`。
 > 三个核心文件本文件作者已**逐行读完**：`models/multirotor_rate_model.py`（110 行）、`controllers/multirotor_rate_mpc.py`（164 行）、`mpc_quadrotor.py`（279 行）。
+
+> ### ✅ 2026-09-20 复核结果
+>
+> 本轮重新克隆并**逐项核对**，本文件 §2 的内容断言**全部成立**：
+> commit `3e541afb05350e30a0867420a5df40dbdfa92c13` ✅、日期 2026-06-15 ✅、**40 个文件** ✅、
+> BSD 3-Clause ✅（`Copyright (c) 2022, JaeyoungLim` —— 署名也佐证它不属 PX4 组织）、
+> `px4_mpc/px4_mpc/models/multirotor_rate_model.py` ✅、`px4_mpc/px4_mpc/controllers/multirotor_rate_mpc.py` ✅、
+> `mpc_msgs/srv/SetPose.srv` ✅。
+>
+> ⚠️ **一处已修正的错误**：本文原先把仓库写成 **`PX4/px4-mpc`，该 URL 不存在**
+> （`git ls-remote` 实测回 "Repository not found"）。真身是 **`DISCOWER/px4-mpc`**。
+> 按原 URL 去找会一无所获。文档内 4 处引用已全部改正。
+>
+> 本地克隆（Q18 决策，仓库外持久路径）：**`~/refs/px4-mpc`**。
+>
+> ### ✅ 2026-09-20 Q25 分支挖掘结果：**两条分支都无需再挖，前提是错的**
+>
+> 按 Q25=a 挖了 `dev-ned_enu_conversion` 与 `dev-attitude_setpoints`。**结论与预期相反：两者都已被
+> `master` 完全包含**，且不是靠肉眼看 diff —— 是用 **tree hash** 判定的（`git diff master origin/<branch>`
+> 看的是 master 自己的新工作在倒放，不是分支的贡献，这个坑会骗人）：
+>
+> | 分支 | HEAD | 与 master 的关系 | 实际有无独有内容 |
+> |---|---|---|---|
+> | `dev-ned_enu_conversion` | `82d46e9`（2025-06-24） | tree 与 `7f208fa` **逐字节相同**，二者同父 `9cdaec7`；`7f208fa` 就是已合并的 PR #33 | **无**。master 在其之上又叠了 32 个 commit |
+> | `dev-attitude_setpoints` | `d3275b3`（2024-12-17） | **0 个独有 commit**（`rev-list --left-right --count master...branch` → `54  0`），是 master 的祖先 | **无** |
+>
+> **★ 最重要的更正：`dev-attitude_setpoints` 里根本没有姿态 setpoint 代码。**
+> 决定性检查：`git log -S "VehicleAttitudeSetpoint" origin/dev-attitude_setpoints` **为空**；
+> `git grep -i attitudesetpoint` **无匹配**。该分支发的仍是 `VehicleRatesSetpoint`
+> + `offboard_msg.attitude = False / body_rate = True` —— 与 master **同级（C）**。
+> 分支名的 "attitude setpoint" 指的是**航天器那条路径让 MPC 在代价里跟踪一个姿态四元数_参考值_**
+> （`mpc_spacecraft.py:179` 的 `self.setpoint_attitude` / `:316-339` 的 `error_attitude`），
+> 是**状态**，不是输出消息。→ 本文件原先"它比 master 更贴近 (B) 级"的推测**作废**。
+>
+> **推论（影响 Phase 2/3 设计）**：**`px4-mpc` 全部 24 条远端分支里都不存在 `VehicleAttitudeSetpoint`
+> 的参考实现。** 所以若 Phase 2/3 需要 (B) 级姿态接口做回退/对照，**没有现成代码可抄，是全新工作**。
+>
+> **附带收获：§2.3a 的帧变换被数值复核为「正确」。** 用真值关系 `R_FLU→ENU = T · R_FRD→NED · S`
+> （`T = [[0,1,0],[1,0,0],[0,0,-1]]`，`S = diag(1,-1,-1)`）在单位四元数、90° yaw、一个混合四元数上
+> 逐点比对，四元数那行完全吻合。**且紧跟其后的 `q_enu /= np.linalg.norm(q_enu)` 是承重的** ——
+> 那个半角映射只在输入为单位四元数时才正交，少了这行会漂。
+>
+> **同一份代码里两条帧变换的"不对称"，别误判成 bug**：
+> - **位置/速度**（世界系 NED 向量）：`[msg.y, msg.x, -msg.z]` —— **既有 x↔y 交换，也有 z 取反**
+> - **角速度**（PX4 发的是**机体系**）：`[xyz[0], -xyz[1], -xyz[2]]` —— **只取反 y/z，不交换**
+> - 二者口径不同是**故意的**，因为一个在世界系、一个在机体系。
+>
+> **反向教训（`dev-attitude_setpoints` 的唯一价值）**：它带着**错的**帧约定（`[x, -y, -z]` + `# TODO`），
+> 是 90° yaw 误差，正是后来 PR #33 修掉的东西。留作**反面参照**。
+>
+> **⚠️ 对我们而言，这份帧变换大部分是死代码。** px4-mpc 是「把 PX4 吐出来的 NED 转进控制器」；
+> 而 Q14 已定 mocap **直出 ENU** 作为状态源 —— 所以**输入侧 (a) 用不上**，
+> 我们真正要借鉴的是**输出侧 (b)**（`pitch`/`yaw` 取反、推力取负），那部分 master 已有。
+>
+> **两个从 master 继承的毛刺**（写代码前记着）：
+> 1. 推力标度是**硬编码 `0.07`**，而 `max_thrust = 9.81/0.73 = 13.4384`
+>    （`multirotor_rate_model.py:44`），其倒数 `0.0744` —— **比 `0.07` 高约 6%**，即代码里自带约 6% 的低估偏置。
+>    （`mpc_spacecraft.py:298` 那条路径则是显式 `F_scaling = 1/(2*1.5)`，两者写法不一致。）
+> 2. 发出去的 `thrust_body[2]` 相对求解器的 `F` 是**取负**的 —— 这对 PX4 的 FRD 约定是对的，
+>    但**移植时极像 bug**，见 §2.3b。
 
 ### 2.1 ★ 最重要的一处：它的 OCP 只有 10 个状态
 
@@ -216,7 +276,7 @@ ubu = np.array([+Fmax,     wmax,       wmax,      +0.5*wmax])
 | M5 | `solve()` 失败 + NaN 的兜底路径 | 坑 2、坑 3 | 🔴 |
 | M6 | `R` 改罚 `u − u_ref` | 坑 4 | 🟡 |
 | M7 | 状态源从 PX4 话题换成 `/mocap/pose_enu` | G3；且**因此不需要 (a) 那两行转换** | 🟡 |
-| M8 | 删掉 `_v1` 后缀话题的双订阅 hack | 我们用 `release/1.14` 的 `px4_msgs`，不需要 | 🟢 |
+| M8 | 删掉 `_v1` 后缀话题的双订阅 hack | `_v1` / `msg/versioned/` 是 **v1.16 才有**的机制，**fork（v1.15 世代）里根本不存在** → 这段兼容代码对我们纯属死代码 | 🟢 |
 | M9 | 补上 `MPC_HORIZON = 15` 这个**定义了却没用的死变量** | 代码卫生 | 🟢 |
 
 > 📌 **M7 顺带干掉了一整类 bug**：既然动捕原生就是 ENU/FLU，MPC 内部也用 ENU/FLU，那么 §2.3(a) 那段手写四元数转换（`1/√2·[w+z, x+y, x−y, w−z]`，**整个文件里最容易写错的一行**）**可以直接删掉**。详见 §3.2。
@@ -326,8 +386,8 @@ ubu = np.array([+Fmax,     wmax,       wmax,      +0.5*wmax])
 ### 3.4 控制流总览
 
 ```
- Nokov 动捕 ──VRPN──> vrpn_listener ──> mocap 节点 ──┬──> /mocap/pose_ned ──> (Phase 1: mavros2 offboard)
-  10.1.1.198:3883                                    │                        Phase 2 不用
+ Nokov 动捕 ──VRPN──> vrpn_listener ──> mocap 节点 ──┬──> /mavros/vision_pose/pose ──> PX4 EKF2 (Phase 1)
+  10.1.1.198:3883                                    │      （ENU，mavros 转 NED）
                                                      └──> /mocap/pose_enu ──> MPC 节点   ← Phase 2 新增
                                                                                   │
                         ┌─────────────────────────────────────────────────────────┘
@@ -344,7 +404,11 @@ ubu = np.array([+Fmax,     wmax,       wmax,      +0.5*wmax])
                      PX4 角速率环 (1 kHz) ──> 混控 ──> 电机
 ```
 
-**注意 Phase 2 是「加一条支路」，不是「替换」**：`/mocap/pose_ned` 与 mavros2 那条链**保持原样不动**，随时可以切回 Phase 1 的 `(A)` 级。
+**注意 Phase 2 是「加一条支路」，不是「替换」**：mavros2 那条链（`vision_pose` → EKF2 → `setpoint_raw/local`）
+**保持原样不动**，随时可以切回 Phase 1 的 `(A)` 级。
+★ **Q14=a 删掉 `/mocap/pose_ned` 不影响这个回退** —— 因为 `(A)` 级用的是
+`/mavros/setpoint_raw/local` + EKF2 的 `/mavros/local_position/*`，**两者都不经过 `pose_ned`**。
+（旧版这里写「`/mocap/pose_ned` 与 mavros2 那条链保持原样」，是把两条不相关的链并在一起说了。）
 
 ---
 
@@ -357,8 +421,9 @@ ubu = np.array([+Fmax,     wmax,       wmax,      +0.5*wmax])
 
 | 项 | 值 | 备注 |
 |---|---|---|
-| PX4 源码 | `v1.14.3` | ✅ **已验证** `ROMFS/px4fmu_common/init.d-posix/airframes/4001_gz_x500` **存在**，`make px4_sitl gz_x500` 可用 |
-| `px4_msgs` | 分支 **`release/1.14`**（HEAD `ffb6e80e`）或标签 `v1.14.0` | ✅ **已验证**两者都存在。**⚠️ 不要用 `main`** |
+| PX4 源码 | ★ **fork `Peize-Liu/PX4-Autopilot @ 5ba2e91f`**（~~`v1.14.3`~~，Q31=a 已改） | 需**带 `--recursive` 的完整 clone**（23 个 submodule）；`~/refs/px4-z0` 是 fetch-only，**不能直接构建** → 建议新目录 `~/refs/px4-z0-build/` |
+| SITL 仿真后端 | **gazebo-classic 或 gz-sim 都可用（Q12 的 gazebo-classic 选择不变）** | ✅ 第一手：fork 的 `init.d-posix/airframes/` **63 个**，`4001_gz_x500`（gz-sim）**与** gazebo-classic 两套都在；`Tools/simulation/{gz,gazebo-classic}` 都在 |
+| `px4_msgs` | ★ **从 fork 的 `msg/` + `srv/` 生成**（Q31=a 已定） | ❌ **`release/1.14` 已被 Q24 的验收步骤判定为不兼容**（28/184 个共用消息字段布局不同）。`release/1.15` **也不必试**（`5ba2e91f` 早于 v1.15.0 发布）。详见 §6.1 与 [`refs-manifest.md`](../reference/refs-manifest.md) §2.5–§2.6 |
 | 中间件代理 | `micro-xrce-dds-agent udp4 -p 8888` | PX4 SITL 默认端口 |
 
 **⚠️ 必须做的版本校验**（roadmap 与 [`open-source-survey.md`](../reference/open-source-survey.md) §10 都强调过）：
@@ -414,7 +479,12 @@ ROS 侧：  ros2 interface show px4_msgs/msg/VehicleRatesSetpoint
 
 ### S5 —— SITL 闭环 ★ **Phase 2 的真正关卡**
 
-在 `gz_x500` 上跑通完整链路。**SITL 里 PX4 状态话题可用，所以这一步有两个可选的输入源**：
+> ⚠️ **被控对象不是 `gz_x500`（Q9 决策）**：`gz_x500` 只是"能跑起来"的现成平台，
+> **SITL 要重新生成一份符合 z0 的模型** —— 按 Q11 用**故意失配**的参数（质量 / `kt` / 转动惯量 / τ 按单参数 ±30% 扫），
+> 并保留一份**同参数变体**作为对照；按 Q13 用 **Phase 1 的真实动捕 rosbag 回放**驱动，
+> 地面真值重映射那份作为对照。`gz_x500` 仅可作为**最早期**的冒烟目标。
+
+在（z0 参数的）SITL 被控对象上跑通完整链路。**SITL 里 PX4 状态话题可用，所以这一步有两个可选的输入源**：
 
 | 输入源 | 用途 |
 |---|---|
@@ -467,7 +537,7 @@ ROS 侧：  ros2 interface show px4_msgs/msg/VehicleRatesSetpoint
 |---|---|
 | **遥控器夺权** | RC 任一杆动 → PX4 自动退出 offboard。**这是最后一道防线，飞前必须实测有效** |
 | **失效保护** | offboard 心跳丢失 → PX4 触发 `COM_OBL_RC_ACT` / failsafe。**确认参数已配且测得** |
-| **软急停** | 遥控器按键（用户 Q22 第 8 条，**通道待实飞确认**）→ 节点停发指令 |
+| **软急停** | 遥控器按键（用户 Q22 第 8 条）→ 节点停发指令。⚠️ ★ **通道号留到 ticket 层决定（Q19 / 2026-09-20）** —— 实现必须**参数化**，不写死通道；已知只剩 **ch7** 空闲（ch5=解锁、ch6=模式、ch8=杀车） |
 | **求解器兜底** | 连续 N 次求解失败 → 切悬停推力 + 零角速率，并置标志 |
 | **数值守卫** | 发布前 `np.isfinite()` 全量校验（坑 3） |
 | **回退到 Phase 1** | **两个节点都在跑，只是不发布** —— 一个 `ros2 param set` 就能切回 `(A)` 级 |
@@ -485,7 +555,11 @@ ROS 侧：  ros2 interface show px4_msgs/msg/VehicleRatesSetpoint
 | P3 | **最坏求解耗时** | SITL 跑 1000 次取 max | **D6（频率）** | 先按 100 Hz 写 |
 | P4 | **`k_ω`** | 角速率阶跃 + IMU 拟合 | S7 | 步骤 1 完全不需要 |
 | P5 | **动捕实测延迟** | 已知：**50 ms** | D9 | 已有数 |
-| P6 | 遥控器急停通道 | 实飞看遥控型号 | S8 | **不影响飞行，但影响安全** |
+| P6 | 遥控器急停通道 | 实飞看遥控型号 | S8 | **不影响飞行，但影响安全**。⚠️ ★ **通道分配本身已定留到 ticket 层（Q19）** —— 本行只负责"实飞时把遥控器实际的通道号读出来"，不负责决定它 |
+
+> ★ **Q19（2026-09-20）：遥控通道分配 / 解锁方式 / "开始"通道的决定留到 ticket 层解决。**
+> 本表 P6 只记录**实测读数**；**决定**由后续的 ticket 做出。
+> 约束与完整占用表见 [`../reference/params-analysis.md`](../reference/params-analysis.md) §3.15。
 
 **⚠️ P1 是唯一真正的阻塞项。** 其余都有可用的初值。
 
@@ -493,10 +567,69 @@ ROS 侧：  ros2 interface show px4_msgs/msg/VehicleRatesSetpoint
 
 ## 6. 六个必须提前知道的坑
 
-### 6.1 `px4_msgs` 版本不匹配 → **静默失败**
+### 6.1 ★★ `px4_msgs` 版本不匹配 → **静默失败**（**此坑已经踩到，不是假设**）
 
-v1.15 及以前，`px4_msgs` 与固件不匹配时：话题存在、能发布、**无报错**，但 PX4 不理会。**排查时你会怀疑 MPC、怀疑符号、怀疑一切，唯独不会怀疑消息定义。**
-→ S1 的版本校验不是形式主义。
+v1.15 及以前，`px4_msgs` 与固件不匹配时：话题存在、能发布、**无报错**，但 PX4 不理会。
+**排查时你会怀疑 MPC、怀疑符号、怀疑一切，唯独不会怀疑消息定义。**
+
+> ### ✅ Q24 的验收步骤**已执行**（2026-09-20），结论是**不兼容**
+>
+> 原计划 `px4_msgs` `release/1.14` @ `ffb6e80e`。逐字节比对后：**184 个共用消息中 28 个字段布局不同**，
+> 11 个关键消息里 **6 个是破坏性的**。而且 **`px4_msgs` 与 fork 都没有版本号机制**
+> （`msg/versioned/` 是 **v1.16 才有**），所以**没有任何自动保护**能替你挡住 —— 正是本节描述的场景。
+>
+> **好消息（一条巧合）**：Phase 2/3 真正要发的 **`VehicleRatesSetpoint` 恰好逐字节相同**，
+> `VehicleAttitudeSetpoint` 也相同。**坏消息**：配套的
+> **`OffboardControlMode`（offboard 心跳必需）是破坏性的**（`bool actuator` → `bool thrust_and_torque`
+> + `bool direct_actuator`），`VehicleStatus` / `VehicleLocalPosition` / `VehicleControlMode` / `VehicleCommand` 也全是。
+>
+> **→ 附带推翻一个项目前提**：`5ba2e91f` 的 `msg/OffboardControlMode.msg` 与 **上游 v1.15.0 一致**、
+> 与 v1.14.3 不同（第一手对照三个 tag）。**所以 z0 固件是「v1.15 世代」，"1.14.x" 这个标签是错的**（G6 已更新）。
+> ⚠️ 但 `5ba2e91f` 是 2024-07-02 的 `main`、**早于 v1.15.0 发布**，
+> **→ `release/1.15` 也未必逐字节相同；最稳的做法是从 fork 自身的 `msg/` 生成 `px4_msgs`。**
+>
+> 完整对照表见 [`refs-manifest.md`](../reference/refs-manifest.md) §2.5。
+>
+> **→ S1 的第一步不再是"选一个版本"，而是"定案怎么得到与 fork 逐字节一致的 `px4_msgs`"。**
+>
+> ### ✅ 已复验：本文依赖「1.14 行为」的**载重结论扛住了版本更正**
+>
+> 版本更正会威胁所有"对着上游 v1.14.3 验出来的行为结论"。**已重新对着 fork `5ba2e91f` 复核最关键的一条**：
+>
+> §3.3 / §6.3 的「offboard 分支对 `thrust_body` **不做任何 hover-thrust 重标定，原样透传**」——
+> `src/modules/mc_rate_control/MulticopterRateControl.cpp:182`（fork 内，逐字）：
+>
+> ```cpp
+> } else if (_vehicle_rates_setpoint_sub.update(&vehicle_rates_setpoint)) {
+> 	if (_vehicle_rates_setpoint_sub.copy(&vehicle_rates_setpoint)) {
+> 		_rates_setpoint(0) = PX4_ISFINITE(vehicle_rates_setpoint.roll)  ? ... : rates(0);
+> 		_rates_setpoint(1) = PX4_ISFINITE(vehicle_rates_setpoint.pitch) ? ... : rates(1);
+> 		_rates_setpoint(2) = PX4_ISFINITE(vehicle_rates_setpoint.yaw)   ? ... : rates(2);
+> 		_thrust_setpoint = Vector3f(vehicle_rates_setpoint.thrust_body);   // ← 与 v1.14.3 完全一致
+> 	}
+> }
+> ```
+>
+> **与 v1.14.3 那一行逐字相同。→ §3.3、§6.2、§6.3 三条结论不受版本更正影响。**
+>
+> ### ✅ Q33=a 复验清单（2026-09-20 完成）
+>
+> 本文所有标注「第一手（PX4 `v1.14.3`）」的条目**已逐条对着 fork `5ba2e91f` 复验完毕**：
+>
+> | 条目 | 复验结果 | 证据 |
+> |---|---|---|
+> | §3.3 / §6.2 / §6.3 `thrust_body` 原样透传、不受 `MPC_THR_HOVER` 影响 | ✅ **成立** | fork `MulticopterRateControl.cpp:182` 与 v1.14.3 逐字相同 |
+> | §3.3 `MC_BAT_SCALE_EN` 默认 **0**（关闭） | ✅ **成立** | fork `mc_rate_control_params.c:294` `PARAM_DEFINE_INT32(MC_BAT_SCALE_EN, 0);` —— **含义**：角速率环**不做**电池电压推力补偿 → `(C)` 级的推力映射**不需要**考虑电压 sag |
+> | §6.4 QoS（订阅 `fmu/out/*` 必须 `BEST_EFFORT`） | ✅ **成立**，且已拆成两个方向说清楚（见 §6.4） | fork `dds_topics.h.em:109`、`utilities.hpp:120-125` |
+> | §6.5 时间戳单位微秒 | ✅ **成立**（两条独立证据） | fork `msg/VehicleRatesSetpoint.msg:1`、`dds_topics.h.em:91/146` |
+> | §6.1 `px4_msgs` 版本 | ❌ **推翻了** | 见上 |
+> | S1 `gz_x500` 可用性（原注 v1.14.3） | ✅ **fork 也有，且更多** | fork 的 `init.d-posix/airframes/` **63 个**，含 `4001_gz_x500`（gz-sim）**与** gazebo-classic 两套；`Tools/simulation/{gz,gazebo-classic}` 都在 |
+>
+> **★ 一条重要的范围澄清**：**§2.4 的「五个坑」不需要按 fork 复验** ——
+> 那五条针对的是 **px4-mpc 自己的 Python 代码**（`0.07` 魔数、`raise` 兜底、代价罚 `u−0`、约束范围），
+> **与 PX4 固件版本无关**。它们已在 Q25 的那一轮里对着 px4-mpc `master` 核过。
+>
+> **→ Q33=a 执行完毕：所有依赖「PX4 版本」的载重结论现在都建立在 fork `5ba2e91f` 之上，不再依赖上游 v1.14.3。**
 
 ### 6.2 `thrust_body` 是 `[-1, 1]`，**不是** `[0,1]`、**不是**牛顿
 
@@ -512,9 +645,25 @@ FRD 下 z 朝下 ⇒ **向上推力是负值**。写成 `+F/T_max` 会直接**�
 PX4 的 `fmu/*` 话题是 **BEST_EFFORT**。ROS 2 默认 `RELIABLE` 的订阅者**与 BEST_EFFORT 发布者不兼容**，表现为「话题列出来了，但一个回调都不进」。
 → 订阅者必须显式声明 `BEST_EFFORT`。（px4-mpc 里已写对，**照抄别改**。）
 
+> ✅ **2026-09-20 对着 fork `5ba2e91f` 复验通过**，并把两个方向拆开说清楚了 ——
+> **原表述把「订阅」和「发布」当成一回事，实际不对称**：
+>
+> | 方向 | 固件侧的事实（第一手） | 我们该怎么做 |
+> |---|---|---|
+> | **订阅 `fmu/out/*`** | PX4 **所有**出向话题都走 **best-effort 流**（`dds_topics.h.em:109`：`uxr_prepare_output_stream(session, best_effort_stream_id, ...)`） | **必须声明 `BEST_EFFORT`** —— RELIABLE 订阅者**匹配不上**。这就是"话题在、回调不进"的成因 |
+> | **发布 `fmu/in/*`** | PX4 建的 DataReader 是 **`VOLATILE` + `BEST_EFFORT` + `KEEP_LAST`**（`utilities.hpp:120-125`，`uxrQoS_t qos = {...}` 逐字）；且 `create_data_reader` 用的输入流是 `best_effort_in_stream_id`（`dds_topics.h.em:174`） | `BEST_EFFORT` 即可。⚠️ 注意 PX4 的 reader 是 **`VOLATILE`**，所以 pub 侧用 `TRANSIENT_LOCAL` **也兼容**（volatile reader 接受 transient-local writer，只是拿不到历史样本）—— px4-mpc 的 `TRANSIENT_LOCAL` 因此没问题，**不是 bug** |
+>
+> **`depth` 也不对称**：PX4 的 reader `depth = orb_get_queue_size(...) * 2`，px4-mpc 的 pub `depth = 1` —— 兼容，不用对齐。
+
 ### 6.5 时间戳单位是**微秒**
 
 `Clock().now().nanoseconds / 1000`。PX4 全用微秒。传成纳秒的话时间戳会大到离谱，PX4 可能直接丢弃。**这个错误不会报错，只会"没反应"。**
+
+> ✅ **2026-09-20 对着 fork `5ba2e91f` 复验通过（两条独立证据）**：
+> ① `msg/VehicleRatesSetpoint.msg:1` 逐字 `uint64 timestamp	# time since system start (microseconds)`；
+> ② 固件在 DDS 边界上自己做 `ns → us` 换算 —— `dds_topics.h.em:91` 与 `:146`：
+> `int64_t time_offset_us = session->time_offset / 1000; // ns -> us`。
+> **→ 微秒是 DDS 边界的硬约定，不是习惯。**
 
 ### 6.6 求解失败必须活着
 

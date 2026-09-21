@@ -112,6 +112,21 @@ low_voltage: 18.0     # ← 6S 电池
 
 > 用户明确说明：*"是经过验证的可以直接使用的"*。**实测确认它是 ROS2/ament 包**（`ament_cmake` + `rclcpp` + ROS2 XML launch），不是 ROS1。
 
+> ### ★ vendoring 边界（Q10 + Q16=b + Q28=a —— 三处决策合起来才完整，不要再重开）
+>
+> 本节曾被误读为与 Q10「不要复制」冲突。**2026-09-20 经用户 Q28=a 明确，三者是自洽的**：
+>
+> | 包 | 来源 | 决定 |
+> |---|---|---|
+> | **`vrpn_listener`** | **上游 `Huan-qun/Sim2real-UAV-Params-` 的 zip（Q16=b 重新获取的那份）** | ✅ **vendor 进仓库，原样不改** —— 即本节的做法 |
+> | `vrpn_relative_pose` | 同上 zip | ❌ **不 vendor** —— 由 z0 自己的 `mocap` 包**重写**（见 `.scratch/phase1/spec.md:32`） |
+> | `offboard` | 同上 zip | ❌ **不 vendor** —— 由 z0 自己的 `control` 包**重写** |
+>
+> **Q10「不要复制」的确切范围**：指**不要复制 2026-09-20 之前留在 `/tmp` 的那几份陈旧副本**
+> （当时 `/tmp` 被清空，来源与新鲜度都不可靠）。**不是**说 `vrpn_listener` 不该 vendor。
+> **→ 所以：vendor 的对象必须是 Q16=b 从上游 zip 重新取的那一份，且要与
+> `refs-manifest.md` 记录的 commit（`b7aeebb`）对得上。**
+
 | 文件 | 规模 | 取舍 | 说明 |
 |---|---|---|---|
 | `src/vrpn_listener.cpp` | 8088 B | ✅ **原样使用** | ★ 见下：**时间戳是刻意设计，不要改** |

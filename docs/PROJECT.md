@@ -47,7 +47,7 @@
 | | 旧机 | **z0**（本项目这台） |
 |---|---|---|
 | 机架 | 超维空间 S2-F290 | **OddityRC XI35 Pro，152 mm 轴距** |
-| 飞控 | Pixhawk + PX4 **1.13.3** | **微空 NxtPX4v2 + PX4 1.14.x** |
+| 飞控 | Pixhawk + PX4 **1.13.3** | **微空 NxtPX4v2 + PX4 1.14.x**（⚠️ 2026-09-20 更正：固件真身实为 **v1.15 世代**，"1.14" 是参数文件头带来的错标签 —— 见下方风险表与 [`reference/refs-manifest.md`](reference/refs-manifest.md) §2.5） |
 | 机载电脑 | 树莓派 4B (8GB?) | **Jetson Orin NX 8GB** |
 | 状态 | 动捕定点飞行已验证 | **只遥控器飞过** |
 | 飞控参数 | — | [`assets/z0.params`](assets/z0.params)（源自上游 `uav1.params`，见 5.1） |
@@ -230,7 +230,7 @@
         │                          │
         ▼                          ▼
 ┌─────────────────────────────────────────────────────────────┐
-│  PX4 飞控（NxtPX4v2, PX4 1.14.x）                            │
+│  PX4 飞控（NxtPX4v2, PX4 1.15世代）                          │
 │   · EKF2：融合动捕位姿 → 提供位置/速度估计（安全网用）          │
 │   · 角速率环 1 kHz：跟踪 ω_des，做控制分配                     │
 │   · 安全逻辑：失控保护、RC 接管、低电、kill switch              │
@@ -407,7 +407,7 @@ PX4 官方 Offboard 文档明确标注了每种 setpoint 所需的**状态估计
 
 | # | 里程碑 | 内容 | 验收标准 | 依赖 |
 |---|---|---|---|---|
-| **0** | **环境就绪** | 装 acados（含 Tera）、CasADi、`px4_msgs`（版本匹配 PX4 1.14.x）、uXRCE-DDS Agent；确认 `px4_msgs` tag | MPC 求解器能编译并跑通官方 `quadrotor_nav` 示例 | — |
+| **0** | **环境就绪** | 装 acados（含 Tera）、CasADi、uXRCE-DDS Agent；★ **`px4_msgs` 改为「从 fork `5ba2e91f` 的 `msg/` 生成」并逐字节比对通过**（原「版本匹配 PX4 1.14.x」已被推翻） | MPC 求解器能编译并跑通官方 `quadrotor_nav` 示例；**且 `px4_msgs` 与固件消息定义逐字节一致** | — |
 | **1** | **z0 动捕定点** | 移植旧机的动捕链路到 z0：VRPN 驱动 → `/mavros/vision_pose/pose` → EKF2；重标 `EKF2_EV_POS_*` 外参；重调 `EKF2_EVP_NOISE` | z0 能用动捕自主定点悬停 | 动捕场地 + 网段打通（见第 7 节） |
 | **2** | **系统辨识** | 用 `thrust_calibrate.py` 测推力曲线；辨识 kt/kq/惯量；测推力在不同电压下的漂移 | 得到完整的建模参数表（替换 2.3 里的 ❌ 项） | 里程碑 1 |
 | **3** | **仿真闭环** | 先在 Python/CasADi 对自写模型验 MPC 数学；再进 PX4 SITL 验接口与闭环 | SITL 里轨迹跟踪不发散 | 里程碑 0 |
@@ -429,11 +429,12 @@ PX4 官方 Offboard 文档明确标注了每种 setpoint 所需的**状态估计
 | **电池功率瓶颈**（见 2.4） | T/W 实际只有 1.60–2.54，敏捷飞行受限 | MPC 推力约束按电池设；考虑换更高 C 的电池 |
 | **电压 sag** | 同样油门给出不同推力，sim-to-real gap | 辨识推力-电压关系；或模型里显式建电压状态 |
 | ~~**★★ 动捕时间戳抖动 10–100 ms**~~ | ✅ **【已撤销】该风险不存在** —— 抖动实际只有 ~2–5 ms，且 `stamp = now()` 是刻意设计（动捕主机与 Jetson 时钟差 ~4 秒，改成 `msg_time` 反而会毁掉 EKF2）。真实最坏延迟 ≈ 55 ms 而非 150 ms | **不需要任何缓解措施。** 详见 [`reference/mocap-setup.md`](reference/mocap-setup.md) **6.2** |
-| **飞控固件来源不明** | z0 的 PX4 1.14 是飞控自带的（MicoAir 出厂），但 `hkust_nxt-dual` 板级目标**要到 PX4 ≥1.15.0 才进官方上游**。1.14 上的这份必然是 MicoAir/HKUST fork 的构建 | **不自己刷固件**，用自带的那份。在 QGC 里记录版本号 |
-| **电池电流采样可能读错通道（★ 大概率已中招）** | `nxt-dual` 的 `board_config.h` 里 `ADC_BATTERY_CURRENT_CHANNEL = ADC12_CH(5)` 是错的。上游修复 commit `129c0f188a`（2024-11-19）改成 `ADC12_CH(8)`，但 **v1.15.0 仍带 `CH(5)`，v1.16.0/main 才修好**。**z0 是 1.14.x，连这个板级目标都还不存在（v1.15.0 才有）→ 1.14 的构建几乎必然带 `CH(5)`。** ⚠️ 修复**只针对 `nxt-dual`**，`nxt-v1` 在 main 上仍是 `CH(5)`，**不要照抄** | ★ **上电后在 QGC 里核对电流读数**（未解锁应≈0、上电后应合理；恒为 0 或恒为怪值 = 中招）。若中招，**电流/电量保护全是假的**。见 [`reference/open-source-survey.md`](reference/open-source-survey.md) §9.5 |
+| ~~**飞控固件来源不明**~~ | ✅ **【已结案，2026-09-20 第一手】** 真身是 **`Peize-Liu/PX4-Autopilot`**（经 `HKUST-Aerial-Robotics/Nxt-FC` 的 git submodule 指认，`Nxt-FC/main` 钉在 **`5ba2e91ff227fe4da0133371e88dc81b038bb81e`**，2024-07-02）。该 commit 的 `boards/hkust/` 下**确实有 `nxt-dual` 与 `nxt-v1`** ✅。另经上游 tag 对照确认：**PX4 v1.14.3 无 `boards/hkust`，v1.15.0 起才有** ✅ —— 本文原判断的结构部分成立。⚠️ **`HKUST-Aerial-Robotics/Nxt-FC` 本身只有 51 个文件，不是固件源码仓库**（是硬件 + 预览版二进制 + submodule） | ⚠️ **仍未完全等于"飞控里烧的那一份"**：`z0.params` 头声明的 `Git Revision` 是 **`4a0e65f233000000`**，**与 submodule 钉的 `5ba2e91f` 不一致**。→ **首飞前必须在 QGC 里记录飞控实际报出的版本号**，以它为准。本地只读副本：`~/refs/px4-z0`（该仓库以 fetch-only 方式保存，无工作树） |
+| **电池电流采样读错通道（★ 已第一手确认为"中招"）** | `nxt-dual` 的 `board_config.h` 里 `ADC_BATTERY_CURRENT_CHANNEL = ADC12_CH(5)` 是错的。★ **本轮已在 z0 固件真身（`Peize-Liu/PX4-Autopilot @ 5ba2e91f`）里逐字读到该错值**，并找到**硬件层根因**：板级引脚表写 `/* PC5 */ GPIO_ADC12_INP8`（电流采样接在 **PC5 = 通道 8**），宏却让电流去读**通道 5** —— 注释与通道号自相矛盾。版本边界亦第一手确认：**v1.15.0 仍是 `CH(5)`，v1.16.0 才改成 `CH(8)`**（电压通道全程 `CH(4)` 未动）。⚠️ 修复**只针对 `nxt-dual`**：`nxt-v1` 的电流也是 `CH(5)`，但其**电压通道是 `CH(9)` 而非 `nxt-dual` 的 `CH(4)`** —— 两板不可互相照抄 | ★ **上电后在 QGC 里核对电流读数**（未解锁应≈0、上电后应合理；恒为 0 或恒为怪值 = 中招）。若中招，**电流/电量保护全是假的**。❌ **参数无法绕过**（已第一手排除）：`board_adc` 的采样通道来自**编译期宏** `ADC_CHANNELS`（`ADC.hpp:58-67`，有 `#ifndef`/`#error` 守卫），全模块无参数、无运行期覆盖 → 通道 8 永不出现在 `adc_report` 里，`BAT1_I_CHANNEL = 8` 取不到读数。**只能重编重刷固件。** ⚠️ 逐项证据见 [`reference/params-analysis.md`](reference/params-analysis.md) **§3.5.1**。⚠️ 文中修复 commit 哈希 `129c0f188a` 为**继承值，本轮未能核实**（github.com 被网络策略拦截）；**实质**（CH(5)→CH(8)）已第一手确认 |
 | **Jetson 内存 7.4 GB** | 仿真时 Gazebo + SITL + ROS2 可能吃紧 | 仿真时关闭不必要组件；真机飞行无此问题 |
 | **PX4 版本迁移** | 旧机 1.13.3 → z0 1.14.x，EKF2 参数名全变（`EKF2_AID_MASK` v1.15 已删除、`EKF2_HGT_MODE` → `EKF2_HGT_REF`） | 用户已完成过一次该迁移（笔记里有成对对照），成本可控 |
-| **`px4_msgs` 版本不匹配** | v1.15 及以前**静默失败**（topic 名或字段错位不报错） | 用官方脚本核对：`./scripts/check-message-compatibility.py -v <px4_msgs> <PX4-Autopilot>` |
+| **`px4_msgs` 版本不匹配** ★★ **已经踩到，不是假设** | v1.15 及以前**静默失败**（topic 名或字段错位不报错）。**2026-09-20 第一手比对确认：`px4_msgs` `release/1.14` @ `ffb6e80e` 与 z0 固件 `5ba2e91f` 不兼容** —— 184 个共用消息里 **28 个字段布局不同**（含 `OffboardControlMode`、`VehicleStatus`、`VehicleLocalPosition`、`VehicleControlMode`、`VehicleCommand`）。`VehicleRatesSetpoint` / `VehicleAttitudeSetpoint` 恰好逐字节相同。两边的 `msg/versioned/` 都不存在（v1.16 才有）→ **DDS 话题名一致但线格式不符 → 无报错的静默失败** | **改用与 fork 匹配的 v1.15 世代 `px4_msgs`**；因 `5ba2e91f` 是 2024-07-02 的 `main`（早于 v1.15.0 发布），**`release/1.15` 也未必逐字节相同 → 最稳是从 fork 自身的 `msg/` 生成**。核对工具可用官方脚本 `./scripts/check-message-compatibility.py -v <px4_msgs> <PX4-Autopilot>`。详见 [`reference/refs-manifest.md`](reference/refs-manifest.md) §2.5 |
+| ★★ **固件版本标签错误（"1.14.x"）** | 项目此前一律按「PX4 1.14.x」决策（含 `px4_msgs` 选版、控制层级、参数默认值基准）。**2026-09-20 第一手判定：`5ba2e91f` 是 v1.15 世代** —— 其 `msg/OffboardControlMode.msg` 有 `thrust_and_torque` + `direct_actuator`，与**上游 v1.15.0 一致、与 v1.14.3（`bool actuator`）不同**；旁证 `VehicleLocalPosition.heading_var`、`VehicleCommand.source_component` 为 `uint16`、存在 `srv/`、无 `msg/versioned/` | **凡是结论依赖"1.14 的行为/默认值"的地方都要重新审视**。⚠️ `z0.params` 头写的 `Version: 1.14.3 dev` **来自上游参考机的参数文件**，未必描述 z0 → **首飞前在 QGC 读飞控实际报出的版本号是唯一终审**。已复查并仍成立的部分：ADC 通道 bug（v1.15.0 仍带、v1.16.0 才修）、`boards/hkust` 的版本边界 |
 | **noetic 容器镜像版本不匹配** | 镜像 `l4t-r35.4.1`（JetPack 5）vs 宿主 `R36.5.0`（JetPack 6） | 使用前实测验证；优先用 Humble 原生环境 |
 | **acados 在 Jetson 上的编译** | 无官方 Jetson 文档；`t_renderer` 缺失报 `EOFError` | 见 5.2 的要点；`BLASFEO_TARGET` 必须手动指定 |
 

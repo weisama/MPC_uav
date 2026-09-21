@@ -1,0 +1,63 @@
+# 05: `control` 骨架 —— mavros 接口 + OFFBOARD 心跳流 + `INIT→STANDBY`，含假 mavros 台架
+
+Status: ready-for-agent
+Type: task
+
+**What to build:** 机载电脑第一次真正"接管"飞机：节点把 PX4 拉进 OFFBOARD，并以 **50 Hz** 持续流「位置 + yaw」setpoint —— 但**先不飞任何轨迹**，状态只走到 `STANDBY`（未解锁、已在流）。
+
+**同时建立可复用的测试夹具**（假 mavros + 脚本化动捕输入），它是本阶段以及 Phase 2/3 所有节点级测试的**公共底座**。
+
+**这是刻意提前的前置工作，不是副产品：** 假 mavros 必须能在**指定时刻注入故障**（让 `/mavros/state` 静默 0.5 s、注入时间戳倒退、注入电压跌落）。**真 SITL 做不到这件事**，而状态机里那些"实飞才会想到"的判据全靠它才可测。所以它在第一张 control ticket 里就先做出来，而不是等需要时现搭。**SITL 因此不进自动化测试**，它只是上机前手动跑一次的集成关卡。
+
+**状态机形状** —— 两个正交维度显式分开，**不压成扁平枚举**：
+
+```
+控制权：   MANUAL ──(开始信号)──▶ AUTO ──(RC 打杆 / 超时 / 异常)──▶ MANUAL
+任务态：   IDLE ─▶ TAKEOFF ─▶ HOVER ─▶ TRACK ─▶ LAND
+```
+
+本张只实现：
+
+- `INIT` —— 等 mavros 连接、动捕有数据、`local_position` 有效；**不发 setpoint**
+- `STANDBY` —— 未解锁；**已开始以 50 Hz 持续发布 setpoint**（位置 = 当前，yaw = 0）
+
+**两件必须做对的事：**
+
+1. `type_mask` 用 **2552**（忽略速度 / 加速度 / yaw_rate，即"位置 + yaw"），`coordinate_frame = FRAME_LOCAL_NED`，`position.z` 向下为正，`yaw` 用弧度。
+2. **切进 OFFBOARD 之前** setpoint 必须已以 ≥2 Hz 持续发布 **≥1 s**（本项目 50 Hz、`STANDBY` 阶段就在发）。**断流 PX4 会自动退出 OFFBOARD**（`COM_OF_LOSS_T = 1.0 s`）。
+
+**Blocked by:** 04
+
+- [ ] `INIT→STANDBY` 的守卫逐条生效：`connected` ∧ 动捕有数据 ∧ `local_position` 有效 —— 缺任一条就**不发 setpoint**
+- [ ] 台架上节点把 PX4 拉进 OFFBOARD，setpoint 以 **50 Hz** 持续流出，`type_mask` / 坐标系 / 时间戳单位（**微秒**）字段正确
+- [ ] **断流实验**：杀掉节点 → PX4 在 `COM_OF_LOSS_T` 之后**自行退出 OFFBOARD**（证明心跳是唯一的维持机制）
+- [ ] 夹具可复用：假 mavros 能收 setpoint 话题、能发 `/mavros/state` 等入向话题，且**能在指定时刻注入故障**
+- [ ] 脚本化 `/vrpn/<刚体>/pose` 发布者可用（或 rosbag 回放）
+- [ ] 夹具跑得进 `colcon test`，至少一个冒烟场景通过
+- [ ] FSM 的两个维度在代码里是**显式分开**的，不是扁平枚举
+
+---
+
+## Comments
+
+### 2026-09-21 —— 串口权限：一个已实测的阻塞前提
+
+在 ticket 01 的侦察中实测到，**本张会撞上这个**：
+
+- 用户 `chen` **不在 `dialout` 组**（`dialout:x:20:` 成员为空）。
+- `/dev/ttyTHS1`、`/dev/ttyTHS2` 权限是 `root:dialout 660`（实测 `ls -l`）。
+- 实测打开失败：`SerialException: [Errno 13] could not open port /dev/ttyTHS1: Permission denied`。
+
+**为什么与本张有关**：本张要让节点把 PX4 拉进 OFFBOARD，而**连上飞控这一条就依赖串口能打开** ——
+不论是走 mavros 还是直接开串口。这是**夹具之外的、环境层面的前置**。
+
+**修法**（需人执行，agent 没有免密 sudo）：
+
+```bash
+sudo usermod -aG dialout "$(id -un)"
+# ⚠️ 必须**重新登录**（或 newgrp dialout）才生效 —— 仅加入组不重登不生效
+```
+
+> ⚠️ 注意：这条**不是**本张的验收项，只是环境前提。它也不解决 ticket 01 的 ②
+> （飞控到底接 THS1 还是 THS2），那一问仍需现场认定，或用
+> [`tools/prereq-evidence/mavlink_probe.py --scan`](../../../tools/prereq-evidence/mavlink_probe.py) 自动判定。

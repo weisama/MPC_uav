@@ -83,7 +83,7 @@ src/
 | `/mavros/local_position/velocity_local` | `geometry_msgs/TwistStamped` | EKF2 融合速度 | ★ 稳定判据的 `|v|` 来源 |
 | `/mavros/rc/in` | `mavros_msgs/RCIn` | **开始按键** | ★ 通道号是参数，实飞时确认 |
 | `/mavros/battery` | `sensor_msgs/BatteryState` | 低电压保护 | ⚠️ 见 §8.2 |
-| `/mocap/pose_ned` | `geometry_msgs/PoseStamped` | 相对位姿（NED） | Phase 1 只用于记录；**Phase 2 的 MPC 用它** |
+| `/mocap/pose_enu` | `geometry_msgs/PoseStamped` | 相对位姿（**ENU，原生**） | Phase 1 只用于记录（Q23）；**Phase 2 的 MPC 拿它当状态源** |
 | `/traj/select` | `std_msgs/UInt8` | 选轨迹：1/2/3 | 由 `fly.py` 发布 |
 
 ### 输出（`control` 发布 / 调用）
@@ -103,10 +103,16 @@ src/
 | 订阅 | `/vrpn/<刚体>/pose` | `geometry_msgs/PoseStamped` | 来自 `vrpn_listener` |
 | 订阅 | `/mavros/state` | `mavros_msgs/State` | ★ 检测**解锁上升沿** |
 | 发布 | `/mavros/vision_pose/pose` | `geometry_msgs/PoseStamped` | → PX4 EKF2（**ENU/FLU，mavros 负责转换** —— 已读 mavros 源码确认，见 §3.5） |
-| 发布 | `/mocap/pose_ned` | `geometry_msgs/PoseStamped` | → 本项目控制器 / Phase 2 MPC（**NED/FRD**） |
+| 发布 | `/mocap/pose_enu` | `geometry_msgs/PoseStamped` | → 仅**记录**（Q23）+ Phase 2 MPC 状态源。**动捕原生 ENU，不做任何转换** |
 
-> **`mocap` 节点是本项目唯一做坐标系转换的地方。** 见 §3。
-> ⚠️ 注意这两路的约定**不一样**：发给 mavros 的是**原生 ENU/FLU**（它自己会转），发给自己控制器的是**已转好的 NED**（没人帮忙转）。**搞反了会得到"转两次"或"一次都没转"的结果，而且症状都是"能飞但飘"。**
+> ★ **`mocap` 节点不做任何坐标系转换（Q14=a）。** 它只做「减原点 + yaw 归零」，
+> 然后把**动捕原生 ENU/FLU** 同时喂给 mavros 的 `vision_pose`。
+>
+> ⚠️ **本文旧版曾让本节点额外发布一条 `/mocap/pose_ned`（NED/FRD）给"本项目控制器"用，
+> 并警告"两路约定不一样、搞反了会飘"。该话题已按 Q14=a 删除** —— 理由：
+> ① Phase 1 的控制器工作在 **EKF2 的 local NED** 里（§3.3），位置直接读 `/mavros/local_position/*`，
+> **根本不需要** mocap 的 NED 值；② Phase 2 的 MPC 用 ENU（§3.2 / G3）。
+> 即**没有任何消费者**。删掉它同时消灭了"转两次 / 一次都没转"这一整类 bug。
 
 ## 3. 坐标系与符号（★ 写死，不靠记忆）
 
@@ -142,7 +148,7 @@ z_ned = -z_enu
 **→ 所以轨迹原点取"HOVER 稳定时 EKF2 报的位置"**，这样：
 - **偏移被自动吸收**——我们是在同一个坐标系里"以当前点为 0"发指令
 - **mocap 节点的原点怎么定都不影响 Phase 1**（它只影响喂给 EKF2 的 vision_pose）
-- Phase 2 的 MPC 再直接用 `/mocap/pose_ned`，那时才需要动捕原点
+- Phase 2 的 MPC 改用 `/mocap/pose_enu`，那时才需要动捕原点
 
 > 📌 **这个设计让 Phase 1 与 Phase 2 的原点问题彻底解耦，是降低 Phase 1 风险的关键一步。**
 
@@ -212,7 +218,10 @@ auto rpy = ftf::quaternion_to_rpy(
 ```
 
 > ✅ **这证实了 [`mocap-setup.md`](../reference/mocap-setup.md) 7.3 的旧节点"直接透传"的做法是对的**——它当年能跑通不是巧合。
-> 📌 **而 `/mocap/pose_ned`（给本项目控制器用）是我们自己做 ENU→NED**，因为那一侧没有 mavros 帮忙。
+> 📌 **旧版这里还有一条 `/mocap/pose_ned`（"给本项目控制器用，我们自己做 ENU→NED"）—— 已按 Q14=a 删除。**
+> 因为两条链**都用不上它**：喂 EKF2 的这条（本节）由 mavros 负责转换；
+> Phase 2 的 MPC 直接用 ENU（§3.2 / G3）。**→ `mocap` 节点是全栈唯一一个不做坐标转换、只做
+> 「减原点 + yaw 归零」的节点，这是本项目故意保持的简洁性。**
 
 **⚠️ 一个 `mavros` 的隐藏行为**：`send_vision_estimate()` 开头有
 
@@ -381,6 +390,14 @@ if (last_transform_stamp == stamp) { /* dropped */ return; }
 `z0.params` 里 `RC_MAP_FLTMODE = 6`（第 6 通道是模式开关）。
 → **开始按键必须选一个未映射的通道**（或用未被 `RC_MAP_*` 占用的开关位）。否则按下去会**同时切换 PX4 飞行模式**，把我们踢出 OFFBOARD。
 → 参数化实现：`start_channel`（`rc/in` 的 `channels[]` 索引）+ `start_threshold` + 200 ms 去抖。
+
+> ⚠️ **本节只给了约束，没给通道号。** 完整占用表（含 **ch5 解锁**、**ch8 杀车** —— 本节原先漏了这两个）
+> 见 [`../reference/params-analysis.md`](../reference/params-analysis.md) §3.15；
+> 实际只剩 **ch7** 空闲。
+>
+> ★ **已定（Q19 / 2026-09-20）：具体通道分配的决定留到 ticket 层解决。**
+> **→ 后续的 ticket 化步骤须产出一张 ticket**，在实施到 FSM 的「开始信号」之前 resolved。
+> 在那之前，本节按**参数化**实现（`start_channel` 可配），不要写死任何通道号。
 
 ### 8.5 ⚠️ `TrajectorySetpoint` 没有 `thrust` 字段
 
