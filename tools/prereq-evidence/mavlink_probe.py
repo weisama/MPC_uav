@@ -92,6 +92,15 @@ def _open(port: str, baud: int):
 # ttyTHS1 @ 921600 读到 ~13 kB/s、**帧错误为 0**（接收器锁住了位时钟，看着"完全正常"），
 # 但非零字节最长只有 **9 字节** —— 一个 MAVLink 帧都不可能有。
 # 当时只看"有没有字节"就报了"有信号、线接对了"，是**误判**；本函数就是为此加的。
+#
+# ⚠️⚠️ 但 (b) 内部还藏着**两种成因**，本函数**分不开**（必须靠 uart_loopback.py 分开）：
+#    b1. 线上真的是噪声 / 串扰 / RX 没被驱动          → 查接线
+#    b2. **线上就是真数据，但被接收通路的驱动缺陷打坏了** → 查驱动（★ z0 实际命中的是这条）
+# 第一手证明 b2 存在：`uart_loopback.py --internal` 的长模式回环
+#   —— 完全不需要接线 —— 发 16 字节收回 16 个 0x00。
+#   既然接收通路会把 ≥8 字节打成 0，那么**任何**真实数据流在 (b) 的形状下
+#   都可能是被它打坏的，而不是"线上没有数据"。
+#   ⟹ **看到 (b)，先跑 `uart_loopback.py --internal`，再谈接线。**
 # ---------------------------------------------------------------------------
 TIOCGICOUNT = 0x545D          # /usr/include/asm-generic/ioctls.h:99
 _ICOUNT_FMT = "4i 2i 4i i 9i"  # struct serial_icounter_struct, /usr/include/linux/serial.h:102
@@ -159,12 +168,18 @@ def _explain_raw(c: dict) -> None:
     print(f"        └ 读到 {c['bytes']} 字节（{c['null_pct']:.0%} 是 0x00；帧错误 {c['frame']}，"
           f"break {c['brk']}；非零最长连续 **{c['max_run']} 字节**）")
     if c["max_run"] < MAVLINK_MIN_FRAME:
-        print(f"          ⚠️ **这不是数据流** —— 真 MAVLink 必然出现 ≥{MAVLINK_MIN_FRAME} 字节的"
-              f"非零连续段，这里最长只有 {c['max_run']}。")
-        print("             ⟹ 线上是**噪声 / 串扰 / RX 引脚没被驱动**。")
-        print("             → 查接线：Jetson 的 **RX 要接飞控的 TX**（必须交叉），"
-              "并确认 **GND 共地**。")
-        print("             ⚠️ **不要**因此去改波特率 —— 波特率错会给出长帧块，不是这个形状。")
+        print(f"          ⚠️ 看不到 ≥{MAVLINK_MIN_FRAME} 字节的非零连续段（最长只有 {c['max_run']}）——")
+        print("             要么线上不是数据，要么**数据被驱动打坏了**。两者症状一样，必须分开：")
+        print("             ★ **先排驱动缺陷**（本机第一手实测：JetPack 6.x 的 "
+              "`nvidia,tegra194-hsuart` 接收通路 DMA 有缺陷，")
+        print("               **≥8 字节的接收数据会被打成 0**）：")
+        print("                 python3 tools/prereq-evidence/uart_loopback.py --internal")
+        print("               → 若报「长模式回环数据被打坏」，**问题就在这里，与接线无关**。")
+        print("                 修法：设备树删掉该串口节点的 `dmas`/`dma-names` 退回 PIO 后重启。")
+        print("               ⚠️ 该缺陷**只影响接收**时也足以让 MAVLink 一个帧都解不出来。")
+        print("             └ 若自检通过，才轮到接线：Jetson 的 **RX 要接飞控的 TX**（必须交叉），")
+        print("               并确认 **GND 共地**。")
+        print("             ⚠️ **两种情况下都不要去改波特率** —— 波特率错会给出长帧块，不是这个形状。")
     else:
         print(f"          → 像**真数据**（存在 ≥{MAVLINK_MIN_FRAME} 字节的长段）"
               " ⟹ 大概率只是波特率不匹配，继续试别的波特率。")
@@ -411,11 +426,13 @@ def scan_ports(ports: list[str], bauds: list[int], wait: float) -> int:
     print("  ===== ② 结论 =====")
     if not hits:
         print("  未在任何候选端口/波特率上听到飞控。")
-        print("  **每一格的判据在上面**（静默 / 不是数据流 / 只是波特率不对），"
-              "三者对应完全不同的动作：")
+        print("  **每一格的判据在上面**，四种情况对应完全不同的动作：")
         print("    · 静默          → 飞控没上电，或线没接到这个口")
-        print("    · 不是数据流    → 查 TX/RX 是否交叉、GND 是否共地（**别去调波特率**）")
+        print("    · 帧块残破      → ★ **先跑 uart_loopback.py --internal 排驱动缺陷**，")
+        print("                       再查 TX/RX 是否交叉、GND 是否共地（**别去调波特率**）")
         print("    · 只是波特率不对→ 换波特率再试")
+        print("  ★ 本机已知：JetPack 6.x 的 nvidia,tegra194-hsuart **接收通路 DMA 有缺陷**，")
+        print("    ≥8 字节的接收数据会被打成 0 ⟹ MAVLink 一帧都解不出来。")
         print("  另：当前用户在不在 dialout 组？不在就打不开串口（见上面报错）。")
         print("  若 mavros 正在跑，它会占住串口 —— 先停掉再扫。")
         # 机器可读结果行：capture.sh 用它把 ② 的结果喂给 ③④，避免两边端口不一致
