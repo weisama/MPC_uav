@@ -72,3 +72,22 @@ spec 用户故事 10（"动捕数据中断超过阈值时看到明确告警"）�
 | **消费是否超时**（`/mavros/local_position`、`/mavros/state` 静默） | **本张**（`phase1-implementation.md` §4.3-3 的 `msg_timeout`） | ⏳ 待做 |
 
 ⟹ 本张仍需要自己的超时判据：`mocap` 那一侧正常不代表 mavros 那一侧正常（两个话题来自不同进程）。
+
+### 2026-09-21 —— ★ 台架实测送来一条**夹具硬要求**：mavros 的话题是 sensor QoS（BEST_EFFORT）
+
+真 mavros 上实测（飞控已上电，证据见 [ticket 13](13-mavros-bench-vision-pose.md) §实测 ⑤）：
+
+- `/mavros/local_position/pose` 与 `/mavros/local_position/pose_cov` 都是 **BEST_EFFORT / VOLATILE**。
+  用默认的 **RELIABLE** 订阅**一帧都收不到** —— 只在日志里留一句
+  `New publisher discovered ... offering incompatible QoS ... Last incompatible policy: RELIABILITY`，
+  **不报错、不退出**（正是"看起来像逻辑错"的失败方式）。
+- ⟹ **假 mavros 必须用同样的 QoS 发这些入向话题**，否则被测节点收不到、测试会以误导人的方式失败。
+- 反过来也顺带确认了：本节点发出的 `/mavros/vision_pose/pose` 是 **RELIABLE**，与真 mavros 的订阅
+  （`vision_pose` 插件，`ros2 topic info -v` 实读 RELIABLE）**兼容** ⟹ 夹具照抄即可。
+
+另两条与夹具直接相关的实测事实：
+
+1. **`/mavros/state` 实测 `1.00 Hz`**（30 条 / 30 s；间隔 0.998–1.002 s）—— 夹具注入 `armed` 边沿时要按这个
+   **真实节拍**来（否则会测出一个现实中不存在的敏捷边沿）；也意味着 `msg_timeout` 的阈值不能小于 1 s。
+2. **`/mavros/local_position/pose_cov` 默认没有数据** —— 源码 `local_position.cpp:257` 只在飞控推
+   `LOCAL_POSITION_NED_COV` 时才有输出，PX4 默认不推。所以**别在断言里依赖协方差**。

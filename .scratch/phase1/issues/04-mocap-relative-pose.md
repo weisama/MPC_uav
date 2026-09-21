@@ -179,18 +179,23 @@ Type: task
 
 1. ⏳ 两条验收的 **QGC 那一半**（① `VISION_POSITION_ESTIMATE` 有数 + `LOCAL_POSITION_NED` 稳定；⑥ `y` 变化 0.5 / 高度向上）
    —— 需**飞控上电 + mavros + QGC**，且需人把飞机平移/升高。
-2. ⚠️ **`mavros` 与 `mavros-extras` 本机都未安装**（只有 `mavros_msgs`）。★ **`vision_pose_estimate` 插件在 `mavros_extras` 里**
-   （`mavros_extras/src/plugins/vision_pose_estimate.cpp`，§3.5 引的就是它）⟹ **只装 `ros-humble-mavros` 不够**。
-   这也是 [ticket 05](05-control-offboard-skeleton.md) 的前置。
+   ★ **2026-09-21 进展**：mavros 已装好（源码构建）并连上飞控，**飞控侧已证 EKF2 真的在用动捕**
+   （`/mavros/estimator_status` 的 `pos_horiz_abs_status_flag` 反转实验：有视觉 True / 停动捕 4 s 后 False / 恢复 True）——
+   这比"QGC 看着有数"更硬（是飞控自己的估计器状态）。**只剩 QGC 目视 + ⑥ 的轴向确认**（那一步必须看飞控自己的 NED 读数）。
+   证据见 [ticket 13](13-mavros-bench-vision-pose.md) §实测 ③。
+2. ✅ **已解决（2026-09-21）**：`mavros` 与 `mavros_extras` 的**arm64 二进制在十个可达镜像里全都没有**
+   （同仓库的 `mavros_msgs` 反而有）⟹ 已**从源码构建 2.15.1**（`~/mavros_ws`；tag commit `22ae5b7c`），
+   含 `mavros_extras`（`vision_pose_estimate` 插件在其中）。步骤见
+   [`mocap-setup.md` §5.1](../../../docs/reference/mocap-setup.md)，全部证据见 [ticket 14](14-mavros-from-source.md)。
 3. ⏳ **`EKF2_EV_POS_Z` 仍未实测**（§10 第 7 项）。本节点做「减原点」后，静止在原点时输出 z = 0，
    刚体原点与飞控 IMU 的 z 向偏移仍要实测填参 —— 属参数核对清单（`phase1-implementation.md` §6），不在本张代码范围内。
-4. ⚠️ **一条本张无法第一手核实的输入：`/mavros/state` 的发布频率**（本机没装 mavros，外网也抓不到源码 ——
-   这台 Jetson 在动捕网段上）。**若它是 1 Hz（mavros `sys_status` 的常见口径），"解锁上升沿"最多会晚 1 s 被检出**
-   ⟹ 阶段 B 的"起飞前静止帧"就会在**已经开始爬升**的时候采到，原点被带偏。
-   - 好消息是这种情形**会被本节点自己抓到**：切换跳变量会超 `jump_warn_m` 而打 WARN，日志里同时有 `p_boot`/`p_arm` 可对照；
-   - 纪律上再加一条：**解锁后到起飞之间留出 ≥1.5 s 余量**（Phase 1 的实际流程本来就有：`control` 要等
-     `state.armed` ∧ `mode == OFFBOARD` 两个条件，各自都有一次 state 往返）；
-   - ⟹ **已交给 [ticket 13](13-mavros-bench-vision-pose.md) 用 `ros2 topic hz /mavros/state` 定案**。
+   ★ 2026-09-21 对账确认：**飞控上 `EKF2_EV_POS_X/Y/Z = 0/0/0`（外参确实没标）**，见 [ticket 15](15-fcu-param-reconciliation.md)。
+4. ✅ **已定案（2026-09-21 实测）= `1.00 Hz`**（30 条 / 30 s；间隔 min 0.998 / mean 1.000 / max 1.002 s）。
+   ⟹ **"解锁上升沿最多晚 1 s 被检出"成立**，所以上面那两条缓解措施都**必要**：
+   - **检测**：切换跳变量超 `jump_warn_m` 会打 WARN，日志里 `p_boot`/`p_arm` 可对照；
+   - **纪律**：**解锁后到起飞之间留 ≥1.5 s 余量**（Phase 1 流程本来就有：`control` 要等
+     `state.armed` ∧ `mode == OFFBOARD`，各自都有一次 state 往返）。
+   - ⚠️ 附带一条本张之外的事实：`ros2 topic hz` 在本机打不出读数（只打印 `Terminated`），量频率要用 rclpy 计数脚本。
 
 #### 八、代码审查（两轴，2026-09-21，`git diff e482825`）与随之做的改动
 

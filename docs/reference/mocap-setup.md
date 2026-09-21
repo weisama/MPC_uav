@@ -183,25 +183,71 @@ z = 上
 
 ## 5. 启动 mavros
 
-### 5.1 安装
+### 5.1 安装 —— ☠️ **apt 装不到，必须源码构建**（2026-09-21 实测）
+
+**apt 这条路已实测不通**：humble 的 `ros-humble-mavros` / `ros-humble-mavros-extras` 的 **arm64 二进制
+在十个可达镜像里全都没有**（同一个仓库的 `ros-humble-mavros-msgs` 反而有 ⟹ 是**上游那次构建没产出/已撤**，
+不是镜像没同步）；`packages.ros.org` 本机不可达。全部证据见
+[`.scratch/phase1/issues/14-mavros-from-source.md`](../../.scratch/phase1/issues/14-mavros-from-source.md) §一。
+
+**做法：源码构建，pin tag `2.15.1`**（与 apt 里的 `ros-humble-mavros-msgs 2.15.1-1jammy` 同代），
+放在**独立工作区 `~/mavros_ws`**（**不入本仓库** —— mavros 是系统级依赖）：
 
 ```bash
-sudo apt install ros-humble-mavros ros-humble-mavros-extras
-sudo /opt/ros/humble/lib/mavros/install_geographiclib_datasets.sh   # 必须执行
+mkdir -p ~/mavros_ws/src && cd ~/mavros_ws/src
+git clone --depth 1 --branch 2.15.1 https://github.com/mavlink/mavros mavros
+git -C mavros rev-parse HEAD          # 必须是 22ae5b7cc7cdb4cb9c2070a8213c72dae445a23e（= tag 2.15.1^{}）
+
+# ★ 跳过三个包：mavros_msgs 用 apt 的同版本（不重复建一套）；另两个是示例与测试
+cd ~/mavros_ws/src/mavros
+touch mavros_msgs/COLCON_IGNORE mavros_examples/COLCON_IGNORE test_mavros/COLCON_IGNORE
+
+sudo apt install ros-humble-eigen-stl-containers ros-humble-mavlink \
+                 ros-humble-ament-cmake-google-benchmark   # ★ 第三个是构建时才暴露出来的
+
+cd ~/mavros_ws && source /opt/ros/humble/setup.bash
+colcon build --parallel-workers 4 --cmake-args -DCMAKE_BUILD_TYPE=Release   # 8 GB 内存：必须限并行度
 ```
+
+**依赖实测**：三个 `package.xml` 的 32 个依赖里 30 个已装（`libgeographic-dev 1.52`、`libasio-dev`、
+`libconsole-bridge-dev`、`libeigen3-dev`、`libyaml-cpp-dev` 等），只缺 `ros-humble-eigen-stl-containers`
+与 `ros-humble-mavlink`（构建期还缺 `ament_cmake_google_benchmark`，见上）。
+**构建实测**：三个包全过、**0 失败**（`libmavconn` 37.7 s / `mavros` 7 min 2 s / `mavros_extras` 5 min 50 s）。
+
+**GeographicLib 数据集（★ 必需，不是"真报错再装"）**：不装会**直接 launch 失败** ——
+`GeographicLib exception: File not readable /usr/share/GeographicLib/geoids/egm96-5.pgm`。
+源码构建时脚本在**源码树里**：
+
+```bash
+sudo ~/mavros_ws/src/mavros/mavros/scripts/install_geographiclib_datasets.sh
+```
+
+**三条环境纪律**：
+
+1. `~/mavros_ws/install` 与本仓库的 `install` **必须同时 source**（两个工作区各有自己的 `setup.bash`）；
+2. ⚠️ **两套 `mavros_msgs` 必须同代**：源码 mavros 2.15.1 配 apt 的 `2.15.1-1jammy`。
+   哪天 apt 把它升到 2.16.x，源码 mavros 也得跟到同一 tag（否则 ABI 可能不匹配）；
+3. `vision_pose` 插件在 **`mavros_extras`** 里 —— **不能只建 `mavros`**（否则 vision_pose 链路整个没有）。
 
 ### 5.2 ★ 用 launch 参数指定串口，**不要改共享文件**
 
 ```bash
-ros2 launch mavros px4.launch \
-  fcu_url:="/dev/ttyTHS3:921600" \
-  gcs_url:="udp://@10.1.1.103"
+# ★ z0 实测可用（2026-09-21）：
+ros2 launch mavros px4.launch fcu_url:=/dev/ttyTHS1:921600
 ```
 
-> ⚠️ **不要改 `/opt/ros/humble/share/mavros/launch/px4.launch`** —— 那是 apt 管理的共享文件，**升级时会被覆盖**。一律通过 launch 参数传。
+> ⚠️ **不要改安装目录里的 `px4.launch`**（源码构建后是
+> `~/mavros_ws/install/mavros/share/mavros/launch/px4.launch`；apt 安装时是
+> `/opt/ros/humble/share/mavros/launch/px4.launch`）—— 那是**共享文件**，重装/升级就没了。一律通过 launch 参数传。
 
-> 📌 **`fcu_url:="/dev/ttyTHS3:921600"`** —— 上游用的 Jetson 串口设备名是 **`/dev/ttyTHS3`**，波特率 921600（与 `z0.params` 里 `SER_TEL2_BAUD = 921600` 一致 ✅）。
-> ⚠️ **z0 需要实测确认自己的设备名**（可能是 `ttyTHS0`/`ttyTHS1`/`ttyTHS2`，也可能是 USB 转串口的 `ttyUSB0`）。
+> 📌 **z0 的串口已定案：`/dev/ttyTHS1` @ 921600**（2026-09-21 用
+> [`tools/prereq-evidence/mavlink_probe.py`](../../tools/prereq-evidence/mavlink_probe.py) `--scan` 逐口找心跳，
+> 报 `sysid=1, type=2`；`ttyTHS2` / `ttyAMA0` 各波特率**一个字节都没有**）。
+> 飞控侧走 TELEM2，与 `z0.params` 的 `MAV_1_CONFIG = 102`（TELEM2/Onboard）一致 ✅，
+> 波特率与 `SER_TEL2_BAUD = 921600` 一致 ✅。
+> ⚠️ **权限**：`chen` 必须在 `dialout` 组（`dialout:x:20:chen`），否则打不开串口。
+>
+> 📌 上游（另一台机器）用的是 **`/dev/ttyTHS3`** —— **设备名是每台机器各自实测出来的，不要照抄**。
 
 ### 5.3 校验
 
@@ -220,6 +266,41 @@ ros2 topic echo /mavros/vision_pose/pose   # 看位姿
 
 > 📌 **排查"动捕没生效"的最快方法**：如果 `VISION_POSITION_ESTIMATE` 有数但 `LOCAL_POSITION_NED` 不动，说明消息发到了但 EKF2 没用（检查 `EKF2_EV_CTRL`）。
 > 如果 `VISION_POSITION_ESTIMATE` 根本没数，问题在动捕/mavros 这一侧。
+
+#### ★ 不依赖 QGC 的硬校验（2026-09-21 实测有效，**推荐先用它**）
+
+看**飞控自己的估计器状态**里"水平位置解有没有被绝对源锚定"：
+
+```bash
+ros2 topic echo /mavros/estimator_status        # 1 Hz；看 pos_horiz_abs_status_flag
+```
+
+本机**没有 GPS、没有光流**，水平绝对位置源**只有动捕** ⟹
+**`pos_horiz_abs_status_flag = True` 就是"EKF2 正在用动捕锚定位置"的判据**。实测反转：
+
+| 阶段 | 做法 | `pos_horiz_abs` |
+|---|---|---|
+| 有视觉 | `mocap` 节点在跑 | **True** |
+| 无视觉 | 停掉 `mocap` 节点 4 s | **False** |
+| 恢复 | 重新起 `mocap` 节点 | **True** |
+
+★ **安全含义**：视觉一断，水平锚定**在 4 s 内就失效** —— 所以动捕链路断了必须立刻停飞/切手动
+（`mocap` 节点的看门狗就是为这个）。
+
+QGC 侧更硬的旁证（Analyze → **MAVLink Console** 里敲）：
+`listener vehicle_visual_odometry`（应有数据）、`listener estimator_aid_src_ev_pos`（若存在，看 `fused`）。
+
+#### ⚠️ 三个会静默骗人的坑（实测踩到）
+
+1. **`/mavros/local_position/pose` 是 sensor QoS（BEST_EFFORT）** —— 用默认 RELIABLE 订阅**一帧都收不到**，
+   只在日志里留一句 `New publisher discovered ... offering incompatible QoS ... Last incompatible policy: RELIABILITY`。
+   工具里记得用 best-effort（Python: `rclpy.qos.qos_profile_sensor_data`）。
+2. **`/mavros/local_position/pose_cov` 与 `velocity_*_cov` 默认没有数据** ——
+   源码 `mavros/src/plugins/local_position.cpp:257` 只在飞控推 `LOCAL_POSITION_NED_COV` 时才发布，
+   而 PX4 默认不推这个流。想用协方差做"是否发散"的实验，得先用 `/mavros/set_message_interval` 请求该流。
+3. **`/mavros/state` 只有 `1.00 Hz`**（2026-09-21 实测：30 条 / 30 s，间隔 0.998–1.002 s）。
+   ⟹ `armed` 的**解锁上升沿最多晚 1 s** 被检出；且 `ros2 topic hz` 在本机打不出读数（只打印 `Terminated`），
+   量频率请用 rclpy 计数脚本。
 
 ---
 
@@ -637,7 +718,7 @@ ros2 topic hz /mavros/vision_pose/pose
 | # | 项 | 上游值 | z0 要做什么 |
 |---|---|---|---|
 | 1 | **刚体命名** | `r11` / `r22` | ★★ **不要写死名字 —— 这一项的正确做法是「现场核对」，不是「抄一个常量」**（本项在 2026-09-21 一天之内被改过两次，教训比结论值钱）。<br>**机制**：下游话题 = `/vrpn/<sender 名>/pose`，名字**原样取自 VRPN**，`replaceSpace()` **只把空格换成 `_`、不改大小写、不做任何归一化**。<br>**当下实测值**：**`z0`（小写）** ⟹ **`/vrpn/z0/pose`**（2026-09-21 重测，ticket 12）。<br>☠️ **当天早些时候（ticket 03）实测到的是 `Z0`（大写）**，后来操作者在 Nokov 侧调整后变为小写 —— **两次都是真的，说明它是个变量**。<br>**怎么核对**（唯一可靠的办法，任何配置前先跑一次）：<br>`ros2 topic list \| grep vrpn` —— 看到什么名字就用什么。<br>⚠️ 它还会**连带**出现 `z0_Marker1..5`（单颗球各自也是独立 sender）。详见文末「ticket 03 实测」§二 与「ticket 12 重测」§一 |
-| 2 | **串口设备** | `/dev/ttyTHS3` | ✅ **已实测**：z0（Jetson Orin NX）上**只有 `/dev/ttyTHS1` 和 `/dev/ttyTHS2`**，`THS3` 与 `THS0` 都不存在。<br>⚠️ **2026-09-21 操作者确认：飞控侧走 TELEM2**（与 `z0.params` 的 `MAV_1_CONFIG = 102` = TELEM2/Onboard ✅ 一致）。<br>❌ **Jetson 侧是 THS1 还是 THS2，仍未定案** —— 判据是 `mavlink_probe.py --scan` 逐口找心跳（ticket 01 ②），**不靠猜** |
+| 2 | **串口设备** | `/dev/ttyTHS3` | ✅ **已实测**：z0（Jetson Orin NX）上**只有 `/dev/ttyTHS1` 和 `/dev/ttyTHS2`**，`THS3` 与 `THS0` 都不存在。<br>⚠️ **2026-09-21 操作者确认：飞控侧走 TELEM2**（与 `z0.params` 的 `MAV_1_CONFIG = 102` = TELEM2/Onboard ✅ 一致）。<br>✅ **2026-09-21 定案：`/dev/ttyTHS1` @ 921600** —— 判据是 `mavlink_probe.py --scan` 逐口找心跳：THS1 报 `sysid=1, type=2`（飞控在此），`ttyTHS2` / `ttyAMA0` 各波特率**一个字节都没有**（ticket 01 ② 结案）。<br>⚠️ `chen` 需在 `dialout` 组（已修：`dialout:x:20:chen`） |
 | 3 | **工作空间路径** | `~/ws_livox` | 改成 `~/ros_ws`（z0 的实际工作空间） |
 | 4 | **`gcs_url`** | `udp://@10.1.1.103` | 改成自己的地面站 IP |
 | 5 | **动捕网段** | `10.1.1.x` | ✅ **不需要额外网卡**。VRPN 就是 UDP over IP，**把机载电脑连到动捕主机所在的同一个 WiFi 即可**。z0 曾连 `SUSTech-802.1x`（`10.29.12.x/14`），到 `10.1.1.198` 的路由经校园网网关绕出、不通；换到动捕所在网络后即通。<br>⚠️ **但「那个 WiFi」到底叫什么，本文档至今没写** —— 这是本项唯一未闭合的信息，见下方 2026-09-21 实测 |

@@ -349,9 +349,13 @@ PX4 官方 Offboard 文档明确标注了每种 setpoint 所需的**状态估计
 
 > ⚠️ **命名上要分清两件事**：
 > - **`uav1.params`** = 上游那个文件的原名。**"uav1" 是上游那台机器的代号**（上游是多机集群，刚体叫 `r11`/`r22`），不是 z0 的名字。
-> - **`z0.params`** = 我们归档并准备烧进 z0 的这份。**内容是上游的，尚未在 z0 的飞控上核实。**
+> - **`z0.params`** = 我们归档的这份。★ **2026-09-21 已与 z0 飞控真身逐条对账：914/915 条完全一致** ⟹
+>   **飞控上跑的就是这份配置**（它不再是"上游参考值"）。
 >
-> 所以下文凡是"`z0.params` 里 X 的值是默认值/可疑"，意思都是"**这是上游的值，别当成 z0 的实测值**"。
+> ☠️ **但"一致"恰恰意味着下面那些可疑值真的在飞机上** —— 不是文件过时。逐条对账、21 条差异与待改项见
+> [`.scratch/phase1/issues/15-fcu-param-reconciliation.md`](../.scratch/phase1/issues/15-fcu-param-reconciliation.md)。
+> ☠️ **且不要整份烧 `z0.params`**：它含 6 条加速度计标定 + 14 条遥控器校准，而**飞控上那两组才是 z0 自己的**；
+> 整份烧会把它们覆盖掉。要改就**只挑配置类参数**写。
 
 **可直接复用的部分**（动捕飞行验证过的真实配置）：
 
@@ -382,9 +386,14 @@ PX4 官方 Offboard 文档明确标注了每种 setpoint 所需的**状态估计
 | `COM_RC_IN_MODE = 3` | 含义需对着 PX4 1.14 文档核实（影响遥控器能否接管） |
 | `UXRCE_DDS_CFG = 0` | uXRCE-DDS 当前**禁用** —— 走 `(C)` 方案时必须改 |
 
-> **推荐动作**：从 **z0 的飞控**导出参数，与 `z0.params` 做 diff —— 差异就是"从上游参考值到 z0 实际值"要改的东西。
+> ✅ **推荐动作已执行（2026-09-21）**：从 z0 的飞控导出全量参数（915 条）与 `z0.params` 逐条 diff ——
+> **结论：914/915 条名字全对上；21 条值差异全部是设备标定类（加速度计 6 条 + 遥控器校准 14 条）与飞行计数器（4 条）**。
+> ⟹ 上表那些"必须核实"的项**不是文件过时，而是飞控上真实存在的待改项**；且飞控**从无飞行记录**
+> （`COM_FLIGHT_UUID = 0`、`LND_FLIGHT_T_* = 0`）。完整对账见
+> [`.scratch/phase1/issues/15-fcu-param-reconciliation.md`](../.scratch/phase1/issues/15-fcu-param-reconciliation.md)。
 > ```bash
-> diff <(grep -v '^#' docs/assets/z0.params | sort) <(grep -v '^#' z0-export.params | sort)
+> # 再次对账（★ 读参数别用 /mavros/param/get —— ROS2 版 mavros 没这个服务，见 ticket 15 §五）：
+> source ~/mavros_ws/install/setup.bash && ros2 param dump /mavros/param > /tmp/fcu_params.yaml
 > ```
 
 ### 5.2 开源项目取舍（详细版见 [`reference/open-source-survey.md`](reference/open-source-survey.md)）
