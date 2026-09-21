@@ -15,7 +15,19 @@ Type: task
 
 **为什么这张要单独做（也就是为什么它值一张 ticket）：** 位姿处理错误**在话题层面没有诊断分辨率** —— 飞机往反方向飞时，话题上分不出是原点锁错、yaw 归零错、还是 mavros 的边界转换不如预期。所以这里含**全项目唯一的纯函数单测**（seam 2），成本≈0，挡住的是"飞起来才发现"的一整类错误。
 
-**Blocked by:** 03
+**★ 来自 [ticket 03](03-vendor-vrpn-listener.md) 的三条前置事实（2026-09-21 第一手实测，直接决定本张怎么配）：**
+
+1. **刚体名是 `Z0`（大写）** ⟹ 要订阅的话题是 **`/vrpn/Z0/pose`**，不是 `/vrpn/z0/pose`。
+   话题名**原样取自 VRPN 的 sender 名**，只把空格换成 `_`，**不做大小写归一化**。
+   （[`mocap-setup.md`](../../../docs/reference/mocap-setup.md) §10 第 1 项已就地更正。）
+2. ⚠️ **那台服务器上还有别的项目的刚体**（`robot0` / `robot1` / `U_Tracker0..9` 及其 markers，
+   连 z0 一共 **28 个 sender**），而 `vrpn_listener` **给每个 sender 都建 publisher**（84 个话题）。
+   ⟹ **必须按名字精确订阅，不能"收到第一个就用"**。🔶 **`Z0_Marker1..5` 这些 per-marker 话题下游要不要屏蔽，本张顺带权衡。**
+3. ⏳ **`Z0` 当前 0 数据流**（ticket 03 实测：5 s 内 0 次回调，而对照组 `robot0`/`U_Tracker0` 各 961 次）。
+   本张的所有台架验收都以「`/vrpn/Z0/pose` 有数据」为前提，该条件由
+   [ticket 12](12-z0-mocap-stream-check.md)（人把 z0 放进棚 / 在 Nokov 里开流）闭合。
+
+**Blocked by:** 03（已 `done`）
 
 - [ ] **未解锁时** QGC 的 `LOCAL_POSITION_NED` **已稳定**，且有 `VISION_POSITION_ESTIMATE`（台架上可验，不用飞、不用解锁）
 - [ ] 解锁上升沿切原点，**切换瞬间位置无跳变**；原点锁定时刻记入日志

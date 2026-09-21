@@ -39,11 +39,23 @@ Nokov 软件 ──VRPN/UDP(3883)──▶ vrpn_listener ──▶ /vrpn/<刚体
 
 ### 2.1 VRPN 库
 
+> ☠️ **本节原教"源码编译 VRPN 到 `/usr/local`"，2026-09-21 已就地更正（ticket 03）。**
+> **z0 上不用这条路** —— 走 apt，再补一条软链：
+
 ```bash
-git clone https://github.com/vrpn/vrpn.git
-mkdir -p vrpn/build && cd vrpn/build
-cmake .. && make -j8 && sudo make install
+sudo apt install ros-humble-vrpn          # 7.35.0，装到 /opt/ros/humble
+# ★ 只装 apt 那份编不过：vendored 的 CMakeLists.txt 里有一行裸名字的
+#   target_link_libraries(vrpn_listener vrpn) → 链接器展开成 -lvrpn，
+#   要求 libvrpn 落在 ld 默认搜索路径里，而 /opt/ros/humble/lib 不是。
+#   那一行是 vendored 的、不能改，所以补一条软链（/usr/local/lib 在 ld 的 SEARCH_DIR 里）：
+sudo ln -sfn /opt/ros/humble/lib/libvrpn.a /usr/local/lib/libvrpn.a
 ```
+
+⚠️ **`libquat` 不需要软链** —— 它全程以绝对路径引用。
+⚠️ 若坚持走源码编译那条老路（`git clone vrpn/vrpn` → `cmake` → `sudo make install`），
+它装出来的布局**同样落在 `/usr/local`**，所以 `-lvrpn` 也能解析 —— 但那要 clone GitHub + 编译若干分钟，
+**且版本不可 pin**。**本机实际走的是 apt 那条。**
+完整依赖说明与验收记录见 [`../../src/vrpn_listener/VENDORED.md`](../../src/vrpn_listener/VENDORED.md) §5/§6。
 
 ### 2.2 ★★ `vrpn_listener` —— **不要从上游 GitHub 克隆**
 
@@ -57,9 +69,14 @@ cmake .. && make -j8 && sudo make install
 >
 > **用上游公开版会丢精度，并且会和下游 `vrpn_relative_pose` 的 reliable 订阅断连。**
 
-**获取方式**：从已配置好的机器上**打包整个 `vrpn_listener` 目录**再拷过来（用 U 盘 / scp / 共享挂载皆可）。
+**获取方式**：☠️ **本节原写"从已配置好的机器上打包整个 `vrpn_listener` 目录再拷过来"，
+2026-09-21 起作废（ticket 03）** —— 该包**已经 vendored 进本仓库**，就在
+[`src/vrpn_listener/`](../../src/vrpn_listener/)，**克隆本仓库即得**，不需要再从任何机器拷。
+来源已钉在 zip + commit 上，并有逐文件 sha256 与一条可重跑的复核命令。
 
-> 💡 **不用 `rsync` 的原因**（上游说明）：容器里通常没装 `rsync` / `ssh-client`，且容器到目标机的直连网络不一定通，**打包传输更稳**。
+> ⚠️ **该包自带的 `README.md` 已过时**（它还在教人 clone 公开版）—— **不要读它**，
+> 读 [`VENDORED.md`](../../src/vrpn_listener/VENDORED.md)（含**三个定制点**与**"勿替换为公开版"**）。
+> 💡 原"不用 `rsync`"那条理由（容器里工具链不全）**连同本节一起作废**。
 
 ### 2.3 ★ 配置 `params.yaml`
 
@@ -79,11 +96,17 @@ cmake .. && make -j8 && sudo make install
 ### 2.4 编译与运行
 
 ```bash
-cd ~/ws_livox && colcon build --packages-select vrpn_listener
-echo "source ~/ws_livox/install/setup.bash" >> ~/.bashrc
+source /opt/ros/humble/setup.bash
+cd ~/ros_ws && colcon build --packages-select vrpn_listener   # ★ colcon 根 = 仓库根，不是 src/
+source install/setup.bash
+ros2 launch vrpn_listener sync_entity_state.launch
 ```
 
-> ⚠️ **上游的工作空间路径是 `~/ws_livox`**（历史原因，来自 Livox 雷达项目）。**z0 应改成自己的路径。**
+> ✅ **2026-09-21（ticket 03）已按上面这组实跑并验收通过** ——
+> 「colcon 根 = 仓库根」这条与本文件 §10 第 3 项一致。**构建产物已被仓库根 `.gitignore` 挡住。**
+>
+> ⚠️ **上游的工作空间路径是 `~/ws_livox`**（历史原因，来自 Livox 雷达项目）—— **上面的 `~/ros_ws` 就是 z0 的替代。**
+> 本文档别处若还写着 `ws_livox`，一律按 `~/ros_ws` 读。
 
 ---
 
@@ -607,7 +630,7 @@ ros2 topic hz /mavros/vision_pose/pose
 
 | # | 项 | 上游值 | z0 要做什么 |
 |---|---|---|---|
-| 1 | **刚体命名** | `r11` / `r22` | ✅ **已定：z0 的刚体名 = `z0`**（2026-09-21 操作者在 Nokov 软件里确认，即以其机名建刚体）。下游话题即 `/vrpn/z0/pose` |
+| 1 | **刚体命名** | `r11` / `r22` | ✅ **已定：z0 的刚体名 = `z0`**（2026-09-21 操作者在 Nokov 软件里确认，即以其机名建刚体）。<br>☠️ **2026-09-21 更正（ticket 03，第一手）：VRPN 实际发出的 sender 名是 `Z0`（首字母大写）** ⟹ 下游话题是 **`/vrpn/Z0/pose`**，**不是** `/vrpn/z0/pose`。话题名直接取自 VRPN 的 sender 名，`replaceSpace()` **只把空格换成 `_`、不改大小写**。<br>→ **两条路选一**：按 `Z0` 配下游，或在 Nokov 软件里把刚体重命名成 `z0`。**别按本文这里的小写去配**。详见文末「ticket 03 实测」§二 |
 | 2 | **串口设备** | `/dev/ttyTHS3` | ✅ **已实测**：z0（Jetson Orin NX）上**只有 `/dev/ttyTHS1` 和 `/dev/ttyTHS2`**，`THS3` 与 `THS0` 都不存在。<br>⚠️ **2026-09-21 操作者确认：飞控侧走 TELEM2**（与 `z0.params` 的 `MAV_1_CONFIG = 102` = TELEM2/Onboard ✅ 一致）。<br>❌ **Jetson 侧是 THS1 还是 THS2，仍未定案** —— 判据是 `mavlink_probe.py --scan` 逐口找心跳（ticket 01 ②），**不靠猜** |
 | 3 | **工作空间路径** | `~/ws_livox` | 改成 `~/ros_ws`（z0 的实际工作空间） |
 | 4 | **`gcs_url`** | `udp://@10.1.1.103` | 改成自己的地面站 IP |
@@ -675,3 +698,68 @@ ros2 topic hz /mavros/vision_pose/pose
 > 二分成本很高。
 >
 > 采集方式：`python3` 裸 socket（`socket.SOCK_STREAM` / `SOCK_DGRAM`），只读，未发任何写指令。
+
+---
+
+### ★★ 2026-09-21 ticket 03 实测：**传输层 = UDP**（上面那个未决项已闭合）+ 刚体名与大写问题
+
+> 执行者：agent，在 z0 的 Jetson（`orin-nx`）上跑**真正的 `vrpn_listener`**（vendored，见
+> [`../../../src/vrpn_listener/VENDORED.md`](../../../src/vrpn_listener/VENDORED.md)）。
+> 全部为第一手读数。
+
+#### 一、传输层判定 —— **UDP，§1 的数据流图不用改**
+
+| 证据 | 读数 |
+|---|---|
+| `ss -tunap`（**vrpn_listener 进程**的 socket） | **3 个 UDP** 连到 `10.1.1.198:3883`（fd 15/16/17）—— 数据就是走这里 |
+| 同进程的 TCP | `LISTEN 10.1.1.114:51185` + 一条 `ESTAB`，**对端是 `10.1.1.198:52182`** ⟹ 这条是**动捕主机主动连进本机监听口**的，不是我们发起的 |
+| 抓包（`AF_PACKET`，见下） | 动捕主机 5 s 内向本机 UDP `:36039`（= vrpn_listener 的 socket）推 **2997 个包**，其中 2978 个载荷 1400 B ⟹ **服务器在主动推** |
+| 独立 VRPN 客户端（`vrpn_Tracker_Remote("robot0@10.1.1.198:3883")`） | 5 s 收到 **961 次** pose 回调 ⟹ **≈192 Hz**，链路完全正常 |
+
+⟹ **上面「TCP 答 banner、UDP 无应答」是探测方法的问题，不是服务器的行为**：
+VRPN 的 UDP 不认裸 socket 发出去的随机报文（要先做它自己的端口协商），
+**裸探针测不到 ≠ 不可用**。§1 的 `VRPN/UDP(3883)` **是对的**。
+
+> ⚠️ **教训（与第三轮那条同源）**：「裸探针没回应」不能推出「那条路不通」——
+> 这次是**用真 `vrpn_listener` 才判定出来的**，正如本节当初所要求的那样。
+
+#### 二、★ 刚体名：`Z0`（大写），不是 `z0`
+
+`vrpn_listener` 自动发现到 **28 个 sender**，与 z0 相关的有：
+
+| sender 名 | 说明 |
+|---|---|
+| **`Z0`** | ★ **刚体本体**，下游要订阅的是 **`/vrpn/Z0/pose`** |
+| `Z0_Marker1` … `Z0_Marker5` | ⚠️ **单颗反光球各自也是独立 sender**，会各自产生 `/vrpn/Z0_MarkerN/{pose,twist,accel}` |
+
+同一台服务器上还有别的项目的刚体：`robot0` / `robot0_Marker1..5`、`robot1` 及其 markers、
+`U_Tracker0..9`、`VRPN Control`。**总数 28 → 自动生成 84 个话题。**
+⟹ **下游必须按名字挑，不能"收到第一个就当成 z0"**。
+
+#### 三、⏳ `Z0` 当前**没有数据流** —— 这条**阻塞** ticket 03 的速率验收（对 z0 而言）
+
+| 刚体 | 是否有 pose 流 |
+|---|---|
+| `robot0` / `U_Tracker0` | ✅ ≈192–200 Hz |
+| **`Z0`** | ❌ **5 s 内 0 次回调**（独立 VRPN 客户端实测） |
+
+**`Z0` 出现在 sender 名单里 ≠ 它在出数**：名单来自服务器的对象列表，
+而出数要求该刚体**正在被追踪**（通常就是**飞机此刻在动捕棚有效捕捉范围内、且 Nokov 侧已开流**）。
+
+⟹ **要人做的**：把 z0 放到动捕棚里 / 在 Nokov 软件里确认 `Z0` 已启用输出，
+然后用下面这条验收（**速率本身已在 `U_Tracker0` 上验到 199.9 Hz，达标**）：
+
+```bash
+ros2 topic hz /vrpn/Z0/pose        # 期望 ~100–400 Hz（动捕 200 Hz 出包）
+```
+
+#### 四、版本：[只差一个小版本号，可忽略]
+
+客户端（本机 `ros-humble-vrpn` **7.35.0**）连上服务器（banner **`vrpn: ver. 07.34  0`**）时打印：
+
+```
+check_vrpn_cookie(): VRPN Note: minor version number doesn't match:
+(prefer 'vrpn: ver. 07.35', got 'vrpn: ver. 07.34  0').  This is not normally a problem.
+```
+
+**实测不影响收数**（`robot0` 的 200 Hz 就是在这条警告下收到的）。**不要为此去换 VRPN 版本。**
