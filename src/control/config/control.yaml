@@ -1,0 +1,56 @@
+# z0 的 control 节点参数。
+#
+# ★ 多台无人机复用：**复制这份文件**（如 control_z1.yaml），只改话题名与服务名，代码一行不动：
+#     ros2 launch control control.launch.py params_file:=<那份 yaml> namespace:=z1
+#   （yaml 里的 ros__parameters 键 `control` 与节点名对应，多机时也**不用改**。）
+
+control:
+  ros__parameters:
+    # —— 控制循环 ——
+    # ★ 50 Hz 不是随便定的：切进 OFFBOARD 期间 PX4 要求 setpoint 持续 ≥2 Hz（低于它视为断流），
+    #   50 Hz 留了足够余量，且与 PX4 默认的 setpoint 流速率同量级。
+    setpoint_rate_hz: 50.0
+
+    # ★ 切 OFFBOARD 之前 setpoint 必须先连续流多久（phase1-implementation.md §4.3-1）。
+    #   理由：**断流 PX4 会自动退出 OFFBOARD**（COM_OF_LOSS_T，z0 现值 1.0 s），
+    #   所以"先流够了再切"是前提，不是优化。
+    offboard_prestream_s: 1.0
+    # 切模式失败（PX4 没接受）时的重试间隔；真正的成功判据是 /mavros/state.mode 变成 OFFBOARD。
+    offboard_retry_s: 1.0
+    # ★ 自动切 OFFBOARD（用户 2026-09-21 裁定）。置 false = 只流 setpoint、不切模式。
+    #   台架上想手动 `ros2 service call /mavros/set_mode ...` 观察时改它。
+    #   ⚠️ 注意：**真 PX4 只在 OFFBOARD 模式下才读 setpoint_raw** ⟹ 关掉它，飞机不会有任何反应。
+    enter_offboard: true
+
+    # setpoint 的 yaw（弧度，**ROS/ENU 口径**：从 ENU 的 +x 逆时针）。
+    # ⚠️ 不是"NED 下的偏航"，也不是"相对当前机头"：mavros 对 FRAME_LOCAL_NED 做 ENU→NED
+    #    （`setpoint_raw.cpp:231/235`，实测换算 `yaw_ned = π/2 − yaw_enu`）
+    #    ⟹ **这里填 0，PX4 收到的是 +90°（机头朝东）**。本张飞机未解锁 ⟹ 不动，但
+    #    ticket 08 定"起飞朝向"时必须按这条来（要么显式给定，要么从当前姿态取，别留着 0 当默认）。
+    yaw: 0.0
+
+    # 诊断日志周期（INIT 时列出每条输入的话题/静默时长/发布者与 QoS；也用作 /control/state 的心跳）。
+    diag_period_s: 1.0
+
+    # —— 话题 / 服务（与 mavros 2.15.1 的默认名一致）——
+    state_topic: "/mavros/state"
+    local_position_topic: "/mavros/local_position/pose"
+    rc_topic: "/mavros/rc/in"
+    battery_topic: "/mavros/battery"
+    mocap_topic: "/mocap/pose_enu"
+    setpoint_topic: "/mavros/setpoint_raw/local"
+    set_mode_service: "/mavros/set_mode"
+    control_state_topic: "/control/state"
+
+    # —— 每条输入的超时判据 ——
+    # ★★ `/mavros/state` 的默认值是 2.5 s，**不要照抄 px4ctrl 的 0.5 s**：
+    #    该话题实测 1.000 Hz（min 0.998 / max 1.001），因为 mavros 只在收到 MAVLink HEARTBEAT
+    #    时才发布它，而 HEARTBEAT 是 PX4 的 1 Hz 定频流（mavros 侧改不了）。
+    #    用 0.5 s 会让这条判据恒真、每秒都在报"飞控失联"。
+    #    代价：**解锁上升沿最多晚 1 s 被检出**（对 STANDBY 无影响，ticket 08 起飞前要把这条算进去）。
+    state_timeout_s: 2.5
+    # 动捕实测 ~196 Hz、local_position 实测 ~30 Hz ⟹ 0.5 s 是"明显漏了"的量级。
+    local_pos_timeout_s: 0.5
+    mocap_timeout_s: 0.5
+    rc_timeout_s: 0.5
+    battery_timeout_s: 2.0

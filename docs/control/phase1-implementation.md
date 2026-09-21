@@ -43,7 +43,7 @@ src/
 ├── mocap/                             ✅ 已实现（2026-09-21，ticket 04）
 │   ├── src/mocap_rel_pose_node.cpp    ← 相对位姿节点（ROS 边界：话题进出）
 │   ├── include/mocap/mocap_rel_pose.hpp  ← ★ 三个纯函数，**零 ROS 依赖**（seam 2）
-│   ├── test/test_mocap_rel_pose.cpp   ← ★ 全项目唯一的纯函数单测（20 例）
+│   ├── test/test_mocap_rel_pose.cpp   ← ★ 纯函数单测（seam 2，20 例）
 │   ├── config/mocap.yaml              ← 刚体名 + 话题名都在这（多机改参数复用）
 │   ├── launch/mocap.launch.py
 │   └── README.md                      ← 参数表 + 运行纪律 + 两阶段原点的理由
@@ -54,13 +54,27 @@ src/
 │   ├── config/traj.yaml
 │   └── launch/traj.launch.py
 │
-├── control/                           🆕 新写（Phase 2 的 MPC 也放这里）
-│   ├── src/control_node.cpp           ← FSM 主体
-│   ├── src/px4_interface.cpp          ← mavros 服务/话题封装
-│   ├── include/control/fsm.hpp
+├── control/                           ✅ 已实现（2026-09-21，ticket 05）—— **只到 STANDBY**
+│                                      （Phase 2 的 MPC（模型预测控制）节点也放这里）
+│   ├── src/control_node.cpp           ← 只做接线：参数、定时器、日志
+│   ├── src/px4_interface.cpp          ← mavros 服务/话题封装 + 每条输入的新鲜度
+│   ├── include/control/fsm.hpp        ← ★ 纯逻辑、零 ROS（seam 2）：两个正交维度 + 转移表
 │   ├── include/control/px4_interface.hpp
 │   ├── config/control.yaml
-│   └── launch/control.launch.py
+│   ├── launch/control.launch.py
+│   ├── test/test_fsm.cpp              ← ★ 纯函数单测（seam 2，零 ROS）：守卫清单 + 前置流计时
+│   ├── test/test_control_standby.py   ← ★ 节点级（seam 1）：DUT 是**子进程**，只断言话题边界
+│   └── README.md                      ← ★ 先读它：参数表 + 两个维度的语义 + 与 06/08 的边界
+│
+├── bench/                             ✅ 已实现（2026-09-21，ticket 05）—— **测试基础设施，不是飞行代码**
+│   ├── bench/fake_mavros.py           ← ★ 假 mavros（QoS 逐条对着真 mavros 源码抄）
+│   ├── bench/vrpn_source.py           ← 脚本化动捕（喂 /vrpn/* 或直接喂 /mocap/pose_enu）
+│   ├── bench/timeline.py              ← ★ 纯逻辑、零 ROS：故障注入时序 + 常用配方
+│   ├── bench/scenario.py              ← Scenario：拼装 + DUT 子进程 + 秒表 + 证据输出
+│   ├── bench/pytest_support.py        ← ★ ROS 域隔离（**拒绝 domain 0**）
+│   ├── config/bench.yaml
+│   ├── test/                          ← ★ 夹具自检（验它"假得像不像"）+ 时序纯逻辑单测
+│   └── README.md                      ← ★ 夹具说明书：它假的是什么、能注入什么、怎么写场景
 │
 ├── bringup/                           🆕 新写
 │   ├── launch/z0.launch.py            ← 一键起 mocap+traj+control
@@ -83,9 +97,9 @@ src/
 | `/mavros/state` | `mavros_msgs/State` | `connected` / `armed` / `mode` | ★ FSM 的主驱动 |
 | `/mavros/local_position/pose` | `geometry_msgs/PoseStamped` | EKF2 融合位置 | ★ **轨迹原点与稳定判据都用它**，见 §3.3 |
 | `/mavros/local_position/velocity_local` | `geometry_msgs/TwistStamped` | EKF2 融合速度 | ★ 稳定判据的 `|v|` 来源 |
-| `/mavros/rc/in` | `mavros_msgs/RCIn` | **开始按键** | ★ 通道号是参数，实飞时确认 |
-| `/mavros/battery` | `sensor_msgs/BatteryState` | 低电压保护 | ⚠️ 见 §8.2 |
-| `/mocap/pose_enu` | `geometry_msgs/PoseStamped` | 相对位姿（**ENU，原生**） | Phase 1 只用于记录（Q23）；**Phase 2 的 MPC 拿它当状态源** |
+| `/mavros/rc/in` | `mavros_msgs/RCIn` | **开始按键** | ★ 通道号是参数，实飞时确认。⚠️ ticket 05 只订阅、不做判据 |
+| `/mavros/battery` | `sensor_msgs/BatteryState` | 低电压保护 | ⚠️ 见 §8.2。⚠️ ticket 05 只订阅、不做判据 |
+| `/mocap/pose_enu` | `geometry_msgs/PoseStamped` | 相对位姿（**ENU，原生**） | Phase 1 用于记录（Q23）**以及 ticket 05 的守卫**（它的新鲜度决定发不发 setpoint）；**Phase 2 的 MPC 拿它当状态源** |
 | `/traj/select` | `std_msgs/UInt8` | 选轨迹：1/2/3 | 由 `fly.py` 发布 |
 
 ### 输出（`control` 发布 / 调用）
@@ -97,6 +111,23 @@ src/
 | `/mavros/cmd/arming` | `mavros_msgs/CommandBool` | 解锁/上锁（服务） |
 | `/control/state` | `std_msgs/String` | 当前状态名，给 `fly.py` 显示 |
 | `/control/traj_progress` | `std_msgs/Float32` | 轨迹完成度 0–1 |
+
+> ★ **两个维度显式分开（ticket 05 已实现）**：`/control/state` 发的是
+> **`"<控制权>/<任务态>"`**（如 `MANUAL/STANDBY`），**不是**一个扁平状态名。
+> 控制权 `MANUAL`/`AUTO` 的定义、任务态 `INIT`/`STANDBY`/`TAKEOFF`/`HOVER`/`TRACK`/`LAND`
+> 见 [`CONTEXT.md`](../../CONTEXT.md) §三。它用 **`transient_local`** 发布
+> （晚订阅者立刻拿到当前值，`fly.py`、测试、`ros2 topic echo` 都受益），且每 `diag_period_s` 心跳重发。
+> 实现与边界见 [`src/control/README.md`](../../src/control/README.md)。
+
+> ★★ **QoS：入向话题必须逐条对齐真 mavros，错了不报错、只是永远收不到**（ticket 05 实测 + 源码核实）：
+> `/mavros/local_position/*` 与 `/mavros/battery` 是 **BEST_EFFORT**（`SensorDataQoS()`），
+> `/mavros/state` 是 **可靠 + `transient_local`**（`mavros::StateQoS()`），`/mavros/rc/in` 是可靠。
+> 用默认（可靠）订阅 `local_position` 会**一帧都收不到**，日志里只有一句
+> `offering incompatible QoS`，节点不报错也不退出。
+> 出向的 `/mavros/setpoint_raw/local` 反过来：mavros 用 `SensorDataQoS()` **订阅**它，
+> 所以发布方用可靠（默认）**能**匹配，改成 best_effort 也没问题 —— 但**别改**，照抄现状最省事。
+> 依据与实测见 [`src/bench/README.md`](../../src/bench/README.md)（夹具逐条复刻了这些 QoS，
+> 并有专门的回归测试盯着"不可靠订阅者收不到 best_effort 数据"这件事）。
 
 ### `mocap` 节点
 
@@ -112,8 +143,8 @@ src/
 >
 > ⚠️ **本文旧版曾让本节点额外发布一条 `/mocap/pose_ned`（NED/FRD）给"本项目控制器"用，
 > 并警告"两路约定不一样、搞反了会飘"。该话题已按 Q14=a 删除** —— 理由：
-> ① Phase 1 的控制器工作在 **EKF2 的 local NED** 里（§3.3），位置直接读 `/mavros/local_position/*`，
-> **不需要** mocap 的 NED 值；② Phase 2 的 MPC（模型预测控制）用 ENU（§3.2 / G3）。
+> ① Phase 1 的控制器工作在 **EKF2 的局部系**里（§3.3；★ 该系在 ROS 侧**就是 ENU**，见 §3.1 的更正），
+> 位置直接读 `/mavros/local_position/*`，**不需要** mocap 再发一份；② Phase 2 的 MPC（模型预测控制）用 ENU（§3.2 / G3）。
 > 即**没有任何消费者**。删掉它同时消灭了"转两次 / 一次都没转"这一整类 bug。
 
 > ✅ **已实现（2026-09-21，[ticket 04](../../.scratch/phase1/issues/04-mocap-relative-pose.md)）= [`src/mocap/`](../../src/mocap/)。**
@@ -134,8 +165,31 @@ src/
 | 坐标系 | 约定 | 出现在哪 |
 |---|---|---|
 | **动捕 map（ENU）** | x=假定东 / y=北 / z=**上** | `/vrpn/<刚体>/pose` |
-| **PX4 本地（NED）** | x=北 / y=东 / z=**下** | `/mavros/local_position/*`、`/mavros/setpoint_raw/local` |
+| **PX4 本地（NED）** | x=北 / y=东 / z=**下** | MAVLink 线上的 NED。⚠️ **ROS 侧的话题不是这个口径** —— 见下方更正 |
 | **PX4 机体（FRD）** | x=前 / y=右 / z=下 | 姿态、角速率（Phase 2 才用） |
+
+> ☠️☠️ **更正（2026-09-21，ticket 05 第一手核实）：mavros 的 ROS 侧**入向/出向**都是 ENU，
+> 「`/mavros/local_position/*` 与 `/mavros/setpoint_raw/local` 是 NED」这句是错的。**
+> 上表第 2 行必须读成"**MAVLink 线上的** NED"，而不是"ROS 话题的**。依据（都读过源码）：
+>
+> | 话题 | mavros 干什么 | 源码 |
+> |---|---|---|
+> | `/mavros/local_position/pose`（出向） | PX4 的 NED → **ENU** 后发布 | `local_position.cpp:157` `transform_frame_ned_enu(...)`（速度在 `:162`，同） |
+> | `/mavros/setpoint_raw/local`（入向） | 收到的 **ENU** → NED 再发给 PX4 | `setpoint_raw.cpp:231` `transform_frame_enu_ned(position)` |
+>
+> **两条直接后果，都会咬人：**
+> 1. **`position.z` 向上为正**（ENU）。★ 若照"NED"去写，起飞目标会写成 `z = -1.0` ⟹
+>    **飞机往地里钻**。§5.2 的"高度 1.0 m"要的就是 `z = +1.0`。
+> 2. **`yaw` 也是 ENU 口径**，实测换算 **`yaw_ned = π/2 − yaw_enu`**
+>    （`setpoint_raw.cpp:235`；按 `frame_tf.hpp:180` + `ftf_frame_conversions.cpp:33/40` 复算）
+>    ⟹ **`yaw = 0` 的意思是"机头朝 ENU 的 +x（假定东）"，不是"保持当前机头"**。
+>    ticket 08 定起飞朝向时必须显式处理，**别把默认 0 当"不改变"用**。
+> 3. ★ **好消息**：正因为两边都是 ENU，「把 `/mavros/local_position/pose` 原样转给 setpoint」
+>    **恰好是正确的**（一进一出抵消，PX4 收到的是它自己报的值）——
+>    ticket 05 的实现就是这么做且已验证。**不要**因为上表的措辞去加一次 ENU→NED 转换，
+>    那会把飞机送错位置。
+>
+> 2026-09-21 已落：`src/control/README.md`、`include/control/px4_interface.hpp`、`config/control.yaml` 均已按本条改正。
 
 ### 3.2 ★ 位置转换（ENU → NED）
 
@@ -156,7 +210,7 @@ z_ned = -z_enu
 | **动捕原点** | `mocap` 节点在**解锁上升沿**锁定 | ❌ **Phase 1 不依赖** |
 | **轨迹原点** | `control` 在 **HOVER 判定稳定那一刻**记录的 `/mavros/local_position/pose` | ✅ **Phase 1 完全依赖** |
 
-**为什么这样设计**：`/mavros/setpoint_raw/local` 的坐标是 **EKF2 的 local NED**，而 EKF2 的局部原点在**它自己初始化时**确定，未必等于我们锁定的动捕原点。两者之间可能有常值偏移。
+**为什么这样设计**：`/mavros/setpoint_raw/local` 的坐标是 **EKF2 的局部系**（ROS 侧为 ENU，见 §3.1 的更正），而 EKF2 的局部原点在**它自己初始化时**确定，未必等于我们锁定的动捕原点。两者之间可能有常值偏移。
 
 **→ 所以轨迹原点取"HOVER 稳定时 EKF2 报的位置"**，这样：
 - **偏移被自动吸收**——我们是在同一个坐标系里"以当前点为 0"发指令
@@ -250,6 +304,36 @@ if (last_transform_stamp == stamp) { /* dropped */ return; }
 
 **数值约定错了，MPC 算得再对，飞机也不会飞。** 见 [`px4-interface.md`](../reference/px4-interface.md) 3.3。
 
+### 3.7 ☠️ 更正：Phase 1 的 setpoint「时间戳单位」**不是微秒**（ticket 05 第一手核实）
+
+**旧说法**（`.scratch/phase1/spec.md` 的「消息时间戳」段）："所有发往 PX4 的消息使用**微秒**时间戳"。
+
+**这条只对 Phase 2 的 uXRCE-DDS 路径成立**（`px4_msgs` 的 `*Setpoint.timestamp` 确实是微秒 `uint64`）。
+Phase 1 走的是 mavros，**不存在"微秒"这一层**：
+
+1. **mavros 出向**：`PositionTarget.header.stamp`（ROS2 `builtin_interfaces/Time`）被换算成 MAVLink 的
+   `time_boot_ms`，即 **毫秒**、且会**截断成 32 位** —— 见 `mavros/include/mavros/plugin.hpp:264-267`
+   与 `setpoint_raw.cpp` 的 `local_cb`。
+2. **PX4 侧根本不读这个字段**（★ 2026-09-21 在 `~/refs/px4-v1.15.0` 上逐行读过，与 z0 固件同代）：
+   `src/modules/mavlink/mavlink_receiver.cpp:960`
+   `MavlinkReceiver::handle_message_set_position_target_local_ned()` 只读 `type_mask` /
+   `coordinate_frame` / 各分量，**`target_local_ned.time_boot_ms` 一次都没出现**；
+   `trajectory_setpoint.timestamp` 是在发布处用 **`hrt_absolute_time()`** 自己打的
+   （同上文件 **1067 行**：`setpoint.timestamp = hrt_absolute_time();`）。
+
+**⟹ Phase 1 的实现口径**（与 mavros 自带 setpoint 插件一致）：`header.stamp = now()`，**不要**去凑"微秒"。
+
+> ★ 同一次阅读还确认了两件与本节点行为直接相关的事：
+> - 该 handler **只在 `nav_state == NAVIGATION_STATE_OFFBOARD` 时才把 setpoint 发进 ORB**
+>   （`mavlink_receiver.cpp:1066` 的注释原文 "only publish setpoint once in OFFBOARD"）
+>   ⟹ **切模式之前流的那些 setpoint 是被丢弃的**，
+>   起作用的不是它们本身，而是它们每条都触发的 **`offboard_control_mode` 发布** ——
+>   那才是"offboard 信号存在"的判据（`Commander::offboardControlCheck()`）。
+>   这就是 §4.3-1「前置流」能生效的机制。
+> - `type_mask = 2552` 不会撞上 `POSITION_TARGET_TYPEMASK_FORCE_SET` 那条错误分支
+>   （该分支的条件是 `ocm.acceleration && (type_mask & FORCE_SET)`，而 2552 让加速度全为 NaN
+>   ⟹ `ocm.acceleration == false`）。见 §8.6。
+
 ## 4. FSM 状态与转移
 
 ### 4.1 状态设计（把"谁在控制"与"在干什么"显式分开）
@@ -264,6 +348,17 @@ if (last_transform_stamp == stamp) { /* dropped */ return; }
 | `TRACK` | 执行选定轨迹 | 目标 = 轨迹发生器输出 |
 | `LAND` | 自动降落 | 交给 PX4 的 `AUTO.LAND` |
 | `RC_OVERRIDE` | 遥控器打杆接管 | **停止发 setpoint**，退出 OFFBOARD |
+
+> ★ **与 ticket 05 已实现代码的对应关系（2026-09-21）** —— 上表是**目标形态**，代码目前是它的子集：
+> - **已实现**：`INIT`、`STANDBY`（= [`src/control/include/control/fsm.hpp`](../../src/control/include/control/fsm.hpp)
+>   的 `Phase::kInit` / `kStandby`）。其余几个**只在枚举里占位，不在转移表里** —— 任何输入组合都到不了。
+> - **`RC_OVERRIDE` 被拆成了另一个维度**：代码里"谁在控制"是独立的 `Authority{MANUAL, AUTO}`，
+>   它**没有**作为一个 `Phase` 存在。遥控器打杆 ⟹ 控制权回 `MANUAL`（`COM_OBL_RC_ACT` 由 PX4 处理），
+>   当前任务态怎么办归 ticket 06 定。
+> - **`WAIT_START` 代码里还没有**：它是"已稳定、等按键"的中间态，归 ticket 08 引入
+>   （`HOVER` 之后的判据也要那批工作一并定）。**不要**在 ticket 08 之前往枚举里加。
+> - ★ 早期图纸里出现的 `IDLE`（ticket 05 的状态机示意图）**与本文的 `INIT`、代码的 `kInit` 同义** ——
+>   同一件事的三个写法，见 [`CONTEXT.md`](../../CONTEXT.md) §三的「任务态」条。
 
 ### 4.2 转移表
 
@@ -282,8 +377,38 @@ if (last_transform_stamp == stamp) { /* dropped */ return; }
 ### 4.3 ★ 三个必须实现的细节（"实飞才会想到"的判据，来自 `px4ctrl`）
 
 1. **OFFBOARD 前置流**：切进 OFFBOARD **之前**，setpoint 必须已经以 ≥2 Hz 持续发布 **≥1 s**。本项目用 50 Hz，`STANDBY` 阶段就在发了。**断流 PX4 会自动退出 OFFBOARD**（`COM_OF_LOSS_T = 1.0 s`，见 `z0.params`）。
+   ★ **机制已第一手确认**（ticket 05）：起作用的是每条 setpoint 触发的 `offboard_control_mode` 发布，
+   而不是 setpoint 本身（切模式前它们被 PX4 丢弃）—— 见 §3.7 的注。
+   ★ **参数落点**：`offboard_prestream_s`（默认 1.0）＝"流够多久才允许切"，`setpoint_rate_hz`（默认 50）。
+   台架测试断言的是：`前置流设 3.0 s` ⟹ 切模式时刻晚于首条 setpoint **≥ 2.95 s**（**硬约束**，
+   差 0.05 s 是计时抖动），且不超过 **4.5 s**（上界是为了抓"根本没切"与"切得太离谱"，
+   不是在卡 DUT 多快启动 —— 见 `src/bench/README.md` 的三条纪律）。
 2. **`RC_OVERRIDE` 必须真的停止发 setpoint**：只是"不更新目标"是不够的——那等于让飞机悬停在原目标，操作员打杆也拉不回来。**要停发**，让 PX4 按 `COM_OBL_RC_ACT` 接管（`z0.params` 里 `COM_OBL_RC_ACT = 0` = 回 Position 模式）。
 3. **`msg_timeout`**：`px4ctrl` 的 `ctrl_param_fpv.yaml` 里每个输入都有 0.5 s 超时（`odom` / `rc` / `cmd` / `imu` / `bat`）。**照抄这个思路**：任何关键输入超时 → 进 `LAND`。
+
+   ★★ **但 0.5 s 这个数字不能照抄到 `/mavros/state` 上**（ticket 05 实测）：
+   该话题实测 **1.000 Hz**（min 0.998 / max 1.001）—— mavros **只在收到 MAVLink HEARTBEAT 时才发布它**
+   （`mavros/src/plugins/sys_status.cpp` 的 `handle_heartbeat` → `state_pub->publish`），
+   而 HEARTBEAT 在 PX4 里是**定频流**（`mavlink/streams/HEARTBEAT.hpp` 的 `const_rate() == true`）
+   ⟹ **这不是 mavros 的定时器，改不了 mavros 那一侧**。用 0.5 s 判据的后果是**每秒都在报"飞控失联"**。
+
+   **本项目的超时口径**（ticket 05 实现，见 `src/control/config/control.yaml`）：
+
+   | 输入 | 上游频率 | 超时 | 理由 | ticket 05 是否拿它做判据 |
+   |---|---|---|---|---|
+   | `/mavros/state` | **1 Hz** | **2.5 s** | 2.5 个周期；容一次丢帧 | ✅ 超时 ⟹ 回 `INIT`、停发 |
+   | `/mavros/local_position/pose` | ~30 Hz | 0.5 s | | ✅ 同上 |
+   | `/mocap/pose_enu` | ~196 Hz | 0.5 s | | ✅ 同上 |
+   | `/mavros/rc/in` | 10 Hz 级 | 0.5 s | | ❌ **只记账**（"打杆 ⟹ 降级"属 ticket 06） |
+   | `/mavros/battery` | 1 Hz 级 | 2.0 s | | ❌ **只记账**（"低压 ⟹ 降落"属 ticket 09） |
+
+   ★ 后两行的 `*_timeout_s` 参数与订阅**在 ticket 05 就位**（值与理由都不会再变），
+   但**判据**分别归 ticket 06 / 09 —— 这样 ticket 06 接进来时只需在 FSM 里加一条守卫，
+   不必再动话题层。**在那些 ticket 落地之前，这两条输入超时不会引起任何动作。**
+
+   ⚠️ **代价：解锁上升沿最多晚 1 s 被检出**（1 Hz 话题的固有限制）——
+   ticket 08 的起飞逻辑必须把这一秒算进去。本张只做"检出外部解锁 ⟹ 停发 setpoint + ERROR"，
+   真正的起飞前置判据归 ticket 08。
 
 ## 5. 判据与轨迹
 
@@ -295,9 +420,12 @@ if (last_transform_stamp == stamp) { /* dropped */ return; }
 
 - **位置误差**相对**轨迹原点**（§3.3），来源 `/mavros/local_position/pose`
 - **速度**来源 `/mavros/local_position/velocity_local`（EKF2 融合，比动捕差分干净）
-- **两者都在 EKF2 的 local NED 里**，与 setpoint 同坐标系，**不需要额外转换**
+- **两者都在 EKF2 的同一个局部系里**（ROS 侧是 ENU，见 §3.1 的更正），与 setpoint 同口径，**不需要额外转换**
 
-### 5.2 三条轨迹（已定，都在 §3.3 的轨迹原点、NED 下定义）
+### 5.2 三条轨迹（已定，都在 §3.3 的轨迹原点、同一个**局部系**下定义）
+
+> ⚠️ 该局部系在 **ROS 侧是 ENU**（`x` 东 / `y` 北 / **`z` 向上为正**）—— 见 §3.1 的更正。
+> 下表"高度 1.0 m"对应的就是 **`z = +1.0`**。
 
 | 编号 | 轨迹 | 定义 | 速度 |
 |---|---|---|---|
@@ -377,6 +505,28 @@ if (last_transform_stamp == stamp) { /* dropped */ return; }
 
 > **★ 第 3 步是"无桨台架"，不是 SITL。** 理由：SITL 验证不了**动捕链路**、**mavros 的真实串口**、**遥控器按键**这三件 Phase 1 真正的风险点。无桨台架能验证全部三件，且不炸机。
 
+### 7.1 ★ 哪些已经进了自动化，哪些还必须上真台架（ticket 05 更新）
+
+**已经自动化**（`colcon test --packages-up-to control`，共 36 例，不需飞控、不需动捕、可离线跑）：
+
+- **seam 1**（`control/test/test_control_standby.py`，`src/bench/` 夹具）：守卫逐条生效 ⟹ 不发 setpoint；
+  50 Hz 流的字段与频率；前置流时长；`/mavros/state` 静默后流在 `state_timeout_s` 内停止；
+  外部解锁 ⟹ 停发；`enter_offboard=false` 只流不切；杀进程后流停止。
+- **seam 2**（`control/test/test_fsm.cpp`，零 ROS）：缺项清单是哪几条、什么顺序；断流后前置流重新计时；
+  `STANDBY` 下控制权仍是 `MANUAL`。
+
+**这些都不再需要人守着看。**
+
+**⏳ 必须上真台架**（夹具**不模拟 PX4**，这两条的判据全在 PX4 侧）：
+
+| 项 | 为什么夹具做不了 |
+|---|---|
+| 真 PX4 被**拉进 OFFBOARD** | 模式需求检查（解锁前/后的差异）、`offboard_control_mode` 的存活判据都在 PX4 里 |
+| 杀节点 ⟹ PX4 在 **`COM_OF_LOSS_T`（1.0 s）后自行退出 OFFBOARD** | 同上。夹具已能证明"节点停发了"，**证明不了**"PX4 因此退出了" |
+
+做这两项时 **必须拆桨**，并走本节的第 3 步序列。⚠️ 当前 `/dev/ttyTHS1` 被另一会话的 mavros 占着
+（见 [ticket 14](../../.scratch/phase1/issues/14-mavros-from-source.md)），**不在 ticket 05 里抢**。
+
 ## 8. ★ 避坑清单（本轮调查挖出来的，逐条都有第一手证据）
 
 ### 8.1 ⚠️ 不要把"公开版 vrpn_listener"替换进来
@@ -437,7 +587,12 @@ IGNORE_VX|IGNORE_VY|IGNORE_VZ|IGNORE_AFX|IGNORE_AFY|IGNORE_AFZ|IGNORE_YAW_RATE
 = 8|16|32|64|128|256|2048 = 2552
 ```
 
-同时：`coordinate_frame = FRAME_LOCAL_NED (1)`，`position.z` **向下为正**，`yaw` 用弧度（推荐 `yaw = 0` = 解锁时的机头方向）。
+同时：`coordinate_frame = FRAME_LOCAL_NED (1)`。
+
+☠️ **更正（2026-09-21）**：本节旧版写「`position.z` **向下为正**，`yaw` 用弧度（推荐 `yaw = 0` = 解锁时的机头方向）」——
+**两句都错**（详见 §3.1 的更正）：mavros 对这个帧做 ENU→NED（`setpoint_raw.cpp:231/235`）⟹
+**`position.z` 向上为正**、**`yaw = 0` 表示"机头朝 ENU 的 +x"而不是"解锁时的机头方向"**。
+`yaw = 0` 按"保持当前机头"用，会在进入 OFFBOARD 的瞬间把机头拧到 90°（NED）。
 
 > 📌 **若定点出现低频抖动**，标准下一步是**加上速度前馈**：轨迹发生器同时给出参考速度，把掩码改成 `2496`（只忽略加速度与 yaw_rate），填入 `velocity`。**这是 (A) 级方案的标准调优路径**，先不做。
 

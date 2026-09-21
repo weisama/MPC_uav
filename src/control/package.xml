@@ -1,0 +1,30 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>control</name>
+  <version>0.1.0</version>
+  <description>
+    自主飞行的控制节点：把 PX4 拉进 OFFBOARD 并以 50 Hz 流「位置 + yaw」setpoint。
+    ★ ticket 05 只实现到 STANDBY（未解锁、持续流 setpoint、不发任何会驱动飞机的指令）；
+    起飞/悬停/降落归 ticket 08，轨迹归 ticket 07，失效路径归 ticket 06。
+  </description>
+  <maintainer email="127371350+weisama@users.noreply.github.com">weisama</maintainer>
+  <license>TODO: License declaration</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <depend>rclcpp</depend>
+  <depend>geometry_msgs</depend>
+  <depend>sensor_msgs</depend>
+  <depend>std_msgs</depend>
+  <!-- setpoint（PositionTarget）/ state / rc 都来自 mavros_msgs；不依赖整个 mavros -->
+  <depend>mavros_msgs</depend>
+
+  <!-- ★ seam 1 的夹具：假 mavros + 脚本化动捕输入，见 src/bench/README.md -->
+  <test_depend>ament_cmake_pytest</test_depend>
+  <test_depend>bench</test_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

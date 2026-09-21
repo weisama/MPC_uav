@@ -1,0 +1,52 @@
+# 台架夹具的默认参数 —— 与 `bench/config.py` 的 DEFAULTS 一一对应（改一处要同时改另一处）。
+#
+# ★ 这份 yaml 是**真的被读**的：`Scenario()` 默认会加载它，yaml 里只写要改的键（与 DEFAULTS 深合并）。
+#   不传 `config_file=` 且安装目录里找不到它时，回落到代码里的 DEFAULTS（两者内容相同）。
+#
+# ★★ 频率这一栏不是"好测就行"，是**照抄真 mavros 的实测值**：
+#    把 state 调快会让"解锁上升沿最多晚 1 s"这类真问题在测试里消失 —— 那等于用夹具说谎。
+
+rates_hz:
+  # 实测 1.000 Hz（min 0.998 / max 1.001）。根源：mavros 只在收到 MAVLink HEARTBEAT 时
+  # 才发这个话题，而 HEARTBEAT 是 PX4 的 1 Hz 定频流 ⟹ 改不了、也不该在夹具里改。
+  state: 1.0
+  local_position: 30.0      # mavros 的 local_position 插件（实测 ~30 Hz）
+  local_velocity: 30.0
+  rc: 10.0
+  battery: 1.0
+  # 动捕实测 190.9–197.0 Hz（ticket 12 的读数）
+  vrpn: 200.0
+
+# 话题名与 mavros 2.15.1 的默认名一致。★ 夹具**按真名发**，不按"测试方便"改名 ——
+# 改名会让 DUT 里写错的默认值照样通过测试。
+topics:
+  state: "/mavros/state"
+  local_position: "/mavros/local_position/pose"
+  local_velocity: "/mavros/local_position/velocity_local"
+  rc: "/mavros/rc/in"
+  battery: "/mavros/battery"
+  setpoint: "/mavros/setpoint_raw/local"
+  set_mode: "/mavros/set_mode"
+  arming: "/mavros/cmd/arming"
+
+initial:
+  # 假 EKF 的位置（local NED，z 向下为正）。默认在原点；要辨认坐标轴时由测试显式 set_position。
+  position: [0.0, 0.0, 0.0]
+  connected: true
+  armed: false
+  # POSCTL：真机上"上电后、切 OFFBOARD 之前"的常见模式。
+  mode: "POSCTL"
+  voltage: 16.0             # 4S LiPo 满电附近
+
+mocap:
+  # 'mocap' = 直接发 /mocap/pose_enu（测 control 时用，旁路 mocap 节点）
+  # 'vrpn'  = 发 /vrpn/<刚体>/pose（测 mocap 节点、或测整链时用）
+  target: "mocap"
+  body_name: "z0"
+  position: [0.0, 0.0, 0.0]
+
+scenario:
+  # 起夹具时是否同时起 DUT（False = 只要夹具，"我想先看看假 mavros 自己发的对不对"时用）
+  start_dut: true
+  # 要不要起脚本化动捕源（测的节点不依赖动捕时可以关掉）
+  mocap: true

@@ -63,6 +63,9 @@
 | **MPCC** | **Model Predictive Contouring Control**，模型预测轮廓控制 —— 优化"沿参考路径的进度"而非"点到点误差"，是竞速飞行的主流方法。 |
 | **微分平坦 (differential flatness)** | 四旋翼的一类性质：全部状态与输入可由四个平坦输出（位置 xyz + 偏航）及其导数代数地表示。常用于生成前馈轨迹。 |
 | **DFBC** | Differential-Flatness-Based Control，基于微分平坦的控制。`Sun2022_TRO_NMPC_vs_DFBC` 论文中作为 NMPC 的对照组。 |
+| ★ **控制权 (authority)** | 自主飞控状态机的**第一个维度**：**谁在控制飞机**。`MANUAL` / `AUTO` 两值。**定义**：`AUTO` = 本项目正在发**会驱动飞机**的指令（即已解锁的 offboard）。⟹ "已切进 OFFBOARD 模式但飞机未解锁"**仍是 `MANUAL`** —— 切模式 ≠ 交出控制权。 |
+| ★ **任务态 (phase)** | 状态机的**第二个维度**：**程序在干什么**。取值 `INIT` / `STANDBY` / `TAKEOFF` / `HOVER` / `TRACK` / `LAND`。★ 与「控制权」**正交、不压成扁平枚举**（两个维度各自独立变化）。`/control/state` 发 `"<控制权>/<任务态>"`，如 `MANUAL/STANDBY`。早期 ticket 里画图时用的 `IDLE` 与代码里的 `INIT` 同义。 |
+| **OFFBOARD 前置流 (pre-stream)** | **切进 OFFBOARD 之前**必须先把 setpoint 连续流够一段时间（本项目 50 Hz 流 ≥1 s）—— 因为 **PX4 在 OFFBOARD 模式下一旦断流超 `COM_OF_LOSS_T` 就自行退出该模式**，所以"先流后切"是前提而不是优化。 |
 
 ## 四、求解器与工具链
 
@@ -106,3 +109,13 @@
 | **XI35 Pro** | 怪象（OddityRC）的 3.5 英寸涵道机架，轴距 152 mm。**z0 的机架。** |
 | **`z0.params`** | **z0 的飞控参数文件**（`assets/z0.params`，928 行，其中 914 条参数）。内容逐字来自上游 `Huan-qun/Sim2real-UAV-Params-` 的 `S2R/assets/param/uav1.params`（那台机器叫 "Vehicle 1"），**尚未在 z0 的飞控上核实**——所以文档里凡说"`z0.params` 里 X 是默认值/可疑"，意思都是"**这是上游值，别当成 z0 的实测值**"。见 `docs/reference/params-analysis.md`。 |
 | **动捕定点飞行** | 用动捕位姿闭环、让飞机自主保持位置悬停的飞行状态。**旧机上已实现，z0 上尚未。** |
+
+## 七、测试与台架
+
+| 术语 | 定义 |
+|---|---|
+| **接缝 (seam)** | 测试切入的边界。**接缝 1** = **ROS 话题/服务边界**（喂入向话题、断言出向话题），节点级测试走这条；**接缝 2** = **纯函数**（不碰 ROS，如坐标变换、时序逻辑）。★ 规矩：**能在接缝 2 测的就别拉到接缝 1**，能上接缝 1 的就别去动内部类。 |
+| **台架夹具 (bench fixture)** | `src/bench/` 提供的测试基础设施（**不是飞行代码**）：一次"被控对象在环"的场景 —— 假 mavros + 脚本化动捕 + 故障注入时序 + **DUT 真子进程**。被测节点当**进程**启动，所以"进程被杀 ⟹ 流停止"这类判据才可测。 |
+| ★ **假 mavros (fake mavros)** | 夹具里假扮 **mavros 的行为**（话题名、频率、**QoS**、`/mavros/state` 1 Hz、`mode_sent` 语义），**不假扮 PX4 的行为**（`COM_OF_LOSS_T` 退出、EKF2 融合、模式需求检查）。⚠️ QoS 必须逐条对齐真 mavros，**不兼容时不报错、只是永远收不到**。 |
+| **脚本化动捕 (scripted mocap)** | 夹具里按秒表喂位姿的发布者，两种接法：喂 `/vrpn/<刚体>/pose`（上游，`mocap` 节点在回路里）或直接喂 `/mocap/pose_enu`（下游，旁路 `mocap`）。**动捕主机、VRPN、路由器都不该出现在节点级测试里。** |
+| **DUT** | Device Under Test，被测节点。台架里它以**子进程**运行，绝不是 import 它的类。 |

@@ -72,6 +72,13 @@ Status: ready-for-agent
 
 11. 作为开发者，我想让飞控状态与程序状态在代码里**显式分开**（「谁在控制飞机」与「程序在干什么」两个维度），这样状态转移的条件可以被独立推理和测试。
 12. 作为操作者，我想在按遥控器开始键之前，程序**不发送任何控制指令**，这样飞机在我不期望的时候不会进入 offboard。
+    > ⚠️ **与 ticket 05 的实现口径不同（2026-09-21 裁定，见 05 的 Comments）**：按本条的"任何控制指令"
+    > 连 setpoint 也不能发，而**切进 OFFBOARD 要求先有稳定的 setpoint 流**（§4.3-1，断流 PX4 会退出 OFFBOARD）
+    > —— 两条互斥。ticket 05 采用的口径是：**`STANDBY` 阶段就发 setpoint，且自动切 OFFBOARD**
+    > （可用 `enter_offboard := false` 关掉），理由是飞机**未解锁** ⟹ setpoint 内容为"原地保持"
+    > ⟹ **不会让飞机进入任何它没被解锁进入的状态**。本条要保护的意图（"我不期望时它别乱动"）
+    > 由**解锁**而非"不发 setpoint"来保证。⚠️ 若坚持本条字面口径，代价是每次起飞前必须先手动
+    > 切进 OFFBOARD 并预流 setpoint —— 这**没有**被采纳。
 13. 作为操作者，我想让飞机在进入 offboard 后**先原地悬停**再执行轨迹，这样我有一个观察飞机是否稳定的窗口，可以随时中止。
 14. 作为操作者，我想让三条轨迹通过**启动脚本里输入数字**来选择，这样我不需要为每条轨迹改代码或重新 launch。
 15. 作为操作者，我想在轨迹执行过程中能**看到当前处于哪个状态**，这样我判断飞机行为时知道它"应该"在做什么。
@@ -150,6 +157,16 @@ Status: ready-for-agent
                               └──────────┘（轨迹结束 / 中止）
 ```
 
+> ☠️ **这段是当时的原型，不是最终口径（2026-09-21，ticket 05 落地后更正）**，两处不一致：
+> 1. **任务态缺 `INIT` 与 `STANDBY`**：真正进 `TAKEOFF` 之前有"等前置条件"（`INIT`）与
+>    "已流 setpoint、已切 OFFBOARD、但未解锁"（`STANDBY`）两段，见
+>    [`docs/control/phase1-implementation.md`](../../docs/control/phase1-implementation.md) §4.1。
+>    本段的 `IDLE` 大致对应 `INIT`，**但没有 `STANDBY` 这一档**。
+> 2. **"开始信号"不是进入 `AUTO` 的边沿**：`AUTO` 的定义是"本项目正在发会驱动飞机的指令
+>    （已解锁的 offboard）"，而**切 OFFBOARD 不等于交给控制权**（那时飞机还没解锁）。
+>    进入 `AUTO` 的边沿是**解锁**（归 ticket 08）。
+> 现口径下 `MANUAL/STANDBY` 是正常的稳定态，不是过渡态。
+
 - 状态名与转移条件**逐条对齐** `px4ctrl`，因为那些看起来多余的判断"每一条都是用事故换来的"。（对齐的是**条件与语义**，不是代码行 —— 见 Q1=a：设计移植，不抄行。）
 - **必须实现的三个细节**（来自 `px4ctrl` 的实飞经验）：消息超时检查、输入边沿检测（`triggered` 语义）、以及急停信号与 PX4 模式开关**不共用通道**。
 
@@ -164,6 +181,16 @@ Status: ready-for-agent
 ### 消息时间戳
 
 所有发往 PX4 的消息使用**微秒**时间戳。时间戳单位错误不会报错，只会表现为"消息没人收"。
+
+> ☠️ **更正（2026-09-21，ticket 05 第一手核实）：这一条对 Phase 1 不成立。**
+> 它只对 **Phase 2 的 uXRCE-DDS 路径**成立 —— `px4_msgs` 的 `*Setpoint.timestamp` 确实是微秒 `uint64`。
+> **Phase 1 走 mavros，不存在"微秒"这一层**：`header.stamp` 被 mavros 换算成 MAVLink 的
+> `time_boot_ms`（**毫秒**、且截断成 32 位），而 **PX4 根本不读这个字段** ——
+> `mavlink_receiver.cpp:960` 的 handler 只读 `type_mask` / `coordinate_frame` / 各分量，
+> 时间戳一律用 `hrt_absolute_time()` 自己打（`~/refs/px4-v1.15.0`，与 z0 固件同代，行号见
+> [实施清单 §3.7](docs/control/phase1-implementation.md)）。
+> **Phase 1 的实现口径**：`header.stamp = now()`（与 mavros 自带 setpoint 插件一致）。
+> 完整论证与源码路径见 [`docs/control/phase1-implementation.md`](../../docs/control/phase1-implementation.md) §3.7。
 
 ---
 
