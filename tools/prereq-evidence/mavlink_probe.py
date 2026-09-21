@@ -20,8 +20,12 @@
 # `CRC_EXTRA` 种子，种子写错不会报错、只会**静默丢帧**。手搓等于赌一张背下来的
 # 种子表。pymavlink 是权威实现，不赌。
 #
-# 依赖：pymavlink（它会自带 pyserial）
-#   装法（NxtPX4v2 上实测可用）：python3 -m pip install --user pymavlink
+# 依赖：pymavlink **和** pyserial —— ⚠️ **两个都要装**。
+#   pymavlink 2.4.49 的 Requires-Dist 只有 `lxml` 与 `fastcrc`，**不含 pyserial**
+#   （2026-09-21 在 z0 的 Jetson 上第一手核实：只装 pymavlink 会通过 import 检查、
+#    却在打开串口时炸 `ModuleNotFoundError: No module named 'serial'`）。
+#   装法（NxtPX4v2 上实测可用）：
+#     python3 -m pip install --user pymavlink pyserial
 # =============================================================================
 from __future__ import annotations
 

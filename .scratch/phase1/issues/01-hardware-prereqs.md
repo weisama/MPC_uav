@@ -19,7 +19,7 @@ Type: task
 
 **Blocked by:** 无（可立即开工）
 
-- [ ] Jetson 在动捕网段内，`ping 10.1.1.198` **0% 丢包**（不再走校园网关）
+- [x] Jetson 在动捕网段内，`ping 10.1.1.198` **0% 丢包**（不再走校园网关）—— ✅ 2026-09-21 实测 5/5，见下方第二轮
 - [ ] 记录飞控实际使用的串口设备节点，并确认它可用
 - [ ] QGC 读到的飞控版本号**原文**记入 [`refs-manifest.md`](../../../docs/reference/refs-manifest.md) §2.5
 - [ ] 未解锁时的电池电流读数记录在案，并给出"是否中招"的判定，结论记入 [`params-changes.md`](../../../docs/reference/params-changes.md) A4
@@ -73,3 +73,67 @@ Type: task
 **⚠️ 本轮刻意没做的事**：没有往 [`refs-manifest.md`](../../../docs/reference/refs-manifest.md) §2.5
 和 [`params-changes.md`](../../../docs/reference/params-changes.md) A4 里填任何占位值 ——
 那两个坑是 ③④ 实测读数的归宿，**填"待测"会污染取证链**。等飞控上电后再落笔。
+
+---
+
+### 2026-09-21 —— 第二轮：**① ✅ 闭合；② 仍未定案，但阻塞点已被精确刻画**
+
+> 本轮由 agent 执行，其间有**一次人工授权**：`chen` 提供 sudo 口令，
+> 跑了你授权的两条 —— `usermod -aG dialout chen` 与 `setfacl -m u:chen:rw /dev/ttyTHS{1,2}`。
+
+#### ① ✅ **完成**（第一手读数，已落进 [`mocap-setup.md`](../../../docs/reference/mocap-setup.md) §10 末尾）
+
+| 项 | 读数 |
+|---|---|
+| 已连 WiFi | **`TPLINK_7A79_2.4G`**（接口 `wlP1p1s0`）—— **这就是此前文档从未写出的那个 SSID** |
+| 本机地址 | `10.1.1.114/24` |
+| 默认网关 | `10.1.1.1`（**不再走校园网关 `10.31.255.254`**） |
+| `ping -c5 10.1.1.198` | ✅ **0% 丢包**（5/5，RTT 1.7–37.1 ms） |
+| ARP | `10.1.1.198 lladdr e8:9c:25:1d:b8:64 REACHABLE` |
+
+配套：**刚体名已确定为 `z0`**（操作者确认），**飞控侧走 TELEM2**（操作者确认）。两条均已记入 `mocap-setup.md` §10 第 1/2 项。
+
+#### ② ⛔ **仍未定案 —— 但已排除三类原因，只剩物理层**
+
+权限打通后实测（**没有任何 permission 错误**，端口确实被打开）：
+
+| 检查 | 读数 |
+|---|---|
+| `/dev/ttyTHS1` / `/dev/ttyTHS2` 打开 | ✅ 均成功 |
+| `mavlink_probe.py --scan`：2 口 × 3 波特率（57600/115200/921600）找 HEARTBEAT | ❌ **6 个组合全无** |
+| **原始字节嗅探（3 s，任意波特率）** | ❌ **两口均 0 字节 —— 线路完全静默** |
+| 端口被占用 | ❌ 无（无 `serial-getty@ttyTHS*`、无 mavros 在跑） |
+| 设备树 `status` | `serial@3100000`（ttyTHS1）/ `serial@3140000`（ttyTHS2）**均 `okay`** |
+
+> **已排除**：权限（✅ 通）、**波特率**（波特率错也会读到乱码字节，而这里是 0 字节）、端口占用（✅ 无）。
+> → **结论：没有任何信号到达 Jetson 的 RX 线。**
+
+剩余可能，**三条都需要物理动作，agent 做不了**：
+
+- **A 飞控没有真正在发** —— 未上电 / 未启动完 / **TELEM2 上没有 MAVLink 实例**。
+  ★ **这条最可能，且有一个本项目特有的陷阱**：`z0.params` 是**参考机**的参数文件，
+  README 明确标它"待上机核实"。**若 z0 实际是 `MAV_1_CONFIG = 0` 或 `SER_TEL2_BAUD = 0`，
+  PX4 根本不会往 TELEM2 发任何字节** —— 与观测完全吻合。而"读参数"本身又需要先有链路（鸡生蛋）。
+- **B 接线没落在 Jetson 的 UART RX 上** —— 接错针，或 TX/RX 没有交叉。
+- **C 40 针排针的 UART 功能未被 pinmux 打开** —— 内核 DT 里**查不到 pinmux 节点**
+  （Tegra234 的 pinmux 由 **BPMP** 单独配置，用户态无法核实）。
+
+**★ 把 A/B/C 分开的判据（30 秒实验）**：在排针上把 UART 的 **TX 与 RX 短接**做回环，然后我发字节读回显 ——
+**读得到** ⇒ Jetson 侧（引脚 + pinmux + 驱动）全通，问题必在 **A 或 B**；**读不到** ⇒ 问题在 **C** 或针脚认错。
+
+#### ③④：**仍未采集**（依赖 ②）
+
+> ⚠️ **本轮新发现、影响 ticket 03**：动捕主机 `10.1.1.198` 的 **TCP** `3883` 会答 **VRPN banner**
+> （`vrpn: ver. 07.34  0`），且 135/139/445 开放 ⇒ **动捕主机是 Windows**；
+> 但 **UDP `3883` 完全无应答**（8 个刚体名 × 3 种报文格式），且 banner 之后 12 s 不推任何消息。
+> `mocap-setup.md` §1 的数据流图默认写的是 `VRPN/UDP(3883)` ——
+> **传输层到底是 UDP 还是 TCP，待 ticket 03 用真 `vrpn_listener` 判定。**
+
+#### 本轮代码产出：修掉工具的一个**真缺陷**
+
+`pymavlink` **不自带 `pyserial`** —— 第一手核实：`pymavlink 2.4.49` 的 `Requires-Dist`
+**只有 `lxml` 与 `fastcrc`**。旧预检只查 `import pymavlink`，会**误报「✅ 已装」**，
+直到 ②③④ 采集阶段才炸 `ModuleNotFoundError: No module named 'serial'` ——
+正是"人到现场才发现"的那种坑。已改 [`capture.sh`](../../../tools/prereq-evidence/capture.sh)
+（分别检查两者，缺哪个报哪个）、[`mavlink_probe.py`](../../../tools/prereq-evidence/mavlink_probe.py)
+（文件头依赖说明）、[`README.md`](../../../tools/prereq-evidence/README.md)（新增「依赖」节）。

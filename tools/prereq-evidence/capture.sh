@@ -82,7 +82,7 @@ render() {
   # 前置体检：这两件事不做，③④ 一定采不到。放在最前面，免得人接上飞控才发现。
   echo "## 开跑前先做这两件事"
   echo
-  local in_dialout pymav_ok
+  local in_dialout pymav_ok have_mav have_ser
   if id -nG 2>/dev/null | tr ' ' '\n' | grep -qx dialout; then
     in_dialout="✅ 已在 \`dialout\` 组"
   else
@@ -91,10 +91,22 @@ render() {
   fi
   echo "1. **串口权限**：${in_dialout}"
   echo
-  if python3 -c 'import pymavlink' 2>/dev/null; then
-    pymav_ok="✅ 已装"
+  # ⚠️ 必须**两个都查**：pymavlink 不自带 pyserial。
+  # 2026-09-21 在 z0 的 Jetson 上第一手核实：pymavlink 2.4.49 的 Requires-Dist
+  # 只有 `lxml` / `fastcrc`。只查 pymavlink 会**误报「已装」**，然后在 ③④ 阶段
+  # 炸 `ModuleNotFoundError: No module named 'serial'` —— 正是"人到现场才发现"的坑。
+  python3 -c 'import pymavlink' 2>/dev/null && have_mav=1 || have_mav=0
+  python3 -c 'import serial'    2>/dev/null && have_ser=1 || have_ser=0
+  if [ "$have_mav" = 1 ] && [ "$have_ser" = 1 ]; then
+    pymav_ok="✅ 已装（\`pymavlink\` + \`pyserial\`）"
+  elif [ "$have_mav" = 1 ]; then
+    pymav_ok="❌ **缺 \`pyserial\`** —— \`pymavlink\` 已装，但**它不自带 pyserial**，
+   开串口时会炸 \`ModuleNotFoundError: No module named 'serial'\`。
+   修：\`python3 -m pip install --user pyserial\`"
+  elif [ "$have_ser" = 1 ]; then
+    pymav_ok="❌ **缺 \`pymavlink\`**。修：\`python3 -m pip install --user pymavlink\`"
   else
-    pymav_ok="❌ **未装** —— ③④ 读不到。修：\`python3 -m pip install --user pymavlink\`"
+    pymav_ok="❌ **两个都没装** —— ③④ 读不到。修：\`python3 -m pip install --user pymavlink pyserial\`"
   fi
   echo "2. **MAVLink 工具**：${pymav_ok}"
   echo

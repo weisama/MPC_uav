@@ -18,7 +18,7 @@
 ```bash
 # 0) 一次性准备（缺任一条 ③④ 都采不到）
 sudo usermod -aG dialout "$(id -un)"     # 然后必须重新登录
-python3 -m pip install --user pymavlink
+python3 -m pip install --user pymavlink pyserial   # ⚠️ 两个都要；见下方「依赖」
 
 # 1) 全量取证：网络 + 串口 + 版本 + 电流
 bash tools/prereq-evidence/capture.sh --scan-serial
@@ -39,6 +39,33 @@ python3 tools/prereq-evidence/mavlink_probe.py --scan
 python3 tools/prereq-evidence/mavlink_probe.py --port /dev/ttyTHS1
 python3 tools/prereq-evidence/mavlink_probe.py --port /dev/ttyTHS1 --baud 921600
 ```
+
+## 单独用 UART 回环自检
+
+当 ② 表现为「**两条 UART 都读不到任何字节**」时，成因至少有三条，而**软件侧看起来一模一样**：
+
+- **A** 飞控侧根本没在发（没上电 / 没启动完 / **那个口上没有 MAVLink 实例**）
+- **B** 接线没落在 Jetson 的 UART RX 上（接错针 / TX-RX 没交叉）
+- **C** 排针的 UART 功能没被 pinmux 打开（Tegra234 的 pinmux 由 **BPMP** 配置，
+  内核 DT 里**查不到 pinmux 节点**，用户态无法核实）
+
+`uart_loopback.py` 用**回环**把 C（以及"针脚认错"）从 A/B 里摘出来：
+
+```bash
+# 把你接飞控的那两针短接（飞控侧两线先拔掉），然后：
+python3 tools/prereq-evidence/uart_loopback.py
+
+# 对照组：未短接时跑，预期「收不到」—— 用来排除自激噪声
+python3 tools/prereq-evidence/uart_loopback.py --no-loopback
+```
+
+> **收到** ⟹ Jetson 侧一路全通（引脚 + pinmux + 驱动 + 电平）⟹ 问题必在 **A 或 B**，
+> **不要再怀疑 Jetson**。
+> **收不到** ⟹ 问题在 **C** 或针脚认错，**与飞控无关**。
+
+⚠️ 做回环时请先把飞控侧那两根线从排针上拔掉，否则你发的字节会进飞控的 RX（PX4 当垃圾丢弃、无害，但回环测不准）。
+
+安全性：只往 TX 发 64 字节固定模式（`0x55 0xAA` 重复）并读回，**不发任何 MAVLink 指令**。
 
 ## 输出都去哪
 
@@ -87,6 +114,22 @@ python3 tools/prereq-evidence/mavlink_probe.py --port /dev/ttyTHS1 --baud 921600
 
 **绝不**发解锁 / 起飞 / 模式切换 / 参数写入。**采集时飞控可以不解锁，也应该不解锁**（④ 的前提）。
 
+## 依赖（⚠️ 一个实测踩过的坑）
+
+**`pymavlink` 不自带 `pyserial`。两个都要装。**
+
+2026-09-21 在 z0 的 Jetson（`orin-nx`）上第一手核实：`pymavlink 2.4.49` 的
+`Requires-Dist` **只有 `lxml` 与 `fastcrc`**。只装 `pymavlink` 的后果特别误导 ——
+`import pymavlink` 会**成功**，直到真正打开串口才炸
+`ModuleNotFoundError: No module named 'serial'`，而那已经是 ②③④ 的采集阶段了。
+
+```bash
+python3 -m pip install --user pymavlink pyserial
+```
+
+> `capture.sh` 的预检已改成**分别检查两者**（缺哪个报哪个）。旧版只查 `pymavlink`，
+> 会在缺 `pyserial` 时**误报「✅ 已装」**。
+
 ## 为什么用 pymavlink 而不是手搓解码器
 
 MAVLink v2 的 CRC 带 per-message `CRC_EXTRA` 种子。种子写错**不会报错、只会静默丢帧** ——
@@ -99,10 +142,12 @@ MAVLink v2 的 CRC 带 per-message `CRC_EXTRA` 种子。种子写错**不会报�
 
 | 部分 | 状态 |
 |---|---|
-| Tier A：网络 / 串口枚举 / 权限 | ✅ **已在 z0 的 Jetson（`orin-nx`）上实跑验证**，含 `dialout` 权限被拒的真实报错路径 |
+| Tier A：网络 / 串口枚举 / 权限 | ✅ **已在 z0 的 Jetson（`orin-nx`）上实跑验证**，含 `dialout` 权限被拒的真实报错路径。**2026-09-21 二次实跑**：复现了 `pyserial` 缺失的真实报错（见「依赖」），并暴露出旧的 `pymavlink`-only 预检会误报 —— 两处均已修 |
 | Tier B：`--port` 读 ③④ | ✅ 已用 **pymavlink 在 pty 上模拟的假飞控**端到端验证（含 git hash 解码、电流为 0 的「疑似中招」判定） |
 | Tier B：`--scan` 找端口 | ✅ 同上验证（假飞控 + 真实权限报错两种路径都走到） |
 | Tier B：**对真飞控** | ❌ **尚未** —— 等飞控上电后首跑 |
+| `uart_loopback.py`：对照组（`--no-loopback`） | ✅ **已在 z0 的 Jetson 上实跑**：未短接时两口均收不到，符合预期 |
+| `uart_loopback.py`：真回环 | ❌ **尚未** —— 需要人在排针上短接 TX↔RX |
 
 所以：**首次对真飞控跑时，请留意脚本有没有报错或给不出读数**，那是预期内的首跑风险，
 不是"已验证过所以一定对"。
