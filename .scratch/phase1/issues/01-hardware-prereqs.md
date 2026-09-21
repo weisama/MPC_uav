@@ -22,8 +22,9 @@ Type: task
 - [x] Jetson 在动捕网段内，`ping 10.1.1.198` **0% 丢包**（不再走校园网关）—— ✅ 2026-09-21 实测 5/5，见下方第二轮
 - [ ] 记录飞控实际使用的串口设备节点，并确认它可用
   - 节点**已定案**：`/dev/ttyTHS1`（= `serial@3100000` = 载板丝印**串口1**），见第五、六、七轮
-  - **但仍不可用** —— 接收通路 DMA 缺陷把 ≥8 字节打成 0。**修法已定，施工图在第八轮**，
-    尚未执行（差一次改设备树 + 重启）
+  - **修复施工已执行完毕，差一次重启 + 三条验证** —— 接收通路 DMA 缺陷（≥8 字节打成 0）的
+    设备树修法已装进 `/boot`（`DEFAULT` 已指向 `primary-pio`，带 `FDT` 行），见第九轮。
+    **重启后的验证结果未回填** ⟹ 这一条在验证通过前**不能勾**
 - [ ] QGC 读到的飞控版本号**原文**记入 [`refs-manifest.md`](../../../docs/reference/refs-manifest.md) §2.5
 - [ ] 未解锁时的电池电流读数记录在案，并给出"是否中招"的判定，结论记入 [`params-changes.md`](../../../docs/reference/params-changes.md) A4
 - [ ] 四条结论**全部落进文档** —— 不能只留在对话或记忆里
@@ -610,4 +611,120 @@ sudo bash tools/prereq-evidence/dtb_pio_fix.sh rollback && sudo reboot
 - TELEM2 的 TX/RX **具体接到哪两针**（此前只确认"接在串口1 上"）。若 5-a 通过而 5-c 仍无心跳，
   这一条就是下一个要问的。
 - 飞控那端的接线**是否交叉**（Jetson TX → 飞控 RX）。
+
+---
+
+### 2026-09-21 —— 第九轮：★★ **第八轮的施工已执行完毕，只差重启 + 验证**
+
+> 操作者**已把串口1 重新短接**（飞控侧两线仍在拔掉状态）⟹ 本轮可以把"改动前"的指纹采干净，
+> 并在重启后立刻用同一个物理条件验"改动后"。**本轮结束时的状态是「已装好、待重启」**。
+
+#### 一、改动前基线（**短接在位**，第一手）
+
+| 测法 | 读数 | 判词 |
+|---|---|---|
+| `uart_loopback.py --internal --port /dev/ttyTHS1` | 短模式 7 字节 ✅ 原样；**长模式 16 字节 → 16 个 `0x00`** | DMA 缺陷原样复现 |
+| `uart_loopback.py --port /dev/ttyTHS1`（**物理**短接） | 发 64 字节，**收回 64 字节，全 `0x00`** | ★ **字节数分毫不差** ⟹ 跳线在位，**引脚 + pinmux + 驱动 + 电平全通**，坏的只有接收数据通路 |
+
+⚠️ 注意工具对第二行的判词是「回环未通过 ⟹ 问题在 Jetson 侧或针脚」——**这句在本例里是误导**，
+正是第六轮记的那个陷阱（它只看内容不看字节数）。**字节数相等这一条本身就证明引脚没问题**，
+不要照着那句去查 pinmux。
+
+#### 二、本轮执行的动作
+
+```bash
+bash tools/prereq-evidence/dtb_pio_fix.sh build          # ✅ 自校验全过，250051 → 250003 字节
+DRY_RUN=1 bash tools/prereq-evidence/dtb_pio_fix.sh install   # ✅ 空跑，产出落 dtb-work/
+echo 123 | sudo -S bash tools/prereq-evidence/dtb_pio_fix.sh install   # ✅ 真装
+```
+
+装完的现场（**第一手，`/boot` 实测**）：
+
+| 项 | 值 |
+|---|---|
+| `/boot/extlinux/extlinux.conf` | `DEFAULT primary-pio`；末尾追加 `LABEL primary-pio`（含 `FDT /boot/dtb/kernel_…-nv-pio.dtb`） |
+| 原 `LABEL primary` | **一字未动**（回退项） |
+| 备份 | `/boot/extlinux/extlinux.conf.bak-20260921-082331` |
+| 新 dtb | `/boot/dtb/kernel_tegra234-p3768-0000+p3767-0001-nv-pio.dtb`（250003 字节，`root:root 644`，与原件权限一致） |
+| 与备份的 diff | **只差 `DEFAULT` 一行 + 末尾新增 12 行**，其余零改动 |
+
+#### 三、★ 本轮发现并修掉了 `install` 路径的两个**会开不了机**的真缺陷
+
+第八轮老实交代过 `install` 从没在真机上跑过。本轮首次执行前先做了空跑，抓到两条：
+
+1. **新启动项原本写的是裸 `${cbootargs}`，会把 `root=` 弄丢。**
+   本机原 `LABEL primary` 的 `APPEND` 是
+   `${cbootargs} root=PARTUUID=1f0266a5-… rw rootwait rootfstype=ext4 …` 一长串。
+   若新 LABEL 只写 `${cbootargs}`，而 UEFI 的 cbootargs 里不含 `root=`，
+   内核**找不到根文件系统 ⟹ 开不了机**。
+   → 已改成**照抄原 APPEND 行原文**，新启动项与"已知能启动的那一份"逐字一致，唯一差别是多一行 `FDT`。
+2. **新 LABEL 原本插在文件最前面，会让全局项落到 `LABEL` 块之后。**
+   `DEFAULT` / `TIMEOUT` 是全局项，惯例在 `LABEL` 之前；插到开头等于赌解析行为。
+   → 已改成**追加到文件末尾**，文件其余部分只改动 `DEFAULT` 那一行。
+
+配套给自校验加了**基准**：初版拿 `$EXTLINUX` 当基准，真装时它就是文件自己 ⟹ 统计恒为 `0/0`、
+**断言空转**（首跑输出里那句"被删 0 行、新增 0 行"就是这个 bug 的现场）。现已改为以**备份**为基准。
+
+**三条自校验测试（在副本上实跑，`DRY_RUN=1` + `EXTLINUX_OVERRIDE=`）**：
+
+| 场景 | 期望 | 结果 |
+|---|---|---|
+| 正常路径 | 被删 1 行、新增 12 行，断言全过 | ✅ |
+| 已被改过的文件（幂等） | **拒绝**，不许重复加 LABEL | ✅ 报"已经有 FDT 行，不覆盖" |
+| 文件里没有 `APPEND` 行 | **拒绝**（怕开不了机） | ✅ 报"读不到原 APPEND 行" |
+
+#### 四、⏭ **下一步就三件事**（重启后，按顺序）
+
+> ⚠️ **重启前请人在机器旁**：extlinux 菜单 `TIMEOUT 30` 秒，万一新启动项有问题，
+> 在菜单里选 **`primary kernel`** 即可回到现状。
+
+```bash
+# a) DT 侧：dmas 是不是真的没了（应打「已消失 ⇒ 改动生效，应该在跑 PIO」）
+bash tools/prereq-evidence/dtb_pio_fix.sh status
+
+# b) 芯片侧：长模式 16 字节能不能原样收回  ← 这是「缺陷已修」的必要条件，与飞控无关
+python3 tools/prereq-evidence/uart_loopback.py --internal --port /dev/ttyTHS1
+#    修前：16 个 0x00。★ 修后应为：01 02 … 10 原样收回
+
+# c) 物理侧（短接还在位，正好接着用）：64 字节原样收回
+python3 tools/prereq-evidence/uart_loopback.py --port /dev/ttyTHS1
+```
+
+**判词**：
+- **a + b + c 全过** ⟹ ② 的 Jetson 侧**修好了**，可以**拔短接、把飞控两线接回串口1**，
+  再跑 `mavlink_probe.py --port /dev/ttyTHS1 --baud 921600` 取心跳 ⟹ **② 闭合，同时解锁 ③④**
+- **b 不过** ⟹ 改动没生效：`status` 看 `FDT` 行在不在、`dmesg | grep 3100000` 有没有 `PIO mode`
+- **b 过了、c 不过是新情况**（不可能由 DMA 缺陷解释）⟹ 回来记一轮，别自己归因
+
+#### 五、回退（两种，任一即可）
+
+```bash
+# A. 开机菜单（TIMEOUT 30 秒）里选 "primary kernel"
+# B. 盲操作还原：
+echo 123 | sudo -S bash tools/prereq-evidence/dtb_pio_fix.sh rollback && sudo reboot
+```
+
+#### 六、本轮**没做**的事
+
+- **没有重启** —— 会话跑在 Jetson 本机上，重启会掐断它；且改动后首次开机需要人在菜单旁。
+- **没有动 `serial@3110000`（串口0）与 `/dev/ttyAMA0`** —— 理由见第八轮 §3，本轮未推翻。
+- **③④ 仍未采集** —— 仍卡在 ② （飞控线现在是拔掉的，且串口1 被短接占用）。
+
+#### 七、提交前 code review 又抓出三条（均已修 + 已验）
+
+| # | 缺陷 | 后果 | 修法 |
+|---|---|---|---|
+| 1 | `install` **先备份先装 dtb、后查挡板** | 重复跑一次：第 2 次会先把**已被改过**的 `extlinux.conf` 备份成「最新一份」再 die ⟹ 之后 `rollback`（取最新备份）把改过的配置当原件还原，而它引用的 `-pio.dtb` 已被 rollback 删掉 ⟹ **回退路径静默失效** | 两道挡板**移到备份/装 dtb 之前**。已用 root + 已改过的副本实测：die、退出码 1、**不产生任何新备份** |
+| 2 | `rollback` 里 `ls … \| head -1` 没跟 `\|\| true` | `set -euo pipefail` 下无备份文件时 `ls` 返回 2、pipefail 让赋值失败 ⟹ **脚本静默死亡**，那句"找不到备份文件"永远打不出来 | 补 `\|\| true`（同文件别处早已这么写，就这处漏了） |
+| 3 | 无参运行的帮助用 `sed -n '2,40p'` 写死行号 | 头部注释一变长就把 `set -euo pipefail` 等代码行当帮助打出来 | 改成打到 `set -euo pipefail` 之前为止，不再依赖行号。实测帮助里无代码行泄漏 |
+
+另修了 `tools/prereq-evidence/README.md` 的验证状态表里一处**陈述过期**：
+「『不是数据流』判据」那条仍把本机现象写成"正确判为**噪声/串扰**"，
+而同一文件第 61–64 行早已作废"串扰"这个说法 —— 现已改为记录该档位
+「既可能是噪声、**也可能是真 MAVLink 被 DMA 打坏**」这个后来才查明的双重含义。
+
+> **review 另有 7 条落在本轮没碰的文件上**（`capture.sh` 漏枚举 `/dev/ttyAMA0`、
+> `mavlink_probe.py` 的 `FC_SCAN_PORTS` 不 strip 与空 hash 前缀假阳性、
+> `CLAUDE.md` 与若干 `docs/` 仍写 "PX4 1.14.x" 等），**本轮未动** —— 它们不属于 ② 的施工范围，
+> 待单独开一轮或并入 ticket 10（1.14 清扫）处理。
 

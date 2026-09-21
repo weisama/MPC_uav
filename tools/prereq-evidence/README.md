@@ -126,6 +126,7 @@ python3 tools/prereq-evidence/uart_loopback.py --no-loopback
 
 ```bash
 bash tools/prereq-evidence/dtb_pio_fix.sh build     # 不需要 sudo，不碰 /boot，自带自校验
+DRY_RUN=1 bash tools/prereq-evidence/dtb_pio_fix.sh install   # ★ 空跑：产物落 dtb-work/，不碰 /boot
 sudo bash tools/prereq-evidence/dtb_pio_fix.sh install   # 装 dtb + 往 extlinux.conf 加 FDT 行
 sudo reboot
 ```
@@ -139,12 +140,26 @@ sudo reboot
 | 子命令 | 要 sudo | 干什么 |
 |---|---|---|
 | `build` | 否 | 从 `/boot/dtb/` 的 dtb 生成改好的 dtb，断言「除目标节点外零差异」 |
+| `DRY_RUN=1 install` | 否 | **同一条 install 路径的空跑**：产出落 `dtb-work/`，一个字节都不碰 `/boot` |
 | `install` | 是 | 备份 `extlinux.conf` → 装 dtb → **新增** `LABEL primary-pio` 并设为默认 |
 | `rollback` | 是 | 从最新备份还原 `extlinux.conf` 并删掉新 dtb |
 | `status` | 否 | 现在的 `FDT` 行 + 内核跑的 DT 里还有没有 `dmas` |
 
-⚠️ **`build` / `status` 已实跑验证；`install` / `rollback` 尚未在真机上执行过。**
+**`install` 生成新启动项时的两条硬规矩**（2026-09-21 施工时补，此前 `install` 只有纸面设计）：
+
+1. 新 LABEL 的 `APPEND` **照抄原 LABEL 原文**，不写裸 `${cbootargs}` ——
+   原行带着 `root=PARTUUID=…`，自己写会把 `root=` 弄丢 ⟹ **开不了机**。
+2. 新 LABEL **追加到文件末尾**，不做「插到最前面」—— 免得 `DEFAULT` / `TIMEOUT`
+   这些全局项落到 `LABEL` 块之后，解析行为靠赌。
+
+两条都有断言看着：改动行数必须 ≤1、原 `LABEL primary` 必须还在、`APPEND` 必须进得去。
 原有的 `LABEL primary` 全程不动，所以最坏情况只是「回到原状」，不会把机器弄成不能启动。
+
+> 验证这条 install 路径本身，可以拿**副本**练（不碰 `/boot`、不要 root）：
+> ```bash
+> T=/tmp/selftest; mkdir -p $T; cp /boot/extlinux/extlinux.conf.bak-* $T/extlinux.conf
+> EXTLINUX_OVERRIDE=$T/extlinux.conf DRY_RUN=1 bash tools/prereq-evidence/dtb_pio_fix.sh install
+> ```
 
 ## 输出都去哪
 
@@ -225,14 +240,16 @@ MAVLink v2 的 CRC 带 per-message `CRC_EXTRA` 种子。种子写错**不会报�
 | Tier B：`--port` 读 ③④ | ✅ 已用 **pymavlink 在 pty 上模拟的假飞控**端到端验证（含 git hash 解码、电流为 0 的「疑似中招」判定） |
 | Tier B：`--scan` 找端口 | ✅ 同上验证（假飞控 + 真实权限报错两种路径都走到） |
 | Tier B：**对真飞控** | ⚠️ **跑过，但还没成功** —— 2026-09-21 在 z0 上实跑，飞控未听到（原因见下条） |
-| Tier B：**「不是数据流」判据** | ✅ **2026-09-21 在 z0 上第一手触发**：`ttyTHS1` 接到飞控线后读到 ~13 kB/s、帧错误 0，但非零段最长仅 **9 B** → 正确判为**噪声/串扰**，**没有**误报成「波特率不对」。这正是加这条判据的理由 |
+| Tier B：**「不是数据流」判据** | ✅ **2026-09-21 在 z0 上第一手触发**：`ttyTHS1` 接到飞控线后读到 ~13 kB/s、帧错误 0，但非零段最长仅 **9 B** → 正确判为「**不是数据流**」，**没有**误报成「波特率不对」。这正是加这条判据的理由。<br>⚠️ **该判据当前的分档已不能只按"噪声"讲** —— 后来查明成因是**接收通路的 DMA 缺陷把真数据打坏**（见下条与 ticket 第六/九轮），所以「非零段 < 17 B」这一档既可能是噪声，**也可能是真 MAVLink 被打坏**。判词已据此加了前提（先跑 `--internal` 排除驱动缺陷，再谈接线） |
 | `uart_loopback.py`：对照组（`--no-loopback`） | ✅ **已在 z0 的 Jetson 上实跑**：未短接时两口均收不到，符合预期 |
 | `uart_loopback.py`：**内部回环短模式** | ✅ **已在 z0 的 Jetson 上实跑**：两口 7 字节均原样收回 ⟹ 控制器/驱动/时钟正常（⚠️ **它绕过引脚，证明不了 pinmux/接线**） |
 | `uart_loopback.py`：**长模式（测 DMA 缺陷）** | ✅ **已在 z0 上第一手触发并复现**：两口发 16 字节均收回 16 个 0x00 ⟹ 接收通路 DMA 缺陷坐实 |
 | `uart_loopback.py`：真回环 | ✅ **2026-09-21 在 z0 上实跑**：短接「串口1」（= `ttyTHS1`）后，**收回字节数精确等于发出字节数** ⟹ 引脚/pinmux/电平全通；而内容在 ≥8 字节被打成 0 ⟹ 坐实是驱动缺陷而非接线 |
 | `uart_loopback.py --internal --port /dev/ttyAMA0` | ⚠️ **试过，作废** —— 该驱动（`sbsa-uart`）不实现 `TIOCM_LOOP`，**短模式**就收不回来，得不出任何结论。操作者已决定**放弃这条线** |
 | `dtb_pio_fix.sh build` | ✅ **2026-09-21 在 z0 上实跑通过**（含全部断言）：往返无损、除 `serial@3100000` 外全文零差异、体积 `250051 → 250003` 字节 |
-| `dtb_pio_fix.sh install` / `rollback` | ❌ **尚未在真机上执行过** —— 照官方文档写的，首次 install 请注意有无报错 |
+| `dtb_pio_fix.sh install`（空跑） | ✅ **2026-09-21 实跑通过**（含副本上的三条自校验测试：正常路径 / 幂等挡板 / 缺 `APPEND` 拒绝） |
+| `dtb_pio_fix.sh install`（真装） | ✅ **2026-09-21 在 z0 上执行成功** —— `DEFAULT` 改成 `primary-pio`、末尾追加 `LABEL primary-pio`（含 `FDT`）、备份落在 `extlinux.conf.bak-20260921-082331`。**⚠️ 改动的效果（能否开机、`dmas` 是否真没了）要等重启后才算验证** |
+| `dtb_pio_fix.sh rollback` | ❌ **尚未在真机上执行过** —— 照官方文档写的，首次 rollback 请注意有无报错 |
 
 所以：**首次对真飞控跑时，请留意脚本有没有报错或给不出读数**，那是预期内的首跑风险，
 不是"已验证过所以一定对"。
