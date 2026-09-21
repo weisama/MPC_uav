@@ -90,6 +90,14 @@ ros2 topic hz /mavros/state        # ★ 定案：它是不是 1 Hz？见下方"
       ⟹ 若变的是 `x`，**问题在 mavros 侧或参数侧**（`mocap` 节点已用假输入排除）
       ⏳ **仍需人动手**：mavros 的转换代码已按源码逐行核对（§实测 ②），这一步验的是**轴向约定**
       （ENU 的东是不是 PX4 的北的右手侧），**只能靠看飞控自己的 NED 读数**（QGC）
+      —— ✅ **但"转换到底做没做"这一问已由 §实测 ⑦ 拿下**（人挪 60 cm，两条 ROS 话题逐毫米吻合且**未换轴**，
+      若 mavros 入向没转换则出向会把轴换回来、0.594 会出现在 `x` 上）；
+      ⏳ **剩下的是 ROS 话题看不到的那一层**：QGC 里 `LOCAL_POSITION_NED` 的**轴标签**。
+      按源码映射（`transform_frame_enu_ned`：ENU `y`→NED `x`），飞机沿动捕 **+y** 挪的这 59.4 cm
+      **在 QGC 里应读作 `x ≈ +0.59`**（`y ≈ +0.014`，`z ≈ +0.002`）。
+      ⟹ 两条路任选其一即可收尾：**(a)** 直接读当前 QGC 的 `x` 是不是 +0.59（飞机保持不动）；
+      **(b)** 再按原描述向动捕 **+x（机头方向）推 0.5 m**，看 QGC 的 `y` 于是变 0.5；
+      外加**升高 0.3 m** → QGC 的 `z` 变 −0.3（NED 向下为正 ⟹ 读数变小 = 变高）
 - [x] 顺带记录 QGC 侧 `EKF2_EVP_NOISE` 的取值与现象（是否发散），供参数核对清单使用
       ⟹ ✅ **取值已从飞控真身读到：`0.06095999851822853`**（与参数文件一致）；
       台架静止 ~30 min 无发散、`pos_horiz_abs` 稳定为 True。**"0.061 是否过小"仍属飞行阶段判定**（见 [ticket 15](15-fcu-param-reconciliation.md)）
@@ -130,6 +138,11 @@ ros2 topic hz /mavros/state        # ★ 定案：它是不是 1 Hz？见下方"
 ```
 
 ⟹ 解锁上升沿最多晚 **1 s** 被检出（缓解措施见上方坑 4）。结论已写回 [ticket 04](04-mocap-relative-pose.md) §七 第 4 条。
+
+★ **机理由 [ticket 05](05-control-offboard-skeleton.md) 补上（2026-09-21，源码级）**：这**不是 mavros 的定时器、改不了** ——
+mavros 只在**收到 MAVLink `HEARTBEAT` 时**才发这个话题（`sys_status.cpp` 的 `handle_heartbeat` → `state_pub->publish`），
+而 `HEARTBEAT` 在 PX4 里是定频流（`mavlink/streams/HEARTBEAT.hpp` 的 `const_rate()` 返回 true）。
+⟹ `msg_timeout` 类判据**不能照抄 px4ctrl 的 0.5 s**（会每秒报"飞控失联"），ticket 05 取 **2.5 s**。
 
 #### ② mavros 侧边界：把 §3.5 的结论对到**真源码**上
 
@@ -188,9 +201,41 @@ ros2 topic hz /mavros/state        # ★ 定案：它是不是 1 Hz？见下方"
    读飞控参数的正确方式是 **`ros2 param get /mavros/param <参数名>`**（飞控参数被暴露成标准 ROS 参数，
    启动时自动拉取；本次缓存到 **915 条**）。见 [ticket 15](15-fcu-param-reconciliation.md)。
 
-#### ⑥ 还剩什么（**需要人**）
+#### ⑦ ⑥ 的动态一半：飞机被真实挪动后，**EKF2 逐毫米跟上**（2026-09-21，操作者在场）
+
+操作者把飞机**向左**挪了一下（当时 yaw ≈ 0 ⟹ 机体左侧 = 动捕 **+y**）。两边读数（5 s 均值）：
+
+| | x | y | z | yaw |
+|---|---|---|---|---|
+| 动捕输出 `/mocap/pose_enu` | +0.0137 | **+0.5940** | −0.0022 | −1.18° |
+| EKF2 `/mavros/local_position/pose` | +0.0134 | **+0.5939** | −0.0024 | −1.18° |
+
+⟹ 两条**独立来源**（本节点算的输出 vs EKF2 自己估出来的）**差 0.3 mm、yaw 差 0.01°** ⟹
+**EKF2 在实时跟随动捕**（不只是 ③ 里的静态锚定）；`pos_horiz_abs` 仍为 True。
+
+★ 顺带**排除了一种失效模式：mavros 入向"没做 ENU→NED 转换"**。若入向没转，出向的 `NED→ENU`
+会把两个水平轴**换回来** —— 那么 0.594 会出现在 `x` 上而不是 `y` 上。实测 0.594 在 `y` 上
+⟹ 入向转换**确实执行了**（与 ② 的源码核对一致）。
+
+> ✅ **与操作者的口述吻合**：操作者说挪了 **60 cm**（起初口误说 40 cm，随即更正），动捕量到 **59.4 cm**
+> ⟹ 差 0.6 cm 是"人手摆位 + 刚体中心 vs 目测边缘"的量级。
+> ⟹ 这一测是**定量**的：**人的 60 cm ≈ 动捕 59.4 cm ≈ EKF2 59.4 cm**。
+> 另注：同时 yaw 变了 **−1.15°**（不是纯平移，飞机被轻微带转），而两边 yaw 读数**同样一致**（均 −1.18°）
+> ⟹ **yaw 通道也在被融合**（`EKF2_EV_CTRL=11` 含 yaw 的又一个旁证）。
+
+> ⚠️ **对"解锁上升沿切原点"测试的影响**：飞机现在离**启动原点**已 0.594 m，而纪律要求
+> "节点启动到解锁之间静止"。**若现在直接解锁**，阶段 B 会把当前点当"起飞前原点"，
+> 切换跳变 = 0.594 m > `jump_warn_m`（0.05）⟹ 会打 WARN，且 EKF2 会把这 0.594 m **当成真实运动**。
+> ⟹ **做解锁测试前，先在飞机的最终摆放位置重启 `mocap` 节点**（让启动原点 = 起飞点），再解锁。
+
+#### ⑧ 还剩什么（**需要人**）
 
 1. **① 的 QGC 目视 + ⑥ 轴向确认**（本张两条主验收）：
+   - ✅ **QGC 不必接数传线了**：2026-09-21 已把 mavros 的 MAVLink **经 WiFi 广播**出去
+     （`ros2 param set /mavros_router gcs_urls "['udp-b://0.0.0.0:14555@:14550']"`，
+     笔记本上 QGC 默认监听 14550 即自动建链；实测 ≈537 Hz、`0xfd` MAVLink v2）。
+     步骤 + URL 语义 + 三个坑见 [`mocap-setup.md` §5.4](../../../docs/reference/mocap-setup.md)
+     ⟹ **下面这几步现在人力可做**。
    - QGC → **MAVLink Inspector**：`VISION_POSITION_ESTIMATE` 有数且不跳、`LOCAL_POSITION_NED` 稳定；
    - **把飞机向动捕 +x（东）平移 0.5 m** ⟹ QGC 的 `LOCAL_POSITION_NED.y` 变 0.5；
      **升高 0.3 m** ⟹ 高度显示向上。
@@ -200,3 +245,29 @@ ros2 topic hz /mavros/state        # ★ 定案：它是不是 1 Hz？见下方"
 2. **解锁上升沿切原点**（★ **拆桨**、飞机摆好后静止）：QGC 里解锁、不起飞，看 `mocap` 节点日志的
    「★ 阶段 B … 切换发生在此刻」与切换跳变量（应 ≈ 0）。
 3. 回填 [ticket 04](04-mocap-relative-pose.md) 并把 04 的 `Status` 改成 `done`。
+
+### 2026-09-21 —— 台架配套：★ QGC 走 WiFi（打通 ①/⑥ 的最后一公里）
+
+操作者要求"在笔记本上用 QGC 看"。做法：给 mavros 的 router **热加**一条 GCS 链路，
+把整条 MAVLink 往本机 WiFi 上**广播**（步骤/语义/坑已写进 [`mocap-setup.md` §5.4](../../../docs/reference/mocap-setup.md)）：
+
+```bash
+ros2 param set /mavros_router gcs_urls "['udp-b://0.0.0.0:14555@:14550']"
+```
+
+实测证据：`Set parameter successful`；`ss -ulnp` → `0.0.0.0:14555 users:(("mavros_node",pid=6511,...))`；
+在 14550 放临时接收器 **6 s 收到 3223 个包（≈537 Hz），首字节全是 `0xfd`（MAVLink v2）**；
+`ip route get 255.255.255.255` → `dev wlP1p1s0`（走 WiFi，不走 docker0）；
+router 日志 `link[1002] opened successfully`。
+
+**三个源码级坑**（都不是"猜"出来的，行号见 §5.4）：① 持链路的节点叫 **`mavros_router`**、参数是**复数
+`gcs_urls`**，启动形参 `gcs_url` 只在启动时被搬一次 ⟹ 运行时改 `gcs_url` **无效**；
+② `link[%d] detected remote address %d.%d` 打的是 **`sysid.compid` 而不是 IP** ⟹ 要确认 QGC 连上，
+看日志里出现 **`255.x`**（QGC 的 sysid）而不是找 IP；③ 本机 `@` 之前是 **bind**、之后才是 remote。
+
+> ⏳ **未决项（已当面问操作者，答案未知）**：router 日志里在**加 GCS 链路之前**就有
+> `link[1000] detected remote address 32.0 / 59.93 / 75.1 / 0.205 / 21.159 …`（约每 30–60 s 新来一个、
+> 又作为 stale 被清掉）⟹ 飞控这条链路上**有别的 MAVLink 系统**。
+> 最可能的解释是飞控 **TELEM 口挂了数传电台**（`MAV_1_CONFIG=102` 指向 TELEM1），而电台网里还有别的设备。
+> 若成立则**安全相关**（陌生 sysid 会参与 router 的 sysid 路由），需要一个归属；**当前无人认领**，
+> 等操作者回答"TELEM 口有没有接电台"后再决定记到哪张 ticket。

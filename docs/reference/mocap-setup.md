@@ -302,6 +302,71 @@ QGC 侧更硬的旁证（Analyze → **MAVLink Console** 里敲）：
    ⟹ `armed` 的**解锁上升沿最多晚 1 s** 被检出；且 `ros2 topic hz` 在本机打不出读数（只打印 `Terminated`），
    量频率请用 rclpy 计数脚本。
 
+### 5.4 ★★ 把飞控的 MAVLink 转给**笔记本上的 QGC**（WiFi 桥）
+
+**用途**：QGC 不用接飞控的数传口，直接从本机的 WiFi 拿到整条 MAVLink 流。这也是
+[ticket 13](../../../.scratch/phase1/issues/13-mavros-bench-vision-pose.md) 那两条**只能靠人看 QGC** 的验收
+（① `VISION_POSITION_ESTIMATE` 有数 + `LOCAL_POSITION_NED` 稳定、⑥ 轴向确认）**唯一的落地途径**。
+
+**给法（z0 实测可用，2026-09-21）**：
+
+```bash
+# ① 给**正在跑**的 mavros 热加一条 GCS 链路 —— 不用重启，不断飞控串口
+ros2 param set /mavros_router gcs_urls "['udp-b://0.0.0.0:14555@:14550']"
+
+# ② 下次启动时带上（热加的参数**不持久**，重启即失）
+ros2 launch mavros px4.launch \
+  fcu_url:=/dev/ttyTHS1:921600 \
+  gcs_url:="udp-b://0.0.0.0:14555@:14550"
+```
+
+QGC 侧：什么都不用配 —— **QGC 默认就在 UDP `14550` 上监听**，广播包一到就自动建链。
+（要手工加也行：`Application Settings → Comm Links → Add` → 类型 `UDP`、端口 `14550`。）
+
+**实测证据**（本机 WiFi `10.1.1.114/24`，与动捕主机同网段）：在 14550 上放临时接收器，
+**6 s 收到 3223 个 UDP 包（≈537 Hz），首字节全是 `0xfd`（MAVLink v2）**，来源 `10.1.1.114:14555`；
+`ip route get 255.255.255.255` → `dev wlP1p1s0`（**走 WiFi，不走 docker0**）；
+`ss -ulnp` → `0.0.0.0:14555 users:(("mavros_node",...))`；
+router 日志 `Requested to add endpoint: … udp-b://0.0.0.0:14555@:14550` / `link[1002] opened successfully`。
+
+#### 源码级语义（别凭记忆猜 URL 语法）
+
+`udp://<bind_host>:<bind_port>@<remote_host>:<remote_port>` ——
+**`@` 之前是 bind，之后是 remote**（`libmavconn/src/interface.cpp:418-437`）。
+
+| 写法 | 含义 |
+|---|---|
+| `udp-b://0.0.0.0:14555@:14550` | **广播**：绑本机 14555，往 `255.255.255.255:14550` 发（`udp.cpp:94-98`，`address_v4::broadcast()`） |
+| `udp://0.0.0.0:14555@10.1.1.x:14550` | **单播**给固定 IP（笔记本 DHCP 换地址即失效） |
+| `udp://0.0.0.0:14555@:14550` | **服务端/学习**：先不发，收到第一个包记住对端再发 |
+
+> 简写 `udp-b://@:14550` 与第一行**等价**（省略 bind 时的默认值是 `0.0.0.0:14555`，
+> 见 `interface.cpp:435`）—— 显式写出来只是免得日后有人"顺手改成 localhost"。
+> ★ 广播是"**先广播、被应答后自动转单播**"：收到真实包后 `remote_ep` 被改写为对端地址
+> （`udp.cpp:303-315`）⟹ **笔记本一连上，本机 14550 上的监听器就会静默**（可当"确实连上了"的旁证）。
+
+#### ☠️ 三个坑
+
+1. **节点名和参数名都不是直觉那个**：2.15.x 的 mavros 是 **router 架构** ——
+   `mavros` 是 UAS 节点，**持链路的是 `mavros_router`**，参数是复数的 **`gcs_urls`**（字符串数组）。
+   启动形参 `gcs_url`（单数）只在**启动那一刻**被搬进 `gcs_urls`（`mavros_node.cpp:77-79`）
+   ⟹ **运行时改 `gcs_url` 无效**；`gcs_urls` 才有增删回调（`mavros_router.cpp:281-360`），所以能热加。
+2. **别想在日志里找对端 IP**：`link[%d] detected remote address %d.%d` 里的两个数是
+   **MAVLink 的 `sysid.compid`**（`mavros_router.cpp:474`），不是 IP。QGC 的 sysid 通常是 **255**
+   ⟹ 日志里出现 `detected remote address 255.x` 即为 QGC 连上。日志在 `~/.ros/log/mavros_node_<pid>_*.log`。
+3. **带宽不小**：实测 ≈537 Hz 全量流。WiFi **广播帧无重传、且会复制给同一 AP 下所有站点**；
+   网络吃紧就改单播（上表第 2 行）或降低 PX4 流率。
+
+#### ⚠️ 两条安全提醒
+
+- 这条桥是**双向**的：QGC 从此能**解锁、切模式、接管飞机** ⟹ 动线/调参时**拆桨**。
+- **别同时再开第二条 QGC 链路**（例如飞控 TELEM 口的数传电台）：同一 sysid 会出现两个 vehicle，
+  router 的 sysid 路由也会左右为难。
+
+> 📌 §8.1 那份 `~/autostart.sh`（上游模板）里的 `gcs_url:="udp://@10.1.1.103"` 是**单播给固定地面站 IP**
+> 的写法（语义同本表第 2 行；省略 bind ⟹ 默认 `0.0.0.0:14555`）。本机 2026-09-21 实测**没有**
+> `~/autostart.sh`、也没有任何 systemd 单元，mavros 是手起的 ⟹ 先用上面 ① 热加。
+
 ---
 
 ## 6. ★★ 速度数据路由（重要的架构决策）
