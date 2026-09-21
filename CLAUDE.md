@@ -1,6 +1,6 @@
 # MPC_uav —— z0 无人机自主飞行栈
 
-> 飞控 MicoAir NxtPX4v2（PX4 1.14.x，飞控自带）+ Jetson Orin NX 8GB + Nokov 动捕（VRPN）。
+> 飞控 MicoAir NxtPX4v2（PX4 1.14.x，飞控自带）+ Jetson Orin NX 8GB（密码123） + Nokov 动捕（VRPN）。
 > 目标：**MPC 接管飞控内置 PID**，分两阶段落地。
 
 **先读**：`README.md`（两阶段路线 + 关键约束）→ `docs/PROJECT.md`（总纲）
