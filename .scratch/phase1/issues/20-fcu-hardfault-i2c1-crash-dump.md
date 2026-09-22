@@ -95,11 +95,19 @@ ULog 文件头第 8–15 字节 = **开始记录时的自开机微秒数**。从
 
 ### ★ 不要拿"mavros 没报断连"当反证
 
-mavros 要**连续 5 s** 收不到 `HEARTBEAT` 才打 `Lost connection`。8 次重启里只有
-**06:53:47 → 06:53:52（5.08 s）** 越过了这道阈值（那次确实报了 `Lost connection`，`control` 侧同秒 `mode_lost`），
-其余 7 次重启的停机 **< 5 s** ⟹ mavros 一声不响。⟹ "没有断连告警" ≠ "没有重启"。
-（另有一次 06:55:14→06:55:26 的 11.5 s 断连**不带**新 session（`mavros_router: link[1000] reconnected`），
-那是**串口链路**自身的抖动，与重启是两回事，别混为一谈。）
+mavros 的判据是 `conn_timeout`（**默认 10.0 s**，`mavros/src/plugins/sys_status.cpp:512-519`）建的一个
+**周期定时器**，**每收到一条 HEARTBEAT 就 reset**（同文件 `958-959`：`update_connection_status(true); timeout_timer->reset();`），
+到点跑 `timeout_cb()` → `update_connection_status(false)`（同文件 `1311-1313`）并打印
+`CON: Lost connection, HEARTBEAT timed out.`（`mavros/src/lib/mavros_uas.cpp:462`）。
+⟹ **那条 WARN 的时间戳 = 最后一条心跳 + 10 s**，所以：
+
+- `06:53:47.87` WARN ⟹ 最后心跳 ≈ `06:53:37.87`，到 `06:53:52.95` 重连 ⟹ **静默 ≈ 15.1 s**（这次是重启，`control` 侧 `mode_lost`）；
+- `06:55:14.95` WARN ⟹ 最后心跳 ≈ `06:55:04.95`，到 `06:55:26.4` 重连 ⟹ **静默 ≈ 21.5 s**，但这次**不带**新 session
+  （`mavros_router: link[1000] reconnected`）⟹ 那是**串口链路**自身抖动，与重启是两回事，别混为一谈；
+- 其余 7 次重启**根本没有** WARN ⟹ 静默 **< 10 s** ⟹ **短重启会被整个漏掉**。
+
+★ 结论方向不变（日志不能当"没重启"的反证），但**算停机时长时别按 5 s 算** —— 阈值是 10 s。
+（该 mavros 源码树：`/home/chen/mavros_ws/src/mavros`。）
 
 ### ★ 为什么每次开机都喊"SD 上有 crash dump"
 
@@ -147,11 +155,14 @@ mavros 要**连续 5 s** 收不到 `HEARTBEAT` 才打 `Lost connection`。8 次�
 ## 六、下一步（都需要第一手证据）
 
 1. **看观察器**（§三）：故障是否复发、能否定到分钟。
-2. **I2C1 上挂了什么、`wq:I2C1` 在跑谁的驱动** —— 查 `HKUST_NXT_DUAL` / `micoair743-v1.14.3` 的板级配置
-   ⟹ **本机没有 PX4 源码**，需要 vendor 树或上游 tag（`Minderring/PX4-Autopilot @ 4a0e65f2`）。
-3. **供电**：~11 min 的周期性也要排除**掉电/欠压**（台架电源、电池、接触）——
-   `Preflight Fail: Missing FMU SD Card` 在 06:27:37、06:28:32、06:28:34 出现过三次，
-   那是**卡没挂上**时的检查结果，与"供电/接触"这条线有关，别漏。
+2. **I2C1 上挂了什么、`wq:I2C1` 在跑谁的驱动** —— 查 `HKUST_NXT_DUAL` / `micoair743-v1.14.3` 的板级配置。
+   ★ **本机有 PX4 参考树**（`/home/chen/refs/px4-z0`（ticket 21 用的是它，`5ba2e91f`）、
+   `/home/chen/refs/px4-v1.14.3`、`px4-v1.15.0`、`px4-v1.16.0`）—— 「本机没有源码」是我先前的**错误**说法，已改。
+   对照 vendor 树（`Minderring/PX4-Autopilot @ 4a0e65f2` = `micoair743-v1.14.3` 分支）。
+3. **供电**：~11 min 的周期性也要排除**掉电/欠压**。操作者 2026-09-22 答复：**台架稳压电源**供电
+   ⟹ 掉电概率下降但**未排除**（要留心限流设置与重启瞬间的电压/电流读数；接插件接触仍是候选）。
+   相关线索：`Preflight Fail: Missing FMU SD Card` 在 06:27:37、06:28:32、06:28:34 出现过三次 ——
+   那是**卡没挂上**时的检查结果，与"供电/接触/SD 卡本身"这条线有关，别漏。
 4. **全量 ulog 对齐**：`sess251…258` 每个 ~20–24 MB（MAVLink FTP 实测 ~46 KB/s，取一个约 9 min）。
    取一个"正常间隔"的 session 与"异常间隔"的做差分，比只在这里推理强。
 5. 结论出来之前：**台架可以做只读/不动飞机的部分**；**装桨免谈**。
