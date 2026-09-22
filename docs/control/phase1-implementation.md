@@ -48,11 +48,14 @@ src/
 │   ├── launch/mocap.launch.py
 │   └── README.md                      ← 参数表 + 运行纪律 + 两阶段原点的理由
 │
-├── traj/                              🆕 新写
-│   ├── src/traj_node.cpp
-│   ├── include/traj/{hover,square,lemniscate}.hpp
-│   ├── config/traj.yaml
-│   └── launch/traj.launch.py
+├── traj/                              ✅ 已实现（2026-09-22，ticket 07）
+│   ├── src/traj_node.cpp              ← 只做接线：参数、话题、定时器、RViz 折线
+│   ├── include/traj/trajectories.hpp  ← ★ 三条轨迹的**纯函数**、**零 ROS 依赖**（seam 2；含弧长参数化）
+│   ├── test/test_trajectories.cpp     ← ★ 纯函数单测（seam 2，20 例，独立 Simpson 法交叉核对周长）
+│   ├── test/test_traj_node.py         ← ★ 节点级（seam 1，11 例）：只断言话题边界
+│   ├── config/traj.yaml               ← 三条轨迹的参数 + 速率 + RViz
+│   ├── launch/traj.launch.py
+│   └── README.md                      ← 参数表 + 怎么用 1/2/3 选轨迹 + 它**不发** setpoint
 │
 ├── control/                           ✅ 已实现（2026-09-21，ticket 05）—— **只到 STANDBY**
 │                                      （Phase 2 的 MPC（模型预测控制）节点也放这里）
@@ -100,7 +103,8 @@ src/
 | `/mavros/rc/in` | `mavros_msgs/RCIn` | **开始按键** | ★ 通道号是参数，实飞时确认。⚠️ ticket 05 只订阅、不做判据 |
 | `/mavros/battery` | `sensor_msgs/BatteryState` | 低电压保护 | ⚠️ 见 §8.2。⚠️ ticket 05 只订阅、不做判据 |
 | `/mocap/pose_enu` | `geometry_msgs/PoseStamped` | 相对位姿（**ENU，原生**） | Phase 1 用于记录（Q23）**以及 ticket 05 的守卫**（它的新鲜度决定发不发 setpoint）；**Phase 2 的 MPC 拿它当状态源** |
-| `/traj/select` | `std_msgs/UInt8` | 选轨迹：1/2/3 | 由 `fly.py` 发布 |
+| `/traj/reference` | `mavros_msgs/PositionTarget` | ★ 参考轨迹（**相对轨迹原点**，不是绝对位置） | ticket 09 在 TRACK 里**加上轨迹原点**再发给 PX4。⚠️ **绝不能把这条直接 remap 到 `/mavros/setpoint_raw/local`** ：轨迹原点是 1 m 高度上的悬停点，直接转发 = 先掉到地面附近。原点的记录见 §3.3 |
+| `/traj/progress` | `std_msgs/Float32` | 轨迹完成度 0–1 | ★ 驱动 §4.2 的 `TRACK → LAND`（`≥ 1.0`）。🔶 **ticket 09 未实现**：按设计 `/control/traj_progress` 就是它的转发（这样 `fly.py` 那侧不用改） |
 
 ### 输出（`control` 发布 / 调用）
 
@@ -128,6 +132,28 @@ src/
 > 所以发布方用可靠（默认）**能**匹配，改成 best_effort 也没问题 —— 但**别改**，照抄现状最省事。
 > 依据与实测见 [`src/bench/README.md`](../../src/bench/README.md)（夹具逐条复刻了这些 QoS，
 > 并有专门的回归测试盯着"不可靠订阅者收不到 best_effort 数据"这件事）。
+
+### `traj` 节点（轨迹发生器）
+
+✅ **已实现（2026-09-22，[ticket 07](../../.scratch/phase1/issues/07-traj-reference-trajectories.md)）= [`src/traj/`](../../src/traj/)。**
+
+| 方向 | 话题 | 类型 | 说明 |
+|---|---|---|---|
+| 订阅 | `/traj/select` | `std_msgs/UInt8` | **选轨迹：1/2/3**（`0` = 清空）。由 `fly.py` 或手打 `ros2 topic pub` 发 |
+| 订阅 | `/traj/start` | `std_msgs/Empty` | ★ **开始跑**。与 `/traj/select` **分开**（见下） |
+| 发布 | `/traj/reference` | `mavros_msgs/PositionTarget` | ★ 参考轨迹，**50 Hz**，**相对轨迹原点**；`type_mask = 2496`（位置+速度+yaw）、`frame_id = "traj_origin"` |
+| 发布 | `/traj/progress` | `std_msgs/Float32` | 完成度 0–1 |
+| 发布 | `/traj/marker` | `visualization_msgs/Marker` | RViz 折线（形状与尺寸的验收手段），无控制作用 |
+
+> ★ **选与开始为什么是两条话题**：`select` 是"我打算飞哪条"（离线核对形状用，`/traj/marker` 一选就出，
+> 不必等起飞）；`start` 是"现在开始计时"。运行中重选 ⟹ **参考立刻停流，且必须再发一次 `start`**
+> （新的时间轴从 0 起）——否则 `control` 还在 TRACK 时会按**旧轨迹的惯性**把飞机拽到新轨迹上。
+> 先例：Fast-Drone-XI35 的 `px4ctrl` 在 AUTO_HOVER 里发 `/traj_start_trigger`（`PX4CtrlFSM.cpp:202`、`:598-603`）。
+>
+> 🔶 **`/traj/start` 由谁在实飞中发，是 ticket 09 要定的事**（`control` 在进 `TRACK` 那一刻发是最自然的接线，
+> 也是 XI35 的做法）；现在只有 `fly.py` / 手打能用。
+>
+> ⚠️ **`traj` 不发 setpoint、不碰 mavros、不判稳。** 它只回答"第 t 秒该在哪、以多快的速度经过"。
 
 ### `mocap` 节点
 
@@ -218,6 +244,13 @@ z_ned = -z_enu
 - Phase 2 的 MPC 改用 `/mocap/pose_enu`，那时才需要动捕原点
 
 > 📌 **这个设计让 Phase 1 与 Phase 2 的原点问题彻底解耦，是降低 Phase 1 风险的关键一步。**
+
+> ★ **谁负责加这个原点：`control`，不是 `traj`（ticket 07 实测口径）。**
+> `traj` 节点只发**相对轨迹原点**的参考 —— 它根本不知道飞机在哪，也就没有"轨迹原点"这个概念。
+> 好处是 `traj` 可以在**没有飞控、没有动捕、没起飞**的情况下把三条几何跑一遍并核对
+> （`traj` 的 seam 1 测试就是这么做的）；而"轨迹原点 + 相对参考 = 绝对 setpoint"这件事
+> 只有 `control` 这一处发生 ⟹ **"重复加原点/一次都没加"这一整类 bug 只有一个可能出错的地方**。
+> ⟹ ticket 09 接线时：`reference_abs = traj_origin + traj_relative`（高度也一并来自原点，见 §5.2 的澄清）。
 
 ### 3.4 ★ 姿态：仅归零 yaw
 
@@ -426,6 +459,13 @@ Phase 1 走的是 mavros，**不存在"微秒"这一层**：
 
 > ⚠️ 该局部系在 **ROS 侧是 ENU**（`x` 东 / `y` 北 / **`z` 向上为正**）—— 见 §3.1 的更正。
 > 下表"高度 1.0 m"对应的就是 **`z = +1.0`**。
+>
+> ✅ **2026-09-22 ticket 07 落地时的口径澄清（`traj` 节点里的"高度"是 0，不是 1.0）**：
+> **1.0 m 这个高度属于"轨迹原点"，不属于轨迹本身。** 轨迹原点由 `control` 在 HOVER 判稳那一刻
+> 从 `/mavros/local_position/pose` 记下来（§3.3），那时飞机**已经在 1 m 上**——
+> 所以轨迹 1 在轨迹原点系里的目标就是 **`(0,0,0)`**，正方形的四个角是 `z = 0`。
+> 把 1.0 再写进轨迹里 ⟹ 参考高度变成 **2 m**（叠加而非替代）。
+> 实现上对应的参数是 `height_offset_m`（[`src/traj/config/traj.yaml`](../../src/traj/config/traj.yaml)），**默认 0.0 且唯一用途是台架上给视频做区分度**。
 
 | 编号 | 轨迹 | 定义 | 速度 |
 |---|---|---|---|
@@ -448,7 +488,14 @@ Phase 1 走的是 mavros，**不存在"微秒"这一层**：
 
 > **★ (A) 级方案的最大好处在这里体现**：我们**只发位置**，动力学全部由 PX4 的 `MPC_*` PID 处理。**轨迹发生器不需要算任何加速度或姿态**——这就是为什么 Phase 1 能很快做出来。
 
-**速度上限的实现**：(b) 方式下把参数 `t` 的推进速率按 `max_speed` 缩放即可；正方形总长 4 m → 8 s；八字周长 ≈ 4.2 m → 8.4 s。
+**速度上限的实现**：**按弧长推进，不是按参数 `t` 匀速**。
+正方形把弧长 `s = clamp(t)·v` 后按 `s / 边长` 取边；八字先建一张 `θ → 弧长` 的数值表再反查
+（`x = a·sinθ` 的速度因子是 `√(cos²θ + cos²2θ)`，数值上 ∈ `[0.661, 1.414]`、均值 `0.970` ⟹
+**按 θ 匀速时过中心那一点是平均速度的 1.46 倍**（最慢处只有 0.68 倍）；
+把"平均"压到 0.5 m/s 则峰值到 **0.73 m/s**，直接违反上限）。
+⇒ 时长：正方形 4 m → **8.0 s**；八字周长 **≈3.05 m → ≈6.1 s**。
+（📌 旧版这里写的"八字周长 ≈ 4.2 m → 8.4 s"是**估的**，2026-09-22 按数值积分更正；
+`src/traj/test/test_trajectories.cpp` 里有一条独立用 Simpson 法算周长的交叉核对盯着它。）
 
 ### 5.3 验收标准（已定）
 
@@ -514,6 +561,21 @@ Phase 1 走的是 mavros，**不存在"微秒"这一层**：
   外部解锁 ⟹ 停发；`enter_offboard=false` 只流不切；杀进程后流停止。
 - **seam 2**（`control/test/test_fsm.cpp`，零 ROS）：缺项清单是哪几条、什么顺序；断流后前置流重新计时；
   `STANDBY` 下控制权仍是 `MANUAL`。
+
+**`traj`（ticket 07）同样是两层**，`colcon test --packages-up-to traj` = **31 例**全绿
+（seam 2 的 20 + seam 1 的 11；★ 它的 seam 1 也用 `bench` 夹具，所以同样要 `--packages-up-to`）：
+
+- **seam 2**（`traj/test/test_trajectories.cpp`，零 ROS，20 例）：三条几何的形状/尺寸/闭合、
+  弧长均匀性（有限差分量速度波纹）、**限速扫过三条轨迹**、周长（含一条独立的 Simpson 法交叉核对）。
+- **seam 1**（`traj/test/test_traj_node.py`，11 例）：`select` 与 `start` 的语义（**选了不 start ⟹ 一帧都不发**，
+  且配了正控）、消息口径（`type_mask = 2496`、`FRAME_LOCAL_NED`、`frame_id`、恒定 yaw）、
+  50 Hz **窗口**频率、正方形四条边且跑完停回原点、8 字的幅度与"偏扁"不变式（`max(x)/max(y) ≈ 2`）、
+  **RViz 折线的形状/尺寸/周期重发** —— 题目里那条"人眼看形状"的验收项由此变成机器可查的。
+
+> ★ `traj` 上实打实踩到的一条测试纪律：**差分速度必须用 `header.stamp`，不能用收到消息的时刻。**
+> rcl 的定时器从**回调开始**重新计时，回调一超时就立刻补跑 ⟹ 接收时刻上会出现相邻仅 0.1 ms 的两帧，
+> 而它们之间隔着 0.1 s 的运动 —— 用接收时刻算出来正方形"飞到 **4.5 m/s**"（限速的 9 倍），全是假的。
+> 频率断言同理：**只在窗口上算**（`bench/README.md` 的纪律 2）。
 
 **这些都不再需要人守着看。**
 
@@ -595,6 +657,17 @@ IGNORE_VX|IGNORE_VY|IGNORE_VZ|IGNORE_AFX|IGNORE_AFY|IGNORE_AFZ|IGNORE_YAW_RATE
 `yaw = 0` 按"保持当前机头"用，会在进入 OFFBOARD 的瞬间把机头拧到 90°（NED）。
 
 > 📌 **若定点出现低频抖动**，标准下一步是**加上速度前馈**：轨迹发生器同时给出参考速度，把掩码改成 `2496`（只忽略加速度与 yaw_rate），填入 `velocity`。**这是 (A) 级方案的标准调优路径**，先不做。
+
+> ⚠️ **别把"参考的掩码"和"下发给 PX4 的掩码"混成一个数** —— ticket 07 之后仓库里这两个数**故意不一样**：
+>
+> | 消息 | 掩码 | 为什么 |
+> |---|---|---|
+> | `traj` → `/traj/reference` | **2496**（位置+速度+yaw） | 它是**参考值**，由 `control` 消费。速度是免费的（轨迹本来就是解析式，顺带把导数给了），留着它 `control` 才有得选 |
+> | `control` → `/mavros/setpoint_raw/local` | **2552**（位置+yaw） | Phase 1 的既定口径（本节上面那个表达式）。**速度前馈是上面 📌 里"先不做"的调优**，收不收 `traj` 的速度是 `control` 单方面的决定，与参考里带不带速度无关 |
+>
+> 两块掩码**唯一的相同点是坐标系**（`FRAME_LOCAL_NED`）。★ 另一条纪律：`/traj/reference`
+> **永远不许 remap 到 `/mavros/setpoint_raw/local`** —— 它相对**轨迹原点**（= 1 m 高度上的悬停点），
+> 直接转发 = 先往地面附近扎，见 §2 与 §3.3。
 
 ---
 

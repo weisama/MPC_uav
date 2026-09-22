@@ -1,0 +1,83 @@
+# traj 节点参数（参考轨迹发生器）。节点名 `traj` 与下面 ros__parameters 的键对应，不要改。
+#
+# ★ 这个节点**只发参考，不碰飞控**：不发 setpoint、不解锁、不进 OFFBOARD。
+#   把参考变成 setpoint、并把轨迹原点加回去，是 control 的事（见 trajectories.hpp 文件头）。
+#
+# ★ 多台无人机复用：复制这份 yaml（如 traj_z1.yaml），改话题名，然后
+#     ros2 launch traj traj.launch.py params_file:=<那份 yaml> namespace:=z1
+
+traj:
+  ros__parameters:
+    # —— 话题 ——
+    # 参考（mavros_msgs/PositionTarget）：**相对轨迹原点**，50 Hz。
+    #   ★ 载体选 PositionTarget 的理由见 docs/reference/open-source-survey.md：
+    #     参照项目（Fast-Drone-XI35 的 /position_cmd、px4-mpc 的 reference）都在
+    #     「位置 + 速度 + 加速度 + yaw」这一族里，PositionTarget 是 mavros 侧唯一现成的那个。
+    reference_topic: "/traj/reference"
+    # 完成度（std_msgs/Float32，0–1）。control 在 progress ≥ 1 时走 TRACK → LAND。
+    progress_topic: "/traj/progress"
+    # 选择（std_msgs/UInt8）：1 = 悬停，2 = 正方形，3 = 8 字，**0 = 清空**。其余值告警并忽略。
+    select_topic: "/traj/select"
+    # ★ 开始（std_msgs/Empty）：**参考时钟的零点**。没有它，选轨迹的那一刻就会
+    #   把飞机拽向轨迹中段（t 从 0 开始跑，而飞机还停在起点）。
+    #   所以「选」与「开始」是两件事：control 在 WAIT_START → TRACK 时发这一条。
+    #   先例：Fast-Drone-XI35 的 px4ctrl 在 AUTO_HOVER 里发 /traj_start_trigger 允许规划器启动。
+    start_topic: "/traj/start"
+    # RViz 可视化（visualization_msgs/Marker）。
+    marker_topic: "/traj/marker"
+
+    # —— 参考的坐标系与限速 ——
+    # 参考消息的 header.frame_id。**纯标注**：mavros 的 setpoint_raw 只读 coordinate_frame
+    #   与 type_mask，从不读 frame_id（第一手：mavros/src/plugins/setpoint_raw.cpp:209-249）。
+    #   写 traj_origin 是为了让 ros2 topic echo 的人一眼看出"这是轨迹原点系，不是 map"。
+    #   ★ 这个 frame **不会**出现在 TF 里 —— Phase 1 没有 traj_origin 与世界系之间的 TF
+    #     （轨迹原点是 control 记的一个数，不是一棵 TF 树的节点）。
+    reference_frame_id: "traj_origin"
+
+    # ★ 沿轨迹的速度上限 [m/s]，§5.2 的硬要求。改大之前先读 §5.2：
+    #   轨迹尺寸（1 m 级）与动捕棚的捕捉范围是配套的，速度也决定了失控时的后果。
+    max_speed_ms: 0.5
+
+    # —— 三条轨迹各自的尺寸 ——
+    # 轨迹 1：悬停的"时长"。悬停没有终点、天生跑不完，而完成度必须是 0–1 ⟹ 用时长兜。
+    #   默认 60.0 = §5.3 的验收值（"定点水平误差 ≤15 cm、持续 60 s"）。
+    hover_duration_s: 60.0
+    # 轨迹 2：正方形边长 [m]（周长 4 m ⟹ @0.5 m/s = 8.0 s）。
+    square_side_m: 1.0
+    # 轨迹 3：8 字的幅度 [m]。x 半幅 = 它，**y 半幅只有它的一半**（Gerono 双纽线天然偏扁：
+    #   宽 1.0 m、高 0.5 m）。想要两个方向都是 ±a 的对称 8 字要换 Bernoulli 双纽线
+    #   （§5.2），那是显示偏好，不影响控制逻辑 ⟹ 先不做。
+    lemniscate_a_m: 0.5
+    # 轨迹平面相对**轨迹原点**的高度偏移 [m]。★ 默认必须是 0：
+    #   §5.2 说的"高度 1.0 m"由轨迹原点自带（那个点本来就是起飞到 1 m 后的悬停点），
+    #   在这里再填 1.0 会让飞机爬到 2 m。只在"要故意比悬停点高/低"时才动它。
+    height_offset_m: 0.0
+
+    # —— 节奏 ——
+    # 参考的发布频率 [Hz]。与 control 的 setpoint 同频（§2 的话题表）：同频才能一拍一换，
+    # 不同频会在 control 侧引入"最新的参考是多久以前的"这种额外抖动。
+    rate_hz: 50.0
+
+    # —— RViz 可视化 ——
+    # ★ Marker 的 frame 必须是 RViz 认得的（有 TF 的）那个：默认 "map" ——
+    #   /mavros/local_position/pose 的 frame 就是它（Phase 1 的动捕/EKF 世界系）。
+    #   ⚠️ 而轨迹几何是**相对轨迹原点**的 ⟹ 画出来形状与尺寸都对，但"落在哪"是相对
+    #       map 原点（动捕原点）的，不是悬停点。校"形状与尺寸"够用（ticket 07 的判据），
+    #       "落点对不对"要在 control 里看。故意不做偏移参数：那会让人以为它在管落点。
+    marker_frame_id: "map"
+    # 整条轨迹折线的重发周期 [s]。Marker 是 volatile 的（后到的 RViz 看不到），
+    #   所以周期重发；1 s 是"够 RViz 起来"与"不刷屏"之间的折中。
+    marker_period_s: 1.0
+    # 折线的采样点数（只有 8 字用得上；正方形是 5 个顶点、悬停是 1 个点）。
+    #   201 点画 8 字足够顺滑，也不至于让 topic 变得难读。
+    marker_points: 201
+
+    # —— 启动即选（离线在 RViz 里核对形状用；0 = 不自动选，等 /traj/select）——
+    # ★ 飞的时候保持 0：轨迹选择是操作者的动作，不该藏在 yaml 里。
+    startup_kind: 0
+
+    # —— yaw ——
+    # 参考的 yaw [rad]。★ Phase 1 恒定：位置控制不需要转向，而"轨迹切向 + 机头朝向"
+    #   会在 8 字的中心交叉处要求 180° 掉头（飞机做不到，会甩）。§8.6 的调参路径里
+    #   yaw 前馈本来就"先不做"。
+    yaw_rad: 0.0

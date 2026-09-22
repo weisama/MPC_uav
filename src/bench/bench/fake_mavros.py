@@ -307,9 +307,15 @@ class FakeMavros:
         """
         return self._pubs[topic_key].get_subscription_count()
 
-    def set_mode_clients(self) -> int:
-        """DUT 侧有几个 `/mavros/set_mode` 客户端匹配上了（服务没建起来时返回 0）。"""
-        return self._set_mode_srv.get_num_clients() if self._set_mode_srv else 0
+    # ☠️ 更正（2026-09-22）：这里本来有一个 `set_mode_clients()`，实现是
+    #     `self._set_mode_srv.get_num_clients()` —— **rclpy 的 Service 没有这个方法**，
+    #     而它只被 `evidence()` 调用 ⟹ 后果是：**任何一次 bench 超时/失败都会变成
+    #     AttributeError，而不是打出证据**（bug 藏在失败路径上，所以一直是绿的）。
+    #   ★ 而且这个数在 rclpy Humble 上**根本拿不到**：Node 只暴露 `count_publishers` /
+    #     `count_subscribers`，没有任何服务客户端计数的 API（第一手：rclpy/node.py 里
+    #     grep `def get_.*_by_service` / `count_clients` 均无命中）。
+    #   ⟹ 判断"DUT 的 /mavros/set_mode 客户端接上没有"只能看 `mode_requests` 有没有到过
+    #     （已经打在 evidence 里）。
 
     def wait_for_subscribers(
         self, topic_key: str, count: int = 1, timeout_s: float = 10.0,
@@ -441,8 +447,7 @@ class FakeMavros:
             + (f"（{', '.join(f'{r.custom_mode}@{r.at_s:.2f}s' for r in self.mode_requests)}）"
                if self.mode_requests else ""),
             f"- 匹配到的 DUT 订阅者："
-            + ", ".join(f"{k}={self.matched_subscribers(k)}" for k in self._pubs)
-            + f", set_mode 客户端={self.set_mode_clients()}",
+            + ", ".join(f"{k}={self.matched_subscribers(k)}" for k in self._pubs),
             f"- 当前状态：connected={self.connected} armed={self.armed} mode={self.mode}"
             f"；静默中={sorted(self._muted) or '无'}；position={self.position}",
         ]

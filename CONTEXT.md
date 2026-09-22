@@ -66,6 +66,8 @@
 | ★ **控制权 (authority)** | 自主飞控状态机的**第一个维度**：**谁在控制飞机**。`MANUAL` / `AUTO` 两值。**定义**：`AUTO` = 本项目正在发**会驱动飞机**的指令（即已解锁的 offboard）。⟹ "已切进 OFFBOARD 模式但飞机未解锁"**仍是 `MANUAL`** —— 切模式 ≠ 交出控制权。 |
 | ★ **任务态 (phase)** | 状态机的**第二个维度**：**程序在干什么**。取值 `INIT` / `STANDBY` / `TAKEOFF` / `HOVER` / `TRACK` / `LAND`。★ 与「控制权」**正交、不压成扁平枚举**（两个维度各自独立变化）。`/control/state` 发 `"<控制权>/<任务态>"`，如 `MANUAL/STANDBY`。早期 ticket 里画图时用的 `IDLE` 与代码里的 `INIT` 同义。 |
 | **OFFBOARD 前置流 (pre-stream)** | **切进 OFFBOARD 之前**必须先把 setpoint 连续流够一段时间（本项目 50 Hz 流 ≥1 s）—— 因为 **PX4 在 OFFBOARD 模式下一旦断流超 `COM_OF_LOSS_T` 就自行退出该模式**，所以"先流后切"是前提而不是优化。 |
+| ★ **轨迹原点系 (trajectory origin frame)** | 以 **HOVER 判稳那一刻 EKF2 报的位置为原点**、朝向与 EKF2 局部系一致（ROS 侧 ENU，z 向上）的坐标系。**`traj` 发的参考全部在这个系里**——所以轨迹 1（悬停）的目标是 `(0,0,0)`：**1 m 高度属于原点、不属于轨迹**，在轨迹里再写 1.0 会变成 2 m。把相对参考加回绝对 setpoint 是 `control` 的**唯一职责**（ticket 09）。⚠️ 与**动捕原点**不是一回事，Phase 1 完全不依赖后者（`docs/control/phase1-implementation.md` §3.3）。 |
+| ★ **参考完成度 (progress)** | `traj` 报的 0–1 标量（`/traj/progress`），驱动 §4.2 的 `TRACK → LAND`（`≥ 1.0`）。**悬停没有终点** ⟹ 用 `hover_duration_s` 的时长兜（默认 60 s = §5.3 的验收时长）。 |
 
 ## 四、求解器与工具链
 

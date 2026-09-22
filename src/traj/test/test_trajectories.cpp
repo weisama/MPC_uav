@@ -1,0 +1,416 @@
+// 接缝 2（纯函数）单测：三条轨迹的**几何、尺寸、限速、完成度**。
+//
+// 为什么这些断言值得写（而不是"飞起来看看"）：
+//   ① 形状与尺寸有**精确解**可对 —— 边长 1 m 的正方形周长必然是 4.0 m、8 字必然是
+//      宽 1.0 m 高 0.5 m。这类错误一旦漏到天上，表现只是"飞机画得有点怪"，
+//      而"有点怪"和"动捕/控制有毛病"在 /traj/reference 的数值流里分不开。
+//   ② 限速是 §5.2 的硬要求（≤0.5 m/s）。★ 这里不只断言"我输出的 v 不大于上限"
+//      （那是自证），还用**有限差分**独立地量一遍"位置实际走多快" —— 后者才拦得住
+//      "θ 匀速而不是弧长匀速"这个真会发生的错误（见 Lemniscate 的注释）。
+//
+// ★ 本文件零 ROS 依赖，与 `control/test/test_fsm.cpp` 同款：只 include 纯头文件。
+
+#include <cmath>
+#include <limits>
+#include <memory>
+#include <vector>
+
+#include "gtest/gtest.h"
+#include "traj/trajectories.hpp"
+
+namespace
+{
+
+using traj::Kind;
+using traj::Lemniscate;
+using traj::Params;
+using traj::Reference;
+using traj::Square;
+using traj::Vec3;
+
+constexpr double kPi = 3.14159265358979323846;
+
+double norm(const Vec3 & v)
+{
+  return std::sqrt(v.x * v.x + v.y * v.y + v.z * v.z);
+}
+
+/// 独立实现的弧长积分（Simpson 法，与被测代码的梯形表**不是**同一套算法）。
+/// 用它来交叉验证 Lemniscate 内部的弧长表与反查插值。
+double lemniscate_perimeter_simpson(double a, int n = 20000)
+{
+  const auto f = [a](double th) {
+      const double c1 = std::cos(th);
+      const double c2 = std::cos(2.0 * th);
+      return a * std::sqrt(c1 * c1 + c2 * c2);
+    };
+  const double h = 2.0 * kPi / n;  // n 取偶数
+  double sum = f(0.0) + f(2.0 * kPi);
+  for (int i = 1; i < n; ++i) {
+    sum += (i % 2 == 0 ? 2.0 : 4.0) * f(h * i);
+  }
+  return sum * h / 3.0;
+}
+
+// ——————————————————————————————————————————————————————————————
+// ① 悬停
+// ——————————————————————————————————————————————————————————————
+
+TEST(Hover, 位置恒在原点_速度恒为零)
+{
+  const traj::Hover h(60.0);
+  for (double t = 0.0; t <= 60.0; t += 0.5) {
+    const Reference r = h.at(t);
+    EXPECT_DOUBLE_EQ(r.p.x, 0.0);
+    EXPECT_DOUBLE_EQ(r.p.y, 0.0);
+    EXPECT_DOUBLE_EQ(r.p.z, 0.0);
+    EXPECT_DOUBLE_EQ(norm(r.v), 0.0);
+  }
+}
+
+TEST(Hover, 完成度随时长线性走到_1)
+{
+  const traj::Hover h(10.0);
+  EXPECT_DOUBLE_EQ(h.duration(), 10.0);
+  EXPECT_DOUBLE_EQ(h.at(0.0).progress, 0.0);
+  EXPECT_DOUBLE_EQ(h.at(2.5).progress, 0.25);
+  EXPECT_NEAR(h.at(5.0).progress, 0.5, 1e-12);
+  EXPECT_DOUBLE_EQ(h.at(10.0).progress, 1.0);
+  // 跑完之后保持 1，不回落也不越界
+  EXPECT_DOUBLE_EQ(h.at(99.0).progress, 1.0);
+  // t < 0 夹到 0
+  EXPECT_DOUBLE_EQ(h.at(-1.0).progress, 0.0);
+}
+
+TEST(Hover, 高度偏移参数决定悬停平面)
+{
+  const traj::Hover h(5.0, 0.3);
+  EXPECT_DOUBLE_EQ(h.at(1.0).p.z, 0.3);
+  // ★ 默认值必须是 0：§5.2 那句"高度 1.0 m"由**轨迹原点自带**，
+  //   在这里再加 1.0 会让飞机爬到 2 m（见 trajectories.hpp 文件头）。
+  const traj::Hover plain(5.0);
+  EXPECT_DOUBLE_EQ(plain.at(1.0).p.z, 0.0);
+}
+
+// ——————————————————————————————————————————————————————————————
+// ② 正方形
+// ——————————————————————————————————————————————————————————————
+
+TEST(Square, 周长与时长_1m边长限速_0_5_是_8_秒)
+{
+  const Square sq(1.0, 0.5);
+  EXPECT_NEAR(sq.duration(), 8.0, 1e-12);  // 4 m / 0.5 m/s
+  // 时长按限速缩放：限速加倍 ⟹ 时长减半
+  const Square fast(1.0, 1.0);
+  EXPECT_NEAR(fast.duration(), 4.0, 1e-12);
+}
+
+TEST(Square, 四条边的端点与走向)
+{
+  const double side = 1.0;
+  const double speed = 0.5;
+  const Square sq(side, speed);
+  const double d = sq.duration();
+
+  // 每条边取中点 + 只差一点点的两端，核对"在正确的边上、朝正确的方向"
+  struct Case
+  {
+    double frac;    // 沿整条轨迹的完成度
+    double x, y;    // 期望位置
+    double vx, vy;  // 期望速度方向
+  };
+  const Case cases[] = {
+    {0.125, 0.5, 0.0, 1.0, 0.0},   // 边 0：+x
+    {0.375, 1.0, 0.5, 0.0, 1.0},   // 边 1：+y
+    {0.625, 0.5, 1.0, -1.0, 0.0},  // 边 2：−x
+    {0.875, 0.0, 0.5, 0.0, -1.0},  // 边 3：−y
+  };
+  for (const Case & c : cases) {
+    const Reference r = sq.at(c.frac * d);
+    EXPECT_NEAR(r.p.x, c.x, 1e-12);
+    EXPECT_NEAR(r.p.y, c.y, 1e-12);
+    EXPECT_NEAR(r.v.x, c.vx * speed, 1e-12);
+    EXPECT_NEAR(r.v.y, c.vy * speed, 1e-12);
+    EXPECT_NEAR(norm(r.v), speed, 1e-12);
+  }
+}
+
+TEST(Square, 起点在原点_每个角都能精确到达)
+{
+  const Square sq(1.0, 0.5);
+  const double d = sq.duration();
+  const Reference start = sq.at(0.0);
+  EXPECT_DOUBLE_EQ(start.p.x, 0.0);
+  EXPECT_DOUBLE_EQ(start.p.y, 0.0);
+  EXPECT_DOUBLE_EQ(start.progress, 0.0);
+
+  // 四个角分别出现在 t = k·(边长/限速) 处（弧长 = 边长 ⟹ 时间 = 边长/限速）
+  const double per_edge = 1.0 / 0.5;
+  const Vec3 corners[] = {
+    {1.0, 0.0, 0.0}, {1.0, 1.0, 0.0}, {0.0, 1.0, 0.0}, {0.0, 0.0, 0.0}};
+  for (int k = 1; k <= 4; ++k) {
+    const Reference r = sq.at(per_edge * k);
+    EXPECT_NEAR(r.p.x, corners[k - 1].x, 1e-12) << "角 " << k;
+    EXPECT_NEAR(r.p.y, corners[k - 1].y, 1e-12) << "角 " << k;
+  }
+  EXPECT_NEAR(d, per_edge * 4, 1e-12);
+}
+
+TEST(Square, 跑完停在起点且速度为_0)
+{
+  const Square sq(1.0, 0.5);
+  const Reference end = sq.at(sq.duration());
+  EXPECT_DOUBLE_EQ(end.progress, 1.0);
+  EXPECT_DOUBLE_EQ(end.p.x, 0.0);
+  EXPECT_DOUBLE_EQ(end.p.y, 0.0);
+  EXPECT_DOUBLE_EQ(norm(end.v), 0.0);  // ★ 停在终点，而不是继续飞出去
+  // 超时也是同一个状态
+  const Reference late = sq.at(1e6);
+  EXPECT_DOUBLE_EQ(late.progress, 1.0);
+  EXPECT_DOUBLE_EQ(norm(late.v), 0.0);
+}
+
+TEST(Square, 几何采样是五个顶点_四条_1m_边_闭合)
+{
+  const Square sq(1.0, 0.5);
+  const std::vector<Vec3> path = sq.path(100);
+  ASSERT_EQ(path.size(), 5u);
+  EXPECT_EQ(path.front().x, path.back().x);  // 闭合
+  EXPECT_EQ(path.front().y, path.back().y);
+  for (std::size_t i = 1; i < path.size(); ++i) {
+    const double edgelen = std::hypot(
+      path[i].x - path[i - 1].x, path[i].y - path[i - 1].y);
+    EXPECT_NEAR(edgelen, 1.0, 1e-12) << "边 " << i - 1;  // ★ 1 m 边长，RViz 要量的就是它
+  }
+}
+
+// ——————————————————————————————————————————————————————————————
+// ③ 8 字
+// ——————————————————————————————————————————————————————————————
+
+TEST(Lemniscate, 尺寸_x_半幅_0_5_y_半幅只有_0_25)
+{
+  const Lemniscate lem(0.5, 0.5);
+  double x_max = 0.0, x_min = 0.0, y_max = 0.0, y_min = 0.0;
+  for (int i = 0; i <= 100000; ++i) {
+    const Vec3 p = lem.at(lem.duration() * i / 100000.0).p;
+    x_max = std::max(x_max, p.x);
+    x_min = std::min(x_min, p.x);
+    y_max = std::max(y_max, p.y);
+    y_min = std::min(y_min, p.y);
+  }
+  // ★ Gerono 双纽线的 y 幅度**恰是 x 的一半** ⟹ 8 字是偏扁的。
+  //   这里把"偏扁"当成**规格**钉住：若哪天换成 Bernoulli，这条测试必须先改。
+  EXPECT_NEAR(x_max, +0.5, 1e-3);
+  EXPECT_NEAR(x_min, -0.5, 1e-3);
+  EXPECT_NEAR(y_max, +0.25, 1e-3);
+  EXPECT_NEAR(y_min, -0.25, 1e-3);
+}
+
+TEST(Lemniscate, 周长与时长的交叉验证)
+{
+  const double a = 0.5;
+  const Lemniscate lem(a, 0.5);
+  // ① 与**独立实现**的 Simpson 积分对齐（相对误差 1e-6 以内 = 内部梯形表够密）
+  const double expected = lemniscate_perimeter_simpson(a);
+  EXPECT_NEAR(lem.perimeter(), expected, expected * 1e-6);
+  // ② ticket / §5.2 给的解析值 ≈3.05 m
+  EXPECT_NEAR(lem.perimeter(), 3.05, 0.01);
+  // ③ 时长 = 周长 / 限速，@0.5 m/s ≈ 6.1 s
+  EXPECT_NEAR(lem.duration(), lem.perimeter() / 0.5, 1e-12);
+  EXPECT_NEAR(lem.duration(), 6.1, 0.02);
+}
+
+TEST(Lemniscate, 闭合_起点在原点_跑完停在原点)
+{
+  const Lemniscate lem(0.5, 0.5);
+  const Reference start = lem.at(0.0);
+  EXPECT_NEAR(start.p.x, 0.0, 1e-12);
+  EXPECT_NEAR(start.p.y, 0.0, 1e-12);
+  EXPECT_DOUBLE_EQ(start.progress, 0.0);
+
+  const Reference end = lem.at(lem.duration());
+  EXPECT_DOUBLE_EQ(end.progress, 1.0);
+  EXPECT_NEAR(end.p.x, 0.0, 1e-12);  // θ=2π 与 θ=0 同一点 ⟹ 曲线闭合
+  EXPECT_NEAR(end.p.y, 0.0, 1e-12);
+  EXPECT_DOUBLE_EQ(norm(end.v), 0.0);
+
+  const std::vector<Vec3> path = lem.path(200);
+  EXPECT_EQ(path.size(), 201u);
+  EXPECT_NEAR(path.front().x, path.back().x, 1e-12);
+  EXPECT_NEAR(path.front().y, path.back().y, 1e-12);
+}
+
+/// ★★ 这条是 8 字最关键的一条测试：**位置实际走多快**（有限差分量的），
+///    而不是"我报告的 v 有多大"。θ 匀速的错误会让过中心那一段冲到 ~1.4×限速（40% 偏差），
+///    而报告的 |v| 仍然写着 0.5 —— 只有差分能抓到。
+///    容差 1e-3（相对）比残余波纹（~1e-4，见 trajectories.hpp 的说明）宽一个数量级，
+///    却比"θ 匀速"那个错（~4e-1）严 400 倍 ⟹ 分辨率足够。
+TEST(Lemniscate, 有限差分证实沿弧长匀速_这就是弧长表存在的理由)
+{
+  const double speed = 0.5;
+  const Lemniscate lem(0.5, speed);
+  const double dt = 1e-5;
+  double worst = 0.0;
+  for (double t = 0.05; t < lem.duration() - 0.05; t += 0.01) {
+    const Vec3 ahead = lem.at(t + dt).p;
+    const Vec3 behind = lem.at(t - dt).p;
+    const double fd_speed = std::hypot(ahead.x - behind.x, ahead.y - behind.y) / (2.0 * dt);
+    worst = std::max(worst, std::fabs(fd_speed - speed));
+    EXPECT_NEAR(fd_speed, speed, speed * 1e-3) << "t = " << t;
+  }
+  // 顺带把残余波纹的**上界**钉住：它应该远小于 1e-3 量级，加密表就该变小。
+  // （万一哪天有人把 table_size 调回去，这条会立刻说话。）
+  EXPECT_LT(worst, speed * 5e-4) << "速度波纹 " << worst << " m/s，比预期大 —— 弧长表太稀了？";
+}
+
+TEST(Lemniscate, 报告的_速度大小恒等于限速_方向与差分一致)
+{
+  const double speed = 0.5;
+  const Lemniscate lem(0.5, speed);
+  const double dt = 1e-5;
+  for (double t = 0.05; t < lem.duration() - 0.05; t += 0.05) {
+    const Reference r = lem.at(t);
+    EXPECT_NEAR(norm(r.v), speed, speed * 1e-9);
+    // 方向也要对：否则"位置对了、前馈方向错了"会在控制侧变成持续的抗风
+    const Vec3 ahead = lem.at(t + dt).p;
+    const Vec3 behind = lem.at(t - dt).p;
+    const double fx = (ahead.x - behind.x) / (2.0 * dt);
+    const double fy = (ahead.y - behind.y) / (2.0 * dt);
+    const double fn = std::hypot(fx, fy);
+    EXPECT_NEAR(r.v.x / speed, fx / fn, 1e-3) << "t = " << t;
+    EXPECT_NEAR(r.v.y / speed, fy / fn, 1e-3) << "t = " << t;
+  }
+}
+
+TEST(Lemniscate, 完成度单调不减且首尾为_0_与_1)
+{
+  const Lemniscate lem(0.5, 0.5);
+  double prev = -1.0;
+  for (int i = 0; i <= 5000; ++i) {
+    const double p = lem.at(lem.duration() * i / 5000.0).progress;
+    EXPECT_GE(p, prev);
+    EXPECT_GE(p, 0.0);
+    EXPECT_LE(p, 1.0);
+    prev = p;
+  }
+  EXPECT_DOUBLE_EQ(prev, 1.0);
+}
+
+// ——————————————————————————————————————————————————————————————
+// 三条轨迹共有的不变量
+// ——————————————————————————————————————————————————————————————
+
+/// §5.2 的硬要求：任一时刻速度都不超过限速。三条轨迹一起扫。
+TEST(限速, 三条轨迹全程不超过限速)
+{
+  const double speed = 0.5;
+  const Params params;  // 默认参数：0.5 m/s
+  ASSERT_DOUBLE_EQ(params.max_speed_ms, speed);
+
+  for (const Kind kind : {Kind::kHover, Kind::kSquare, Kind::kLemniscate}) {
+    const std::unique_ptr<traj::Trajectory> tr = traj::make(kind, params);
+    ASSERT_NE(tr, nullptr);
+    const int n = 20000;
+    for (int i = 0; i <= n; ++i) {
+      const double t = tr->duration() * i / n;
+      const Reference r = tr->at(t);
+      EXPECT_LE(norm(r.v), speed + 1e-12)
+        << traj::to_string(kind) << " 在 t = " << t << " 超速";
+      EXPECT_GE(norm(r.v), 0.0);
+      EXPECT_FALSE(std::isnan(r.p.x) || std::isnan(r.p.y) || std::isnan(r.p.z));
+      EXPECT_FALSE(std::isnan(r.v.x) || std::isnan(r.progress));
+      EXPECT_GE(r.progress, 0.0);
+      EXPECT_LE(r.progress, 1.0);
+    }
+  }
+}
+
+/// 时长与限速成反比（"t 的推进速率按 max_speed 缩放"这条验收判据的直接形式）。
+TEST(限速, 时长与限速成反比)
+{
+  for (const Kind kind : {Kind::kHover, Kind::kSquare, Kind::kLemniscate}) {
+    Params slow;
+    slow.max_speed_ms = 0.25;
+    Params fast;
+    fast.max_speed_ms = 0.5;
+    if (kind == Kind::kHover) {
+      continue;  // ★ 悬停的时长由 hover_duration_s 决定，与限速无关（它没有弧长）
+    }
+    const std::unique_ptr<traj::Trajectory> a = traj::make(kind, slow);
+    const std::unique_ptr<traj::Trajectory> b = traj::make(kind, fast);
+    EXPECT_NEAR(a->duration(), 2.0 * b->duration(), a->duration() * 1e-9)
+      << traj::to_string(kind);
+  }
+}
+
+TEST(参数, 非法参数被夹住而不是产生_nan_或零时长)
+{
+  // 非正边长/幅度/限速/时长，全都不能崩、不能 NaN、duration 必须 > 0
+  const Params bad{
+    /*max_speed_ms=*/0.0,
+    /*hover_duration_s=*/0.0,
+    /*square_side_m=*/-1.0,
+    /*lemniscate_a_m=*/0.0,
+    /*height_offset_m=*/0.0};
+  for (const Kind kind : {Kind::kHover, Kind::kSquare, Kind::kLemniscate}) {
+    const std::unique_ptr<traj::Trajectory> tr = traj::make(kind, bad);
+    ASSERT_NE(tr, nullptr);
+    EXPECT_GT(tr->duration(), 0.0) << traj::to_string(kind);
+    const Reference r = tr->at(tr->duration() * 0.5);
+    EXPECT_TRUE(std::isfinite(r.p.x) && std::isfinite(r.p.y) && std::isfinite(r.p.z));
+    EXPECT_TRUE(std::isfinite(r.v.x) && std::isfinite(r.progress));
+    EXPECT_GE(r.progress, 0.0);
+    EXPECT_LE(r.progress, 1.0);
+  }
+  // 负的限速取绝对值意义上的"夹住"后仍须有限
+  const Lemniscate neg(-1.0, -1.0);
+  EXPECT_TRUE(std::isfinite(neg.duration()));
+  EXPECT_GT(neg.duration(), 0.0);
+  EXPECT_TRUE(std::isfinite(neg.at(0.1).p.x));
+}
+
+// ——————————————————————————————————————————————————————————————
+// 编号（`/traj/select` 的取值口径）
+// ——————————————————————————————————————————————————————————————
+
+TEST(编号, 1_2_3_对应三条轨迹)
+{
+  Kind k{};
+  ASSERT_TRUE(traj::parse_kind(1, k));
+  EXPECT_EQ(k, Kind::kHover);
+  ASSERT_TRUE(traj::parse_kind(2, k));
+  EXPECT_EQ(k, Kind::kSquare);
+  ASSERT_TRUE(traj::parse_kind(3, k));
+  EXPECT_EQ(k, Kind::kLemniscate);
+
+  EXPECT_STREQ(traj::to_string(Kind::kHover), "hover");
+  EXPECT_STREQ(traj::to_string(Kind::kSquare), "square");
+  EXPECT_STREQ(traj::to_string(Kind::kLemniscate), "lemniscate");
+  EXPECT_EQ(static_cast<unsigned char>(Kind::kHover), 1u);  // ★ 数值就是话题上的数字
+  EXPECT_EQ(static_cast<unsigned char>(Kind::kSquare), 2u);
+  EXPECT_EQ(static_cast<unsigned char>(Kind::kLemniscate), 3u);
+}
+
+TEST(编号, 0_与越界值被拒绝)
+{
+  Kind k{};
+  EXPECT_FALSE(traj::parse_kind(0, k));  // 0 在节点侧另有含义：清空
+  EXPECT_FALSE(traj::parse_kind(4, k));
+  EXPECT_FALSE(traj::parse_kind(255, k));
+}
+
+TEST(工厂, make_对每个编号都返回对应类型与高度偏移)
+{
+  Params p;
+  p.height_offset_m = 0.4;
+  for (const Kind kind : {Kind::kHover, Kind::kSquare, Kind::kLemniscate}) {
+    const std::unique_ptr<traj::Trajectory> tr = traj::make(kind, p);
+    ASSERT_NE(tr, nullptr);
+    EXPECT_EQ(tr->kind(), kind);
+    EXPECT_DOUBLE_EQ(tr->at(0.0).p.z, 0.4) << traj::to_string(kind);
+    EXPECT_DOUBLE_EQ(tr->at(tr->duration()).progress, 1.0);
+  }
+}
+
+}  // namespace

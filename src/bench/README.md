@@ -136,7 +136,7 @@ with Scenario(dut=("control", "control_node"), params={"yaw": 0.0}) as sc:
 | `set_voltage(v)` / `set_rc(channels)` / `set_rc_channel(ch, v)` | 电压、整组遥控通道、单路（**通道号从 1 起算**） |
 | `set_mode_policy('ok'\|'fail'\|'absent')` | `set_mode` 应答：接受 / `mode_sent=False` / **服务不存在** |
 | `set_mode_service_available(bool)` | 运行时增删服务（⚠️ 要等 DDS 发现传播，断言前用 `wait_for`） |
-| `matched_subscribers(key)` / `set_mode_clients()` | ★ 发现屏障：**QoS 不兼容时恒为 0** |
+| `matched_subscribers(key)` | ★ 发现屏障：**QoS 不兼容时恒为 0**（服务没有对应的计数 API，见 `fake_mavros.py` 的更正） |
 | `setpoints` / `mode_requests` / `arming_requests` | 记录（`armings` 本张没用到，ticket 08 会用） |
 | `setpoints_between(from_s, to_s)` | 按窗口取 |
 

@@ -1,0 +1,34 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>traj</name>
+  <version>0.1.0</version>
+  <description>
+    参考轨迹发生器：三条解析轨迹（悬停 / 1 m 正方形 / 8 字），50 Hz 吐
+    「位置 + 速度前馈 + yaw」，**相对轨迹原点**、限速 ≤0.5 m/s。
+    ★ 只发参考，不碰飞控：谁把参考变成 setpoint、谁记录轨迹原点，是 control 的事。
+  </description>
+  <maintainer email="127371350+weisama@users.noreply.github.com">weisama</maintainer>
+  <license>TODO: License declaration</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <depend>rclcpp</depend>
+  <depend>geometry_msgs</depend>
+  <depend>std_msgs</depend>
+  <!-- PositionTarget（参考的载体）来自 mavros_msgs；不依赖整个 mavros -->
+  <depend>mavros_msgs</depend>
+  <!-- RViz 里核对轨迹形状与尺寸（ticket 07 的验收判据之一） -->
+  <depend>visualization_msgs</depend>
+
+  <!-- ★ seam 2（纯函数、零 ROS）用 gtest；别漏了它 —— 少了声明的表现是
+       "本机碰巧能 build，换台机器 find_package(ament_cmake_gtest) 才失败" -->
+  <test_depend>ament_cmake_gtest</test_depend>
+  <!-- ★ seam 1 的夹具：假 mavros + 脚本化动捕输入，见 src/bench/README.md -->
+  <test_depend>ament_cmake_pytest</test_depend>
+  <test_depend>bench</test_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

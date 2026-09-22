@@ -40,3 +40,18 @@ Type: task
 - [ ] 三条轨迹在自由飞里都跑完：1 m 悬停 / 1 m 正方形 / 0.5 m 八字
 - [ ] `TRACK` 完成后自动进 `LAND`，任务结束上锁
 - [ ] **§5.3 验收全部达标**：定点水平误差 **≤15 cm**、**持续 60 s**、**全程不碰摇杆**、能触发自动降落
+
+## Comments
+
+### 2026-09-22 —— [`07`](07-traj-reference-trajectories.md) 落地 ⟹ 本张的三条接线要求
+
+1. **加轨迹原点**：`setpoint = traj_origin + /traj/reference`。`traj` 发的是**相对轨迹原点**的参考
+   （悬停 = `(0,0,0)`，**1 m 高度在原点里，不在轨迹里**）。⚠️ 绝不能把 `/traj/reference` 直接 remap 到
+   `/mavros/setpoint_raw/local` —— 那等于把原点丢掉，飞机会先往地面附近扎。
+2. **进 `TRACK` 那一刻发一次 `/traj/start`**（`std_msgs/Empty`）。参考时钟的零点必须与"开始飞"同一时刻，
+   否则参考已经在跑而飞机还停在起点。**运行中重选轨迹（`/traj/select`）之后要再发一次** ——
+   重选会立刻停流并按新轨迹归零。
+3. **`/control/traj_progress` 直接转发 `/traj/progress`**（`Float32`）；`TRACK → LAND` 用 `progress ≥ 1.0`（§4.2）。
+   自己重算弧长等于把同一个数算两遍。**`/traj/marker` 只是可视化**，本张不必订阅。
+
+★ 本张**不需要**动 `traj` 的任何代码或参数就能满足上面三条（都在 control 侧）—— 这正是"轨迹原点只在 control 加一次"的设计目的。
