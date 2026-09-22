@@ -4,7 +4,7 @@
 
 ```
         ┌─────────────── 本包（一个 pytest 进程内的夹具节点）───────────────┐
-        │  FakeMavros  ── 发 /mavros/*（/mavros/state 1 Hz、local_position、rc、battery）
+        │  FakeMavros  ── 发 /mavros/*（/mavros/state 1 Hz、local_position、rc、battery、estimator_status）
         │              ── 收 /mavros/setpoint_raw/local 并逐帧记录（含到达时刻）
         │              ── 服务 /mavros/set_mode、/mavros/cmd/arming
         │  VrpnSource  ── 脚本化发 /mocap/pose_enu（或上游 /vrpn/<刚体>/pose）
@@ -24,7 +24,7 @@
 
 | 假 | 不假 |
 |---|---|
-| **mavros 的行为**：话题名、频率、**QoS**、`/mavros/state` 1 Hz、`mode_sent` 的语义、服务的应答 | **PX4 的行为**：`COM_OF_LOSS_T` 超时退 OFFBOARD、EKF2 融合、模式需求检查 |
+| **mavros 的行为**：话题名、频率、**QoS**、`/mavros/state` 1 Hz、`mode_sent` 的语义、服务的应答、`/mavros/estimator_status` 自报的 `pos_horiz_abs` | **PX4 的行为**：`COM_OF_LOSS_T` 超时退 OFFBOARD、EKF2 融合、模式需求检查 |
 | EKF2 的**位置输出**（`local_position`，可被 `set_position` 搬动） | EKF2 **怎么算出**这个位置 |
 | EKF2 的**速度输出**（`local_position/velocity_local`，可被 `set_velocity` 搬动；与位置**解耦**，两条独立话题） | 速度**怎么融合**出来的（TRIAD/差动，与它的噪声） |
 | PX4 **接受 SET_MODE 之后 mode 会变**（`follow_set_mode`，默认开） | PX4 **为什么可能拒绝**某个模式 |
@@ -256,8 +256,11 @@ sc.timeline.add(sc.t() + 0.5, sc.stop_dut, "杀掉 DUT")
 `config/bench.yaml`（安装到 `share/bench/config/bench.yaml`，用 `bench.config.load()` 读，
 `Scenario` 默认就用它）：频率、话题名、初始状态、动捕刚体名、`scenario.start_dut` / `scenario.mocap` 开关。
 
-★ 频率必须与实测一致：`state` 写的是 **1 Hz**、`vrpn` 是 **200 Hz**。
+★ 频率必须与实测一致：`state` 写的是 **1 Hz**、`vrpn` 是 **200 Hz**、`estimator_status` 是 **1 Hz**
+（z0 实测 1.000 Hz，ticket 16）。
 把 state 调快会让"解锁上升沿最多晚 1 s"这类真问题在测试里消失 —— **那等于用夹具说谎**。
+⚠️ `estimator_status` 这一条尤其**不能**随手调快：DUT 的 `ekf2_pos_lost` 判据是"**连续 2 帧**"，
+而 2 帧的真实代价是 ~2 s —— 调快会让那条判据看起来比真机灵得多。
 
 ## 构建与测试
 
@@ -273,6 +276,10 @@ colcon test  --packages-up-to bench
 （`set_velocity` 真的走到 `velocity_local` 上**且与 `set_position` 解耦**、`set_yaw` 真的改掉
 `local_position` 的四元数**且符号对**（用 DUT 那套 `atan2` 反解出来对账）、
 `set_arming_policy` 的 `'ok'`/`'fail'`/`follow_arming=False`/`'absent'` 四种形状**两两可区分**）。
+**ticket 16 的两条**（`set_pos_horiz_abs`）：注入真的走到 `/mavros/estimator_status` 上且**只动那一位**
+（其余位保持假，因为 DUT 只读那一位）、以及这条话题的**发布方 QoS 与真 mavros 一致**
+（`mavros::StateQoS()` = 可靠 + **瞬态本地**；DUT 侧**故意用易失订阅** ⟹ 这条自检钉的是
+"易失订阅者接得上、但不会拿到启动前的历史回放"这个性质 —— 见 `px4_interface.cpp` 那段 ★★）。
 ★ 理由：**夹具骗不到 DUT 的前提是它先骗过自己**；
 一个把 `local_position` 发成 reliable 的假 mavros，会让**所有**依赖它的测试"莫名其妙收不到数据"，
 而那种故障在日志里看不出来。
@@ -294,5 +301,5 @@ bench/scenario.py       Scenario：拼装 + DUT 子进程 + 秒表 + 证据输�
 bench/config.py         DEFAULTS 与 yaml 深合并
 bench/pytest_support.py ★ 会话级 ROS 上下文与 domain 安全边界
 config/bench.yaml       默认频率/话题/初始状态
-test/                   夹具自检（16 条）+ 时序纯逻辑单测（6 条）
+test/                   夹具自检（18 条）+ 时序纯逻辑单测（6 条）
 ```

@@ -17,6 +17,8 @@ import yaml
 #                      会让"解锁上升沿最多晚 1 s"这类真问题在测试里消失。
 #   · local_position / velocity_local 30 Hz —— 真 mavros 的 local_position 插件是 30 Hz 级。
 #   · vrpn 200 Hz   —— 动捕实测 ~196 Hz（ticket 12 的读数：190.9–197.0 Hz）。
+#   · estimator_status 1.0 Hz —— 实测 1.000 Hz（2026-09-22 z0 读数，ticket 16）。
+#     ⚠️ 与 DUT 的 `ekf2_pos_lost_samples`（帧数！）是一对：1 Hz 下 2 帧 = 2 s。
 DEFAULTS: Dict[str, Any] = {
     "rates_hz": {
         "state": 1.0,
@@ -24,6 +26,7 @@ DEFAULTS: Dict[str, Any] = {
         "local_velocity": 30.0,
         "rc": 10.0,
         "battery": 1.0,
+        "estimator_status": 1.0,
         "vrpn": 200.0,
     },
     "topics": {
@@ -32,6 +35,8 @@ DEFAULTS: Dict[str, Any] = {
         "local_velocity": "/mavros/local_position/velocity_local",
         "rc": "/mavros/rc/in",
         "battery": "/mavros/battery",
+        # ticket 16：EKF2 位置失效的载体（MAVLink ESTIMATOR_STATUS）。
+        "estimator_status": "/mavros/estimator_status",
         "setpoint": "/mavros/setpoint_raw/local",
         "set_mode": "/mavros/set_mode",
         "arming": "/mavros/cmd/arming",

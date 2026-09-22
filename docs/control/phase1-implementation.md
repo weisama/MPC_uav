@@ -430,7 +430,8 @@ Phase 1 走的是 mavros，**不存在"微秒"这一层**：
 >   ⚠️ 原表写的"检测到 `state.mode != "OFFBOARD"`"太粗 —— 我们自己请求降落造成的
 >   OFFBOARD→`AUTO.LAND` **不算**夺权（`mode_is_ours`）。
 > - ⟹ `LAND`：已解锁 + 下列任一 —— `state_timeout` / `mocap_timeout` / `local_pos_timeout` /
->   `rc_timeout` / `battery_low` / `position_invalid` / `mocap_stamp_stalled`。逐个 token 见 §4.4。
+>   `rc_timeout` / `battery_low` / `position_invalid` / `mocap_stamp_stalled` / `ekf2_pos_lost`
+>   （最后一个 = 「EKF2 位置失效」，ticket 16 补上的**唯一可用载体**）。逐个 token 见 §4.4。
 ★ **`TAKEOFF → HOVER` 那一格的基准是本张最容易写错的一处**（ticket 08 实现时定，2026-09-22）：
 判据必须比的是"飞机当前位置"与"**起飞原点 + `takeoff_altitude_m`**"，**不是当帧的 `target_z`**。
 写成 `target_z` 的后果是：斜坡还没走完时目标就在飞机当前位置上 ⟹ 判据**发出去的那一瞬间**就成立，
@@ -472,6 +473,7 @@ Phase 1 走的是 mavros，**不存在"微秒"这一层**：
    | `/mocap/pose_enu` | ~196 Hz | 0.5 s | | ✅ 同上 |
    | `/mavros/rc/in` | 10 Hz 级 | 0.5 s | | ✅ **只在已解锁时**超时 ⟹ `LAND`（未解锁时"遥控没开"不影响安全） |
    | `/mavros/battery` | 1 Hz 级 | 2.0 s | | ❌ **`battery_timeout_s` 刻意不做判据**；做的是**低电压**判据（值判断，与超时无关） |
+   | `/mavros/estimator_status` | **1 Hz**（z0 实测 1.000） | **2.5 s** | 2.5 个周期，同 `state` | ✅ **ticket 16**：不作独立判据，而是 `ekf2_pos_lost` 的**新鲜度门**（陈旧的坏读数不作数 —— 那个位能自清，理由见 §4.4） |
 
    ★ 后两行的 `*_timeout_s` 参数与订阅**在 ticket 05 就位**（值与理由都不会再变），
    判据在 ticket 06 接上 —— 所以不需要再动话题层。⚠️ **低压保护归 ticket 06，不是 ticket 09**
@@ -500,7 +502,7 @@ Phase 1 走的是 mavros，**不存在"微秒"这一层**：
 | 类 | 原因 token | 处置 |
 |---|---|---|
 | **控制权被夺走** | `rc_override`、`mode_lost` | 停发 + 交还控制权（`MANUAL/RC_OVERRIDE`），**不请求任何模式** —— 既不抢回 OFFBOARD，**也不请求 `AUTO.LAND`**（那是在跟正在接管飞机的人抢） |
-| **输入坏了** | `state_timeout`、`mocap_timeout`、`local_pos_timeout`、`rc_timeout`、`battery_low`、`position_invalid`、`mocap_stamp_stalled` | 停发；已解锁时请求 `AUTO.LAND` |
+| **输入坏了** | `state_timeout`、`mocap_timeout`、`local_pos_timeout`、`rc_timeout`、`battery_low`、`position_invalid`、`mocap_stamp_stalled`、`ekf2_pos_lost` | 停发；已解锁时请求 `AUTO.LAND` |
 
 **闩锁与复位**（"可判定、可复位"，与 XI35 的 `kf_fusion_fail` 单向 latch 相对）：
 
@@ -520,7 +522,11 @@ Phase 1 走的是 mavros，**不存在"微秒"这一层**：
 
 ★ **日志可检索**：每帧降级写 `degrade=<token>`（token 由 `fsm.hpp::to_string(Degrade)` 给，有 `-Wswitch` 兜底），
 复位那帧写 `degrade=none：降级已复位（此前 degrade=<原因>，持续 X s）`。
-`grep -oE "degrade=[a-z_]+" 日志 | grep -v none` 捞全部降级事件。
+`grep -oE "degrade=[a-z0-9_]+" 日志 | grep -v none` 捞全部降级事件。
+★ **字符类是 `[a-z0-9_]`，含数字**（2026-09-22 改，ticket 16）：`ekf2_pos_lost` 是第一个带数字的 token，
+旧配方（`[a-z_]`）把它截成 `ekf` ⟹ 按旧配方捞出来的不是真实原因，还会把"有没有这条降级"判错。
+`test_fsm.cpp::DegradeNames` 现在有一条**逐字符守卫**（任何 token 跑出这个字符集即 seam 2 变红）
+⟹ 这份配方和 `to_string(Degrade)` 的词表不会各自漂移。
 
 #### ★★ 两条容易做错的判据细节（2026-09-22 复核补，都有第一手依据）
 
@@ -546,18 +552,86 @@ setpoint（或已经在**我们请求的** `AUTO.LAND` 里）**，这一帧模�
 `test_动捕时间戳倒退到旧纪元_持续超过判据即降级` 立刻变红（DUT 全程停在 `AUTO/STANDBY`，
 一条降级都没有），而"戳冻住"那条仍然通过（戳相等 ⟹ 两种基准都成立）。
 
-#### ⚠️ 本张**不能**兑现的三件事（诚实记录，别当成已完成）
+#### ★★ 「EKF2 位置失效」的载体：`ekf2_pos_lost`（ticket 16 落实，2026-09-22）
 
-1. **「EKF2 位置失效 ⟹ LAND」在这条链上抓不到**（`position_invalid` 判据是**防御性**的）。
-   第一手核实（z0 固件 `4a0e65f2`，见 ticket 06 的 Comments）：
-   `EKF2.cpp::PublishLocalPosition` 发的 `lpos.x/y/z` 没有 NaN 合成；
-   `LOCAL_POSITION_NED.hpp` 在 MAVLink 层就丢掉了 `xy_valid`；mavros 2.15.1 原样转 ENU。
-   ⟹ **真正的兜底是动捕超时**（动捕是本项目唯一的位置源）；`estimator_status` 那条候选载体开在 ticket 16。
-2. **打杆接管的最终执行是 PX4 的事**（`COM_OBL_RC_ACT`，z0 现值 `0` = 回 Position 模式），
+**结论先行：ticket 06 的验收项 ④（「EKF2 位置失效 ⟹ LAND」）原先接的判据恒假，本张补上了唯一
+真能读到的载体。** 判据 = `/mavros/estimator_status.pos_horiz_abs_status_flag` **连续**为假
+（`ekf2_pos_lost_samples` = 2 帧）⟹ 归**输入类**降级 ⟹ 已解锁时停发 + 请求 `AUTO.LAND`。
+进 `Degrade::kEkf2PosLost`（`fsm.hpp::first_degrade()` ⑥），seam 2 两条 + seam 1 四条 + bench 自检两条。
+
+**三个候选的核实结果（全部第一手，z0 固件 `4a0e65f2` + mavros 2.15.1）：**
+
+| 候选 | 结论 | 依据 |
+|---|---|---|
+| `/mavros/estimator_status` 的 `pos_horiz_abs` | ✅ **可用、且能自清** | PX4 侧那条位是**每次发布现算**的（`EKF2.cpp:1644` 调 `get_ekf_soln_status`）：`pos_horiz_abs = (cs.gps \|\| cs.ev_pos) && _fault_status.value == 0`（`EKF/ekf_helper.cpp:761`）⟹ 不是粘滞计数器，失效解除即自清。mavros 侧 `flags & ESF::POS_HORIZ_ABS` → `pos_horiz_abs_status_flag`（`sys_status.cpp:1290-1296`），字段确实是 mavros 对外发的（`mavros_msgs/EstimatorStatus.msg:12`） |
+| `control_status_changes` / `cs_*` 位 | ❌ **两边都不通** | ① mavros 的 `EstimatorStatus.msg` 压根**没有**这两个字段（只有 12 个 `*_status_flag` 布尔位，逐行看 `.msg`）⟹ 从这条路读不到；② PX4 侧 `ESTIMATOR_STATUS.hpp` 里 `mavlink_estimator_status_t est_msg{}` 是**零初始化**且只逐个赋了 `time_usec`/各 `*_ratio`/`*_accuracy`/`flags` ⟹ `control_status_changes` **恒 0**。另外这个名字本身就是"**变化**掩码"而不是"状态"，拿它当状态判据从语义上就不对 |
+| `/mavros/local_position/pose` 的协方差 / `frame_id` | ❌ **结构上不可能** | 那条话题的类型是 `geometry_msgs::PoseStamped` —— **消息里根本没有协方差字段**（协方差在 `Odometry`/`PoseWithCovarianceStamped` 上）；mavros 发它时只赋了 `header` 与 `pose.pose`（`local_position.cpp:196-199`）。`frame_id` 是参数化的常量字符串，不随估计器健康变化。★ 邻近的 `/mavros/local_position/pose_cov` **确实存在**（`local_position.cpp:257`），但 ① PX4 默认**不推** `LOCAL_POSITION_NED_COV` ⟹ 那条话题默认没数据（`mocap-setup.md` §三个坑 2）；② 即使推了，协方差是**量值**不是**有效性位** —— 用它还得自己定阈值，而"位置不可用"这件事 EKF2 已经用一个**布尔位**明说了 |
+
+★ **实测频率 1.000 Hz**（z0 现场，`/mavros/estimator_status`），与 mavros 收到的 MAVLink 流一致：
+z0 的链路跑在 `MAVLINK_MODE_ONBOARD`，该模式配 `ESTIMATOR_STATUS` **1.0 Hz**（`mavlink_main.cpp:1467`；
+`MAVLINK_MODE_CONFIG`/USB 是 5.0，`NORMAL` 是 0.5）⟹ **这是配置不是物理上限**：真嫌慢可以提流率，
+但那要连 `estimator_timeout_s` 与 `ekf2_pos_lost_samples` 一起重估（两个数都是按 1 Hz 定的）。
+
+★ **现场反转复核**（2026-09-22，本票开工前已做过一次，记录在 `docs/reference/mocap-setup.md` §硬校验）：
+停掉 `mocap` 节点 4 s ⟹ 该位翻 `False`；重新起节点 ⟹ 回到 `True`。
+⟹ "可读 + 可自清"这两条**都是实测过的**，不是只读源码推的。
+
+★ **断开到翻假有多快（机制，第一手）**：清 `cs.ev_pos` 有**两条**路径，触发条件不同 ——
+这一点很关键，因为在真机上它们对应**两种不同的场面**：
+
+| 场面 | 触发 | 阈值 | 出处 |
+|---|---|---|---|
+| 动捕**整个停了**（没有新样本） | `isTimedOut(_ev_sample_prev.time_us, 2 * EV_MAX_INTERVAL)` ⟹ `stopEvPosFusion()` | **2 × 200 ms = 400 ms**（`EV_MAX_INTERVAL` 是 `common.h:70` 的 `constexpr`） | `EKF/ev_control.cpp:75-81` |
+| 样本**照到、但没被融合**（`_fault_status` 非零 / 新息被拒 / 戳过旧） | `isTimedOut(aid_src.time_last_fuse, no_aid_timeout_max)` | **1 s**（`no_aid_timeout_max` 在固件里硬编码，不是参数 —— `EKF/EKF/common.h:449`） | `EKF/ev_pos_control.cpp:256` ⟹ `stopEvPosFusion()` `:297-303`（`_nb_ev_pos_reset_available > 0` 时先试重置 `:259-293`） |
+
+★ 第一行那条 400 ms **有现场实测佐证**：2026-09-22 的停机探针里，最后一帧动捕在 t≈12.81，
+13.17 时该位仍为 True、13.70 已为 False ⟹ 清位落在 **0.36~0.89 s** 之后 —— 与 400 ms 吻合、
+且**排除**了 1 s（1 s 落在 13.81，而那之前早已翻假）。读数见 ticket 16 的 Comments。
+
+再加上发布侧：`pos_horiz_abs` 要等**下一次 1 Hz 发布**才把新值送到 mavros，然后我们还要**连续 2 帧**
+⟹ **总延迟 ≈ 2.5 s（第一行）/ ≈ 3 s（第二行）**（两个数都只是量级 —— 发布相位是均匀分布），
+无论哪条都**慢于动捕那两条的 0.5 s**。
+★ 顺带：第一行那 400 ms 看着比 `mocap_timeout_s = 0.5` 快，但**到我们手上**要经过"发布 + 2 帧消抖"
+—— 所以"谁先说话"仍然是动捕那条（且这正是 `first_degrade()` 里它排后面的原因之一）。
+而**第二行那种场面动捕那两条完全看不见**（帧在正常到），这才是这条载体真正值钱的地方。
+
+**两道门，以及为什么必须加：**
+
+1. **已解锁门**（与 `rc_timeout` 同款）：未解锁时**不算失效**。代价是"停发"，而冷启动时
+   "EKF2 还没把位置锚到动捕上"是**常态**（`cs.ev_pos` 要等第一帧外部视觉）⟹ 不加门会把每次
+   冷启动的正常窗口变成"节点不发东西了"。⚠️ 反过来的代价**接受**：飞机在空中才失效时，
+   我们要等**解锁之后**才可能报（这条判据在未解锁时是隐形的）。
+2. **连续 2 帧**（`ekf2_pos_lost_samples`）：任何一帧为真立刻把计数归零 ⟹ 对称自清。
+   判据是**连续**不是累计（seam 1 的 `test_EKF2位置判据数的是连续帧_不是累计帧` 专钉这点：
+   "假-真"交替三轮都不降级）。⚠️ 这条**只能在 seam 1 验**：计数的状态在
+   `px4_interface.cpp::on_estimator_status()`（`pos_lost_streak_`，边界层），`fsm.hpp` 只是
+   读一个已经算好的 `Health::ekf2_pos_lost` ⟹ seam 2 那条纯函数链上**结构上**测不到"累计 vs 连续"。
+
+★ **新鲜度门是必须的，不是防御性的**（`estimator_timeout_s` = 2.5 s）：这条判据的"坏消息"来自一个
+**能自清**的读数 ⟹ 若话题静默后仍拿最后一帧当现状，一次静默前的瞬时 `false` 会被永久当作"现在坏了"。
+后果是**停发 + 请求 `AUTO.LAND`**，代价不对称 ⟹ 必须要求"这一帧是新的"。判别力是**实测**的：
+把 `health()` 里的 `fresh(...)` 临时删掉，`test_estimator_status静默时_陈旧的坏读数不作数` 立刻变红。
+
+★ **优先级**：`first_degrade()` 里它排在 `mocap_stamp_stalled` **之后**（同一帧两个都成立时报后者）——
+戳冻住是**原因**、EKF2 拒用是**结果**，日志指认根因比指认现象有用。
+
+⚠️ **它仍然不是兜底**：上游 1 Hz、EKF2 自己清位要 0.4~1 s、再加 2 帧去抖 ⟹ 最坏 ~2.5–3 s 才成立，
+比动捕那两条（0.5 s）慢一个量级。
+**真正的兜底依旧是 `mocap_timeout` / `mocap_stamp_stalled`**（动捕是本项目唯一的位置源）。
+`ekf2_pos_lost` 补的是**另一类**场面：动捕帧正常到、`local_position` 照发，
+但 EKF2 拒绝用它（融合失败 / `_fault_status` 非零）—— 那两条都看不见。
+
+#### ⚠️ 本张**不能**兑现的两件事（诚实记录，别当成已完成）
+
+> ☠️ 原先这里的第 1 项「「EKF2 位置失效 ⟹ LAND」在这条链上抓不到」**已由 ticket 16 结清**
+> （见上一小节）。从这条结论里**只有半句还成立**：`position_invalid`（NaN 判据）在真机上恒假，
+> 它只是**防御性**的（夹具能注入 NaN ⟹ 节点行为可测）—— 读文档时别以为它兜住了 EKF2。
+
+1. **打杆接管的最终执行是 PX4 的事**（`COM_OBL_RC_ACT`，z0 现值 `0` = 回 Position 模式），
    夹具不模拟 PX4 ⟹ 台架只能验到"我们停发了、退到 `RC_OVERRIDE`、不抢回"。
    连带 ⚠️：**`NAV_RCL_ACT = 2`（Return）是 A1 阻塞项** —— A1 不落实，"RC 丢失 ⟹ 我们请求 LAND"
    之后 PX4 自己的 RC 失效保护仍会试图**返航**（室内无 GPS）。
-3. ⚠️ **`/mavros/state` 超时这条在真机上不是"请求 `AUTO.LAND` 直到结束"**（2026-09-22 第二轮复核补，
+2. ⚠️ **`/mavros/state` 超时这条在真机上不是"请求 `AUTO.LAND` 直到结束"**（2026-09-22 第二轮复核补，
    第一手：mavros 2.15.1 `sys_status.cpp`）。真丢链路时 mavros 会在 `conn_timeout`（默认 **10 s**，`:512`
    的 wall timer → `timeout_cb()` `:1311` → `connection_cb(connected=false)`）之后**自己发一帧合成状态**
    `connected=false, armed=false, guided=false, mode=""`（`publish_disconnection()` `:903-911`，`:1411` 处调用）。
@@ -750,9 +824,9 @@ setpoint（或已经在**我们请求的** `AUTO.LAND` 里）**，这一帧模�
 
 ### 7.1 ★ 哪些已经进了自动化，哪些还必须上真台架（ticket 08 更新）
 
-**已经自动化**（`colcon test --packages-up-to control`，共 **122** 例，不需飞控、不需动捕、可离线跑）：
+**已经自动化**（`colcon test --packages-up-to control`，共 **131** 例，不需飞控、不需动捕、可离线跑）：
 
-- **seam 1**（`test/test_control_standby.py` 9 例 + `test/test_control_failsafe.py` 13 例，`src/bench/` 夹具）：
+- **seam 1**（`test/test_control_standby.py` 10 例 + `test/test_control_failsafe.py` 17 例，`src/bench/` 夹具）：
   守卫逐条生效 ⟹ 不发 setpoint；50 Hz 流的字段与频率；前置流时长；`/mavros/state` 静默后流在
   `state_timeout_s` 内停止；外部解锁 ⟹ 停发；`enter_offboard=false` 只流不切；杀进程后流停止。
   **ticket 06 的那一半**：打杆 ⟹ **立刻**停发 + 退 `RC_OVERRIDE` + 不抢回（配正控：此前确实请求过 OFFBOARD）；
@@ -760,6 +834,9 @@ setpoint（或已经在**我们请求的** `AUTO.LAND` 里）**，这一帧模�
   低压 ⟹ 主动中止任务、落地上锁后复位；NaN 位置 ⟹ 停发 + `LAND`；未解锁时的降级只停发、判据恢复即自动复位；
   动捕戳**冻住** ⟹ 降级而**短促倒退不降级**；戳**倒退到旧纪元并持续** ⟹ 降级；
   五条输入同时静默 + `set_mode` 服务撤走 ⟹ 不崩；遥控帧通道数不足 ⟹ 不崩。
+  **ticket 16 的那一半**（4 例，`/mavros/estimator_status` 注入）：报无绝对位置 ⟹ 停发 + `LAND` 且
+  **落地上锁才复位**；**未解锁时不判**；"连续 2 帧"是**连续不是累计**（假-真交替三轮都不降级）；
+  话题静默 ⟹ **陈旧的坏读数不作数**（这条同时是新鲜度门的变异检查）。
   **ticket 08 的那一半**（`test/test_control_takeoff.py` 8 例）：全链冒烟（受理 ≠ 起飞 ⟹ 程序解锁 ⟹
   爬升到 1 m 且速率 ≤0.55 m/s、水平两轴钉在原点 ⟹ 判稳 ⟹ `traj_origin=` 与判稳那一刻的位置一致 ⟹
   `WAIT_START` 的目标恰是轨迹原点 ⟹ `MANUAL/LAND` + 请求 `AUTO.LAND` + 停发 ⟹ 外部上锁 ⟹ 自动复位、能再起飞）、
@@ -767,7 +844,7 @@ setpoint（或已经在**我们请求的** `AUTO.LAND` 里）**，这一帧模�
   爬升速率两侧、判稳的两半各一条反例、进入 `TAKEOFF` 后机头锁定。
   ⚠️ 这一份测试里有一个**"假飞机"**（`_Plant`）：它只在**收到新 setpoint 时**才走一步，
   否则探针的轮询快过 DUT 的 50 Hz 时会观测到假的 0 / 2× 速度抖动（`src/bench/README.md` 的纪律 2）。
-- **seam 2**（`test/test_fsm.cpp` **57** 例 + `test/test_rc_stick.cpp` 13 例，零 ROS）：缺项清单是哪几条、
+- **seam 2**（`test/test_fsm.cpp` **59** 例 + `test/test_rc_stick.cpp` 13 例，零 ROS）：缺项清单是哪几条、
   什么顺序；断流后前置流重新计时；`STANDBY` 下控制权仍是 `MANUAL`。
   **ticket 06 的那一半**：两类降级的处置差异、闩锁种类与复位矩阵（含"夺权可升级已闩锁的输入失效"）、
   首因闩锁、`mode_lost` 按**丢的是哪个模式**区分（含"我们自己停发后 PX4 跟着退出不算夺权"的解锁/未解锁两条 ——
@@ -780,9 +857,12 @@ setpoint（或已经在**我们请求的** `AUTO.LAND` 里）**，这一帧模�
   判稳的两条判据各一条反例；**轨迹原点记的是判稳那一刻的位置而不是悬停点**；
   保持满 `hover_hold_s` ⟹ 降落出口 + `mission_complete`；落地上锁后原点/轨迹原点全清且能重新起飞；
   起飞后机头锁定、而 `STANDBY` 跟随当前机头。
+  **ticket 16 的那一半**：`ekf2_pos_lost` 的**解锁门**（未解锁不算失效）、它与 `mocap_stamp_stalled`
+  的**优先级**（同一帧两个都成立时报戳冻住 —— 原因是戳冻住、结果是 EKF2 拒用），以及
+  `DegradeNames` 的**逐字符守卫**（任何 `degrade=` token 跑出 `[a-z0-9_]` 即变红）。
 
-★ 上面说的 122 例 = `control` 自己的 100（57 gtest + 13 gtest + 9 + 13 + 8 起飞）
-+ `bench` 夹具自检 22（`test_bench_selftest.py` **16** + `test_timeline.py` 6，
+★ 上面说的 131 例 = `control` 自己的 107（59 gtest + 13 gtest + 10 standby + 17 failsafe + 8 起飞）
++ `bench` 夹具自检 24（`test_bench_selftest.py` **18** + `test_timeline.py` 6，
 **它自己的测试**，不是 `control` 的验收项）。
 
 **`traj`（ticket 07）同样是两层**，`colcon test --packages-up-to traj` = **31 例**全绿

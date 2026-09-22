@@ -8,9 +8,10 @@ Type: task
 > ★ **两条没勾的验收项仍然在，并且各自有归属**（`done` 不等于"没人管了"）：
 > ① 的后半句「实测确认 PX4 按 `COM_OBL_RC_ACT` 接管」—— 需**人 + 空闲飞控 + 拆桨台架**，
 > 步骤与判别法在 [`docs/control/bench-runbook.md`](../../../docs/control/bench-runbook.md) 的 **T6**；
-> ④ 整条「EKF2 位置失效 ⟹ `LAND`」—— **本链条上判据恒假**（第一手：EKF2 不发 NaN、
-> MAVLink 丢 `xy_valid`、mavros 原样转）⟹ **已移交 [ticket 16](16-ekf2-position-failure-carrier.md) 跟踪**，
-> 它不属于台架清单（上飞机也验不出）。
+> ④ 整条「EKF2 位置失效 ⟹ `LAND`」—— 原判据（NaN）**本链条上恒假**（第一手：EKF2 不发 NaN、
+> MAVLink 丢 `xy_valid`、mavros 原样转）⟹ 当初**移交 [ticket 16](16-ekf2-position-failure-carrier.md) 跟踪**；
+> ★★ **ticket 16 已于 2026-09-22 结清**：载体换成 `/mavros/estimator_status` 的 `pos_horiz_abs`
+> （`degrade=ekf2_pos_lost`，**只在已解锁时算失效**、连续 2 帧），台架**可注入可测** ⟹ ④ 现在有兑现了。
 
 **What to build:** 让**每一条单链路静默失效**都有确定的反应，而不是继续发指令。这一张是安全机制的主体 —— 那些看起来多余的判据，**每一条都是用事故换来的**。
 
@@ -49,8 +50,11 @@ Type: task
       见 Comments 的「与原文不同的四处」。遥控器那条**只在已解锁时算失效**
 - [x] 电池电压低于阈值 → 主动中止任务 → `LAND`（⚠️ 电流读数可能不可信，见 [`01`](01-hardware-prereqs.md) 的 ADC 判定；低电压保护这条兜底不依赖电流）
       —— 判据只看电压已验；**真实读数可不可信**仍归 ticket 01。★ 这条归**本张**（早期文档误记为 ticket 09，已就地更正）
-- [ ] EKF2 位置失效 → `LAND` —— **本链条上抓不到**（第一手核实：EKF2 不发 NaN、MAVLink 丢 `xy_valid`、mavros 原样转），
-      见 Comments 与 §4.4；真正的兜底是**动捕超时**，候选载体已开 **ticket 16**
+- [x] EKF2 位置失效 → `LAND` —— ★★ **由 [ticket 16](16-ekf2-position-failure-carrier.md) 于 2026-09-22 兑现**：
+      判据改成 `/mavros/estimator_status.pos_horiz_abs` 连续 2 帧为假（`degrade=ekf2_pos_lost`，仅已解锁时算），
+      台架可注入（`set_pos_horiz_abs`）、seam 1/2 各有单测。**原先的 NaN 判据**（`position_invalid`）
+      在本链条上恒假（第一手：EKF2 不发 NaN、MAVLink 丢 `xy_valid`、mavros 原样转）⟹ 降级为**防御性**保留；
+      **真兜底仍是动捕那两条**（`mocap_timeout` / `mocap_stamp_stalled`）—— 见 §4.4 与 ticket 16 的 Comments
 - [x] 失效降级路径**可复位**（不是单向 latch），且降级原因在日志里**可检索**
       —— `degrade=<token>` 可 grep（token 有 `-Wswitch` 兜底）；复位 = 未解锁失效**自动**回 `STANDBY`、已解锁失效**落地上锁**才复位
 - [x] 故障注入全部在夹具里验证过：指定时刻让 `/mavros/state` 静默、注入时间戳倒退、注入电压跌落 —— **不留给天上第一次发生**
@@ -175,9 +179,11 @@ mavros 真丢链路后会在 `conn_timeout`（默认 10 s）时**自己发一帧
   `streams/LOCAL_POSITION_NED.hpp` 在 MAVLink 层就丢掉了 `xy_valid`；mavros 2.15.1
   `local_position.cpp::handle_local_position_ned` 原样 NED→ENU。
   ⟹ 判据留着不亏（夹具能注入 NaN、节点行为可测，`test_bench_selftest.py` 有一条自检证明 NaN 真能到话题上），
-  但**真正的兜底是动捕超时**（动捕是唯一位置源）。候选载体 `/mavros/estimator_status`
-  （`sys_status.cpp:1296` 的 `pos_horiz_abs_status_flag`；⚠️ PX4 的 ESTIMATOR_STATUS flag 可能有粘滞性，
-  要用它得先确认"失效解除后会不会自动清")⟹ 开 **ticket 16**。
+  但**真正的兜底是动捕超时**（动捕是唯一位置源）。当时把候选载体 `/mavros/estimator_status`
+  （`sys_status.cpp:1296` 的 `pos_horiz_abs_status_flag`；⚠️ 当时担心的"粘滞性"是**当时唯一没核实的一环** ——
+  原因见票）开成 **ticket 16**。
+  ★★ **ticket 16 结清（2026-09-22）**：`pos_horiz_abs` **每次发布现算**（`ekf_helper.cpp:761`）⟹ **会自清**，
+  顾虑不成立；它已成为 `Degrade::kEkf2PosLost`（`degrade=ekf2_pos_lost`，仅已解锁时算失效、连续 2 帧）。
 - ★ **低压保护归本张，不是 ticket 09** —— 本张原文验收项 ③ 就是它。几处文档（`bench/README.md`、
   `control/README.md`、`phase1-implementation.md`）曾把它记成 ticket 09（那是"轨迹任务脚本"），已就地更正。
 - ★ **`battery_timeout_s` 刻意不做判据**：低压是**值**判断 —— 飞控静默之后最后一帧读数若低，它**仍然低**，
@@ -270,4 +276,5 @@ lint 失败数**不增**（仍全是 vendored `vrpn_listener` 的既有 172 条�
   （读数 36…38 有变化）；要更硬就是"换一次上电再采一组"，不必单列一步；
 - ⚠️ **首飞前确认 RC 在场**（H.7.1：解锁那一刻 RC 就是丢的 ⟹ PX4 的 RC 丢失保护被忽略）⟹ runbook 的 **P0**。
 
-⚠️ **④ 不在台架清单里**：它在本链路上判据恒假（EKF2 不发 NaN），**上飞机也验不出** ⟹ 见 ticket 16。
+⚠️ **④ 不在台架清单里**：原先判据恒假（EKF2 不发 NaN），**上飞机也验不出**；ticket 16 找到载体后
+**改由自动化覆盖**（假 mavros 直接注入那一位）⟹ 仍然不在台架清单里（理由换了，见 `bench-runbook.md`）。

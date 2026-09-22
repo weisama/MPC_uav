@@ -1,14 +1,18 @@
 # 拆桨台架清单（Phase 1，**必须由人做**的部分）
 
-> **这张表是什么**：`control` 的 122 例自动化（`colcon test --packages-up-to control`）覆盖的是**本节点**
+> **这张表是什么**：`control` + `bench` 的 131 例自动化（`colcon test --packages-up-to control`）覆盖的是**本节点**
 > 的行为；留在下面的每一项，**判据都在 PX4 一侧**（或需要真实的遥控器/动捕现场），夹具**不模拟 PX4**
 > ⟹ 机器验不了。做一遍、把读数填进下面的表、回去勾掉对应 ticket 的框即可。
 > ⚠️ **T4 是唯一的例外**：它的判据一半在我们这一侧（服务应答、`takeoff_origin=`、斜坡、`/control/state`），
 > 自动化**已经**把这些验过了 —— 但它仍留在这里，因为"真 PX4 会不会按我们的解锁请求起飞""prearm 被拒时
 > 报哪个 `MAV_RESULT` 码"**只有真飞控能给**，夹具的 `armed` 是我们自己置的。
 >
-> **不在本清单里的**：验收项 ④「EKF2 位置失效 ⟹ `LAND`」—— 它在本链路上**判据恒假**（不上飞机也验不出），
-> 归 [ticket 16](../../.scratch/phase1/issues/16-ekf2-position-failure-carrier.md)。别在这里找它。
+> **不在本清单里的**：验收项 ④「EKF2 位置失效 ⟹ `LAND`」。原先它的判据在本链路上**恒假**
+> （`position_invalid` 那条 NaN 判据在真机上永不触发）⟹ [ticket 16](../../.scratch/phase1/issues/16-ekf2-position-failure-carrier.md)
+> **2026-09-22 已结清**：载体换成 `/mavros/estimator_status` 的 `pos_horiz_abs`（`ekf2_pos_lost`），
+> **自动化**已经覆盖（假 mavros 直接注入那一位，`test_control_failsafe.py` 四条 + bench 自检两条）。
+> ⚠️ 但**真台架上仍然看不到它单独触发**：停掉动捕会让 0.5 s 的 `mocap_timeout` 先成立 ⟹
+> 报出来的是动捕那条。所以别在本清单里找它 —— 它属于"自动化能验"的那一半，不是 PX4 侧行为。
 
 ★ **一次会话尽量全做完**：起链、搬飞机、解锁这些准备工作占大头，下面 7 项共用同一次准备。
 （步骤顺序是刻意的：T1/T2/T3 必须在**解锁之前**做，T5/T6/T7 必须在**解锁之后**做。

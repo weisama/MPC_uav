@@ -13,7 +13,12 @@
    | `/mavros/local_position/*` | **发布** `SensorDataQoS()`（**best_effort**） | `local_position.cpp` |
    | `/mavros/battery` | **发布** `SensorDataQoS()`（**best_effort**） | `sys_status.cpp` |
    | `/mavros/rc/in` | **发布** 默认 `10`（可靠） | `rc_io.cpp` |
+   | `/mavros/estimator_status` | **发布** `QoS(10).transient_local()`（可靠 + 瞬态本地） | `sys_status.cpp` 用 `mavros::StateQoS()` |
    | `/mavros/setpoint_raw/local` | **订阅** `SensorDataQoS()`（best_effort） | `setpoint_raw.cpp` |
+   ★ `estimator_status` 这一行是 ticket 16 加的：DUT 侧**故意用易失订阅**（见 `px4_interface.cpp`
+     里那段 ★★）—— 易失订阅与瞬态本地发布方**兼容**（durability 只要求 offered ≥ requested），
+     所以夹具照抄真 mavros 的发布方 QoS 才是对的：要让"DUT 会不会被历史回放喂饱计数"
+     这件事在 seam 1 上**真的能被复现**，夹具就不能替它把 QoS 降级。
 
    为什么必须一致：QoS 不兼容的两个端点**不报错**，只是永远不匹配 ⟹ 表现为"节点没数据"，
    而日志、`ros2 topic list`、`ros2 topic hz` 全都看不出原因。
@@ -31,7 +36,7 @@ from dataclasses import dataclass
 from typing import Dict, List, Optional, Sequence
 
 from geometry_msgs.msg import PoseStamped, TwistStamped
-from mavros_msgs.msg import PositionTarget, RCIn, State
+from mavros_msgs.msg import EstimatorStatus, PositionTarget, RCIn, State
 from mavros_msgs.srv import CommandBool, SetMode
 from rclpy.node import Node
 from rclpy.qos import (
@@ -107,7 +112,8 @@ class FakeMavros:
     改遥控（`set_rc`）、服务应答策略（`set_mode_policy` / `set_arming_policy`）。
     """
 
-    SILENCEABLE = ("state", "local_position", "local_velocity", "rc", "battery")
+    SILENCEABLE = ("state", "local_position", "local_velocity", "rc", "battery",
+                   "estimator_status")
 
     def __init__(
         self,
@@ -133,8 +139,11 @@ class FakeMavros:
         # 时刻的尺子由 Scenario 提供（`clock.t()`），这样"记录里的一秒"与"时序里的一秒"是同一秒。
         self.clock = clock
 
+        # ★ `estimator_status` 的 1.0 Hz 是**照抄实测**（2026-09-22 z0：1.000 Hz）——
+        #   它是 MAVLink 的 `ESTIMATOR_STATUS` 流，PX4 侧默认就在发，mavros 收到即转发。
+        #   ⚠️ 这个数决定了 DUT 侧 `ekf2_pos_lost_samples: 2` 折合多少秒（2 s）：改它就要重估那个参数。
         rates = {"state": 1.0, "local_position": 30.0, "local_velocity": 30.0,
-                 "rc": 10.0, "battery": 1.0}
+                 "rc": 10.0, "battery": 1.0, "estimator_status": 1.0}
         rates.update(rates_hz or {})
         t = {
             "state": "/mavros/state",
@@ -142,6 +151,7 @@ class FakeMavros:
             "local_velocity": "/mavros/local_position/velocity_local",
             "rc": "/mavros/rc/in",
             "battery": "/mavros/battery",
+            "estimator_status": "/mavros/estimator_status",
             "setpoint": "/mavros/setpoint_raw/local",
             "set_mode": "/mavros/set_mode",
             "arming": "/mavros/cmd/arming",
@@ -164,6 +174,14 @@ class FakeMavros:
         # 机头（ROS/ENU，绕 +z 的 yaw，逆时针为正）。默认 0 ⟹ 单位四元数。
         self.yaw = 0.0
         self.voltage = float(voltage)
+        # ★★ ticket 16：EKF2 自报的"水平位置有绝对参考"（`estimator_status.pos_horiz_abs`）。
+        #   默认 True —— 与"正常飞行"一致；`set_pos_horiz_abs(False)` 才造得出
+        #   「帧还在到、但 EKF2 说位置没有绝对参考」这一类失效（动捕那两条判据看不见它）。
+        self.pos_horiz_abs = True
+        # ★ 已发出的 `estimator_status` 帧数（ticket 16）。存在的唯一理由是让
+        #   "**连续 N 帧**"这类消抖判据在 seam 1 上能被**精确**构造与断言：
+        #   靠 `sleep` 猜"现在发到第几帧了"在 1 Hz 上游上必然又慢又飘。
+        self.estimator_status_frames = 0
         # 通道 1 起算（长度 16）。默认中位 1500，ch8 = 硬件杀车、ch9 = 开始（见 ticket 02 的分配）。
         self.rc_channels = list(rc_channels) if rc_channels is not None else (
             [1500] * 16)
@@ -199,6 +217,11 @@ class FakeMavros:
         self._rc_pub = node.create_publisher(RCIn, t["rc"], mavros_default_qos())
         self._battery_pub = node.create_publisher(
             BatteryState, t["battery"], mavros_sensor_qos())
+        # ★ ticket 16：真 mavros 用 `mavros::StateQoS()` 发它（`sys_status.cpp:579-584` 那一段里
+        #   与 `/mavros/state` 同一个 QoS 对象），所以这里也用 `mavros_state_qos()`。
+        #   ⚠️ DUT 侧是**易失**订阅 ⟹ 两者兼容但**不回放历史**（见 `px4_interface.cpp` 那段 ★★）。
+        self._est_pub = node.create_publisher(
+            EstimatorStatus, t["estimator_status"], mavros_state_qos())
         # 供"发现屏障"按 key 取用（见 matched_subscribers）
         self._pubs = {
             "state": self._state_pub,
@@ -206,6 +229,7 @@ class FakeMavros:
             "local_velocity": self._vel_pub,
             "rc": self._rc_pub,
             "battery": self._battery_pub,
+            "estimator_status": self._est_pub,
         }
 
         # —— 下游（mavros 是订阅方，QoS 用 SensorDataQoS ⟹ 发布可靠一方也能匹配）——
@@ -230,7 +254,8 @@ class FakeMavros:
                             ("local_position", self._pub_pose),
                             ("local_velocity", self._pub_velocity),
                             ("rc", self._pub_rc),
-                            ("battery", self._pub_battery)):
+                            ("battery", self._pub_battery),
+                            ("estimator_status", self._pub_estimator_status)):
             period = 1.0 / max(1e-3, rates[key])
             self._timers.append(
                 node.create_timer(period, lambda cb=pub_cb, k=key: self._tick(k, cb)))
@@ -320,6 +345,20 @@ class FakeMavros:
         msg.cell_voltage = []
         msg.cell_temperature = []
         self._battery_pub.publish(msg)
+
+    def _pub_estimator_status(self) -> None:
+        # ★ 帧计数（ticket 16）：DUT 的判据是"**连续**几帧为假"，而"连续"这件事在测试里
+        #   只能靠"我知道已经发了几帧"来精确构造 —— 用 sleep 猜帧数会既慢又飘。
+        self.estimator_status_frames += 1
+        # ★ ticket 16：**只填 DUT 真正读的那一位**，别的位保持 False。
+        #   为什么值得刻意留白：真 mavros 的这一帧里有十来位（速度、垂直位置、GPS glitch…），
+        #   而 DUT 的判据只认 `pos_horiz_abs_status_flag` —— 夹具把别的位全填 True 会让
+        #   "以后有人顺手改成读另一位"这种改动在台架上**照样绿**（那位永远是 True）。
+        #   留白 ⟹ 任何"读错了位"的改动都会立刻表现为"判据恒假"。
+        msg = EstimatorStatus()
+        msg.header.stamp = self._stamp()
+        msg.pos_horiz_abs_status_flag = bool(self.pos_horiz_abs)
+        self._est_pub.publish(msg)
 
     # ─────────────────── 发现屏障（★ 任何"没收到"的断言之前先用它）───────────────────
 
@@ -422,6 +461,18 @@ class FakeMavros:
 
     def set_voltage(self, voltage: float) -> None:
         self.voltage = float(voltage)
+
+    def set_pos_horiz_abs(self, ok: bool) -> None:
+        """改假 EKF2 自报的"水平位置有绝对参考"（`/mavros/estimator_status.pos_horiz_abs`）。
+
+        ★ ticket 16 的**故障注入原语**：`False` 造的是"动捕帧还在正常到、`local_position`
+        也还在发，但 EKF2 说它的水平位置没有绝对参考" —— 这正是 `mocap_timeout` /
+        `mocap_stamp_stalled` 那两条判据**看不见**的一类失效，也是本判据存在的理由。
+
+        ⚠️ 它**不改变** `local_position` 的任何读数（真 PX4 也是这样：失效信息只走状态位，
+        不合成 NaN）⟹ 夹具若在这里顺手把位置改成 NaN，测的就不是同一条链了。
+        """
+        self.pos_horiz_abs = bool(ok)
 
     def set_yaw(self, yaw: float) -> None:
         """改假 EKF 报的机头朝向（**ROS/ENU：绕 +z 的 yaw，逆时针为正，弧度**）。

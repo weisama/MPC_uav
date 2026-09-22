@@ -110,6 +110,9 @@ public:
       "local_velocity_topic", topics_.local_velocity);
     topics_.rc = declare_parameter<std::string>("rc_topic", topics_.rc);
     topics_.battery = declare_parameter<std::string>("battery_topic", topics_.battery);
+    // ★ ticket 16：EKF2 位置失效的载体（唯一一个在本链条上真能读到的，见 `Px4Topics`）。
+    topics_.estimator_status = declare_parameter<std::string>(
+      "estimator_status_topic", topics_.estimator_status);
     topics_.mocap = declare_parameter<std::string>("mocap_topic", topics_.mocap);
     topics_.setpoint = declare_parameter<std::string>("setpoint_topic", topics_.setpoint);
     topics_.set_mode_service = declare_parameter<std::string>(
@@ -129,6 +132,8 @@ public:
     timeouts.mocap_s = declare_parameter<double>("mocap_timeout_s", timeouts.mocap_s);
     timeouts.rc_s = declare_parameter<double>("rc_timeout_s", timeouts.rc_s);
     timeouts.battery_s = declare_parameter<double>("battery_timeout_s", timeouts.battery_s);
+    // ★ ticket 16：**不是判据、只是诊断/新鲜度门**（见 `Timeouts::estimator_s`）。
+    timeouts.estimator_s = declare_parameter<double>("estimator_timeout_s", timeouts.estimator_s);
     timeouts_ = timeouts;
 
     // —— 失效判据的阈值（ticket 06，逐条出处见 `px4_interface.hpp` 的 `Limits`）——
@@ -138,6 +143,9 @@ public:
       "rc_stick_ov_us_per_s", limits.rc_stick_ov_us_per_s);
     limits.mocap_stamp_stall_s = declare_parameter<double>(
       "mocap_stamp_stall_s", limits.mocap_stamp_stall_s);
+    // ★ ticket 16：消抖帧数。**与上游频率强相关**（1 Hz ⟹ 2 帧 ≈ 2 s），换固件要重估。
+    limits.ekf2_pos_lost_samples = declare_parameter<int>(
+      "ekf2_pos_lost_samples", limits.ekf2_pos_lost_samples);
     limits.rc_map_roll = declare_parameter<int>("rc_map_roll", limits.rc_map_roll);
     limits.rc_map_pitch = declare_parameter<int>("rc_map_pitch", limits.rc_map_pitch);
     limits.rc_map_throttle = declare_parameter<int>("rc_map_throttle", limits.rc_map_throttle);
@@ -211,8 +219,9 @@ public:
       "  前置流 %.1f s 后%s切 OFFBOARD（重试间隔 %.1f s）；setpoint：位置/机头**全部由状态机给**（无 yaw 参数）\n"
       "  超时判据：state %.1f s（★ 该话题实测 1 Hz）、local_position/velocity %.1f s、mocap %.1f s、rc %.1f s、battery %.1f s\n"
       "  失效判据：低压 < %.1f V、摇杆变化率 > %.1f µs/s（≈ COM_RC_STICK_OV = 20）、"
-      "动捕时间戳不前进 > %.1f s\n"
+      "动捕时间戳不前进 > %.1f s、%s 报 pos_horiz_abs 连续 %d 帧为假（★ 只在已解锁时算失效）\n"
       "  ★ 任何失效 ⟹ 立即停发 setpoint；**已解锁**时并请求 %s；打杆/模式被夺走 ⟹ 停发且不抢回 OFFBOARD\n"
+      "  ★ 「EKF2 位置失效」的载体 = %s（%.1f s 内的帧才算数；该话题实测 1 Hz，**不作超时判据**）\n"
       "  ★ 任务判据：起飞高度 %.2f m（≤ %.2f m/s）、到高容差 ±%.2f m / ±%.2f m/s 持续 %.1f s、"
       "稳定 < %.2f m ∧ < %.2f m/s 持续 %.1f s、保持 %.1f s 后自动降落\n"
       "  ★ 解锁：调用 %s **一次**，被拒不重试（登记 %s；上锁交给 PX4 自己的 COM_DISARM_LAND）",
@@ -223,7 +232,9 @@ public:
       timeouts_.state_s, timeouts_.local_pos_s, timeouts_.mocap_s,
       timeouts_.rc_s, timeouts_.battery_s,
       limits_.low_voltage_v, limits_.rc_stick_ov_us_per_s, limits_.mocap_stamp_stall_s,
+      topics_.estimator_status.c_str(), limits_.ekf2_pos_lost_samples,
       land_mode_.c_str(),
+      topics_.estimator_status.c_str(), timeouts_.estimator_s,
       task_limits_.takeoff_altitude_m, task_limits_.climb_speed_mps,
       task_limits_.takeoff_alt_tol_m, task_limits_.takeoff_vel_tol_mps,
       task_limits_.takeoff_settle_s,
@@ -686,10 +697,23 @@ private:
                age_str(topics_.battery, now_s);
       }
       case control::Degrade::kPositionInvalid:
-        return topics_.local_position + " 最近一帧含 NaN/Inf（EKF2 位置失效）";
+        // ★★ 措辞刻意**不写**"EKF2 位置失效"：那句话归 `kEkf2PosLost`（ticket 16）。
+        //   本判据在真机上**永不触发**（PX4 的 `PublishLocalPosition` 不合成 NaN、MAVLink 又丢掉
+        //   `xy_valid`）—— 它只在夹具注入 NaN 时成立，是**防御性**的。日志若打出这一条，
+        //   说明读数真的坏了，但**别**据此去找 EKF2 的问题。
+        return topics_.local_position + " 最近一帧含 NaN/Inf（**防御性判据**，真机上 EKF2 不发 NaN；"
+                                         "「EKF2 位置失效」请看 ekf2_pos_lost）";
       case control::Degrade::kMocapStampStalled:
         return topics_.mocap + " 有帧（静默 " + age_str(topics_.mocap, now_s) +
                "）但时间戳连续不前进超过 " + std::to_string(limits_.mocap_stamp_stall_s) + " s";
+      case control::Degrade::kEkf2PosLost:
+        // ★ 证据是**读数本身**（EKF2 自报的状态位），不是我们的推断 —— 且必须带上"这条输入是
+        //   什么时候的"：本判据有一道新鲜度门（见 `px4_interface.cpp::health()`），
+        //   陈旧的话题会让判据**不成立**，所以"静默多久"是排查的第一个数。
+        return topics_.estimator_status + " 报 pos_horiz_abs=false 连续 ≥ " +
+               std::to_string(limits_.ekf2_pos_lost_samples) + " 帧（1 Hz ⟹ 约 " +
+               std::to_string(limits_.ekf2_pos_lost_samples) + " s；该话题静默 " +
+               age_str(topics_.estimator_status, now_s) + "）⟹ EKF2 自报水平位置没有绝对参考";
       case control::Degrade::kNone:
         break;
     }
@@ -728,6 +752,16 @@ private:
       case control::Degrade::kMocapStampStalled:
         return "动捕有帧但**时间戳不前进** ⟹ mavros/EKF2 都会丢弃这类位姿（话题层看不出来）；"
                "已停发；已解锁时请求 " + land_mode_ + "；复位：时间戳恢复前进";
+      case control::Degrade::kEkf2PosLost:
+        // ★ 文案要把**边界**说清楚：这条判据只看 EKF2 的状态位，不等于"话题上没数据"，
+        //   也不等于动捕真的坏了 —— 它是"帧可能还在到，但 EKF2 不肯用"。
+        // ★ 复位**只有一条路**：落地上锁。别在这里写"状态位恢复即复位" —— 判据本身带解锁门
+        //   （`first_degrade()` ⑥）⟹ 它一旦成立就必然是 `Latch::kArmedDegrade`（`fsm.hpp`），
+        //   而在空中把闩锁解开等于**未经确认就恢复发 setpoint**。与 `describe_reset()` 同源。
+        return "EKF2 自报水平位置**没有绝对参考**（" + topics_.estimator_status +
+               " 的 pos_horiz_abs 连续为假，**只在已解锁时**算失效）⟹ 已停发；已解锁时请求 " +
+               land_mode_ + "（它自己也要求位置，很可能被拒 —— 那时靠 PX4 的失效保护）；"
+               "复位：**落地上锁**（状态位恢复**不会**在空中把它解掉）";
       case control::Degrade::kNone:
         break;
     }
@@ -794,7 +828,10 @@ private:
       case control::Degrade::kBatteryLow:
       case control::Degrade::kPositionInvalid:
       case control::Degrade::kMocapStampStalled:
+      case control::Degrade::kEkf2PosLost:
         // 输入类：落地上锁才复位（未解锁时则是"判据恢复即自动复位"，不会闩锁）。
+        // ★ `kEkf2PosLost` 走这条是因为它**本来就在已解锁时才成立**（`first_degrade` 的解锁门）
+        //   ⟹ 它一旦成立就必然是 `kArmedDegrade` 闩锁，只能等落地上锁。
         return "落地上锁（armed → false）；未解锁时的降级不闩锁，判据恢复即自动复位";
       case control::Degrade::kNone:
         break;
@@ -856,6 +893,9 @@ private:
       {"mocap", &topics_.mocap},
       {"rc", &topics_.rc},
       {"battery", &topics_.battery},
+      // ★ ticket 16：它**不进任何超时判据**（见 `Timeouts::estimator_s`），但每一条
+      //   "EKF2 位置失效"的日志都要靠这一行的"静默多久"来判断"我们到底知不知道现在的情况"。
+      {"estimator_status", &topics_.estimator_status},
     };
     std::string s;
     for (const auto & row : rows) {

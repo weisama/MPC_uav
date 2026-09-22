@@ -58,6 +58,10 @@ BASE_PARAMS = {
     "low_voltage_v": 20.0,
     "rc_stick_ov_us_per_s": 100.0,
     "mocap_stamp_stall_s": 0.5,
+    # —— ticket 16：EKF2 位置失效的载体（`/mavros/estimator_status`）——
+    # ★ 上游实测 1.000 Hz（夹具也照 1 Hz 发）⟹ 超时取 2.5 s；消抖是**帧数**（2 帧 ≈ 2 s）。
+    "estimator_timeout_s": 2.5,
+    "ekf2_pos_lost_samples": 2,
     "land_mode": "AUTO.LAND",
     # ☠️ 这里原本有一个 `own_arming: True` —— ticket 06 的**台架缝**（本张没有解锁路径，
     #   而"已解锁时的失效该请求 AUTO.LAND"只在 armed 时成立）。
@@ -89,6 +93,11 @@ def _reach_auto(sc):
     assert sc.wait_for_subscribers("local_position"), "DUT 没有接上 /mavros/local_position/pose"
     assert sc.wait_for_subscribers("rc"), "DUT 没有接上 /mavros/rc/in"
     assert sc.wait_for_subscribers("battery"), "DUT 没有接上 /mavros/battery"
+    # ★ ticket 16：这一条是**必须**在这里等的 —— DUT 侧对这条话题用的是易失订阅，而夹具
+    #   照抄真 mavros 用 transient_local 发 ⟹ 两者兼容但**不回放历史**。若哪天有人把其中
+    #   一边的 QoS 改错（两边就都不匹配），`matched_subscribers` 会在这里当场变成 0，
+    #   而不是让后面的用例以"判据没反应"的样子失败。
+    assert sc.wait_for_subscribers("estimator_status"), "DUT 没有接上 /mavros/estimator_status"
     assert sc.poll(lambda: sc.mocap_source.matched_subscribers() >= 1), "DUT 没有接上动捕话题"
     assert sc.wait_for_setpoints(20, timeout_s=10.0), "守卫成立之后应当开始流 setpoint"
 
@@ -114,8 +123,14 @@ def _degrade_tokens(sc):
     """DUT 日志里出现过的 `degrade=<token>`（ticket 06 要求"原因在日志里**可检索**"）。
 
     token 由 `fsm.hpp::to_string(Degrade)` 给 ⟹ 日志里搜到的原因与代码里的判据同源。
+
+    ⚠️ 词表是 `[a-z0-9_]+`，**含数字** —— ticket 16 的 `ekf2_pos_lost` 是第一个带数字的 token，
+      而这里的正则当时写的是 `[a-z_]+` ⟹ 它把 token 截成 `ekf`，测试报"日志里没有这条降级"
+      而**日志里明明有**（现场用 README 里那条 `grep -oE` 方子的人会遇到同一件事）。
+      ★ 同一条词表现在由 `test_fsm.cpp::DegradeNames` 逐个字符断言 ⟹ 以后再加 token 时，
+        "文档里的方子捞不出来"这种事会在 seam 2 上先红，而不是留到现场。
     """
-    return re.findall(r"degrade=([a-z_]+)", sc.dut_log())
+    return re.findall(r"degrade=([a-z0-9_]+)", sc.dut_log())
 
 
 def _wait_degrade(sc, token, timeout_s=3.0):
@@ -393,6 +408,177 @@ def test_位置估计给出_NAN_时停发并请求_LAND():
         _stopped(sc)
         sc.wait_for(lambda: "AUTO.LAND" in [r.custom_mode for r in sc.fake.mode_requests],
                     timeout_s=5.0, message="没有请求 AUTO.LAND")
+        assert sc.dut_alive()
+
+
+# ──────────── ④ 之二：EKF2 位置失效的**真载体**（ticket 16） ────────────
+#
+# ④ 原来只挂在"位置是 NaN"上，而第一手核实过：**那条判据在真机上恒假** ——
+# PX4 的 `EKF2.cpp::PublishLocalPosition` 不合成 NaN、`LOCAL_POSITION_NED` 又把 `xy_valid`
+# 丢掉，mavros 原样转 ⟹ 位置真失效时表现成"话题照发、值不可信"（见上方 NaN 用例的说明，
+# 以及 `docs/control/phase1-implementation.md` §4.4）。ticket 16 找到了真能读到的载体：
+# `/mavros/estimator_status.pos_horiz_abs`（PX4 侧 `EKF/ekf_helper.cpp:761` 每次发布现算 ⟹ 能自清）。
+
+def test_EKF2自报没有绝对位置时停发并请求_LAND():
+    """④ 的正面（已解锁）：`pos_horiz_abs` 连续为假 ⟹ 停发 + `AUTO.LAND`，原因可检索。
+
+    ★ 这条注入**不碰** `local_position` 的任何读数（真 PX4 也不碰）：它造的是
+      "动捕帧正常到、位置话题照发，而 EKF2 说它的水平位置没有绝对参考" ——
+      那正是 `mocap_timeout` / `mocap_stamp_stalled` 看不见的一类失效。
+    """
+    with Scenario(dut=DUT, params=BASE_PARAMS) as sc:
+        # ★ 发现屏障（`src/bench/README.md` 纪律 1）：下面"**单帧**为假还没降级"是否定断言，
+        #   必须先把"DUT 真的接上了这个话题"钉死，否则"没降级"与"压根没收到"在日志里长得一样。
+        assert sc.wait_for_subscribers("estimator_status"), "DUT 没有接上 /mavros/estimator_status"
+        _reach_auto(sc)
+        _assert_requests_recorded(sc)
+        n_requests = len(sc.fake.mode_requests)
+
+        sc.fake.set_pos_horiz_abs(False)
+        # ★★ 消抖的正面判据（这是本张"连续 2 帧"裁定的**唯一**直接证据）：
+        #    先只让它发**一帧**假，确认此刻还没降级；第二帧到齐之后才准降级。
+        #    ★ 用夹具的帧计数对齐，不用 sleep 猜 —— 上游 1 Hz，猜必然又慢又飘。
+        n0 = sc.fake.estimator_status_frames
+        assert sc.poll(lambda: sc.fake.estimator_status_frames > n0, timeout_s=3.0), \
+            "夹具没有继续发 estimator_status（频率被改过？）"
+        sc.hold(0.4)   # 留出 DUT 处理这一帧的时间（下一帧还在 ~0.6 s 之后）
+        assert "ekf2_pos_lost" not in _degrade_tokens(sc), (
+            f"**单帧**为假就降级了 ⟹ 消抖（`ekf2_pos_lost_samples`）没生效，"
+            f"实际 {_degrade_tokens(sc)}")
+        assert sc.control_state() == "AUTO/TAKEOFF", (
+            f"单帧为假不该改变状态，实际 {sc.control_state()!r}")
+
+        # 第二帧为假 ⟹ 判据成立。
+        assert sc.wait_for_control_state("MANUAL/LAND", timeout_s=6.0), (
+            f"EKF2 自报位置没有绝对参考 ⟹ 应当停发并中止任务，实际 {sc.control_state()!r}")
+        _wait_degrade(sc, "ekf2_pos_lost")
+        assert _degrade_tokens(sc)[0] == "ekf2_pos_lost", f"实际 {_degrade_tokens(sc)}"
+        _stopped(sc)
+        sc.wait_for(lambda: "AUTO.LAND" in [r.custom_mode for r in sc.fake.mode_requests],
+                    timeout_s=5.0, message="没有请求 AUTO.LAND ⟹ 主动中止任务这一半没生效")
+        assert set(_mode_requests_after(sc, n_requests)) <= {"AUTO.LAND"}, (
+            f"降级之后只该请求 AUTO.LAND，实际 {_mode_requests_after(sc, n_requests)}")
+
+        # ★ 状态位自己恢复**不算**复位：这是"已解锁的输入失效"，闩到落地上锁
+        #   （与低压那条同一个语义：飞机还在天上，不许因为读数变好就自动重新接管）。
+        sc.fake.set_pos_horiz_abs(True)
+        sc.hold(3.0)
+        assert sc.control_state() == "MANUAL/LAND", (
+            f"状态位恢复不该让飞机在空中自动接管，实际 {sc.control_state()!r}")
+        _stopped(sc, hold_s=0.5)
+
+        # —— ⑤ 复位：落地上锁 ——
+        sc.fake.set_state(armed=False)
+        assert sc.wait_for_control_state("MANUAL/STANDBY", timeout_s=6.0), (
+            f"落地上锁之后应当自动复位回 STANDBY，实际 {sc.control_state()!r}")
+        assert sc.wait_for_setpoints(len(sc.setpoints()) + 20, timeout_s=5.0), \
+            "复位之后必须重新开始流 setpoint"
+        assert sc.dut_alive(), "验收项 ⑦"
+
+
+def test_未解锁时_EKF2自报位置失效不停发也不降级():
+    """这条判据**只在已解锁时**算失效（用户 2026-09-22 裁定）。
+
+    ★ 理由不是"未解锁时不需要保护"，而是**代价不对称**：本判据的代价是**停发 setpoint**，
+      而冷启动时"EKF2 还没把位置锚到动捕上"（`pos_horiz_abs` 从假变真）是**常态**
+      ⟹ 不加这道门会把台架上每次冷启动的正常窗口变成"节点不发东西了"。
+    ⚠️ 代价（刻意接受）：解锁前就坏掉的情形只能等解锁后才被抓住（见 `fsm.hpp::first_degrade`）。
+    """
+    with Scenario(dut=DUT, params=BASE_PARAMS) as sc:
+        assert sc.wait_for_subscribers("estimator_status"), "DUT 没有接上 /mavros/estimator_status"
+        assert sc.wait_for_setpoints(20, timeout_s=10.0), "正控：未解锁时也该在流 setpoint"
+        assert sc.control_state() == "MANUAL/STANDBY"
+        _assert_requests_recorded(sc)
+        n_requests = len(sc.fake.mode_requests)
+        n_setpoints = len(sc.setpoints())
+
+        sc.fake.set_pos_horiz_abs(False)
+        # 1 Hz ⟹ 3.5 s 必然够 2 帧（判据若没有解锁门，这段时间里早就降级了）。
+        sc.hold(3.5)
+
+        assert sc.control_state() == "MANUAL/STANDBY", (
+            f"未解锁时不该降级，实际 {sc.control_state()!r}")
+        assert "ekf2_pos_lost" not in _degrade_tokens(sc), (
+            f"未解锁时不该报这条降级，实际 {_degrade_tokens(sc)}")
+        assert sc.wait_for_setpoints(n_setpoints + 20, timeout_s=3.0), "不该停发 setpoint"
+        assert _mode_requests_after(sc, n_requests) == [], "不该有任何模式请求"
+        assert sc.dut_alive()
+
+
+def test_EKF2位置判据数的是连续帧_不是累计帧():
+    """消抖的**另一半**：真帧必须把计数归零（否则判据会变成"累计够 2 帧就报"）。
+
+    ★ 这不是多余的一条：`连续 2 帧` 与 `累计 2 帧` 在"状态位偶尔抖一下"的真实场面上
+      行为完全不同 —— 后者会让每次抖动都累加、最终在什么都没坏的时候请求降落。
+      两者在**一次**注入下表现一致（都会降级），必须用"假-真-假-真"交替才分得开。
+    """
+    with Scenario(dut=DUT, params=BASE_PARAMS) as sc:
+        _reach_auto(sc)
+        n_requests = len(sc.fake.mode_requests)
+
+        for _ in range(3):
+            n0 = sc.fake.estimator_status_frames
+            sc.fake.set_pos_horiz_abs(False)
+            assert sc.poll(lambda: sc.fake.estimator_status_frames > n0, timeout_s=3.0)
+            # ★ 两次 `hold(0.35)` **不是**在"等判据成立"（判据数帧、上面已经在数帧了），
+            #   而是保证这一轮**恰好一帧**：0.35 s < 上游周期 1 s ⟹ 这段里至多发 1 帧假
+            #   （留 0.65 s 余量）。若这轮发到 2 帧，它就变成"连续 2 帧"、降级是对的，
+            #   这条用例反而会**假红**。所以这个数**不能**往 1 s 以上调。
+            sc.hold(0.35)
+            n1 = sc.fake.estimator_status_frames
+            sc.fake.set_pos_horiz_abs(True)
+            assert sc.poll(lambda: sc.fake.estimator_status_frames > n1, timeout_s=3.0)
+            sc.hold(0.35)
+
+        assert sc.control_state() == "AUTO/TAKEOFF", (
+            f"3 次单帧抖动不该降级（判据数的是连续帧），实际 {sc.control_state()!r}")
+        assert "ekf2_pos_lost" not in _degrade_tokens(sc), f"实际 {_degrade_tokens(sc)}"
+        assert _mode_requests_after(sc, n_requests) == [], "不该有任何模式请求"
+        assert sc.dut_alive()
+
+
+def test_estimator_status静默时_陈旧的坏读数不作数():
+    """`/mavros/estimator_status` 静默 ⟹ **不许**拿最后一帧的读数说事（`health()` 里的新鲜度门）。
+
+    ★ 构造手法（这道门只在"已解锁且还没闩锁"的窗口里可观测，所以顺序是刻意的）：
+      1. **未解锁**时注入 `pos_horiz_abs=False` 并等够 2 帧 —— 计数已经够了，但解锁门挡着，
+         此刻不会降级（这正是上一条用例证明的）；
+      2. 让话题**静默**（> `estimator_timeout_s` = 2.5 s）；
+      3. 走**真实的解锁路径**（`_reach_auto`，全程 ≥ 3 s ⟹ 到时读数必然已经过期）；
+      4. 断言没有报 `ekf2_pos_lost`。
+    ★ 判据的意义：这条话题里那个状态位在 PX4 侧是**每次发布现算**的（`ekf/ekf_helper.cpp:761`）
+      ⟹ 它只在**帧还在到**的时候才自清。让一个陈旧的"假"一直挂着，等于把"我们不知道"
+      说成"我们知道它坏了"（与"没收到电池不是低压"同一条纪律）。
+    ⚠️ 代价（刻意接受）：这条话题单独静默时本判据**失明** —— 那时没有更好的信号，
+      真兜底是动捕那两条判据（它们不依赖这个话题）。
+    """
+    with Scenario(dut=DUT, params=BASE_PARAMS) as sc:
+        assert sc.wait_for_subscribers("estimator_status"), "DUT 没有接上 /mavros/estimator_status"
+        assert sc.wait_for_setpoints(20, timeout_s=10.0), "正控：未解锁时也该在流 setpoint"
+
+        # ① 未解锁时攒够 2 帧假（解锁门挡着 ⟹ 不降级）。
+        sc.fake.set_pos_horiz_abs(False)
+        n0 = sc.fake.estimator_status_frames
+        assert sc.poll(lambda: sc.fake.estimator_status_frames >= n0 + 2, timeout_s=5.0), \
+            "1 Hz 上游没能在 5 s 内发出 2 帧"
+        assert sc.control_state() == "MANUAL/STANDBY", (
+            f"未解锁时不该降级，实际 {sc.control_state()!r}")
+
+        # ② 话题静默 —— 从这一刻起"最后一帧的假"就是陈旧读数。
+        #    先静默到**必然过期**（> estimator_timeout_s = 2.5 s）再往下走：否则后面
+        #    "解锁那一刻读数还新鲜"会让这条用例变得看时序（夹具的 1 Hz 与判据只差 1 s 出头）。
+        sc.fake.mute("estimator_status")
+        sc.hold(3.0)
+
+        # ③ 真实解锁（耗时 ≥ 3 s > estimator_timeout_s ⟹ 读数必然过期）。
+        _reach_auto(sc)
+
+        # ④ 陈旧读数不许再被拿来降级。
+        sc.hold(2.0)
+        assert "ekf2_pos_lost" not in _degrade_tokens(sc), (
+            f"话题已静默，判据不该拿陈旧的读数说事，实际 {_degrade_tokens(sc)}")
+        assert sc.control_state() == "AUTO/TAKEOFF", (
+            f"陈旧读数不该让我们中止任务，实际 {sc.control_state()!r}")
         assert sc.dut_alive()
 
 

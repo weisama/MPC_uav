@@ -18,7 +18,7 @@ from mavros_msgs.srv import SetMode
 from rclpy.qos import QoSProfile, ReliabilityPolicy
 
 from bench import Scenario
-from bench.fake_mavros import mavros_sensor_qos, mavros_state_qos
+from bench.fake_mavros import mavros_default_qos, mavros_sensor_qos, mavros_state_qos
 from bench.vrpn_source import mocap_qos
 
 
@@ -472,4 +472,91 @@ def test_解锁服务可以答应_拒绝_或不存在():
         sc.fake.set_arming_policy("absent")
         sc.wait_for(lambda: not client.service_is_ready(), timeout_s=15.0,
                     message="销毁服务之后客户端仍认为服务可用（DDS 发现没跟上？）")
+
+
+
+# ─────────────── ticket 16（EKF2 位置失效的载体）第一次用到的注入能力，各来一条自检 ───────────────
+
+def test_pos_horiz_abs注入真的走到_estimator_status_话题上():
+    """`set_pos_horiz_abs` —— 「EKF2 位置失效」判据（ticket 16）唯一的注入面。
+
+    ★★ 本条的**核心**是 QoS 那一半，而不是那位真假值：
+      DUT 侧**故意用易失订阅**（`QoS(10)`）订这条话题 —— 真实 mavros 用
+      `transient_local` 发（`mavros::StateQoS()`），durable 订阅会在启动时回放上一会话的
+      ~10 帧缓存，把"连续为假"的计数当场喂满（2026-09-22 现场实测到过那个回放突发）。
+      我们要求的是"两者兼容（可靠 + 可靠）、但不回放" ⟹ 夹具必须照**真 mavros 的发布方**
+      抄（可靠 + 瞬态本地），否则这条"会不会被历史喂饱"的性质在台架上根本复现不出来。
+      这里就用 DUT 的那种订阅 profile（`mavros_default_qos()` = 可靠 / 易失）去接：
+      **接不上 ⟹ 真机上 DUT 也接不上**（QoS 不匹配是静默的，只有这条断言能提前抓出来）。
+
+    ⚠️ 只证明夹具送得出，不断言 DUT 会怎样（那是 `src/control/test/` 的事）。
+    """
+    from mavros_msgs.msg import EstimatorStatus
+
+    with _fixture_only() as sc:
+        got = []
+        _subscribe(sc, EstimatorStatus, sc.fake.topics["estimator_status"], got.append,
+                   mavros_default_qos())   # ← DUT 用的那种（可靠 / 易失）
+        sc.advance_to(1.5)
+        assert got, ("DUT 的订阅 profile（可靠/易失）一帧都收不到 ⟹ 真机上 DUT 也收不到"
+                     "（QoS 不匹配不报错，只会静默没有数据）")
+        assert got[-1].pos_horiz_abs_status_flag is True, "默认应当是「有绝对参考」"
+
+        sc.fake.set_pos_horiz_abs(False)
+        sc.advance_to(2.5)   # 1 Hz ⟹ 最多 1 s 之后
+        assert got[-1].pos_horiz_abs_status_flag is False, "注入的状态位没到话题上"
+
+        # ★ 别的位必须保持 False（夹具只填 DUT 真正读的那一位）：
+        #   全填 True 会让"以后有人顺手改成读另一位"这种改动在台架上照样绿。
+        assert not got[-1].pos_horiz_rel_status_flag, "夹具不该顺手把别的位也点亮"
+        assert not got[-1].velocity_horiz_status_flag, "夹具不该顺手把别的位也点亮"
+        assert not got[-1].attitude_status_flag, "夹具不该顺手把别的位也点亮"
+
+        sc.fake.set_pos_horiz_abs(True)
+        sc.advance_to(4.0)
+        assert got[-1].pos_horiz_abs_status_flag is True, "恢复之后必须能回到真"
+
+        # ★ 帧计数（seam 1 的"连续 N 帧"消抖要靠它精确构造）。
+        n0 = sc.fake.estimator_status_frames
+        assert n0 >= 3, f"帧计数没有跟着发布走，实测 {n0}"
+        sc.advance_to(5.2)
+        assert sc.fake.estimator_status_frames > n0, "帧计数停住了"
+
+
+def test_estimator_status的QoS与真_mavros一致():
+    """夹具的发布方 QoS 必须是 `mavros::StateQoS()`（可靠 + **瞬态本地**）。
+
+    ★ 为什么这一条在 ticket 16 里格外重要：DUT 侧**故意用易失订阅**（见 `px4_interface.cpp`
+      那段 ★★ —— durable 订阅会在启动时回放上一会话的 ~10 帧缓存，把"连续为假"的计数
+      当场喂满）。"易失订阅者接得上、但不拿缓存"这件事**只有夹具照抄真 mavros 的发布方
+      QoS 时**才能在台架上复现：夹具若把发布方降成易失，这条性质就测不出来了。
+    ★ 与上一条分工：上一条测"DUT 的订阅 profile 接得上"，这一条测"夹具抄的是真 mavros"。
+
+    证据：`sys_status.cpp:579-584` 里 `/mavros/state` 与 `/mavros/estimator_status` 用的是
+    **同一个** `mavros::StateQoS()`。
+    """
+    from mavros_msgs.msg import EstimatorStatus
+
+    with _fixture_only() as sc:
+        sc.advance_to(1.6)   # 先保证已经发过至少一帧
+
+        durable, volatile = [], []
+        _subscribe(sc, EstimatorStatus, sc.fake.topics["estimator_status"], durable.append,
+                   mavros_state_qos())          # 瞬态本地：晚订阅也该**立刻**拿到缓存帧
+        # 易失（= DUT 那种订阅 profile）：只能等下一帧（1 Hz）——与上面那条 state 自检同一个写法。
+        _subscribe(sc, EstimatorStatus, sc.fake.topics["estimator_status"], volatile.append,
+                   QoSProfile(depth=10, reliability=ReliabilityPolicy.RELIABLE))
+        # ★★ 发现屏障（`bench/README.md` 纪律 1）：**两个**订阅者都匹配上之后才谈"收没收到" ——
+        #   否则"易失那个没收到缓存"与"它压根还没接上"在日志里长得一模一样（都是空列表）。
+        #   ⚠️ 这条是按复核意见补的（2026-09-22）：本文件里既有的 state QoS 用例是同一写法、
+        #   同一处缺口，**未**一并改（那是 ticket 05 的成品，改它要单独记账）。
+        assert sc.wait_for_subscribers("estimator_status", count=2), (
+            "夹具的发布者没能跟两个旁路订阅者匹配上 ⟹ 下面的『易失没拿到缓存』不成立")
+        sc.advance_to(1.85)
+
+        assert durable, ("瞬态本地的晚订阅者没拿到缓存 ⟹ 夹具的发布方不是 durable，"
+                         "与真 mavros 的 `StateQoS()` 不一致")
+        assert not volatile, ("易失的晚订阅者不该拿到缓存帧。若这里失败，说明夹具把发布方"
+                              "降成了易失 —— 那么「DUT 不会被历史回放喂饱」这条性质就测不出来了")
+
 

@@ -203,6 +203,25 @@ struct Health
   /// （`send_vision_estimate()` 里戳相等即 return，§3.5），EKF2 也会丢过旧的样本
   /// ⟹ 话题层面"有数据"，EKF2 眼里"没数据"。
   bool mocap_stamp_stalled{false};
+  /// ★★ ticket 16：**EKF2 自己说"我的水平位置没有绝对参考"** —— 载体是
+  /// `/mavros/estimator_status.pos_horiz_abs_status_flag`，边界层要求它**连续为假**若干帧
+  /// 才算成立（消抖，帧数在 `control.yaml`）。
+  ///
+  /// 这是验收标准 ④「位置失效 ⟹ LAND」在**本链条上真能兑现**的那一条：
+  /// `position_invalid` 那条（NaN）实测恒假 —— PX4 的 `PublishLocalPosition` **不合成 NaN**
+  /// （`EKF2.cpp` 只发状态位），`LOCAL_POSITION_NED` 又把 `xy_valid` 丢掉 ⟹ 失效信息
+  /// 到不了 mavros。而本字段在 PX4 侧就是 `(cs.gps || cs.ev_pos) && _fault_status.value == 0`
+  /// （`EKF/ekf_helper.cpp:761`），**每次发布现算**（⟹ 构造上就不锁存，会自清）。
+  ///
+  /// ⚠️ 它**只在已解锁时**才当失效用（同 `rc_sticks_moving` 的解锁门，理由见 `first_degrade`）。
+  /// ⚠️ 它不是 ④ 的兜底 —— 真兜底是动捕那两条（`mocap_timeout` / `mocap_stamp_stalled`）：
+  ///    EKF2 自己清 `ev_pos` 是 **400 ms**（样本停了，`EKF/ev_control.cpp:75`）或 **1 s**
+  ///    （样本照到、但没被融合，`EKF/ev_pos_control.cpp:256`），再加上**发布相位（1 Hz）**
+  ///    与本判据的 **2 帧消抖** ⟹ 到我们手上 ~2.5–3 s，而动捕那两条是 0.5 s。
+  ///    它值钱的地方是**另一类**故障 —— 帧正常到达、EKF2 却拒绝用（融合失败、`_fault_status`
+  ///    非零）：那种场面动捕那两条**完全看不见**。两条路径的源码出处见
+  ///    `docs/control/phase1-implementation.md` §4.4。
+  bool ekf2_pos_lost{false};
 };
 
 /// 本帧的**导航读数**（ticket 08）—— 起飞与悬停判据要的量的最小集合。
@@ -306,6 +325,14 @@ enum class Degrade
   kBatteryLow,         ///< 电压低于阈值
   kPositionInvalid,    ///< `local_position` 出现 NaN/Inf
   kMocapStampStalled,  ///< 动捕时间戳不前进
+  /// EKF2 自报"水平位置没有绝对参考"（`pos_horiz_abs` 连续为假，见 `Health::ekf2_pos_lost`）。
+  /// ⚠️ 排在 `mocap_stamp_stalled` **之后**：戳冻住是原因、本判据是它的后果
+  ///   （戳不前进 ⟹ EKF2 自己清 `ev_pos`（400 ms / 1 s，见 `Health::ekf2_pos_lost`）
+  ///   ⟹ `pos_horiz_abs` 变假），
+  ///   报后者会把排查方向指到估计器上，而问题在上游的戳。
+  /// ⚠️ 名字里的 `ekf2_` 是**故意的**：日志要靠它把"EKF2 说没位置"与"话题上没数据"
+  ///   （`local_pos_timeout`）分开 —— 两者的排查方向完全不同。
+  kEkf2PosLost,
 };
 
 const char * to_string(Degrade d);
@@ -316,7 +343,7 @@ inline const std::vector<Degrade> & all_degrades()
   static const std::vector<Degrade> kAll{
     Degrade::kNone, Degrade::kRcOverride, Degrade::kModeLost, Degrade::kStateTimeout,
     Degrade::kMocapTimeout, Degrade::kLocalPosTimeout, Degrade::kRcTimeout, Degrade::kBatteryLow,
-    Degrade::kPositionInvalid, Degrade::kMocapStampStalled};
+    Degrade::kPositionInvalid, Degrade::kMocapStampStalled, Degrade::kEkf2PosLost};
   return kAll;
 }
 
@@ -376,6 +403,22 @@ inline Degrade first_degrade(const Guards & g, const Health & h, const PrevFrame
   // ⑤ 低压是"还能飞但该停"，动捕戳不前进是"上游数据坏了但还没丢帧" —— 都排在最后。
   if (h.battery_low) {return Degrade::kBatteryLow;}
   if (h.mocap_stamp_stalled) {return Degrade::kMocapStampStalled;}
+
+  // ⑥ ticket 16：EKF2 自报水平位置没有绝对参考（`pos_horiz_abs` 连续为假）。
+  //   ★ 排在 ⑤ 之后是**因果顺序**：戳冻住是因、这条是果（戳停 ⟹ EKF2 自己清 `ev_pos`），
+  //     同帧两条都成立时报上游那条。
+  //   ★★ 与 `rc_timeout` 同款的**解锁门**（`g.armed`）——理由与它不同，必须写清楚：
+  //     · 未解锁时这条判据的代价是**停发 setpoint**，而冷启动时"EKF2 还没把位置锚到动捕上"
+  //       是**常态**（`ev_pos` 要等 vision 真的被融合起来，`pos_horiz_abs` 从假变真）⟹
+  //       不加门会在这个正常窗口里停流，把"准备起飞"变成"节点不发东西了"。
+  //       （用户 2026-09-22 裁定：不做。台架上每次冷启动都会撞上这段窗口。）
+  //     · 已解锁时它才是"④ 位置失效 ⟹ LAND"的执行者：那时停下比继续飞安全。
+  //   ⚠️ 代价（刻意接受，两道门都要说清）：
+  //     1) 未解锁时 EKF2 真坏了我们**不报** —— 那时没有任务可中止，报的代价（停发）比收益大。
+  //     2) 于是"解锁前就坏了"的情形只能等**解锁之后**才被抓住（第一帧起就成立，
+  //        再等消抖的 2 帧 ≈ 2 s）。这段时间里飞机是解锁状态而位置参考已经没了 ——
+  //        所以真兜底仍然是动捕那两条（0.5 s 就报，且不看解锁状态）。
+  if (g.armed && h.ekf2_pos_lost) {return Degrade::kEkf2PosLost;}
   return Degrade::kNone;
 }
 
@@ -628,6 +671,7 @@ inline const char * to_string(Degrade d)
     case Degrade::kBatteryLow:        return "battery_low";
     case Degrade::kPositionInvalid:   return "position_invalid";
     case Degrade::kMocapStampStalled: return "mocap_stamp_stalled";
+    case Degrade::kEkf2PosLost:       return "ekf2_pos_lost";
     case Degrade::kNone:              break;
   }
   return "none";

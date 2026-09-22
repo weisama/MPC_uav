@@ -35,6 +35,7 @@
 
 #include "geometry_msgs/msg/pose_stamped.hpp"
 #include "geometry_msgs/msg/twist_stamped.hpp"
+#include "mavros_msgs/msg/estimator_status.hpp"
 #include "mavros_msgs/msg/position_target.hpp"
 #include "mavros_msgs/msg/rc_in.hpp"
 #include "mavros_msgs/msg/state.hpp"
@@ -63,6 +64,14 @@ struct Px4Topics
   std::string local_velocity{"/mavros/local_position/velocity_local"};
   std::string rc{"/mavros/rc/in"};
   std::string battery{"/mavros/battery"};
+  /// ★★ ticket 16：EKF2 的**估计器状态**（MAVLink `ESTIMATOR_STATUS`）。
+  /// 用它是因为它是 ④「EKF2 位置失效」在本链条上**唯一真能读到的载体**：
+  /// `pos_horiz_abs_status_flag` 直接来自 `estimator_status.solution_status_flags`
+  /// （`mavlink/streams/ESTIMATOR_STATUS.hpp:88`，z0 固件 commit `4a0e65f2` 已核对），
+  /// 而它在 PX4 侧**每次发布现算**（`EKF/ekf_helper.cpp:761`）⟹ **能自清**。
+  /// ⚠️ 上游只有 **1 Hz**（2026-09-22 z0 实测 1.000 Hz）—— 与 `/mavros/state` 同量级，
+  ///   所以它的超时不能照抄 0.5 s（见 `Timeouts::estimator_s`）。
+  std::string estimator_status{"/mavros/estimator_status"};
   std::string mocap{"/mocap/pose_enu"};
   std::string setpoint{"/mavros/setpoint_raw/local"};
   std::string set_mode_service{"/mavros/set_mode"};
@@ -82,6 +91,13 @@ struct Timeouts
   double mocap_s{0.5};
   double rc_s{0.5};
   double battery_s{2.0};
+  /// ★ ticket 16：`/mavros/estimator_status` 实测 **1.000 Hz**（2026-09-22 z0 实测），
+  /// 取 2.5 s = 2.5 个周期（与 `state_s` 同一个理由、同一个数）。
+  /// ⚠️ 它**不作为判据用**（没有"估计器状态静默"这条降级）—— 只用于诊断里报"这条输入多久没到"
+  ///   与"敢不敢拿最后一帧读数说事"（见 `health()` 里那条新鲜度门）。
+  ///   理由：这条话题静默时我们**什么也不知道**（既不能说 EKF2 坏了，也不能说它好），
+  ///   而它上面的信息没有别的替代品 —— 拿它当判据只会多出一条"含义不明"的降级。
+  double estimator_s{2.5};
 };
 
 /// PX4 的**模式名**（`/mavros/state.mode` 与 `set_mode` 的 `custom_mode` 用的是同一套字符串）。
@@ -121,6 +137,23 @@ struct Limits
   /// 动捕**时间戳**连续不前进多久算"冻住"（s）。动捕 ~196 Hz ⟹ 0.5 s 是 ~100 帧，
   /// 不是抖动而是真冻住（`vrpn_listener` 的 `stamp = now()`，夹具 `hold_stamp` 复现）。
   double mocap_stamp_stall_s{0.5};
+
+  /// ★★ ticket 16：`/mavros/estimator_status.pos_horiz_abs` **连续为假**多少帧才算"EKF2 位置失效"。
+  ///
+  /// 取 **2**（用户 2026-09-22 裁定：连续 2 帧）的理由是**代价不对称**：
+  ///   · 上游 1 Hz ⟹ 单帧为假可能是发布瞬间的状态（EKF2 在两次融合之间、`_fault_status` 抖了
+  ///     一下），一帧就降级 = 每次抖动都停发 setpoint + 请求降落。
+  ///   · 等 2 帧的代价 = 多 1 s 才认出失效，而这**不改变 ④ 的兜底能力**：
+  ///     真正的兜底是动捕那两条（0.5 s），它们不依赖这个话题（见 `docs/.../§4.4`）。
+  /// ⚠️ 换固件/改 `EKF2_EV_*` 之后这个数要重估 —— 它与上游频率强相关（1 Hz 时 2 帧 = 2 s）。
+  /// ⚠️ 端到端延迟 = **上游两道**（EKF2 自己清 `cs.ev_pos`：样本停了是 400 ms，
+  ///   `EKF/ev_control.cpp:75`；样本照到但没被融合是 1 s，`EKF/ev_pos_control.cpp:256`）
+  ///   **+ 发布相位（1 Hz）+ 这里这两帧** ≈ 2.5–3 s。这两个上游阈值的出处见 `docs/.../§4.4`。
+  /// ⚠️ **取值必须 ≥ 1**：判据是 `pos_lost_streak_ >= ekf2_pos_lost_samples`，而 streak 在读到**真**帧时
+  ///   也是 0 ⟹ 填 0 或负数会让判据**恒成立**（一解锁就停发 + 请求降落，飞机就飞不了）。
+  ///   **不做钳位**是刻意的：本仓所有数值参数都只在 `control.yaml` 受控、没有一处做运行时校验，
+  ///   给这一个加钳位既不一致、又会让"参数写错了"这件事**在日志里静默消失**（`control.yaml` 是该值的唯一出处）。
+  int ekf2_pos_lost_samples{2};
 
   /// 四个摇杆通道号（**1-based**，与 PX4 `RC_MAP_ROLL/PITCH/THROTTLE/YAW` 同一约定）。
   int rc_map_roll{1};
@@ -238,6 +271,9 @@ private:
   void on_rc(const mavros_msgs::msg::RCIn & msg);
   void on_mocap(const geometry_msgs::msg::PoseStamped & msg);
   void on_local_position(const geometry_msgs::msg::PoseStamped & msg);
+  /// `/mavros/estimator_status` 一帧 —— 只做一件事：数 `pos_horiz_abs` **连续**为假的帧数
+  /// （见 `Limits::ekf2_pos_lost_samples` 与 `health()`）。
+  void on_estimator_status(const mavros_msgs::msg::EstimatorStatus & msg);
   /// `/mavros/state` 一帧 —— 顺带在 `armed` 的**上升沿**上兑现"这次解锁是谁发起的"。
   void on_state(const mavros_msgs::msg::State & msg);
 
@@ -283,6 +319,13 @@ private:
   bool mocap_stall_counting_{false};
   rclcpp::Time mocap_stall_start_{0, 0, RCL_ROS_TIME};
   bool mocap_stalled_{false};
+  /// ticket 16：`pos_horiz_abs` **连续**为假的帧数（任何一帧为真立刻归零 —— 对称自清）。
+  /// ★ 它数的是**样本**不是时间：上游 1 Hz ⟹ 2 帧 ≈ 2 s，改频率时这个含义跟着变（见 `Limits`）。
+  int pos_lost_streak_{0};
+  /// 连续假帧数够不够 `Limits::ekf2_pos_lost_samples`。
+  /// ★ 它只回答"读数说没位置"，**不回答"这个读数还算不算数"** —— 后者是 `health()` 里那条
+  ///   新鲜度门（话题静默时最后一帧的"真"会永远挂着，那是"我们不知道"，不是"我们知道它坏"）。
+  bool ekf2_pos_lost_{false};
 
   rclcpp::Subscription<mavros_msgs::msg::State>::SharedPtr state_sub_;
   rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr local_position_sub_;
@@ -290,6 +333,7 @@ private:
   rclcpp::Subscription<mavros_msgs::msg::RCIn>::SharedPtr rc_sub_;
   rclcpp::Subscription<sensor_msgs::msg::BatteryState>::SharedPtr battery_sub_;
   rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr mocap_sub_;
+  rclcpp::Subscription<mavros_msgs::msg::EstimatorStatus>::SharedPtr estimator_status_sub_;
 
   rclcpp::Publisher<mavros_msgs::msg::PositionTarget>::SharedPtr setpoint_pub_;
   rclcpp::Client<mavros_msgs::srv::SetMode>::SharedPtr set_mode_client_;

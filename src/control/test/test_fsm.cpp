@@ -178,8 +178,21 @@ TEST(DegradeNames, 每个降级原因都有可grep的名字)
       EXPECT_NE(tokens[i], tokens[j]) << "名字重复：" << tokens[i];
     }
   }
+  // ★★ token 必须落在**文档里那张 grep 词表**内：`README.md` 与
+  //   `docs/control/phase1-implementation.md` §4.4 给现场的方子是
+  //   `grep -oE "degrade=[a-z0-9_]+"`。两处必须同一个词表 ——
+  //   ticket 16 的 `ekf2_pos_lost` 是第一个**带数字**的 token，而当时那份方子写的是
+  //   `[a-z_]+`：照它捞只会捞到 `ekf`，"日志里明明有这条降级、方子却捞不出来"。
+  //   这条断言就是防它再走散（改词表要同时改这里与那两处文档）。
+  for (const std::string & token : tokens) {
+    for (char c : token) {
+      const bool ok = (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || (c == '_');
+      EXPECT_TRUE(ok) << "token 跑到文档的词表 [a-z0-9_] 之外了：" << token;
+    }
+  }
   EXPECT_EQ(control::to_string(control::Degrade::kNone), "none");
   EXPECT_EQ(control::to_string(control::Degrade::kBatteryLow), "battery_low");
+  EXPECT_EQ(control::to_string(control::Degrade::kEkf2PosLost), "ekf2_pos_lost");
 }
 
 // ─────────────────────────── 状态机：放行与前置流（ticket 05） ───────────────────────────
@@ -360,6 +373,37 @@ TEST(FirstDegrade, 位置NaN优先于位置超时)
   control::Health h = health_ok();
   h.position_invalid = true;      // 真正的原因
   EXPECT_EQ(control::first_degrade(g, h, control::PrevFrame{}), control::Degrade::kPositionInvalid);
+}
+
+/// ★★ ticket 16：「EKF2 位置失效」的**真载体**（`/mavros/estimator_status.pos_horiz_abs`）。
+///
+/// 判据**只在已解锁时**成立（与 `rc_timeout` 同款门）：
+///   · 未解锁时没有任务可中止，而这条判据的代价是**停发** ⟹ 会在台架上把"冷启动时 EKF2
+///     还没把位置锚到动捕上"这段正常窗口变成"不流 setpoint"（用户 2026-09-22 裁定：不做）。
+///   · 已解锁时它就是 ④「位置失效 ⟹ LAND」在**真机链条上真能兑现**的那一条
+///     （`position_invalid` 那条在本链条上恒假，见 §4.4）。
+TEST(FirstDegrade, EKF2位置失效只在已解锁时算失效)
+{
+  control::Health h = health_ok();
+  h.ekf2_pos_lost = true;
+  EXPECT_EQ(control::first_degrade(all_ok(), h, control::PrevFrame{}), control::Degrade::kNone)
+    << "未解锁时不算失效（同 rc_timeout 的解锁门）";
+  EXPECT_EQ(
+    control::first_degrade(armed_ok(), h, control::PrevFrame{}), control::Degrade::kEkf2PosLost);
+}
+
+/// ★ 同一帧里两条都成立时报**动捕戳冻住** —— 它是原因，`ekf2_pos_lost` 是它的后果：
+/// 戳不前进 ⟹ EKF2 拿不到新样本 ⟹ 自己清掉 `ev_pos`（**400 ms**：`EKF/ev_control.cpp:75-81`
+/// 的 `isTimedOut(_ev_sample_prev.time_us, 2 * EV_MAX_INTERVAL)`）⟹ `pos_horiz_abs` 变假。
+/// 报后者会把排查方向指到估计器上，而问题在上游的戳。
+TEST(FirstDegrade, 动捕戳冻住优先于EKF2位置失效)
+{
+  control::Health h = health_ok();
+  h.mocap_stamp_stalled = true;
+  h.ekf2_pos_lost = true;
+  EXPECT_EQ(
+    control::first_degrade(armed_ok(), h, control::PrevFrame{}),
+    control::Degrade::kMocapStampStalled);
 }
 
 /// 打杆只在已解锁时算夺权（PX4 亦然，`Commander.cpp:2740` 的解锁门）。

@@ -46,6 +46,19 @@ control:
     local_velocity_topic: "/mavros/local_position/velocity_local"
     rc_topic: "/mavros/rc/in"
     battery_topic: "/mavros/battery"
+    # ★★ ticket 16：**「EKF2 位置失效」唯一可用的载体**（MAVLink ESTIMATOR_STATUS）。
+    #   为什么非得是它：`/mavros/local_position/pose` 那条路**根本传不出**位置失效 ——
+    #   PX4 的 `EKF2.cpp::PublishLocalPosition` 不合成 NaN，`LOCAL_POSITION_NED` 又把
+    #   `xy_valid` 丢掉了，mavros 只是照抄 ⟹ 我们这边的 `position_invalid` 判据在真机上恒假
+    #   （第一手证据见 `docs/control/phase1-implementation.md` §4.4）。
+    #   而 `estimator_status.solution_status_flags.pos_horiz_abs` 在 PX4 侧就是
+    #   `(cs.gps || cs.ev_pos) && _fault_status.value == 0`（`EKF/ekf_helper.cpp:761`），
+    #   **每次发布现算** ⟹ 能自清，不是锁存量。
+    #   ⚠️ 上游实测 **1.000 Hz**（2026-09-22 z0 读数）—— 这就是下面那条超时取 2.5 s、
+    #      以及消抖要按"帧"数而不是秒数的原因。
+    #   ⚠️ QoS：真实 mavros 以 `transient_local` 发它，本节点**故意用易失**订阅 ——
+    #      durable 订阅会在启动时回放上一会话缓存的 ~10 帧，把"连续为假"的计数当场喂满。
+    estimator_status_topic: "/mavros/estimator_status"
     mocap_topic: "/mocap/pose_enu"
     setpoint_topic: "/mavros/setpoint_raw/local"
     set_mode_service: "/mavros/set_mode"
@@ -69,6 +82,13 @@ control:
     mocap_timeout_s: 0.5
     rc_timeout_s: 0.5
     battery_timeout_s: 2.0
+    # ★ ticket 16：`/mavros/estimator_status` 实测 1.000 Hz ⟹ 取 2.5 s（2.5 个周期，同 state）。
+    #   ⚠️ **它不当判据用** —— 这条话题静默时我们既不能说 EKF2 坏了、也不能说它好
+    #   （"不知道"不是"坏消息"，与"没收到电池不是低压"同一条纪律）。它只用两处：
+    #     · 诊断里报"这条输入多久没到"；
+    #     · `ekf2_pos_lost` 的**新鲜度门** —— 话题静默时不许拿最后一帧的读数说事
+    #       （那个读数会一直挂着"假"，而它本该自清）。
+    estimator_timeout_s: 2.5
 
     # —— 失效判据的阈值（ticket 06）——
     # ★ 低电压阈值：**只看电压、不看电流**（ticket 06 明确要求，理由是 01 的 ADC 判定）。
@@ -90,6 +110,22 @@ control:
     # ★ 动捕**时间戳**连续不前进多久算"冻住"。动捕 ~196 Hz ⟹ 0.5 s ≈ 100 帧，不是抖动。
     #   这条判据管的是话题层看不见的失效：mavros 会丢弃戳不前进的 vision_pose，EKF2 也会丢过旧的样本。
     mocap_stamp_stall_s: 0.5
+
+    # ★★ ticket 16：「EKF2 位置失效」的**消抖帧数** —— `pos_horiz_abs` **连续**为假这么多帧才算成立。
+    #   取 2（用户 2026-09-22 裁定）：上游 1 Hz，单帧为假可能只是发布瞬间的抖动，
+    #   一帧就降级的代价是"每次抖动都停发 setpoint + 请求降落"。
+    #   ⚠️ 它是**帧数**不是秒数 ⟹ 上游频率一变（换固件 / 改 `MAV_*` 流配置）含义就变：
+    #      2 帧 = 1 Hz 下的 2 s。
+    #   ⚠️ 与另外两条判据的分工（别指望它兜底）：
+    #      · `mocap_timeout_s` / `mocap_stamp_stall_s` 0.5 s 就报 ⟹ 那是真兜底；
+    #      · 这一条到我们手上要 ~2.5–3 s：EKF2 自己清 `ev_pos` 是 400 ms（样本停了，
+    #        `EKF/ev_control.cpp:75`）或 1 s（样本照到、但没被融合，`EKF/ev_pos_control.cpp:256`），
+    #        再加**发布相位（1 Hz）+ 这里这两帧消抖**。
+    #      · 它值钱的地方是**另一类**失效 —— 帧正常到达、EKF2 却拒绝用（融合失败、
+    #        `_fault_status` 非零），那种场面动捕那两条判据完全看不见。
+    #   ⚠️ **必须 ≥ 1**：判据是 `streak >= 本值`，而 streak 读到真帧时也是 0 ⟹ 填 0 会让判据**恒成立**。
+    #      节点**不钳位**（本仓所有数值参数都在本文件受控、无运行时校验）⟹ 这个坑靠这行注释挡。
+    ekf2_pos_lost_samples: 2
 
     # 四个摇杆通道号（**1-based**，与 PX4 的 `RC_MAP_ROLL/PITCH/THROTTLE/YAW` 同一约定）。
     # ⚠️ 必须与飞控上的 RC_MAP_* 一致，否则我们看的是别的通道（会漏判夺权或误判）。

@@ -75,6 +75,9 @@ Px4Interface::Px4Interface(rclcpp::Node & node, const Px4Config & config)
   inputs_[topics_.rc] = {rclcpp::Time(0, 0, RCL_ROS_TIME), false, timeouts_.rc_s};
   inputs_[topics_.battery] = {rclcpp::Time(0, 0, RCL_ROS_TIME), false, timeouts_.battery_s};
   inputs_[topics_.mocap] = {rclcpp::Time(0, 0, RCL_ROS_TIME), false, timeouts_.mocap_s};
+  // ★ ticket 16：登记进来才有"多久没到"可看（诊断），但它**不进任何判据**（见 `Timeouts::estimator_s`）。
+  inputs_[topics_.estimator_status] = {rclcpp::Time(0, 0, RCL_ROS_TIME), false,
+    timeouts_.estimator_s};
 
   state_sub_ = node_.create_subscription<mavros_msgs::msg::State>(
     topics_.state, rclcpp::QoS(10).transient_local(),
@@ -118,6 +121,19 @@ Px4Interface::Px4Interface(rclcpp::Node & node, const Px4Config & config)
   mocap_sub_ = node_.create_subscription<geometry_msgs::msg::PoseStamped>(
     topics_.mocap, rclcpp::QoS(10),
     [this](geometry_msgs::msg::PoseStamped::ConstSharedPtr msg) {on_mocap(*msg);});
+
+  // ★★ ticket 16：QoS **故意用易失**（默认 `QoS(10)`），而不是真实 mavros 发布方的
+  //   `QoS(10).transient_local()`（`mavros/qos.hpp:60` `StateQoS()`，`sys_status.cpp:579` 用它发
+  //   `estimator_status`）。两种 QoS 都兼容（可靠发布方 + 可靠订阅方，durability 只要求
+  //   offered ≥ requested），差别在**启动时会不会回放历史**：
+  //     · transient_local 订阅 ⟹ 复现 2026-09-22 现场实测到的现象：一订阅上来就"唰"地回放
+  //       上一会话缓存的 ~10 帧。若那批旧帧里 `pos_horiz_abs` 是假（上一轮的失效状态），
+  //       本判据的**连续计数**会当场被喂满 ⟹ 节点一启动就报 `ekf2_pos_lost`。
+  //     · 易失订阅 ⟹ 只看得见"从现在起"的帧（1 Hz，最多晚 1 s 才有第一帧）。
+  //   ⟹ 这里要的是后者：**判据必须建立在本次会话收到的样本上**，"上一轮的旧读数"不是证据。
+  estimator_status_sub_ = node_.create_subscription<mavros_msgs::msg::EstimatorStatus>(
+    topics_.estimator_status, rclcpp::QoS(10),
+    [this](mavros_msgs::msg::EstimatorStatus::ConstSharedPtr msg) {on_estimator_status(*msg);});
 
   // 唯一的控制输出。发布方用默认（可靠）QoS：mavros 以 best_effort 订阅，可靠发布方可兼容；
   // 反过来（best_effort 发布）会让 mavros 收不到。
@@ -244,6 +260,31 @@ void Px4Interface::on_local_position(const geometry_msgs::msg::PoseStamped & msg
   slot(topics_.local_position) = {node_.now(), true, timeouts_.local_pos_s};
 }
 
+/// `estimator_status` 帧 —— ticket 16 的载体：数 `pos_horiz_abs` **连续**为假的帧数。
+///
+/// `pos_horiz_abs_status_flag` 是 MAVLink `ESTIMATOR_STATUS.flags` 的一位，到了 mavros 侧被拆成
+/// 结构体成员（`EstimatorStatus.msg` / `sys_status.cpp:1296` 的解析）。PX4 侧它就是
+/// `(cs.gps || cs.ev_pos) && _fault_status.value == 0`（`EKF/ekf_helper.cpp:761`）：
+///   · `cs.ev_pos` = "外部视觉的位置正在被融合" ⟹ 动捕断了/戳冻住/融合失败都会让这一位落下来；
+///   · `_fault_status.value == 0` = 没有任何传感器故障位（`bad_acc_vertical` 等）—— 是个**全有或全无**
+///     的门，z0 的 mag 已禁用（`EKF2_MAG_TYPE=5` / `SYS_HAS_MAG=0`）所以那不是风险点，
+///     但 `BADACC_PROBATION = 10 s` 期间它会保持置位（见 §4.4 的丢包风险一节）。
+void Px4Interface::on_estimator_status(const mavros_msgs::msg::EstimatorStatus & msg)
+{
+  // ★ **对称**计数：真 ⟹ 立刻归零；假 ⟹ 累加。没有"半清"（不清也不加）的第三条路 ——
+  //   别的方式（滑动窗口、计数衰减）会让"连续"这个词在代码里失去字面意思，而判据的
+  //   全部理由就是"连续"（见 `Limits::ekf2_pos_lost_samples`）。
+  if (msg.pos_horiz_abs_status_flag) {
+    pos_lost_streak_ = 0;
+  } else if (pos_lost_streak_ < limits_.ekf2_pos_lost_samples) {
+    // 够数就不再涨（避免长期失效时把 int 涨上去；判据只看是否 ≥ 阈值）。
+    ++pos_lost_streak_;
+  }
+  ekf2_pos_lost_ = (pos_lost_streak_ >= limits_.ekf2_pos_lost_samples);
+
+  slot(topics_.estimator_status) = {node_.now(), true, timeouts_.estimator_s};
+}
+
 const Px4Interface::Input & Px4Interface::slot(const std::string & topic) const
 {
   return inputs_.at(topic);
@@ -301,6 +342,14 @@ Health Px4Interface::health(double now_s) const
   h.battery_low = battery_low_;
   h.position_invalid = position_invalid_;
   h.mocap_stamp_stalled = mocap_stalled_;
+  // ★★ ticket 16：**必须**加这道新鲜度门，理由是这条判据的"坏消息"来自一个**能自清**的读数
+  //   （`pos_horiz_abs` 每次发布现算）—— 但它只在**帧还在到**的时候才自清。话题一旦静默，
+  //   `pos_lost_streak_` 就冻在最后一帧上：那时我们**不知道** EKF2 现在怎么样，
+  //   让一个陈旧的真值一直挂着，等于把"不知道"说成"知道它坏了"（与"没收到电池不是低压"
+  //   同一条纪律，见 `Health::battery_low`）。
+  //   ⚠️ 代价（刻意接受）：`estimator_status` 单独静默（`local_position` 还在）时这条判据**失明**。
+  //     没有更好的信号可用（这就是载体本身的边界），而真兜底是动捕那两条判据（不依赖本话题）。
+  h.ekf2_pos_lost = fresh(topics_.estimator_status, now_s) && ekf2_pos_lost_;
   return h;
 }
 

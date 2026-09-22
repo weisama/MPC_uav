@@ -14,6 +14,9 @@ rates_hz:
   local_velocity: 30.0
   rc: 10.0
   battery: 1.0
+  # ticket 16：MAVLink ESTIMATOR_STATUS，实测 1.000 Hz（2026-09-22 z0 读数）。
+  # ⚠️ 与 DUT 的 ekf2_pos_lost_samples（**帧数**）是一对：1 Hz 下 2 帧 = 2 s。
+  estimator_status: 1.0
   # 动捕实测 190.9–197.0 Hz（ticket 12 的读数）
   vrpn: 200.0
 
@@ -25,6 +28,8 @@ topics:
   local_velocity: "/mavros/local_position/velocity_local"
   rc: "/mavros/rc/in"
   battery: "/mavros/battery"
+  # ticket 16：EKF2 位置失效的载体（唯一一个在本链条上真能读到的，见 phase1-implementation.md §4.4）。
+  estimator_status: "/mavros/estimator_status"
   setpoint: "/mavros/setpoint_raw/local"
   set_mode: "/mavros/set_mode"
   arming: "/mavros/cmd/arming"
