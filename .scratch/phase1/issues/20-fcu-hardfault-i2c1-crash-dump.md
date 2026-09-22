@@ -161,3 +161,12 @@ mavros 要**连续 5 s** 收不到 `HEARTBEAT` 才打 `Lost connection`。8 次�
 - **2026-09-22（agent，triage）**：`Status: needs-triage`。事实已写清、且**方法可复现**（文件头读 uptime 那一步是定性的关键）。
   待人裁定的三件事：① 是否现在就投力气查根因（I2C1 器件 / 固件树 / 供电）；
   ② 本张要不要升为"**装桨前必须解决**"的门禁；③ 台架阶段 B 是否等这条线有结论后再做。
+- **2026-09-22（agent，交叉复核 —— 症状侧新票 [21](21-esc-no-signal-beeping.md)）**：
+  - 用户报告的现象「**电调上电一段时间后没收到信号滴滴响**」很可能是本张硬故障的**肉眼症状**
+    （重启窗口里 DShot 停发 ⟹ 电调报警）⟹ **症状那一侧单开为 [ticket 21](21-esc-no-signal-beeping.md)**，
+    由它负责定义现象并做判别实验（墙上时刻 ↔ `sessNNN` 对齐 / QGC `dshot status` / ulog）。
+  - ★ **一处机制更正（本张 §二）**：文中「mavros 要**连续 5 s** 收不到 HEARTBEAT 才打 `Lost connection`」与源码不符。
+    实为 `conn_timeout`（**默认 10.0 s**，`mavros/src/plugins/sys_status.cpp:512`）到点跑一次 `timeout_cb()`
+    （`:1311-1313`），**无条件**置 `connected=false` 并打印（`mavros/src/lib/mavros_uas.cpp:462`）。
+    ——**结论方向不变**（短重启会被整个漏掉、日志不能当反证），但阈值是「**10 s 周期定时器**」而不是「5 s 静默判据」，
+    判读飞行日志/算停机时长时别按 5 s 算。（该 mavros 源码树：`/home/chen/mavros_ws/src/mavros`）
