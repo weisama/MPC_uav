@@ -645,7 +645,9 @@ ticket 08 落地时删掉它**。
 
 ★ **2026-09-22 人裁定**：8 条待处理项里，**只有 3 条参数现在就改**（`EKF2_GPS_CTRL=0`、`SYS_HAS_GPS=0`、
 `MPC_XY_VEL_MAX=2.0`），其余留到标定 / 尺子 / 飞行阶段。逐条处置见
-[`params-changes.md`](../reference/params-changes.md) **§I**。下表受影响的只有 `MPC_XY_VEL_MAX` 一行。
+[`params-changes.md`](../reference/params-changes.md) **§I**。下表里本次被加注的是 **3 行**：
+`MPC_XY_VEL_MAX`（现在就改）、`MPC_THR_HOVER`（留到推力标定）、`EKF2_EVP_NOISE`（留到飞行阶段判定）
+—— **后两行是"故意不改"的裁定**，别当成漏改。
 
 | 参数 | 现值 | 判断 | 说明 |
 |---|---|---|---|

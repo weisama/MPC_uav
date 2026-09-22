@@ -35,6 +35,13 @@ ros2 param get /mavros/param EKF2_EV_CTRL      # 单条读
 里那行被注释掉了：`// rclcpp::Service<mavros_msgs::srv::ParamGet>::SharedPtr get_srv;`），
 只有 `~/pull`（`ParamPull`）与 `~/set`（`ParamSetV2`）。第一次摸的时候在这里白等了一分多钟。
 
+> ⚠️ **2026-09-22 更正：上面"只有两个服务"这句不完整**（第一手重读 `mavros/src/plugins/param.cpp`）——
+> 还有 **`~/get_parameters`**（`:468`）与 **`~/set_parameters`**（`:476`，`ros2 param set` 走的就是它，
+> 真的会发给飞控：`:1148`）；`~/set_parameters_atomically` 则是**硬编码不支持**（`:1157-1164`）。
+> **"没有 `~/get`"这个判断本身是对的，坑也是真的**，不影响本节的结论。
+> ⟹ **实际影响在 §四**：写参数**不必**用 `ParamSetV2`。逐条表格见
+> [`docs/reference/params-changes.md`](../../../docs/reference/params-changes.md) **§I.2**。
+
 ⚠️ **`/mavros/param/set` 的服务类型是 `ParamSetV2`**（不是 ROS1 时代的 `ParamSet`）—— 写参数时别按旧类型写。
 
 ## 二、结果：**914/915 条名字全对上**
@@ -115,7 +122,7 @@ ros2 param get /mavros/param EKF2_EV_CTRL      # 单条读
 
 ### ☠️ 一条必须写下来的操作警告：**不要整份烧 `z0.params`**
 
-对账的结果正好说明：那份文件**含 6 条加速度计标定 + 14 条遥控器校准**，
+对账的结果正好说明：那份文件**含 6 条加速度计标定 + 12 条遥控器校准**，
 而**飞控上现有的这两组值才是 z0 自己的**。整份 `load` 下去会：
 **① 覆盖 z0 的加速度计标定**（参数表与真实 IMU 不匹配）、**② 覆盖遥控器行程校准**。
 ⟹ 若要上参数，**只挑配置类参数写**（`EKF2_*` / `MPC_*` / `CA_ROTOR*` / `BAT1_*`…），
@@ -171,7 +178,7 @@ ros2 param get /mavros/param EKF2_EV_CTRL      # 单条读
 | 2 | `MPC_XY_VEL_MAX` | ★ **现在就改** `2.0` | agent（mavros） | re-dump 对账 + 飞时看轨迹 2/3 |
 | 3 | `CA_ROTOR0..3_PX/PY` | **不改**（分配器按几何范数归一化，均匀缩放被约掉；要它的是 (D) 方案） | — | — |
 | 4 | `BAT1_R_INTERNAL` | 留到**系统辨识**（里程碑 2） | 人 | 只影响 sag 补偿 |
-| 5 | `MPC_THR_HOVER` | 留到**推力标定**（里程碑 2） | 人 | `thrust_calibrate`，且要同时回填 MPC 模型 |
+| 5 | `MPC_THR_HOVER` | 留到**推力标定**（里程碑 2） | 人 | `thrust_calibrate`，且要同时回填 **MPC（模型预测控制）** 模型 |
 | 6 | `THR_MDL_FAC` | 留到**推力标定**（与 5 一并） | 人 | 与 XI35 的 `K3=0.6786` 至少一个错 |
 | 7 | `EKF2_EV_POS_X/Y/Z` | 留到"**尺子量**" | 人 | 量刚体原点→IMU 偏移后写入 |
 | 8 | `EKF2_EVP_NOISE` | 留到**飞行阶段**判定 | 人 | 台架 30 min 未发散 ⟹ 台架证不了它过小 |
