@@ -27,10 +27,36 @@
 //      2026-09-22 复核时更正过一处 2729-2731 的错引）
 //   ② `AUTO.LAND` 在 `mode_req_prevent_arming` 名单里（`mode_requirements.cpp:142`）
 //      ⟹ 未解锁就切进去，台架上会**解不了锁**
+//
+// ★★ 本张（ticket 08）的全部分量：**第一次真正自主离地并稳定悬停**。
+//   `STANDBY → TAKEOFF → HOVER → WAIT_START → LAND`，全部判据都是程序可判定的量：
+//   · **起飞命令**只从 `request_takeoff()` 进来（ROS 侧是服务 `/control/takeoff`，
+//     ticket 09 会用遥控器 ch9 的上升沿去调它）。**本文件不读遥控器**。
+//   · **解锁**走 `/mavros/cmd/arming`（H.6 的 D3 = 程序解锁）；前置 = 已在 OFFBOARD
+//     + setpoint 已在流（H.6 原文的两条）+ **遥控在线**（H.7.1，见 `update()` ⑦）。
+//     ⚠️ **不重试**：应答被拒或无应答 ⟹ 放弃本次起飞、退回 STANDBY（用户 2026-09-22 裁定）。
+//   · **爬升**：目标 z 从"进入 TAKEOFF 那一刻的 EKF 位置"线性上升 `takeoff_altitude_m`，
+//     速率 `climb_speed_mps`。★ 起点是**锁一次**的，不是每帧跟着当前位姿跑 ——
+//     否则"目标"会跟着飞机漂，"爬到 1 m"这句话就不成立了。
+//   · **稳定**：`位置误差 < hover_pos_tol_m ∧ |v| < hover_vel_tol_mps` 持续 `hover_settle_s`。
+//     ★ 位置误差相对的是**悬停点**（= 起飞点正上方 `takeoff_altitude_m`），
+//     不是轨迹原点 —— 轨迹原点恰恰是**判稳那一刻**才记下来的（`traj_origin()`），
+//     拿它当判据的基准是循环定义。判稳时飞机必然在悬停点 `hover_pos_tol_m` 之内，
+//     所以记下来的原点与悬停点的差不超过一个判据宽度。
+//   · **轨迹原点**记录后进 `WAIT_START`，目标切到原点本身（"停在原地"，见 `update()` ⑦）。
+//   · **任务结束**：`WAIT_START` 保持 `hover_hold_s` ⟹ `LAND`（请求 `AUTO.LAND`）。
+//     **上锁不是我们发的**：PX4 的 `COM_DISARM_LAND = 2.0`（z0 实测值，ticket 15 对账）
+//     会在它自己的着陆检测判定落地 2 s 后上锁 ⟹ 我们只等 `armed` 的降沿。
+//   · **机头**：setpoint 的 yaw 一律 = **起飞机头**（STANDBY 时是当前机头，起飞后是锁定值）。
+//     ⚠️ **这条推翻了 ticket 05 的 `yaw` 参数（已删）**：那个参数默认 0，而 0 在
+//     ROS/ENU 口径下经 mavros 换算后是 PX4 的 +90°（机头朝东）⟹ 一旦在 OFFBOARD 里解锁，
+//     PX4 会**真的去转机头**。本张按 §3.4 的精神改成"不转向"。
 
 #ifndef CONTROL__FSM_HPP_
 #define CONTROL__FSM_HPP_
 
+#include <algorithm>
+#include <cmath>
 #include <vector>
 
 namespace control
@@ -49,11 +75,18 @@ enum class Authority
 enum class Phase
 {
   kInit,        ///< 上电：等前置（mavros 连接 / 动捕有数据 / local_position 有效）；**不发 setpoint**
-  kStandby,     ///< **已开始以 setpoint_rate_hz 持续发布 setpoint**（位置 = 当前，yaw = 0）
-  kTakeoff,     ///< 占位（ticket 08）
-  kHover,       ///< 占位（ticket 08）
-  kTrack,       ///< 占位（ticket 07）
-  kLand,        ///< 主动中止任务（ticket 06）：停发 + 请求 `AUTO.LAND`（仅**已解锁**时）
+  /// 已开始以 `setpoint_rate_hz` 持续发布 setpoint（目标 = 当前位置、yaw = 当前机头）。
+  /// ★ **收到起飞命令但还没解锁的期间也是它** —— 那时飞机仍未被我们驱动。
+  kStandby,
+  kTakeoff,     ///< 已解锁且在 OFFBOARD，目标 z 沿斜坡上升（ticket 08）
+  kHover,       ///< 到高后定点保持，同时判稳（ticket 08）
+  /// 已判稳、**轨迹原点已记录**，目标 = 原点本身；保持 `hover_hold_s` 后自动 `LAND`。
+  /// ★ ticket 09 会在这里插入"遥控器开始键 ⟹ `TRACK`"。
+  kWaitStart,
+  kTrack,       ///< 占位（ticket 09）
+  /// 停发 + 请求 `AUTO.LAND`。两个来源：**失效降级**（ticket 06）与**任务正常走完**（ticket 08），
+  /// 处置逐字相同，靠 `Decision::mission_complete` 区分（日志要说清是哪一种）。
+  kLand,
   kRcOverride,  ///< 控制权被外部夺走（ticket 06）：停发 + 交还控制权 + **不抢回 OFFBOARD**
 };
 
@@ -72,8 +105,11 @@ struct Guards
   /// 与 `in_offboard` 一起构成"当前模式是不是我们要的"（见 `mode_is_ours`）——
   /// 少了它，我们自己请求 `AUTO.LAND` 成功之后模式的变化会被误判成"被外部夺走"。
   bool in_land{false};
-  /// ★ 本次解锁是**本节点发起的**（ticket 06/08 之间的缝，见 `own_arming` 参数）。
-  ///   本张没有解锁路径 ⟹ 默认 false ⟹ 任何 `armed` 上升沿都是"外部解锁"（异常，§H.6）。
+  /// ★ 本次解锁是**本节点发起的**（ticket 08 起由 `Px4Interface` 真实追踪，不再是参数）。
+  ///   追踪方式见 `px4_interface.hpp` 的 `request_arming()`：只有拿到 `/mavros/cmd/arming`
+  ///   的**肯定应答**（`MAV_RESULT::ACCEPTED`）之后观察到的第一个 `armed` 上升沿才算我们的。
+  ///   ⚠️ 中间可能夹几帧 `armed == false`（`/mavros/state` 只有 1 Hz，而应答是即时的）
+  ///   ⟹ "看到 false 就清掉请求标记"会把**我们自己的**解锁误报成外部解锁（§H.6 的告警）。
   bool own_arming{false};
 };
 
@@ -88,7 +124,9 @@ enum class Guard
   kLocalPosFresh, ///< `local_position` 有效
   /// 飞机的解锁（如果有）来自本节点 —— **未解锁时恒成立**。
   /// 语义 = "不许出现『别人解锁了』这种情况"：§H.6 要求外部解锁 ⟹ 停发 + 告警。
-  /// 由 `Guards::own_arming` 提供（ticket 08 会把它变成真实解锁状态而不是参数）。
+  /// 由 `Guards::own_arming` 提供（ticket 08 起是真实的解锁追踪，不再是参数）。
+  /// ⚠️ 它**不在** `ready_to_stream()` 里当真值用（未解锁恒成立，所以放行判据不受影响），
+  /// 但它是 `AUTO` 的必要条件：`guards.armed` 为真而这条不成立 ⟹ 停发 + 退回 INIT。
   kArmingByUs,
 };
 
@@ -165,6 +203,89 @@ struct Health
   /// （`send_vision_estimate()` 里戳相等即 return，§3.5），EKF2 也会丢过旧的样本
   /// ⟹ 话题层面"有数据"，EKF2 眼里"没数据"。
   bool mocap_stamp_stalled{false};
+};
+
+/// 本帧的**导航读数**（ticket 08）—— 起飞与悬停判据要的量的最小集合。
+///
+/// ★ 与 `Guards`/`Health` 同一条纪律：**边界层算好，本文件只做几何**。
+/// ★★ 位置/速度/机头**全都已经在 EKF2 的 local 系里**（ROS 侧 ENU，z 向上为正），
+///    与 setpoint 同口径 ⟹ 生成目标**不需要任何坐标转换**。这是本张能这么薄的原因。
+///    两个来源分别是 `/mavros/local_position/pose` 与
+///    `/mavros/local_position/velocity_local`；**后者也是 ENU**（已核对 mavros 源码：
+///    `local_position.cpp:210` 在**同一个回调**里发它，速度经 `transform_frame_ned_enu`）。
+///
+/// ⚠️ `position_valid` 一条管**位置与姿态两样**：它们来自同一条 `PoseStamped`
+///    ⟹ 不会一个有一个没有。速度是**另一条话题**（另一条订阅），启动时可能还没到，
+///    所以 `velocity_valid` 单列。判据一律要求"量本身有效"才用，见 `update()`。
+struct Odometry
+{
+  bool position_valid{false};
+  double x{0.0};
+  double y{0.0};
+  double z{0.0};
+  bool velocity_valid{false};
+  double vx{0.0};
+  double vy{0.0};
+  double vz{0.0};
+  /// 机头朝向（ROS/ENU：从 +x 逆时针，与 `PoseStamped` 的四元数同系）。
+  double yaw{0.0};
+
+  /// 三维位置偏差（相对给定点；ENU 口径 ⟹ 就是朴素的欧氏距离）。
+  double distance_to(double ox, double oy, double oz) const
+  {
+    const double dx = x - ox, dy = y - oy, dz = z - oz;
+    return std::sqrt(dx * dx + dy * dy + dz * dz);
+  }
+  /// 三维速率。⚠️ 判稳用的是**三维**（`|v| < 0.10 m/s`），不是只看水平分量。
+  double speed() const
+  {
+    return std::sqrt(vx * vx + vy * vy + vz * vz);
+  }
+};
+
+/// 从四元数取 **ROS/ENU 口径**的偏航角（从 +x 逆时针，绕 +z）。
+/// ★ 放这里而不是边界层：它是纯函数（seam 2 可测），而 yaw 的正确性在实机上
+///   代价很高（ticket 05 的 `yaw` 参数就是这么错的 —— 见文件头 ★）。
+/// ⚠️ 返回的是 **ENU** 口径。mavros 对 `FRAME_LOCAL_NED` 的 setpoint 做 ENU→NED 换算，
+///   所以**我们填 ENU、mavros 换**，口径与本函数一致，不要在这里预先 `π/2 − yaw`。
+inline double yaw_from_quaternion(double qw, double qx, double qy, double qz)
+{
+  // 标准 yaw（ZYX 序）：atan2(2(qw·qz + qx·qy), 1 − 2(qy² + qz²))。
+  return std::atan2(2.0 * (qw * qz + qx * qy), 1.0 - 2.0 * (qy * qy + qz * qz));
+}
+
+/// 任务判据的阈值（ticket 08）。
+///
+/// ★ **与失效判据的 `Limits`（在 `px4_interface.hpp`）刻意分开**：那一组管"什么时候停"，
+///   这一组管"飞到什么算到"。合在一起之后，调悬停精度会顺手把低压阈值也改了。
+/// ★ 放在本文件（零 ROS）而不是边界层：它们全是纯几何/时长，边界层只负责把 yaml 里的数搬进来。
+struct TaskLimits
+{
+  /// 爬升目标高度（相对**进入 TAKEOFF 那一刻的 EKF 位置**，m）。工单：1 m。
+  double takeoff_altitude_m{1.0};
+  /// 爬升速率上限（m/s）。工单：≤0.5 m/s。
+  double climb_speed_mps{0.5};
+  /// `TAKEOFF → HOVER` 的高度容差（m，工单 0.10）。
+  double takeoff_alt_tol_m{0.10};
+  /// `TAKEOFF → HOVER` 的垂速容差（m/s，工单 0.10）。
+  double takeoff_vel_tol_mps{0.10};
+  /// 上面两条同时成立需持续多久才算"到高"（工单 1 s）。
+  double takeoff_settle_s{1.0};
+  /// 稳定判据：位置误差上限（m，工单 `< 0.10 m`）。
+  double hover_pos_tol_m{0.10};
+  /// 稳定判据：速率上限（m/s，工单 `< 0.10 m/s`）。
+  double hover_vel_tol_mps{0.10};
+  /// 稳定判据需持续多久（工单 2 s）。
+  double hover_settle_s{2.0};
+  /// 判稳后保持多久再自动降落（工单 60 s = §5.3 的验收时长）。
+  /// ⚠️ ticket 09 必须重新审这个数：操作员要在 `WAIT_START` 里按"开始"键进 `TRACK`，
+  ///   60 s 可能不够他准备 —— 那时它该由遥控器/参数给出更长的值（或改为不超时）。
+  double hover_hold_s{60.0};
+  /// 起飞命令的**有效期**：受理之后这么久还没解锁成功就作废、退回 STANDBY（不自动重试）。
+  /// 取 5.0 的理由：`/mavros/state` 只有 1 Hz（解锁成功最多晚 1 s 才知道）+
+  /// `/mavros/cmd/arming` 的服务往返 + 余量。⚠️ 它**也是**"前置不满足"的兜底时限
+  /// （前置齐了才会发解锁请求，见 `update()` ⑦）。
+  double takeoff_timeout_s{5.0};
 };
 
 /// 降级原因。★ `to_string()` 的字符串**直接进日志**（`degrade=<reason>`）⟹ 稳定、可 grep、
@@ -269,7 +390,35 @@ struct Decision
   bool request_land{false};
   /// 本轮的降级原因（`kNone` = 没有降级）。★ 直接进日志：`degrade=<to_string(...)>`。
   Degrade degrade{Degrade::kNone};
+
+  // ────────── ticket 08 ──────────
+
+  /// 本帧该发**一次**解锁命令（`/mavros/cmd/arming`）。★ 一次性脉冲：只有决定解锁的
+  /// 那一帧为真（边界层照旧"不判断"，只管发；重发/重试的语义在 FSM 里，本张刻意**不重试**）。
+  bool request_arming{false};
+  /// 本帧 setpoint 的**目标位置**（ROS/ENU，z 向上为正）。`stream_setpoint` 为真时才有意义。
+  /// ★ 目标由状态机算（爬升斜坡、悬停点、轨迹原点），**不再由边界层拿"当前位姿"顶替** ——
+  /// 那是 ticket 05 的写法，而"目标"这个概念在 ticket 08 才第一次与"当前"分家。
+  double target_x{0.0};
+  double target_y{0.0};
+  double target_z{0.0};
+  /// 本帧 setpoint 的 yaw（ROS/ENU）。★ 起飞前 = 当前机头（不转向），起飞后 = 锁定值。
+  double target_yaw{0.0};
+  /// 进 `LAND` 的原因是"任务正常走完"而不是失效降级（日志用它区分两种降落）。
+  /// ★ 与 `degrade == kNone` 是**两回事**：正常走完时 `degrade` 也是 `kNone`
+  ///   ⟹ 只用 `degrade` 判断会把"任务飞完了"漏成"什么都没发生"。
+  bool mission_complete{false};
 };
+
+/// `/control/takeoff` 的受理结论（ticket 08）。★ 让"为什么没受理"在**服务应答**里就说清，
+/// 而不是只落进日志 —— 操作员按了键没反应时，第一个被问的问题永远是"什么缺了"。
+enum class TakeoffReply
+{
+  kAccepted,       ///< 受理了；随后由 `update()` 推进（**不等于**已解锁，见 `Fsm::request_takeoff`）
+  kAlreadyFlying,  ///< 已经在执行一次任务了（含"落地上锁还没等到降沿"的收尾期）
+};
+
+const char * to_string(TakeoffReply r);
 
 class Fsm
 {
@@ -277,10 +426,29 @@ public:
   /// @param offboard_prestream_s 切进 OFFBOARD 之前 setpoint 必须先连续流多久。
   ///        见 `phase1-implementation.md` §4.3-1：**断流 PX4 会自动退出 OFFBOARD**
   ///        （`COM_OF_LOSS_T`，z0 现值 1.0 s），所以"先流够了再切"不是优化，是前提。
-  explicit Fsm(double offboard_prestream_s);
+  /// @param limits 任务判据（ticket 08）。默认值就是工单里的数。
+  Fsm(double offboard_prestream_s, TaskLimits limits);
+
+  /// 受理一条**起飞命令** —— `/control/takeoff` 的唯一入口，ticket 09 会让遥控器 ch9 的
+  /// 上升沿来调它。★ 语义与 `request_set_mode` 一样是**异步**的：受理 ≠ 起飞。
+  ///
+  /// 不受理的情形只有一种：**已经有一次任务在跑**（`kAlreadyFlying`）。刻意**不排队**：
+  /// 排队等待前置满足 = 会在操作员不看的某一刻自己起飞 —— 那是本项目最不该有的失效模式。
+  /// 所以受理之后，前置（守卫 + OFFBOARD + 遥控在线）**当帧**不满足就不发解锁请求，
+  /// 由 `takeoff_timeout_s` 兜底作废（见 `TaskLimits::takeoff_timeout_s`）。
+  ///
+  /// @param now_s 单调递增的秒（同 `update()`）
+  TakeoffReply request_takeoff(double now_s);
+
+  /// 解锁请求**被拒**（`/mavros/cmd/arming` 应答 `success == false` 或超时无应答）。
+  /// 由边界层在拿到应答时调用；原因由调用方打印（本文件不碰字符串）。
+  /// ★ 处置 = **放弃本次起飞、退回 STANDBY**，**不自动重试**（用户 2026-09-22 裁定）：
+  ///   静默重试会把"参数没配对"这类确定性的拒绝变成一串没人看的日志。
+  void note_arming_failed();
 
   /// @param now_s 单调递增的秒（边界层给 `rclcpp::Node::now()`，本文件只用差值）
-  Decision update(const Guards & guards, const Health & health, double now_s);
+  Decision update(const Guards & guards, const Health & health, const Odometry & odom,
+    double now_s);
 
   /// 观测口（日志/测试用）：当前这轮连续流了多久（没在流时为 0）。
   double streaming_seconds(double now_s) const;
@@ -292,7 +460,46 @@ public:
   /// 观测口：是否在闩锁里（⟹ 这次失效**不会**自己好）。
   bool latched() const {return latch_ != Latch::kNone;}
 
+  /// 观测口：**起飞时锁定的原点**（进入 TAKEOFF 那一刻的 EKF 位置，ENU）。
+  /// ⚠️ 不是轨迹原点 —— 那个只在判稳那一刻才存在，见 `traj_origin()`。
+  bool takeoff_origin(double * x, double * y, double * z) const;
+
+  /// 观测口：**轨迹原点** —— 稳定判据成立那一刻的 EKF 位置（工单的 ★ 核心设计），
+  /// 之后 `WAIT_START`/`TRACK` 的一切都以它为 0。返回 false 表示**还没判稳过**。
+  /// ★ 日志里以 `traj_origin=(x, y, z)` 打出来，可 grep、可与动捕原点对账。
+  bool traj_origin(double * x, double * y, double * z) const;
+
+  /// 观测口：**起飞机头**（进入 `TAKEOFF` 那一刻锁定的 ENU 偏航角；没起飞过时是 0）。
+  /// 日志用它说清"这轮是按哪个机头飞的"—— 排查"飞机自己在转"这类问题时这是第一个要看的数。
+  double takeoff_yaw() const {return takeoff_yaw_;}
+
+  /// 观测口：本帧任务子状态的名字（日志用，`"idle"` / `"requested"` / `"climb"` / …）。
+  const char * task_name() const;
+
+  /// 观测口：起飞命令已受理但**还没解锁**（`STANDBY` 里等解锁的那一段）。
+  /// 诊断日志用它说明"命令收到了、在等什么"。
+  bool awaiting_arming() const {return task_ == Task::kRequested;}
+
+  /// 观测口：这一轮**已经发过**解锁请求（⟹ 再不发第二条）。诊断日志用它区分
+  /// "还没到解锁的前置"与"请求发出去了、在等 PX4 生效"—— 两者该查的东西完全不同。
+  bool arming_requested() const {return arming_sent_;}
+
 private:
+  /// 任务子状态（ticket 08）。★ 单独一层而不是把 `Task` 塞进 `Phase`：
+  /// `Phase` 是对外契约（`/control/state` 的 `"<AUTHORITY>/<PHASE>"`，测试也在断言它），
+  /// 而这一层管的是"内部飞到哪一步了"。`update()` ⑦ 末尾是**唯一**的翻译处。
+  /// ★★ 它同时是"起飞命令的生命周期"：受理 ⟹ `kRequested`，落地上锁 ⟹ 回 `kIdle`，
+  ///    中间任何一步都不接受第二条命令 —— 这就把 `kAlreadyFlying` 落到了一处状态上。
+  enum class Task
+  {
+    kIdle,       ///< 没有任务 → `STANDBY`（或未放行时的 `INIT`）
+    kRequested,  ///< 收到起飞命令，正在发/等解锁 → 仍是 `STANDBY`（飞机还没被我们驱动）
+    kClimb,      ///< 爬升 → `TAKEOFF`
+    kHover,      ///< 到高后定点保持并判稳 → `HOVER`
+    kWaitStart,  ///< 已判稳、轨迹原点已记录 → `WAIT_START`
+    kDone,       ///< 任务走完，等落地上锁 → `LAND`
+  };
+
   /// 闩锁的**种类** —— 它决定"什么条件下才允许复位"。★ 用种类而不是两个 bool：
   /// 两个 bool 会出现"闩锁还在、原因已经被清掉"的退化状态（`latched()` 为真而
   /// `latched_reason()` 为 `kNone`），那时 `active == kNone` 会让状态机**带着失效继续流**。
@@ -304,6 +511,7 @@ private:
   };
 
   double offboard_prestream_s_;
+  TaskLimits limits_;
   bool streaming_{false};
   double stream_started_at_s_{0.0};
   /// 曾经流起来过 —— 只有"曾经就绪、之后失去"才算**失效**，否则启动时"还没起完"
@@ -314,6 +522,49 @@ private:
   PrevFrame prev_{};
   Latch latch_{Latch::kNone};
   Degrade latched_reason_{Degrade::kNone};
+
+  // ────────── ticket 08 ──────────
+  Task task_{Task::kIdle};
+  /// 起飞命令的受理时刻（`takeoff_timeout_s` 从它起算）。
+  double requested_at_s_{0.0};
+  /// 解锁请求**已经发出去过一次**（不重试 ⟹ 这一位进去就不再下来，直到任务复位）。
+  /// ★ 它与 `task_ == kRequested` 的区别：`armed` 一到就进 `kClimb`，而这一位保证
+  ///   "一次任务只请求解锁一次"，即使中途守卫抖了一下也不会补发第二条。
+  bool arming_sent_{false};
+  /// 起飞机头（进入 `TAKEOFF` 那一刻锁定，之后全程用它当 setpoint 的 yaw）。
+  /// ★ "飞机原地不动"只在 yaw 也被固定时才成立 —— 一个会转向的飞机不算悬停成功。
+  double takeoff_yaw_{0.0};
+  /// 起飞原点（进入 `TAKEOFF` 那一刻的 EKF 位置）。爬升目标与悬停点都从它推出来。
+  double origin_x_{0.0}, origin_y_{0.0}, origin_z_{0.0};
+  bool origin_valid_{false};
+  /// 爬升起点时刻（斜坡 = `climb_speed_mps * (now - climb_started_at_s_)` 封顶到目标高度）。
+  double climb_started_at_s_{0.0};
+  /// **当前这一级判据**开始连续成立的时刻；负值表示"还没开始计时"。
+  /// ★ 两处判据（到高 / 判稳）共用它：它们**互斥**（同一帧只可能在一个任务态里），
+  ///   各存一个反而会出现"离开这个态时忘了清那一个"。每次进新的一级都重置。
+  /// ⚠️ 哨兵值必须是**负数**：夹具/测试的 `now_s` 从 ~0 起算，用 `0.0` 当哨兵会在
+  ///    开机后那几帧把"还没计时"和"从 0 秒起就在计时"混为一谈。
+  double settle_started_at_s_{-1.0};
+  /// `WAIT_START` 的起点（`hover_hold_s` 从它起算）。
+  double wait_started_at_s_{0.0};
+  /// **轨迹原点**（工单的 ★ 核心设计）：稳定判据成立那一刻记下的 EKF 位置。
+  /// 之后 `WAIT_START`/`TRACK` 的目标就是它 —— 于是 EKF2 局部原点与动捕原点之间的
+  /// 常值偏移被**自动吸收**（我们是"以当前点为 0"发的指令）。
+  double traj_x_{0.0}, traj_y_{0.0}, traj_z_{0.0};
+  bool traj_valid_{false};
+
+  /// `armed` 下降沿的复位动作（落地上锁 ⟹ 一切重来）。★ 抽出来是因为 `update()` 的
+  /// ① 复位与任务层必须**同时**归零：漏一个就会出现"飞机已上锁，任务还记着上一轮的轨迹原点"。
+  void reset_mission()
+  {
+    task_ = Task::kIdle;
+    arming_sent_ = false;
+    origin_valid_ = false;
+    traj_valid_ = false;
+    settle_started_at_s_ = -1.0;
+    climb_started_at_s_ = 0.0;
+    wait_started_at_s_ = 0.0;
+  }
 
   /// 停发 + 交出控制权的**公共动作**（④ 夺权 / ⑤ 失效 / ⑥ 守卫不成立 —— 三处的这一段
   /// 必须逐字一致，否则会出现"停发了却还在请求某个模式"这种自相矛盾的输出）。
@@ -343,12 +594,25 @@ inline const char * to_string(Phase p)
     case Phase::kStandby:    return "STANDBY";
     case Phase::kTakeoff:    return "TAKEOFF";
     case Phase::kHover:      return "HOVER";
+    case Phase::kWaitStart:  return "WAIT_START";
     case Phase::kTrack:      return "TRACK";
     case Phase::kLand:       return "LAND";
     case Phase::kRcOverride: return "RC_OVERRIDE";
     case Phase::kInit:       break;
   }
   return "INIT";
+}
+
+/// `/control/takeoff` 应答的**词表**（`accepted` / `already_flying`）。
+/// ★ 由 `control_node.cpp::on_takeoff_request` 放在应答 `message` 的**开头** ⟹ 现场脚本可 grep。
+/// ⚠️ 曾经有一个版本把这里晾着不用、文档却按它写词表 —— 两处出处必然走散。
+inline const char * to_string(TakeoffReply r)
+{
+  switch (r) {
+    case TakeoffReply::kAccepted:      return "accepted";
+    case TakeoffReply::kAlreadyFlying: return "already_flying";
+  }
+  return "accepted";
 }
 
 /// ★ 故意不写 `default:`：新增一条 `Degrade` 而这里没跟上时，`-Wswitch` 直接编译失败。
@@ -369,10 +633,76 @@ inline const char * to_string(Degrade d)
   return "none";
 }
 
-inline Fsm::Fsm(double offboard_prestream_s)
-: offboard_prestream_s_(offboard_prestream_s) {}
+inline Fsm::Fsm(double offboard_prestream_s, TaskLimits limits)
+: offboard_prestream_s_(offboard_prestream_s), limits_(limits) {}
 
-inline Decision Fsm::update(const Guards & guards, const Health & health, double now_s)
+inline TakeoffReply Fsm::request_takeoff(double now_s)
+{
+  // ★ 只拦"已经有一次任务在跑"。**不拦前置** —— 前置在这条命令进来的时候可能正好缺一条
+  //   （动捕刚断了一帧），当场拒绝会让操作员必须掐着时机按键。受理之后前置每帧都查，
+  //   不满足就不发解锁请求，`takeoff_timeout_s` 到点作废并在日志里说明（见 `update()` ⑦）。
+  if (task_ != Task::kIdle) {
+    return TakeoffReply::kAlreadyFlying;
+  }
+  task_ = Task::kRequested;
+  requested_at_s_ = now_s;
+  arming_sent_ = false;
+  // 上一轮的轨迹原点**现在**就清掉：它已经没意义了（飞机还没起飞），留着只会让日志
+  // 在"还没判稳"的时候打出一个上一轮的原点。
+  traj_valid_ = false;
+  origin_valid_ = false;
+  settle_started_at_s_ = -1.0;
+  return TakeoffReply::kAccepted;
+}
+
+inline void Fsm::note_arming_failed()
+{
+  // 只对"我们正在等解锁"这一态有意义；别的态收到这条说明边界层多调了，忽略即可
+  // （不 assert：这不值得让飞控边上跑着的节点崩掉）。
+  if (task_ == Task::kRequested) {
+    reset_mission();
+  }
+}
+
+inline bool Fsm::takeoff_origin(double * x, double * y, double * z) const
+{
+  if (!origin_valid_) {
+    return false;
+  }
+  *x = origin_x_;
+  *y = origin_y_;
+  *z = origin_z_;
+  return true;
+}
+
+inline bool Fsm::traj_origin(double * x, double * y, double * z) const
+{
+  if (!traj_valid_) {
+    return false;
+  }
+  *x = traj_x_;
+  *y = traj_y_;
+  *z = traj_z_;
+  return true;
+}
+
+inline const char * Fsm::task_name() const
+{
+  // ★ 日志用的小写词，与 `/control/state` 里的大写 `Phase` **刻意不同名**：
+  //   两者接近但不等价（`kRequested` 的阶段名是 `STANDBY`），同名会让人以为是同一个东西。
+  switch (task_) {
+    case Task::kIdle:      return "idle";
+    case Task::kRequested: return "requested";
+    case Task::kClimb:     return "climb";
+    case Task::kHover:     return "hover";
+    case Task::kWaitStart: return "wait_start";
+    case Task::kDone:      return "done";
+  }
+  return "idle";
+}
+
+inline Decision Fsm::update(const Guards & guards, const Health & health, const Odometry & odom,
+  double now_s)
 {
   Decision d;
 
@@ -398,6 +728,10 @@ inline Decision Fsm::update(const Guards & guards, const Health & health, double
   if (prev_armed && !guards.armed) {
     latch_ = Latch::kNone;
     latched_reason_ = Degrade::kNone;
+    // ★★ 任务层**同时**归零（ticket 08）：落地上锁 = 这一轮飞完了。不清的话，
+    //    `takeoff_origin` / `traj_origin` 会带着上一轮的值活到下一轮，而它们正是
+    //    "目标"的基准 ⟹ 下一轮会在**上一轮的原点**上悬停。
+    reset_mission();
   } else if (!prev.mode_ours && guards.in_offboard) {
     // 只清**夺权**闩锁：已解锁的输入失效要等落地上锁（电池不会因为有人切了模式就变满）。
     if (latch_ == Latch::kTakeover) {
@@ -443,8 +777,12 @@ inline Decision Fsm::update(const Guards & guards, const Health & health, double
   }
 
   // ── ⑤ 有失效 ⟹ 停发；已解锁时主动中止任务（请求 AUTO.LAND）──
-  if (active != Degrade::kNone) {
+  //   ★ ticket 08 把"任务**正常**走完"接进同一个出口：两者的**动作逐字相同**（停发 + 降落），
+  //     分开写迟早会出现两处不一致（比如只给降级那条重试 `AUTO.LAND`）。差别只在日志里
+  //     怎么称呼它 ⟹ 用 `d.mission_complete` 传出去，由边界层决定措辞。
+  if (active != Degrade::kNone || task_ == Task::kDone) {
     halt(d);
+    d.mission_complete = (active == Degrade::kNone);
     if (guards.armed) {
       // ★ 尽力而为：`AUTO.LAND` 需要 EKF2 的 local position（`mode_requirements.cpp:141`），
       //   位置真失效时 PX4 会**拒绝**它 —— 那时唯一兜底是 PX4 自己的失效保护
@@ -467,9 +805,16 @@ inline Decision Fsm::update(const Guards & guards, const Health & health, double
     return record(d);
   }
 
-  d.phase = Phase::kStandby;
-  // ★ 未解锁 ⟹ MANUAL；解锁且守卫仍成立（只可能来自 `own_arming` 那条缝，ticket 08 会做成真的）
-  //   ⟹ AUTO：我们正在发会驱动飞机（已解锁的 offboard）的指令。
+  // ★ 发 setpoint 需要**可用的位置与姿态**（ticket 08 起目标由本文件算，不再拿"当前位姿"顶替）。
+  //   位置失效的那一帧边界层不刷新新鲜度 ⟹ `position_invalid` 会先降级（上面的 ⑤），
+  //   这条在正常路径上**不会触发**；留着是为了让"绝不带着无效位置发 setpoint"成为一条
+  //   接缝 2 可测的**不变式**（而不是"靠上游不会发生"）。
+  if (!odom.position_valid) {
+    halt(d);
+    return record(d);
+  }
+
+  // ── ⑦ 无失效、守卫成立：流 setpoint + 推进任务 ──
   d.authority = guards.armed ? Authority::kAuto : Authority::kManual;
   d.stream_setpoint = true;
   ever_streamed_ = true;
@@ -481,6 +826,145 @@ inline Decision Fsm::update(const Guards & guards, const Health & health, double
 
   d.request_offboard =
     !guards.in_offboard && (now_s - stream_started_at_s_) >= offboard_prestream_s_;
+
+  // 默认目标 = **当前位置、当前机头**（STANDBY 的语义就是"原地保持"）。
+  d.target_x = odom.x;
+  d.target_y = odom.y;
+  d.target_z = odom.z;
+  d.target_yaw = odom.yaw;
+
+  switch (task_) {
+    case Task::kIdle:
+      d.phase = Phase::kStandby;
+      break;
+
+    case Task::kRequested:
+      // 收到起飞命令、正在发/等解锁。★ 对外**仍是 STANDBY**：飞机还没被我们驱动，
+      //   `AUTO` 那条定义（"正在发会驱动飞机的指令"）必须等 `armed` 为真才成立
+      //   —— 不过 `d.authority` 上面已经按 `guards.armed` 算了，正好。
+      d.phase = Phase::kStandby;
+      if (guards.armed) {
+        // 解锁成功（不管是哪一帧成功的）⟹ **就在这一帧锁定原点与机头**，开始爬升。
+        // ★ 锁在"看到 armed 的那一帧"而不是"发解锁请求的那一帧"：请求与生效之间
+        //   飞机可能已经在地上被风吹着挪了一点，而我们要的基准是**起飞时的**位置。
+        origin_x_ = odom.x;
+        origin_y_ = odom.y;
+        origin_z_ = odom.z;
+        origin_valid_ = true;
+        takeoff_yaw_ = odom.yaw;
+        task_ = Task::kClimb;
+        climb_started_at_s_ = now_s;
+        settle_started_at_s_ = -1.0;
+      } else if (!arming_sent_ && guards.in_offboard && health.rc_fresh) {
+        // ★ 解锁的前置（§H.6 原文两条）= **已在 OFFBOARD** + **setpoint 已在流**。
+        //   后者由 `streaming_`/`offboard_prestream_s_` 保证（切进 OFFBOARD 之前就得流够），
+        //   这里补前者的显式判断 —— 少了它，在 STANDBY 还没切模式的那一小段时间里
+        //   发了解锁请求，PX4 会因为"没在 OFFBOARD"而拒绝（H.6 的 D3）。
+        // ★★ 再加一条 `rc_fresh`（§H.7.1「解锁前遥控必须开机且链路已建立」）：把那条
+        //   **人肉清单项变成机器判据**。不这么做的后果是具体的 —— 遥控静默时解锁，
+        //   紧接着 ④ 的 `rc_timeout`（只在已解锁时算失效）就会判失效并请求降落，
+        //   于是飞机**起飞后立刻降落**，比一开始就不解锁难查得多。
+        //   ⚠️ 代价：台上没有遥控接收机（`/mavros/rc/in` 从未到帧）时**永远解不了锁**。
+        //   这是刻意的：ticket 09 的起飞键就在遥控器上，遥控不在场本来就不该起飞。
+        d.request_arming = true;
+        arming_sent_ = true;
+      } else if (now_s - requested_at_s_ > limits_.takeoff_timeout_s) {
+        // 前置迟迟不齐 / 解锁始终没生效 ⟹ **作废**，退回 STANDBY（不自动重试）。
+        // ⚠️ 这里**不打印**原因：诊断日志每 `diag_period_s` 已经把这轮的缺失项列出来了。
+        reset_mission();
+      }
+      break;
+
+    case Task::kClimb: {
+      d.phase = Phase::kTakeoff;
+      // 机头保持起飞机头（不转向）。
+      d.target_yaw = takeoff_yaw_;
+      // 目标高度 = 原点 + 高度上限；目标 z 沿斜坡上升，速率 ≤ climb_speed_mps。
+      // ★ 水平两轴**钉在原点**：工单要的是"垂直起飞"，不是"斜着飞上去"。
+      const double altitude = limits_.takeoff_altitude_m;
+      const double climbed =
+        limits_.climb_speed_mps * std::max(0.0, now_s - climb_started_at_s_);
+      d.target_x = origin_x_;
+      d.target_y = origin_y_;
+      d.target_z = origin_z_ + std::min(altitude, climbed);
+
+      // 到高判据：`|z − (原点+高度)| < tol ∧ |v_z| < tol` 持续 `takeoff_settle_s`。
+      // ⚠️ 用**原点+高度**而不是 `target_z`：斜坡还没走完时目标就在当前高度上，
+      //    拿它当基准会"发出去的一瞬间就满足"，斜坡形同虚设。
+      // ⚠️ `velocity_valid` 是必需的：速度话题还没到过一帧时 `vz` 是 0（"看起来静止"），
+      //    用它判稳会**立刻**通过 —— 这是"没数据当成好消息"的老毛病，必须显式挡掉。
+      const bool at_altitude = odom.velocity_valid &&
+        std::fabs(odom.z - (origin_z_ + altitude)) < limits_.takeoff_alt_tol_m &&
+        std::fabs(odom.vz) < limits_.takeoff_vel_tol_mps;
+      if (at_altitude) {
+        if (settle_started_at_s_ < 0.0) {
+          settle_started_at_s_ = now_s;
+        } else if (now_s - settle_started_at_s_ >= limits_.takeoff_settle_s) {
+          task_ = Task::kHover;
+          settle_started_at_s_ = -1.0;   // 判稳重新计时（判据不同，不能沿用）
+        }
+      } else {
+        settle_started_at_s_ = -1.0;     // 连续成立的语义：一帧不成立就重新计时
+      }
+      break;
+    }
+
+    case Task::kHover: {
+      d.phase = Phase::kHover;
+      d.target_yaw = takeoff_yaw_;
+      // 悬停点 = 起飞原点正上方 `takeoff_altitude_m`（与爬升的目标一致 ⟹ 到高后无跳变）。
+      d.target_x = origin_x_;
+      d.target_y = origin_y_;
+      d.target_z = origin_z_ + limits_.takeoff_altitude_m;
+
+      // 稳定判据（工单原话）：`位置误差 < 0.10 m ∧ |v| < 0.10 m/s 持续 2 s`。
+      // ★ 位置误差相对**悬停点**（见文件头 ★ 的说明：轨迹原点此刻还不存在）。
+      // ⚠️ `velocity_valid` 同上，必须显式要求。
+      const bool stable = odom.velocity_valid &&
+        odom.distance_to(d.target_x, d.target_y, d.target_z) < limits_.hover_pos_tol_m &&
+        odom.speed() < limits_.hover_vel_tol_mps;
+      if (stable) {
+        if (settle_started_at_s_ < 0.0) {
+          settle_started_at_s_ = now_s;
+        } else if (now_s - settle_started_at_s_ >= limits_.hover_settle_s) {
+          // ★★ **轨迹原点**：稳定判据成立那一刻的 EKF 位置（工单的 ★ 核心设计）。
+          //   记的是**当前位置**，不是悬停点 —— "以当前点为 0"正是这条设计的意思，
+          //   EKF2 局部原点与动捕原点之间的那个常值偏移就此被吸收。
+          //   它与悬停点的差不超过 `hover_pos_tol_m`（判据保证），所以跳变 ≤ 10 cm。
+          traj_x_ = odom.x;
+          traj_y_ = odom.y;
+          traj_z_ = odom.z;
+          traj_valid_ = true;
+          task_ = Task::kWaitStart;
+          wait_started_at_s_ = now_s;
+          settle_started_at_s_ = -1.0;
+        }
+      } else {
+        settle_started_at_s_ = -1.0;
+      }
+      break;
+    }
+
+    case Task::kWaitStart:
+      d.phase = Phase::kWaitStart;
+      d.target_yaw = takeoff_yaw_;
+      // 目标 = **轨迹原点本身**："停在原地"。★ 若沿用悬停点，飞机就会慢慢朝悬停点
+      // 挪回到最开始的 10 cm 内 —— 那会让"轨迹原点"变成一个飞机其实没去过的点。
+      d.target_x = traj_x_;
+      d.target_y = traj_y_;
+      d.target_z = traj_z_;
+      if (now_s - wait_started_at_s_ >= limits_.hover_hold_s) {
+        // 任务正常结束 ⟹ `kDone`，下一帧走 ⑤ 的降落出口（那一刻 `d.request_land` 才有意义）。
+        // ★ 不在这里直接请求降落：保持"降落只有一个出口"这条纪律。
+        task_ = Task::kDone;
+      }
+      break;
+
+    case Task::kDone:
+      // 不可达（⑤ 已经把它拦在降落分支里了）。写出来是为了让 `-Wswitch` 保持完整。
+      d.phase = Phase::kLand;
+      break;
+  }
   return record(d);
 }
 

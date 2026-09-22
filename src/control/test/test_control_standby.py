@@ -79,10 +79,21 @@ def test_冒烟_进_STANDBY_并按_50Hz_发正确的_setpoint():
             "type_mask 必须是 2552：忽略速度/加速度/yaw_rate，保留位置 + yaw；"
             "不含 FORCE(512) 与 IGNORE_YAW(1024)")
         assert last.msg.coordinate_frame == 1, "coordinate_frame 必须是 FRAME_LOCAL_NED(1)"
-        assert last.msg.yaw == pytest.approx(0.0), "本张的 yaw 固定 0"
         assert last.msg.header.stamp.sec > 0 or last.msg.header.stamp.nanosec > 0, \
             "stamp 不能是 0（mavros 会把它换算成 time_boot_ms）"
         assert last.msg.header.frame_id == "map", "frame_id 应当沿用 local_position 的 frame"
+
+        # ★ yaw：**本张起不再是常量 0，而是"当前机头"**（ticket 05 的 `yaw` 参数已删，
+        #   见 control/include/control/fsm.hpp 的文件头 ★）。
+        #   转一下假 EKF 的机头 ⟹ setpoint 的 yaw 必须跟着转，否则测的是"恰好等于 0"。
+        #   ⚠️ 这里只断言 STANDBY 段（跟随）；"进入 TAKEOFF 后锁定不再跟随"在
+        #   `test_control_takeoff.py` 里。
+        sc.fake.set_yaw(0.7)
+        sc.hold(0.5)
+        assert sc.setpoints()[-1].msg.yaw == pytest.approx(0.7, abs=1e-6), (
+            "STANDBY 段 setpoint 的 yaw 必须 = 当前机头（这样飞机原地不动、不转向）")
+        sc.fake.set_yaw(0.0)
+        sc.hold(0.3)
 
         # —— 频率：只在**窗口**上算，绝不断言相邻两帧的间隔（见 Scenario.setpoint_rate_hz）——
         rate = sc.setpoint_rate_hz(from_s=first.at_s + 0.3, to_s=last.at_s - 0.05)
@@ -147,7 +158,11 @@ def test_守卫_飞控未连接时不发_setpoint():
 
 def test_已解锁时不发_setpoint():
     """★ 外部解锁 = 异常（`params-changes.md` §H.6）：停发 setpoint + 告警。
-    本张没有解锁路径（解锁归 ticket 08）⟹ 本张看到的任何 armed 上升沿都不是我们造成的。"""
+
+    ★ 本用例用的是**外部解锁**的注入面（直接 `set_state(armed=True)`，DUT 没发过解锁请求）
+      —— 这条路径在 ticket 08 之后仍然成立：DUT 会区分"这次 armed 上升沿是不是我请求的"
+      （`px4_interface.cpp::on_state` 的归属判定）⟹ 没请求过的上升沿一律按外部解锁处理。
+      我们自己解锁那一路（`/control/takeoff`）在 `test_control_takeoff.py` 里。"""
     with Scenario(dut=DUT, params=BASE_PARAMS) as sc:
         _reach_standby(sc)
         sc.fake.set_state(armed=True)

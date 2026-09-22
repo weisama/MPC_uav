@@ -26,7 +26,9 @@
 |---|---|
 | **mavros 的行为**：话题名、频率、**QoS**、`/mavros/state` 1 Hz、`mode_sent` 的语义、服务的应答 | **PX4 的行为**：`COM_OF_LOSS_T` 超时退 OFFBOARD、EKF2 融合、模式需求检查 |
 | EKF2 的**位置输出**（`local_position`，可被 `set_position` 搬动） | EKF2 **怎么算出**这个位置 |
+| EKF2 的**速度输出**（`local_position/velocity_local`，可被 `set_velocity` 搬动；与位置**解耦**，两条独立话题） | 速度**怎么融合**出来的（TRIAD/差动，与它的噪声） |
 | PX4 **接受 SET_MODE 之后 mode 会变**（`follow_set_mode`，默认开） | PX4 **为什么可能拒绝**某个模式 |
+| PX4 **解锁服务的应答**（`set_arming_policy`）与**解锁之后 `armed` 才上升沿**（`follow_arming`） | PX4 的 **prearm 检查**（哪种检查不合格对应哪个 `MAV_RESULT` 码） |
 
 ⟹ **依赖 PX4 侧行为的验收项不能在夹具里做**（例如"杀节点 → PX4 自行退出 OFFBOARD"），
 那是 SITL / 拆桨台架的职责。夹具只能证到"节点确实停止发 setpoint 了"。
@@ -111,7 +113,7 @@ def test_飞控状态静默之后停止发_setpoint():
 ### 一条完整的场景
 
 ```python
-with Scenario(dut=("control", "control_node"), params={"yaw": 0.0}) as sc:
+with Scenario(dut=("control", "control_node")) as sc:
     sc.wait_for_subscribers("state")
     sc.wait_for_subscribers("local_position")
     assert sc.mocap_source.matched_subscribers() >= 1     # 动捕那条也要接上
@@ -152,11 +154,15 @@ with Scenario(dut=("control", "control_node"), params={"yaw": 0.0}) as sc:
 | `mute(*keys)` / `unmute(*keys)` | 让话题**停止发布**。可选 `state` `local_position` `local_velocity` `rc` `battery` |
 | `set_state(**fields)` | 改 `connected` / `armed` / `mode` / `guided` / `manual_input` |
 | `set_position(x, y, z)` | 搬动假 EKF（**ROS/ENU，z 向上为正**；⚠️ 不是 NED —— 见 `fake_mavros.py` 的 docstring） |
+| `set_velocity(vx, vy, vz)` | 搬动假 EKF 的**速度**（ROS/ENU，与 `set_position` **互不影响** —— 它们是两条独立话题） |
+| `set_yaw(yaw)` | 改假 EKF 报的**机头**（ROS/ENU，从 +x 逆时针）。★ ticket 08 加：此前 setpoint 的 yaw 是固定 0，夹具没有"会转的飞机"⟹"锁没锁住机头"在 0 上分不出来 |
 | `set_voltage(v)` / `set_rc(channels)` / `set_rc_channel(ch, v)` | 电压、整组遥控通道、单路（**通道号从 1 起算**） |
 | `set_mode_policy('ok'\|'fail'\|'absent')` | `set_mode` 应答：接受 / `mode_sent=False` / **服务不存在** |
+| `set_arming_policy('ok'\|'fail'\|'absent')` | `/mavros/cmd/arming` 应答：`success=True,result=0` / `success=False,result=1` / **服务不存在**。★ `'fail'` 造的是"**服务当场说不**"（DUT 立刻知道被拒） |
+| `follow_arming`（构造参数，默认 `true`） | `false` = **应答肯定但 `armed` 永不上升沿**。★ 这是**另一种**失效：真机上对应 prearm 检查在 ack 之后才失败 ⟹ DUT **只能等到 `takeoff_timeout_s` 超时**，与 `'fail'` 走的是两条不同的路径 |
 | `set_mode_service_available(bool)` | 运行时增删服务（⚠️ 要等 DDS 发现传播，断言前用 `wait_for`） |
 | `matched_subscribers(key)` | ★ 发现屏障：**QoS 不兼容时恒为 0**（服务没有对应的计数 API，见 `fake_mavros.py` 的更正） |
-| `setpoints` / `mode_requests` / `arming_requests` | 记录（`armings` 本张没用到，ticket 08 会用） |
+| `setpoints` / `mode_requests` / `arming_requests` | 记录 DUT **发来**的每一帧 / 每次 set_mode / 每次 arming（`ArmingRequest(at_s, value)`）。★ 解锁的负断言（"只请求一次"、"被拒后一帧都不补发"）就靠它 |
 | `setpoints_between(from_s, to_s)` | 按窗口取 |
 
 ★ `matched_subscribers()` 是**最该先用的一个断言原语**：它把"没收到数据"一句话分成两种截然不同的原因 ——
@@ -208,14 +214,20 @@ sc.timeline.add(sc.t() + 0.5, sc.stop_dut, "杀掉 DUT")
 
 | 能力 | 谁会用 |
 |---|---|
-| `arming_requests` | ticket 08（解锁） |
-| `VrpnSource.set_trajectory` | ticket 07（参考轨迹跟随） |
+| `VrpnSource.set_trajectory` | ticket 07/09（参考轨迹跟随） |
+| `FakeMavros.set_arming_service_available()` | 暂时没人用（`set_arming_policy('absent')` 已覆盖"服务不存在"）；留着是为了与 `set_mode_service_available` 对称 |
 | `Scenario(start_dut=False)`（只起夹具，手动起节点） | 台架排障时好用，自动化里没用过 |
 
 ★ 反过来，`mute` / `pause` / `set_position` / `set_state` / `wait_for_control_state` /
 `setpoint_rate_hz` / `evidence` / `set_voltage` / `voltage_drop` / `set_rc` / `set_rc_channel` /
 `rc_change` / `rewind` / `hold_stamp` / `set_mode_policy('absent')` 这些
 **已被 `control` 的测试真实调用过**（ticket 05/06），可以照着抄。
+
+★ ticket 08 新引入的三个注入面（`set_velocity` / `set_yaw` / `set_arming_policy`）**都已各有一条自检**，
+并且**都已被 `control` 的测试真实调用**（`set_velocity` 与 `set_arming_policy` 在
+`test_control_takeoff.py`、`set_yaw` 在 `test_control_standby.py`）⟹ 可以从 ② 那份清单里抄。
+其中 `set_arming_policy('fail')` 与 `follow_arming=False` 是**两种不同的失效**（见 `FakeMavros` 表），
+第一次用的时候别把它们当成同一件事。
 
 ## 三条写测试的纪律
 
@@ -252,8 +264,12 @@ colcon test  --packages-up-to bench
 
 夹具**自己也有测试**（`test/test_bench_selftest.py`）：验它**假得像不像** ——
 频率对不对、`local_position` 是不是 best_effort、`mute` 是不是真的不发、`set_state` 是不是真的走到话题上、
-`set_mode` 的三种应答，以及 **ticket 06 新引入的四个注入面各一条**（`set_voltage`、`set_position(nan)`、
-`set_rc_channel`/静置恒定、`hold_stamp`/`rewind`）。★ 理由：**夹具骗不到 DUT 的前提是它先骗过自己**；
+`set_mode` 的三种应答，**ticket 06 新引入的四个注入面各一条**（`set_voltage`、`set_position(nan)`、
+`set_rc_channel`/静置恒定、`hold_stamp`/`rewind`），以及 **ticket 08 的三个各一条**
+（`set_velocity` 真的走到 `velocity_local` 上**且与 `set_position` 解耦**、`set_yaw` 真的改掉
+`local_position` 的四元数**且符号对**（用 DUT 那套 `atan2` 反解出来对账）、
+`set_arming_policy` 的 `'ok'`/`'fail'`/`follow_arming=False`/`'absent'` 四种形状**两两可区分**）。
+★ 理由：**夹具骗不到 DUT 的前提是它先骗过自己**；
 一个把 `local_position` 发成 reliable 的假 mavros，会让**所有**依赖它的测试"莫名其妙收不到数据"，
 而那种故障在日志里看不出来。
 
@@ -274,5 +290,5 @@ bench/scenario.py       Scenario：拼装 + DUT 子进程 + 秒表 + 证据输�
 bench/config.py         DEFAULTS 与 yaml 深合并
 bench/pytest_support.py ★ 会话级 ROS 上下文与 domain 安全边界
 config/bench.yaml       默认频率/话题/初始状态
-test/                   夹具自检（13 条）+ 时序纯逻辑单测（6 条）
+test/                   夹具自检（16 条）+ 时序纯逻辑单测（6 条）
 ```

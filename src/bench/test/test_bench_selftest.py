@@ -11,6 +11,7 @@
 
 import time
 
+import pytest
 from geometry_msgs.msg import PoseStamped
 from mavros_msgs.msg import PositionTarget, State
 from mavros_msgs.srv import SetMode
@@ -216,7 +217,6 @@ def test_电压注入真的走到_battery_话题上():
     ⚠️ 这一条不测"低压会怎样"（那是 DUT 的事），只测**夹具真的把电压送出去了** ——
     否则 ticket 06 的"低压 ⟹ LAND"测试会在"注入根本没生效"的前提下变绿（假绿）。
     """
-    import pytest
     from sensor_msgs.msg import BatteryState
 
     with _fixture_only() as sc:
@@ -331,4 +331,145 @@ def test_动捕时间戳可以冻住也可以倒退():
         sc.advance_to(2.6)
         stamps = [m.header.stamp.sec + m.header.stamp.nanosec * 1e-9 for m in got]
         assert min(stamps) < max(stamps) - 1.0, "rewind 没有造出「戳倒退」的场景"
+
+
+# ─────────────── ticket 08（起飞/悬停）第一次用到的注入能力，各来一条自检 ───────────────
+
+def test_速度注入真的走到_local_position_velocity_话题上():
+    """`set_velocity` —— 悬停判稳判据里**速率那一半**的唯一注入面（ticket 08 的 ★ 项）。
+
+    ★ 为什么要专门自检"位置不动、速度很大"这种**内部不自洽**的场面：
+      真 mavros 里位置与速度是同一个回调（`local_position.cpp`）发的，物理上自洽；
+      但 DUT 订的是两条话题，所以判据的两半必须能**分别**被证伪。否则
+      `|v| < 0.10` 那一半在台架上根本没有反例，测试会在一半判据永不触发的情况下变绿。
+    ⚠️ 这里只证明夹具送得出，不断言"DUT 会怎样"（那是 `src/control/test/` 的事）。
+    """
+    from geometry_msgs.msg import TwistStamped
+
+    with _fixture_only() as sc:
+        got = []
+        _subscribe(sc, TwistStamped, sc.fake.topics["local_velocity"], got.append,
+                   mavros_sensor_qos())
+        sc.advance_to(0.5)
+        assert got, "假 mavros 一帧 local_position/velocity_local 都没发出来"
+        assert got[-1].header.frame_id == "map", "真 mavros 的速度话题也用 frame_id = 'map'"
+        assert (got[-1].twist.linear.x, got[-1].twist.linear.y, got[-1].twist.linear.z) \
+            == (0.0, 0.0, 0.0), "默认速度应当是零（= 静止）"
+
+        # 位置**不动**、速度非零：这是"位置看着挺好但还在飘"的场面。
+        sc.fake.set_position(0.0, 0.0, 1.0)
+        sc.fake.set_velocity(0.0, 0.0, -0.3)
+        sc.advance_to(1.0)
+        assert got[-1].twist.linear.z == pytest.approx(-0.3), (
+            f"注入的速度没到话题上，实测 {got[-1].twist.linear.z}")
+        assert got[-1].twist.linear.x == 0.0, "只该改被点名的那一轴"
+
+        # ★ 与位置**解耦**：两条话题各自独立，位置仍是刚设的 1.0。
+        pose = []
+        _subscribe(sc, PoseStamped, sc.fake.topics["local_position"], pose.append,
+                   mavros_sensor_qos())
+        sc.advance_to(1.4)
+        assert pose and pose[-1].pose.position.z == 1.0
+        assert got[-1].twist.linear.z == pytest.approx(-0.3), "改位置不该顺带改速度"
+
+        sc.fake.set_velocity(0.0, 0.0, 0.0)
+        sc.advance_to(1.8)
+        assert got[-1].twist.linear.z == 0.0, "恢复零速之后必须能回到静止"
+
+
+def test_机头注入真的改掉_local_position_的四元数():
+    """`set_yaw` —— ticket 08「yaw = 起飞机头，锁定后不跟随」的唯一注入面。
+
+    ⚠️ 转的是**四元数**，而 DUT 用 `yaw_from_quaternion` 反解 ⟹ 这条自检必须验证
+    **整条链**：`set_yaw(θ)` → 四元数 → （DUT 那侧）反解回 θ。只断言"四元数变了"是不够的
+    ——四元数的符号与轴序写错时，它照样"变了"，但反解出来是另一个角。
+    这里自己做一次同样的反解，把口径钉死为 **ENU 绕 +z、逆时针为正**。
+    """
+    import math
+
+    def yaw_of(q):
+        return math.atan2(2.0 * (q.w * q.z + q.x * q.y),
+                          1.0 - 2.0 * (q.y * q.y + q.z * q.z))
+
+    with _fixture_only() as sc:
+        got = []
+        _subscribe(sc, PoseStamped, sc.fake.topics["local_position"], got.append,
+                   mavros_sensor_qos())
+        sc.advance_to(0.3)
+        assert got and yaw_of(got[-1].pose.orientation) == pytest.approx(0.0), \
+            "默认机头应当是 0（单位四元数）"
+
+        sc.fake.set_yaw(0.7)
+        sc.advance_to(0.6)
+        assert yaw_of(got[-1].pose.orientation) == pytest.approx(0.7, abs=1e-6), (
+            f"注入的机头没有（正确地）到话题上，反解出来是 {yaw_of(got[-1].pose.orientation)}")
+        # 逆时针为正：负角必须反解回负角（符号写错时这一条会红）。
+        sc.fake.set_yaw(-1.2)
+        sc.advance_to(0.9)
+        assert yaw_of(got[-1].pose.orientation) == pytest.approx(-1.2, abs=1e-6), \
+            "yaw 的符号约定写错了（ENU 下逆时针为正）"
+        # 位置不该被牵连（两者共用同一帧消息）。
+        assert got[-1].pose.position.x == 0.0
+
+
+def test_解锁服务可以答应_拒绝_或不存在():
+    """`set_arming_policy` / `follow_arming` —— ticket 08 三条不同失效路径的注入面：
+
+      · `'ok'`                  ⟹ `success=True`、`result=0`，且 armed 随后变真
+      · `'fail'`                ⟹ `success=False`、`result=1`（TEMPORARILY_REJECTED）；
+                                   **armed 不许变**，DUT 该报原因 + 退回 STANDBY、不重试
+      · `follow_arming=False`   ⟹ 应答是肯定的，但 armed 永不上升沿（DUT 只能等到超时）
+                                   ★ 与 `'fail'` 是**两种不同的失效**，必须能分开造
+      · `'absent'`              ⟹ 服务不存在（DUT 走 `service_is_ready() == False`）
+
+    ⚠️ `CommandBool` 的应答字段是 `success` + `result`（MAV_RESULT 码），不是
+    `SetMode` 的 `mode_sent` —— 写错字段名的测试会永远读到默认的 False 而"看起来通过了"。
+    """
+    from mavros_msgs.srv import CommandBool
+
+    with _fixture_only() as sc:
+        client = sc.node.create_client(CommandBool, sc.fake.topics["arming"])
+        assert client.wait_for_service(timeout_sec=5.0)
+
+        def call(value=True):
+            req = CommandBool.Request()
+            req.value = value
+            future = client.call_async(req)
+            sc.wait_for(lambda: future.done(), timeout_s=5.0, message="arming 没有回应")
+            return future.result()
+
+        def wait_armed(expected, timeout_s=3.0):
+            return sc.poll(lambda: sc.fake.armed is expected, timeout_s=timeout_s)
+
+        # ① 接受：success / result=0，且跟随解锁（state 是 1 Hz ⟹ 最多等 1 s）。
+        resp = call()
+        assert resp.success is True and resp.result == 0
+        assert wait_armed(True), "policy='ok' 时夹具没有真的把 armed 置真"
+        assert sc.fake.arming_requests[-1].value is True
+        assert len(sc.fake.arming_requests) == 1, "夹具该把每一次调用都记下来"
+
+        # ② 拒绝：应答否定、armed **不许**变（此刻已被 ① 置真，先恢复）。
+        assert wait_armed(True)
+        sc.fake.set_state(armed=False)
+        assert wait_armed(False)
+        sc.fake.set_arming_policy("fail")
+        resp = call()
+        assert resp.success is False, "policy='fail' 必须应答否定"
+        assert resp.result == 1, "MAV_RESULT 码该是 1（TEMPORARILY_REJECTED），DUT 报原因靠它"
+        sc.advance_to(sc.t() + 1.5)
+        assert sc.fake.armed is False, "被拒绝的解锁请求不该让 armed 变真"
+
+        # ③ 答应但不真解锁：与 ② 的区别正是 DUT 能观测到的东西（应答 vs 上升沿）。
+        sc.fake.set_arming_policy("ok")
+        sc.fake.follow_arming = False
+        resp = call()
+        assert resp.success is True, "这一路上应答必须是肯定的"
+        sc.advance_to(sc.t() + 1.5)
+        assert sc.fake.armed is False, "follow_arming=False 时 armed 必须一直不变"
+        sc.fake.follow_arming = True
+
+        # ④ 服务不存在。
+        sc.fake.set_arming_policy("absent")
+        sc.wait_for(lambda: not client.service_is_ready(), timeout_s=15.0,
+                    message="销毁服务之后客户端仍认为服务可用（DDS 发现没跟上？）")
 

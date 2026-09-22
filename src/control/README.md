@@ -1,11 +1,16 @@
 # control —— 自主飞行控制节点
 
-把 PX4 拉进 OFFBOARD，并以 50 Hz 持续流「位置 + yaw」setpoint。
+把 PX4 拉进 OFFBOARD，并以 50 Hz 持续流「位置 + yaw」setpoint；
+起飞、悬停判据、自动降落（ticket 08）已经接上，**它现在会让飞机真的离地**。
 
-> ⚠️ **本包目前只实现到 `STANDBY` + 失效路径**（ticket 05 + 06）：已在流 setpoint、已切 OFFBOARD，
-> 但**飞机未解锁**（本包自己没有解锁路径）、setpoint 内容是"位置 = 当前位姿"（原地保持）
-> ⟹ 正常路径下**它不会让飞机动**。失效路径可用：打杆夺权、输入超时、低压、位置异常 ⟹ 停发/`LAND`。
-> 起飞/悬停/降落归 ticket 08，轨迹归 ticket 07。
+> ★ **本包覆盖到 `TAKEOFF → HOVER → WAIT_START → LAND`**（ticket 05 + 06 + 08）。
+> 正常路径：`STANDBY` 里等到守卫齐 ⟹ 切 OFFBOARD ⟹ 收到 `/control/takeoff` 才**程序解锁**（H.6 的 D3）⟹
+> 垂直慢爬到 1 m ⟹ 判稳、记轨迹原点 ⟹ 保持 `hover_hold_s` ⟹ 自动 `AUTO.LAND`。
+> 失效路径：打杆夺权、输入超时、低压、位置异常 ⟹ 停发/`LAND`。
+> 轨迹（`TRACK`）归 ticket 09。
+>
+> ⚠️ **起飞这条路径的判据只在台架/仿真上验过**：验收阶梯的 1–4 级（无桨台架 / 系绳离地 20 cm /
+> 系绳闭环悬停 30 s / 自由飞）都**需要人 + 拆桨台架 + 飞控空闲窗口**，见本文末的「⏳ 还没做的验收项」。
 
 ## ★ 运行纪律（比代码重要）
 
@@ -18,8 +23,12 @@
    代价是**解锁上升沿最多晚 1 s 被检出**（ticket 08 起飞前要把这条算进去）。
 3. **退出 OFFBOARD 有两种方式**：停本节点（断流超过 `COM_OF_LOSS_T` 后 PX4 自行退出），
    或遥控器接管（ticket 02 的通道分配）。**不要用 QGC 抢模式** —— 那会让"谁在控制"变得说不清。
-4. **`armed` 上升沿 = 异常**（本张没有解锁路径，台架注入除外）⟹ 看到 ERROR 日志就去查是谁解的锁，
-   不要"重试一下"。等 ticket 08 落地后这条才改。
+4. **起飞的唯一入口是 `/control/takeoff`**（ticket 08）。它**没有别的触发方式**：
+   本节点不读遥控器，也没有"自动起飞"—— 遥控器 ch9 的上升沿归 ticket 09。
+   ⟹ 看到飞机解锁而没人按过 `/control/takeoff`，那就是**别人解的锁**（§H.6 的告警），去查是谁，
+   不要"重试一下"。
+   ⚠️ **起飞的前置里有一条"遥控在线"**（§H.7.1），所以**台上没有遥控接收机时永远解不了锁**
+   —— 这是刻意的（ticket 09 的起飞键就在遥控器上），不是 bug。
 5. **降级之后想复位，只有两条路**（都不要去"帮它一把"）：
    - **落地上锁**（`armed` true→false）—— 主路径，对四类原因都有效；
    - **夺权场景**：让**摇杆停止动作**，再把模式**离开、然后交回** OFFBOARD（判的是模式升沿，
@@ -31,13 +40,105 @@
 | 维度 | 取值 | 含义 |
 |---|---|---|
 | **控制权** `Authority` | `MANUAL` / `AUTO` | 谁在控制飞机 |
-| **任务态** `Phase` | `INIT` / `STANDBY` / `TAKEOFF` / `HOVER` / `TRACK` / `LAND` / `RC_OVERRIDE` | 程序在干什么 |
+| **任务态** `Phase` | `INIT` / `STANDBY` / `TAKEOFF` / `HOVER` / `WAIT_START` / `TRACK` / `LAND` / `RC_OVERRIDE` | 程序在干什么 |
 
 ★ **`AUTO` 的定义是"本项目正在发会驱动飞机的指令（已解锁的 offboard）"**。
 所以 `STANDBY` 虽然已经切进 OFFBOARD 模式，但飞机未解锁 ⟹ `/control/state` 仍是 `MANUAL/STANDBY`。
 这条定义让"切模式"与"交出控制权"两件事不被混为一谈。
 
-`TAKEOFF/HOVER/TRACK` 仍是占位（归 ticket 08/07）；`LAND` 与 `RC_OVERRIDE` 由 ticket 06 的失效路径到达。
+`TRACK` 仍是占位（归 ticket 09）；`LAND` 有两个来源：ticket 06 的失效降级、ticket 08 的任务正常走完。
+
+## 起飞 / 悬停 / 降落（ticket 08）
+
+```
+MANUAL/STANDBY ──/control/takeoff──▶ (仍在 STANDBY：解锁请求发出去，等 armed)
+      │ armed 上升沿（锁原点 + 锁机头）
+      ▼
+AUTO/TAKEOFF ──爬到 origin+1 m，≤0.5 m/s──▶ AUTO/HOVER ──判稳 2 s──▶ AUTO/WAIT_START
+                                                                            │ 保持 60 s
+                                                                            ▼
+                                                              MANUAL/LAND（请求 AUTO.LAND）
+                                                                            │ PX4 的 COM_DISARM_LAND=2.0 自己上锁
+                                                                            ▼
+                                                              MANUAL/STANDBY（armed 降沿 ⟹ 全部复位）
+```
+
+### 触发与前置
+
+**唯一入口**：`ros2 service call /control/takeoff std_srvs/srv/Trigger {}`。服务应答是 `success`（布尔）
++ `message`，后者**以** `accepted` / `already_flying` 开头（词表在 `fsm.hpp::to_string(TakeoffReply)`，
+`control_node.cpp::on_takeoff_request` 把它接在 `message` 开头）—— 用服务而不是话题，
+是因为**命令要有应答**：操作员按了没反应时，第一个问题永远是"什么缺了"，
+而 `message` 后半段就是那个答案（缺哪条前置、当前任务态）。
+
+★ **受理 ≠ 起飞。** 受理之后前置不齐就**一帧都不发解锁请求**，由 `takeoff_timeout_s` 兜底作废
+（**不自动重试**：静默重试会把"参数没配对"这种确定性拒绝变成一串没人看的日志）。解锁的全部前置：
+
+| 前置 | 出处 |
+|---|---|
+| 四条守卫全成立（已连接 / 动捕新鲜 / `local_position` 新鲜 / 解锁是我们发起的） | ticket 05 |
+| **已在 OFFBOARD** + setpoint 已在连续流 | §H.6 原文两条；断流 PX4 会自动退出 OFFBOARD（`COM_OF_LOSS_T`） |
+| **遥控在线**（`/mavros/rc/in` 新鲜） | §H.7.1，见下 ★ |
+
+★★ **"遥控在线"这条是机器判据，不是人肉清单**（`fsm.hpp::update()` ⑦）。理由具体：遥控静默时解锁，
+紧接着 `rc_timeout` 降级（**只在已解锁时算失效**）就会判失效并请求降落 ⟹ 飞机**起飞后立刻降落**，
+比一开始就不解锁难查得多。代价是台上没接遥控接收机时永远解不了锁 —— 刻意如此。
+
+### 判据
+
+| 判据 | 值 | 基准 |
+|---|---|---|
+| 爬升 | 目标 z 从**进入 `TAKEOFF` 那一刻的 EKF 位置**线性上升到 +`takeoff_altitude_m`，速率 ≤`climb_speed_mps` | 起飞原点（锁一次，之后每帧不跟着当前位姿跑） |
+| `TAKEOFF → HOVER` | `\|z − (原点+高度)\| < takeoff_alt_tol_m` ∧ `\|v_z\| < takeoff_vel_tol_mps` **持续** `takeoff_settle_s` | ⚠️ **原点+高度**，不是当帧的 `target_z` —— 写成 `target_z` 的话判据在斜坡**发出去的那一瞬间**就满足，斜坡形同虚设 |
+| 稳定 | `位置误差 < hover_pos_tol_m` ∧ `\|v\| < hover_vel_tol_mps` **持续** `hover_settle_s` | **悬停点** = 起飞原点正上方 `takeoff_altitude_m`（不是轨迹原点 —— 它此刻还不存在，拿它当基准是循环定义） |
+| 任务结束 | `WAIT_START` 保持 `hover_hold_s` | 之后走 `LAND`（请求 `AUTO.LAND`） |
+
+★★ **轨迹原点 = 判稳那一刻 EKF 报的位置**（工单的 ★ 核心设计）。此后 `WAIT_START`（以及 ticket 09 的
+`TRACK`）的一切都以它为 0。这条让 **EKF2 的局部原点与动捕原点之间的常值偏移被自动吸收** ——
+我们是"以当前点为 0"发指令，于是 Phase 1 与 Phase 2 的原点问题彻底解耦。
+⚠️ 它与悬停点的差不超过 `hover_pos_tol_m`（判据保证），所以记下来的那一刻目标跳变 ≤ 10 cm。
+
+★ **两种位姿量都要求"量本身有效"**：`position_valid`（`PoseStamped` 有帧且非 NaN）与
+`velocity_valid`（`velocity_local` 有帧）。少了后者，**速度话题一帧都没到过时 `vz` 恰好是 0**
+（"看起来静止"）⟹ 判稳立刻通过。这是"没数据当成好消息"的老毛病，`fsm.hpp::Odometry` 把两者**分列**
+（它们来自两条独立订阅，启动时可能只到了一条）。
+
+★ **"持续"是连续的，不是累计的**：一帧不合格就重新计时（`settle_started_at_s_` 归 -1）。
+到高与判稳两级**共用**这一个时刻变量（它们互斥：同一帧只可能在一个任务态里），每次进新的一级都重置。
+
+### 降落与上锁：我们只做一半
+
+- **请求降落是我们的**：`d.request_land` ⟹ `/mavros/set_mode` 请求 `AUTO.LAND`（与 ticket 06 的降级
+  走**同一个出口**、逐字相同的动作，靠 `Decision::mission_complete` 区分措辞）。已在我们请求的
+  `AUTO.LAND` 里就**不重发**。
+- **上锁不是我们的**：PX4 的 `COM_DISARM_LAND = 2.0`（z0 实测值）在它自己的着陆检测判定落地 2 s 后上锁
+  ⟹ 我们**只等 `armed` 的降沿**，那一帧 `reset_mission()` 把原点/轨迹原点/任务态全部归零。
+  ⚠️ 不清的话下一轮会在**上一轮的原点**上悬停 —— 而那是飞机上一次起飞的地方。
+- 请求降落之后**停发 setpoint**，控制权回到 `MANUAL`（`AUTO` 的定义是"我们正在发会驱动飞机的指令"，
+  而此刻是 PX4 在自己落）⟹ `/control/state` 打出 `MANUAL/LAND`。
+
+### setpoint 的 yaw：起飞前跟随、起飞后锁定
+
+| 阶段 | `target_yaw` | 为什么 |
+|---|---|---|
+| `INIT` / `STANDBY`（含已受理未解锁） | **当前机头**（`odom.yaw`） | 停机坪上不转向 |
+| `TAKEOFF` / `HOVER` / `WAIT_START` / `LAND` | **起飞机头**（进入 `TAKEOFF` 那一刻锁一次） | §3.4：起飞不转向。"飞机原地不动"只在 yaw 也被固定时才成立 |
+
+☠️ **这条推翻了 ticket 05 的 `yaw` 参数（已删）**：那个参数默认 0，而 0 在 ROS/ENU 口径下经 mavros
+换算后是 PX4 的 **+90°（机头朝东）** ⟹ 一旦在 OFFBOARD 里解锁，PX4 会**真的去转机头**。
+
+### 日志里怎么复核（都是固定形状，可 grep）
+
+| token | 含义 |
+|---|---|
+| `takeoff_origin=(x, y, z)` | 起飞原点（进入 `TAKEOFF` 那一刻的 EKF 位置） |
+| `traj_origin=(x, y, z)` | **轨迹原点** —— 稳定判据成立那一刻的位置；与动捕原点对账就看它 |
+| `MAV_RESULT=<n>` | `/mavros/cmd/arming` 的应答码（`0=ACCEPTED`，见 `px4_interface.cpp`；`0` 之外一律走"被拒"路径） |
+| `任务走完` | ★ 这次 `LAND` 是任务正常走完，**不是**降级（判据是 `Decision::mission_complete`，但那是**字段名不是日志字面量**——日志打的是这四个字；两种来源动作逐字相同，只有原因不同） |
+| `degrade=<token>` | 降级原因（ticket 06） |
+
+★ 服务应答也有一套固定词表（`accepted` / `already_flying`，见 `to_string(TakeoffReply)`）：它出现在
+**`/control/takeoff` 应答 `message` 的开头**，不在日志里 —— 用服务而不是话题，图的就是"命令有应答"。
 
 ## 失效降级（ticket 06）
 
@@ -124,21 +225,33 @@
 ## 数据流
 
 ```
-/mavros/state ─────────────┐
-/mavros/local_position/pose ┤
-/mocap/pose_enu ────────────┼─▶ 守卫 ─▶ 状态机 ─▶ /mavros/setpoint_raw/local（PositionTarget）
-/mavros/rc/in、/mavros/battery ┘        └─▶ /control/state（"<控制权>/<任务态>"）
+/mavros/state ─────────────────┐
+/mavros/local_position/pose ───┤
+/mavros/local_position/velocity_local ┤
+/mocap/pose_enu ───────────────┼─▶ 守卫/读数 ─▶ 状态机 ─▶ /mavros/setpoint_raw/local（PositionTarget）
+/mavros/rc/in、/mavros/battery ┘            └─▶ /control/state（"<控制权>/<任务态>"）
+
+/control/takeoff（服务）──▶ 状态机   状态机 ──▶ /mavros/cmd/arming（服务）、/mavros/set_mode（服务）
 ```
 
-| 话题 | 方向 | 类型 | QoS | 备注 |
+| 话题 / 服务 | 方向 | 类型 | QoS | 备注 |
 |---|---|---|---|---|
 | `/mavros/state` | 订阅 | `mavros_msgs/State` | 可靠 + **transient_local** | 上游 1 Hz |
-| `/mavros/local_position/pose` | 订阅 | `geometry_msgs/PoseStamped` | **best_effort** | 上游 ~30 Hz |
-| `/mavros/rc/in` | 订阅 | `mavros_msgs/RCIn` | 可靠 | 两个判据：**打杆夺权**（变化率）+ **超时**（仅已解锁时算失效） |
+| `/mavros/local_position/pose` | 订阅 | `geometry_msgs/PoseStamped` | **best_effort** | 上游 ~30 Hz；位置的唯一来源 |
+| `/mavros/local_position/velocity_local` | 订阅 | `geometry_msgs/TwistStamped` | **best_effort** | ★ ticket 08 新增。**判稳要它**：EKF2 融合过的速度，比我们自己差动捕干净 |
+| `/mavros/rc/in` | 订阅 | `mavros_msgs/RCIn` | 可靠 | 两个判据：**打杆夺权**（变化率）+ **超时**（仅已解锁时算失效）；另有一条**起飞前置**（§H.7.1） |
 | `/mavros/battery` | 订阅 | `sensor_msgs/BatteryState` | **best_effort** | 低电压判据（**只看值**，不看新鲜度） |
 | `/mocap/pose_enu` | 订阅 | `geometry_msgs/PoseStamped` | 可靠 | 来自 `mocap` 节点；**是守卫的输入**（新鲜度决定发不发 setpoint） |
 | `/mavros/setpoint_raw/local` | **发布** | `mavros_msgs/PositionTarget` | 可靠 | 唯一的控制输出 |
 | `/control/state` | **发布** | `std_msgs/String` | 可靠 + transient_local | `"MANUAL/STANDBY"` |
+| `/control/takeoff` | **服务** | `std_srvs/Trigger` | —— | ★ ticket 08：起飞的**唯一入口**（ticket 09 会让遥控器 ch9 的上升沿来调它） |
+| `/mavros/cmd/arming` | **服务（客户端）** | `mavros_msgs/CommandBool` | —— | ★ ticket 08：程序解锁（H.6 的 D3）。**被拒 ⟹ 放弃本次起飞**（不重试） |
+| `/mavros/set_mode` | **服务（客户端）** | `mavros_msgs/SetMode` | —— | 切 `OFFBOARD`（ticket 05）与请求 `AUTO.LAND`（ticket 06/08） |
+
+★ **速度话题与位置话题是同一条 MAVLink 消息**：mavros 在 `local_position.cpp` 的**同一个回调**里发这两条
+话题，速度经 `transform_frame_ned_enu` ⟹ 频率、时间戳、口径（都是 ROS/ENU，z 向上为正）一致。
+所以两者**没有"要不要互相等"的问题**，但**有效性各算各的**（两条独立订阅，启动时可能只到了一条）——
+见上文「判据」一节的 `velocity_valid`。
 
 ★★ **QoS 必须与真 mavros 逐条对齐，而且错了不会报错、只会"永远收不到"**：
 `local_position` / `battery` 在真 mavros 上是 `SensorDataQoS()`（best_effort），
@@ -162,12 +275,14 @@
   （`setpoint_raw.cpp:235`，按 `frame_tf.hpp:180` + `ftf_frame_conversions.cpp:33/40` 逐字复算）
   ⟹ **本项目填的 `yaw = 0`，PX4 收到的是 +90°，即"机头朝东"**（不是"保持当前机头"）
 
-★ 也正因如此，把 `/mavros/local_position/pose` 原样转给 setpoint 是**正确的**：
-mavros 出向已做 NED→ENU（`local_position.cpp:157`），进向再做 ENU→NED ⟹ 一进一出恰好抵消，
-PX4 收到的是它自己报的那个位置。**这不是巧合，是"两边都在 ROS 口径里"的必然结果。**
+★ 也正因如此，读数与 setpoint **同口径**：`local_position` 出向已做 NED→ENU
+（`local_position.cpp:157`），进向再做 ENU→NED ⟹ 一进一出恰好抵消，PX4 收到的是它自己报的那个位置。
+**这不是巧合，是"两边都在 ROS 口径里"的必然结果** —— 判据与目标生成因此都不需要任何坐标转换。
 
-⚠️ 本张飞机未解锁 ⟹ 上面这些**不会让飞机真动**；但 ticket 08 定"起飞朝向"之前必须处理 `yaw`——
-**不要留着默认 0 当"保持当前机头"用**。
+★ **`target_x/y/z/yaw` 由状态机算**（ticket 08），边界层不再拿"当前位姿"顶替：
+`STANDBY` = 当前位置（原地保持）、`TAKEOFF` = 原点 + 斜坡、`HOVER` = 悬停点、`WAIT_START` = 轨迹原点。
+"目标"这个概念在 ticket 08 才第一次与"当前"分家。
+⚠️ 起飞朝向的处理见上文「setpoint 的 yaw」（ticket 05 那个默认 0 的 `yaw` 参数已删）。
 
 ⚠️ **spec 里"发往 PX4 的消息用微秒时间戳"那条不适用于本路径**（那是 Phase 2 走 uXRCE-DDS 时的约定）：
 mavros 把 `header.stamp` 换算成 MAVLink 的 `time_boot_ms`（**毫秒**，且会截断成 32 位，
@@ -183,7 +298,8 @@ mavros 把 `header.stamp` 换算成 MAVLink 的 `time_boot_ms`（**毫秒**，�
 | `offboard_prestream_s` | `1.0` | ★ 切 OFFBOARD 前 setpoint 必须先连续流多久。**断流 PX4 会自动退出 OFFBOARD**（`COM_OF_LOSS_T`，z0 现值 1.0 s）⟹ 这是前提不是优化 |
 | `offboard_retry_s` | `1.0` | 切模式失败后的重试间隔（真正的成功判据是 `/mavros/state.mode` 变成 `OFFBOARD`） |
 | `enter_offboard` | `true` | 自动切 OFFBOARD（参数可关）。⚠️ 关掉它真 PX4 就永远读不到这些 setpoint |
-| `yaw` | `0.0` | setpoint 的 yaw（弧度，**ENU 口径**）。⚠️ 填 0 ⟹ PX4 收到 +90°（机头朝东），见上文 |
+| ~~`yaw`~~ | —— | ☠️ **ticket 08 删掉了**（填 0 ⟹ PX4 收到 +90°，机头朝东）。现在 setpoint 的 yaw 由状态机给：`STANDBY` 跟随当前机头、起飞后锁在起飞机头 |
+| ~~`own_arming`~~ | —— | ☠️ **ticket 08 删掉了**（ticket 06 的台架临时缝）。归属改由 `Px4Interface::request_arming()` 真实追踪：只有拿到肯定应答之后观察到的第一个 `armed` 上升沿才算我们的 |
 | `diag_period_s` | `1.0` | 诊断日志周期；也是 `/control/state` 的心跳周期 |
 | `state_timeout_s` | **`2.5`** | ★ 不是 0.5 s —— 该话题实测 1 Hz |
 | `local_pos_timeout_s` | `0.5` | 上游 ~30 Hz |
@@ -195,19 +311,41 @@ mavros 把 `header.stamp` 换算成 MAVLink 的 `time_boot_ms`（**毫秒**，�
 | `mocap_stamp_stall_s` | `0.5` | 动捕**时间戳**连续不前进多久算"冻住"（话题层看不见的失效） |
 | `rc_map_roll` … `rc_map_yaw` | `1/2/3/4` | 摇杆通道号（**1-based**）。⚠️ 必须与飞控上的 `RC_MAP_*` 一致 |
 | `land_mode` | `AUTO.LAND` | 主动中止任务时请求的模式 |
-| `own_arming` | `false` | ⚠️ **ticket 06 与 08 之间的临时缝**：本张没有解锁路径，于是"已解锁时的失效请求 `AUTO.LAND`"在台架上没法验；置 `true` = 把任何 `armed` 上升沿当作本节点发起的解锁。**只用于台架注入，实飞前保持 false，ticket 08 落地时删掉** |
 | `*_topic` / `*_service` | mavros 2.15.1 默认名 | 多机/台架复用不改代码 |
+
+任务判据的阈值（ticket 08）**单独一组**，与上面那组失效判据刻意分开（那一组管"什么时候停"，
+这一组管"飞到什么算到"——合在一起之后调悬停精度会顺手改掉低压阈值）：
+
+| 参数 | 默认 | 说明 |
+|---|---|---|
+| `takeoff_altitude_m` | `1.0` | 起飞目标高度（相对**起飞原点**） |
+| `climb_speed_mps` | `0.5` | 爬升速率上限。★ 工单硬要求 **≤0.5 m/s**，改大直接违反验收项 |
+| `takeoff_alt_tol_m` / `takeoff_vel_tol_mps` | `0.10` / `0.10` | 到高判据（高度容差 / 垂速容差） |
+| `takeoff_settle_s` | `1.0` | 到高判据需持续多久 |
+| `hover_pos_tol_m` / `hover_vel_tol_mps` | `0.10` / `0.10` | ★ 稳定判据（工单原文 `<0.10 m ∧ <0.10 m/s`）。速率是**三维**的 |
+| `hover_settle_s` | `2.0` | 稳定判据需持续多久 |
+| `hover_hold_s` | `60.0` | 判稳后保持多久再自动降落（= §5.3 的验收时长）。⚠️ **实飞前若改成 < 30 s**，飞机会在阶梯第 4 级的 60 s 走完之前自己下来（节点启动时会为此发一条 WARN） |
+| `takeoff_timeout_s` | `5.0` | 起飞命令的有效期：受理之后这么久还没解锁成功就作废、退回 `STANDBY`（**不自动重试**）。取 5.0 的理由：`/mavros/state` 只有 1 Hz（解锁成功最多晚 1 s 才知道）+ 服务往返 + 余量。⚠️ 它也**是**"前置不满足"的兜底时限 |
+
+★ **还有一条不在参数表里的时限**（`control_node.cpp:request_arming_once` 的局部常量
+`stale_after_s = 2.0`）：解锁**请求发出去之后**如果没有应答，2 s 就丢弃它并当作失败
+（`note_arming_failed()` ⟹ 当场退回 `STANDBY`）。rclcpp **不会**超时一个没有回应的请求
+（`rclcpp/client.hpp`），少了这条就会永久卡在"等 `/mavros/state.armed` 确认"，而日志还在说在等。
+它比 `takeoff_timeout_s` 短是**刻意**的：悬空请求是"mavros 挂了/重启了"这个**确定性**故障，
+早报早退比等满 5 s 强。⚠️ 它只是**局部常量不是参数** —— 想改得动代码。
+（★ 复核指出这条在文档里没记，此处补上。）
 
 ## 与其它 ticket 的边界
 
 | 本包**做** | 本包**不做**（归谁） |
 |---|---|
-| 守卫判定 → `INIT`/`STANDBY` | `TAKEOFF`/`HOVER` 的判据（ticket 08）、轨迹（07） |
-| 50 Hz 流 setpoint、切 OFFBOARD | **解锁**（ticket 08）、任何位移 |
+| 守卫判定 → `INIT`/`STANDBY` | 轨迹（ticket 09）、`TRACK` 的任何判据 |
+| 50 Hz 流 setpoint、切 OFFBOARD | **上锁**（`COM_DISARM_LAND` 是 PX4 的事，我们只等 `armed` 降沿） |
+| **程序解锁**（`/mavros/cmd/arming`）+ 起飞/悬停/判稳/自动降落（ticket 08） | **起飞的触发**（ticket 09 把遥控器 ch9 接到 `/control/takeoff`；本节点不读遥控器） |
 | 输入静默 / 低压 / 位置异常 ⟹ 停发 + `LAND` | `RTL` 等其它降级动作、以及"位置失效 ⟹ 停桨"（不归本包，见 ticket 16） |
 | 打杆夺权 ⟹ 停发 + 交还（`RC_OVERRIDE`） | 打杆接管的**执行**在 PX4（`COM_OBL_RC_ACT`），本包只是不再抢 |
-| 可复位闩锁 + `degrade=` 可检索日志 | 任何"清故障"命令 / 远程复位接口 |
-| `/control/state` | `/control/traj_progress`（ticket 07） |
+| 可复位闩锁 + `degrade=` / `traj_origin=` 可检索日志 | 任何"清故障"命令 / 远程复位接口 |
+| `/control/state` | `/control/traj_progress`（ticket 09） |
 
 ## 构建与测试
 
@@ -227,7 +365,8 @@ colcon test  --packages-up-to control --executor sequential   # ★ 串行：并
 |---|---|---|---|
 | `test/test_control_standby.py` | **seam 1**（话题边界） | 只断言外部可观测的话题 | 正常路径下飞机**发了什么** |
 | `test/test_control_failsafe.py` | **seam 1**（话题边界） | 同上 | 失效时**停止**了什么、请求了什么模式 |
-| `test/test_fsm.cpp` | **seam 2**（纯函数，零 ROS） | 零依赖，直接调 `fsm.hpp` | **是哪条守卫**放行的、降级怎么闩锁与复位 |
+| `test/test_control_takeoff.py` | **seam 1**（话题边界） | 同上（+ 服务应答） | 起飞这一整条链：**解锁、爬升、判稳、记轨迹原点、自动降落、复位** |
+| `test/test_fsm.cpp` | **seam 2**（纯函数，零 ROS） | 零依赖，直接调 `fsm.hpp` | **是哪条守卫**放行的、降级怎么闩锁与复位、判据的**基准**是什么 |
 | `test/test_rc_stick.cpp` | **seam 2**（纯函数，零 ROS） | 零依赖，直接调 `rc_stick.hpp` | 摇杆**在不在动**（变化率判据）|
 
 seam 1 的 DUT 是**子进程**（`control_node` 可执行文件），输入来自**假 mavros + 脚本化动捕**；
@@ -251,15 +390,38 @@ vendored 的 `vrpn_listener`，新包再加 lint 只是增加噪声）。
 未解锁失效 ⟹ 只停发且判据恢复**自动复位**、动捕戳**冻住** ⟹ 降级而**短促倒退不降级**、
 戳**倒退到旧纪元并持续** > `mocap_stamp_stall_s` ⟹ 降级、
 所有输入同时静默 ⟹ 节点不退出且报出最根本那条、通道数不足的遥控帧不崩、
-未置 `own_arming` 时外部解锁 ⟹ 只停发不请求 `LAND`。
+外部解锁 ⟹ 只停发不请求 `LAND`（ticket 06 的 `own_arming` 缝已删 ⟹ 这一条的注入面从"翻一个参数"
+换成了"不调 `/control/takeoff`"，基线也随之从 `AUTO/STANDBY` 变成 `AUTO/TAKEOFF`）。
 
-seam 2（`test/test_fsm.cpp`，42 例）：四条守卫**逐条**掀掉时缺项清单恰好是那一条（不是只断言"不放行"——
+起飞链（seam 1，`test/test_control_takeoff.py`，8 例）：全链冒烟（受理 ≠ 起飞 ⟹ 解锁 ⟹ 爬升到 1 m
+且速率 ≤0.55 m/s、水平两轴钉在原点 ⟹ 判稳 ⟹ `traj_origin=` 与判稳那一刻的位置一致 ⟹ `WAIT_START`
+的目标恰是轨迹原点 ⟹ `MANUAL/LAND` + 请求 `AUTO.LAND` + setpoint 停发 ⟹ 外部上锁 ⟹ 自动复位到
+`MANUAL/STANDBY` ⟹ 第二次起飞被受理）、遥控不在线时**受理了但永不解锁**、解锁被拒 ⟹ 报 `MAV_RESULT`
+且**不自动重试**、任务在跑时第二次起飞被拒（这条同时是"命令超时作废"的外部观测面）、
+爬升速率两侧（`≤0.55` **且** `≥0.40` m/s —— 只断言上界的话"根本没爬"也会通过）、
+判稳的两半各一条反例（速率不成立 / 位置不成立 ⟹ 不记轨迹原点）、
+进入 `TAKEOFF` 后机头锁定（夹具注入非零机头）。
+
+★★ **`test_control_takeoff.py` 里有一个"假飞机"**（`_Plant`，文件末尾）：速率受限地逼近 setpoint，
+速度 = 实际位移 / dt。它刻意**只在收到新 setpoint 时**才走一步 —— 否则探针的轮询比 DUT 的 50 Hz 快时
+会观测到 0 与 2× 交替的假速度抖动。它**不是**夹具的一部分（那是**场景**逻辑："这一轮飞机该怎么飞"，
+与 `Timeline` 同类），用的是已经被自检过的注入面。⚠️ ticket 09/10 若要复用，再把它提升进 `bench`
+并补自检（`src/bench/README.md` 的纪律）。
+
+seam 2（`test/test_fsm.cpp`，57 例）：四条守卫**逐条**掀掉时缺项清单恰好是那一条（不是只断言"不放行"——
 那样"某条守卫恒假"也会通过）、缺项顺序固定、全零 `Guards` 里"未解锁"成立（默认值的纪律）、
 `STANDBY` 下控制权仍是 `MANUAL`、前置流时长两侧、已在 OFFBOARD 不再请求、**断流后前置流重新计时**；
-以及降级路径的**每条分支**：原因优先级（同一帧里多个判据成立时谁说话）、未解锁失效不闩锁 ⟹ 自动复位、
+降级路径的**每条分支**：原因优先级（同一帧里多个判据成立时谁说话）、未解锁失效不闩锁 ⟹ 自动复位、
 已解锁失效闩锁 ⟹ **不因输入恢复而空中自动接管**、落地上锁才复位、**低压闩锁被夺权升级**、
 夺权闩锁不被输入超时改写、自己请求的 `AUTO.LAND` 生效**不算夺权**、降级期间不抢回 OFFBOARD、
-外部交回即复位、`rc_override` 与 `mode_lost` 的先后（打杆后模式才掉出来仍报打杆）。
+外部交回即复位、`rc_override` 与 `mode_lost` 的先后（打杆后模式才掉出来仍报打杆）；
+起飞/悬停的 15 例（ticket 08）：受理后仍停在 `STANDBY`、解锁请求**一次性**、前置不齐不发请求、
+遥控不在线不发请求且超时作废、被拒当场退回且**一帧都不补发**、解锁那一帧锁原点与机头、
+爬升斜坡**逐帧**核对并封顶、**到高判据看原点+高度而不是当帧 `target_z`**、
+**"持续"是连续不是累计**（一帧不合格就重新计时）、`velocity_valid` 必须为真、
+判稳两条判据各一条反例、**轨迹原点记的是判稳那一刻的位置而不是悬停点**、
+保持满 `hover_hold_s` 后走降落出口且 `mission_complete` 为真、落地上锁后原点/轨迹原点全清
+（且能重新起飞）、起飞后机头锁定而 `STANDBY` 跟随当前机头。
 
 seam 2（`test/test_rc_stick.cpp`，13 例）：变化率判据的边界 —— 第一帧不作判断、快速推杆/反向推杆算在动、
 **慢速大行程漂移不算在动**、推到头保持不动会衰减到阈值以下、非正周期与 NaN 不作判断（且不污染状态）、
@@ -273,14 +435,24 @@ seam 2（`test/test_rc_stick.cpp`，13 例）：变化率判据的边界 —— 
 
 | 项 | 为什么还没做 |
 |---|---|
+| ★ **验收阶梯 1–4 级**（无桨台架 / 系绳离地 20 cm / 系绳闭环悬停 30 s / 自由飞 60 s） | **每一步都是人的物理动作**（拆桨、系绳、扶飞机、按 `/control/takeoff`），夹具替代不了。见下 |
 | 真 PX4 被拉进 OFFBOARD | `COM_OF_LOSS_T` / `COM_OBL_RC_ACT` / 模式需求检查都是 **PX4 侧**行为，夹具不模拟。需要在**拆桨**台架上跑一次 |
+| **解锁被飞控真的拒绝一次**（看 `MAV_RESULT=` 码） | 夹具能造"被拒"（`set_arming_policy('fail')`），但**真 PX4 的 prearm 检查**不模拟 ⟹ "哪种拒绝对应哪个码"要上真飞控 |
+| **上锁确实由 `COM_DISARM_LAND = 2.0` 完成** | 夹具的 `armed` 是我们自己置的；真机上这条依赖 PX4 的着陆检测（落地判定 + 2 s） |
+| ⚠️ **起飞时 `/mavros/state` 的 1 Hz 延迟** | 解锁成功最多晚 1 s 才知道 ⟹ 原点锁的是"**看到** armed 那一帧"的位置。台架上这一秒内的位移可以忽略，**真机上要确认飞机在被锁原点之前没有漂出容差** |
 | 杀节点 → PX4 在 `COM_OF_LOSS_T`（1.0 s）后自行退出 OFFBOARD | 同上；夹具这一半已由 `test_杀掉_DUT_之后_setpoint_流停止` 覆盖 |
 | **打杆 → PX4 按 `COM_OBL_RC_ACT` 接管**（z0 现值 `0` = 回 Position 模式） | 同上：执行在 PX4。本节点这一半（立刻停发、退到 `RC_OVERRIDE`、**不抢回 OFFBOARD**）已由 `test_control_failsafe.py` 覆盖 |
 | 低压判据面对的是**真电池**读数 | 台架注入的是假 mavros 的电压，判据逻辑已覆盖；**真实读数可不可信**是 ticket 01 的 ADC 判定（⚠️ 判据本身只看电压、不依赖电流） |
 | ⚠️ **`NAV_RCL_ACT = 2`（Return）这条依赖** | 不是本包的实现项，是 `params-changes.md` **A1** 的阻塞项：A1 不落实，"RC 丢失超时 ⟹ LAND"之后 PX4 自己的 RC 失效保护仍会试图**返航** |
 | **"EKF2 位置失效"的真载体** | 本链条上**抓不到**（第一手核实，见上文「失效降级」），真正的兜底是动捕超时；候选载体开在 ticket 16 |
 
-做前两项时 **必须在台架上拆桨**，并按 `docs/control/phase1-implementation.md` §7 的顺序来。
+做上面几项时 **必须在台架上拆桨**，并按 `docs/control/phase1-implementation.md` §7 的顺序来 ——
+那一节与 `.scratch/phase1/issues/08-takeoff-hover-land.md` 的验收阶梯是同一条路线。
+
+★★ **阶梯第 1 级（无桨台架）能看和不能看的东西**：拆了桨就没有推力，所以
+`|z − 1.0| < 0.10 m` **按字面永远不可能成立** ⟹ 第 1 级的判据**只到 `TAKEOFF` 为止**
+（电机按预期转、`TAKEOFF` 的 setpoint 斜坡正确），HOVER 及之后的判据在第 2/3/4 级。
+这条是对 `phase1-implementation.md` §7 第 3 步的**修正**（本张落实），别照旧文档去台架上等 HOVER。
 
 ## 目录
 
@@ -296,4 +468,5 @@ test/test_fsm.cpp                 ★ seam 2：纯函数单测（零 ROS 依赖�
 test/test_rc_stick.cpp            ★ seam 2：变化率判据单测（零 ROS 依赖）
 test/test_control_standby.py      ★ seam 1：子进程 DUT + 假 mavros，只断言话题（正常路径）
 test/test_control_failsafe.py     ★ seam 1：同上（失效路径）
+test/test_control_takeoff.py      ★ seam 1：同上（起飞 → 悬停 → 自动降落，含文件末尾的"假飞机"）
 ```

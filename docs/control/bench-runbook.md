@@ -1,14 +1,22 @@
 # 拆桨台架清单（Phase 1，**必须由人做**的部分）
 
-> **这张表是什么**：`control` 的 96 例自动化（`colcon test --packages-up-to control`）覆盖的是**本节点**
+> **这张表是什么**：`control` 的 122 例自动化（`colcon test --packages-up-to control`）覆盖的是**本节点**
 > 的行为；留在下面的每一项，**判据都在 PX4 一侧**（或需要真实的遥控器/动捕现场），夹具**不模拟 PX4**
 > ⟹ 机器验不了。做一遍、把读数填进下面的表、回去勾掉对应 ticket 的框即可。
+> ⚠️ **T4 是唯一的例外**：它的判据一半在我们这一侧（服务应答、`takeoff_origin=`、斜坡、`/control/state`），
+> 自动化**已经**把这些验过了 —— 但它仍留在这里，因为"真 PX4 会不会按我们的解锁请求起飞""prearm 被拒时
+> 报哪个 `MAV_RESULT` 码"**只有真飞控能给**，夹具的 `armed` 是我们自己置的。
 >
 > **不在本清单里的**：验收项 ④「EKF2 位置失效 ⟹ `LAND`」—— 它在本链路上**判据恒假**（不上飞机也验不出），
 > 归 [ticket 16](../../.scratch/phase1/issues/16-ekf2-position-failure-carrier.md)。别在这里找它。
 
 ★ **一次会话尽量全做完**：起链、搬飞机、解锁这些准备工作占大头，下面 7 项共用同一次准备。
-（步骤顺序是刻意的：T1/T2 必须在**解锁之前**做，T5/T6/T7 必须在**解锁之后**做。）
+（步骤顺序是刻意的：T1/T2/T3 必须在**解锁之前**做，T5/T6/T7 必须在**解锁之后**做。
+**T4 是全程唯一的解锁动作**（ticket 08 起解锁只能由 `/control/takeoff` 发起，见 T4）。）
+
+> ⚠️ **本清单只覆盖 ticket 08 验收阶梯的第 1 级**（拆桨台架：解锁 + 进 `OFFBOARD` + 爬升斜坡正确）。
+> 阶梯的第 **2/3/4** 级（系绳离地 20 cm / 系绳闭环悬停 30 s / 自由飞轨迹 1）**要装桨**，
+> 不属于"拆桨台架"这张表，判据见 [ticket 08](../../.scratch/phase1/issues/08-takeoff-hover-land.md) 的验收阶梯。
 
 ---
 
@@ -44,20 +52,21 @@
 > ⚠️ **它们不是台架 T1–T7 的判据** —— 只是**恰好共用这次上电**，别混进下面的验收表。
 > 裁定时的状态是"飞控没上电所以没写成"；这次上电就是补写的机会。
 
-### 台架专用缝：`own_arming: true`
+### ☠️ 已删：台架专用缝 `own_arming: true`（ticket 08 落地时删掉）
 
-本张还没有解锁路径（解锁 = ticket 08），而"已解锁时的失效该请求 `AUTO.LAND`"只在 `armed` 时成立
-（`phase1-implementation.md` §4.4「临时缝」）。**T4/T6/T7 都需要它**：
+ticket 06 时期本张还没有解锁路径，于是有个参数 `own_arming` 把"任何 `armed` 上升沿"都当成本节点发起的解锁。
+**ticket 08 加了 `/control/takeoff` 之后这个参数已删**（`px4_interface.cpp:134-152`）：解锁的归属改由
+`/mavros/cmd/arming` 的**肯定应答** + 随后的第一个 `armed` 上升沿**真实追踪**（`arming_by_us_`）。
 
-```bash
-# ★ 用 ros2 run 而不是 launch：own_arming 只在**启动时读一次**（无参数回调），
-#   运行中 `ros2 param set` 无效；命令行 -p 在 --params-file 之后应用 ⟹ 覆盖文件里的 false。
-ros2 run control control_node --ros-args \
-  --params-file $(ros2 pkg prefix control)/share/control/config/control.yaml \
-  -p own_arming:=true
-```
+**这对台架操作的三个后果，别按旧笔记做**：
 
-⚠️ **实飞前必须回到 `false`**（`config/control.yaml:91-95`），ticket 08 落地时**删掉**这个参数。
+1. **没有命令行开关可选了** —— 解锁只有一条路：`ros2 service call /control/takeoff`（T4）。
+2. **`AUTO` 由应答决定，不由参数决定**：QGC 里手动解锁 ⟹ `armed` 为真而归属不是我们的
+   ⟹ `guard_holds()` 的 `kArmingByUs = !armed || own_arming` **不成立** ⟹ 节点**停发并退回 `INIT`**
+   （§H.6 的外部解锁语义，**刻意如此**）。想在台上拿到 `AUTO/STANDBY` 就必须走 T4 的服务。
+3. ★ **重启节点不会"自动重新请求 `OFFBOARD`"**：`arming_by_us_` 是内存里的，重启即丢。
+   飞机若**还解锁着**，新起的节点把它看成**外部解锁** ⟹ 停发。要继续做 T5/T6，**先在 QGC 里上锁**
+   （或重跑 T4）—— 见 T5 的注意事项。
 
 ### 起链（顺序不能反）
 
@@ -101,21 +110,25 @@ ros2 topic hz /mocap/pose_enu                                #    有数
 
 | | |
 |---|---|
-| **做** | 起 `control` 节点：`ros2 launch control control.launch.py`（★ 这一项**不要**置 `own_arming` —— 未解锁时守卫本来就成立）；另开一个终端 `ros2 topic echo /control/state` |
+| **做** | ★ **先确认飞机是上锁的**（QGC 或 `/mavros/state` 的 `armed == false`；还解锁着的话本项做不到 —— 见上面那节第 3 条）。然后起 `control` 节点：`ros2 launch control control.launch.py`；另开一个终端 `ros2 topic echo /control/state`。★ **不要**调 `/control/takeoff` —— 这一项只验"未解锁时能不能进 `OFFBOARD`" |
 | **判据** | ① 日志报守卫逐条成立；② `ros2 topic hz /mavros/setpoint_raw/local` ≈ **50 Hz**；③ 前置流满 `offboard_prestream_s`（1.0 s）后节点请求 `OFFBOARD`；④ `ros2 topic echo /mavros/state` 的 `mode` == `OFFBOARD` |
 | **记录** | ★ **未解锁时 PX4 接不接受 `OFFBOARD`**（模式需求检查在 PX4 里，这是本次要回答的问题之一）；从"开始流"到"模式真的变成 OFFBOARD"的时间 |
 | **卡住看哪** | 节点日志的守卫清单（它自己会说缺什么）；`mode` 一直是 `POSCTL` ⟹ 看 PX4 拒绝的原因（QGC 的 STATUSTEXT） |
 
 ★ 此时期望 `/control/state` = **`MANUAL/STANDBY`**（未解锁 ⟹ 控制权 `MANUAL`，`fsm.hpp:475`）。
 
-## T4. 解锁上升沿切原点（勾 ticket 13 的未勾项）
+## T4. `/control/takeoff` 程序解锁 ⟹ 锁原点 + 进 `TAKEOFF`
+（**ticket 08 阶梯第 1 级**；同时勾 ticket 13 的未勾项）
+
+★ **这是全程唯一的解锁动作**（ticket 08 起 QGC 手动解锁会被判成"外部解锁 ⟹ 停发"）。
 
 | | |
 |---|---|
-| **做** | ★ **先用 `own_arming=true` 重起节点**（T3 那次是 `false`；`own_arming` 只在启动时读一次，改不了运行时）⟹ 等它重新进 `OFFBOARD` 与 `STANDBY`；再在 QGC 里**解锁、不起飞**（这次 `armed` 上升沿被当作**我们发起的**解锁） |
-| **判据** | `mocap` 节点日志打出「★ 阶段 B … 切换发生在此刻」；**切换瞬间位置跳变 ≈ 0**（> 0.05 m 会同时 WARN）；`/control/state` 变 **`AUTO/STANDBY`** |
-| **记录** | 跳变量（m）；`/mavros/state` 的 `armed` 上升沿时刻 |
-| **卡住看哪** | 跳变大 ⟹ 飞机在动/摆位不对，**停下来别继续** |
+| **做** | 承接 T3 的状态（未解锁 + `OFFBOARD` + `STANDBY` + 正在流），然后：`ros2 service call /control/takeoff std_srvs/srv/Trigger` |
+| **判据** | ① 服务应答 `success: true` **且有 `message`**（◎ 被拒时 `message` 要能说出缺什么）；② 日志 `MAV_RESULT=0`（`ACCEPTED`，`common.h:1135`；**被拒时把这个码原样记下来** —— prearm 失败到底报哪个码，只有真飞控能给）；③ 日志 `takeoff_origin=(x, y, z)`，且**不等于动捕原点**（EKF2 局部原点是它自己的）；④ `/control/state` 变 **`AUTO/TAKEOFF`**；⑤ `ros2 topic echo /mavros/setpoint_raw/local` 的 `z` **线性上升、斜率 ≤0.5 m/s、封顶 1.0 m**，水平两轴钉在 `takeoff_origin` 上；⑥ `mocap` 节点日志打出「★ 阶段 B … 切换发生在此刻」，**切换瞬间位置跳变 ≈ 0**（> 0.05 m 会同时 WARN） |
+| **判据（止于此）** | ⚠️ **无桨 ⟹ 没有推力 ⟹ 飞机一直在起飞原点上，`/control/state` 永远停在 `AUTO/TAKEOFF`**。`TAKEOFF→HOVER` 的判据 `\|z − (原点+1.0)\| < 0.10 m` **按字面不可能成立** ⟹ **本项不判 `HOVER`**，那是阶梯第 2/3 级（要装桨）。别在台架上等 `WAIT_START` |
+| **记录** | `MAV_RESULT` 码；`takeoff_origin` 三个数；`z` 斜坡的终点与用时；跳变量（m）；`armed` 上升沿与"进 `OFFBOARD`"的时刻 |
+| **卡住看哪** | 服务被拒 ⟹ 看 `message` 缺哪一条前置（遥控在线是最常见的：台上没接接收机时**永远解不了锁**，刻意如此）；`MAV_RESULT=4` ⟹ `FAILED`，看 QGC 的 STATUSTEXT |
 
 ## T5. 杀节点 ⟹ PX4 在 `COM_OF_LOSS_T` 后**自行退出** `OFFBOARD`（勾 ticket 05 的 ②）
 
@@ -126,11 +139,15 @@ ros2 topic hz /mocap/pose_enu                                #    有数
 | **记录** | 两个时刻与其差（应 ≈1.0 s，**这是 PX4 侧的数字**，夹具永远造不出） |
 | **卡住看哪** | 不退 ⟹ `COM_OF_LOSS_T` 现值不是 1.0？；`setpoint_raw` 还有别的发布者在发？ |
 
+> ⚠️ **做 T6 之前必须先上锁**：杀节点不改飞机的解锁状态，而新起的节点**不再认**这次解锁
+> （`arming_by_us_` 随进程一起没了 ⟹ 判成外部解锁 ⟹ 停发，见上面那节第 3 条）。
+> 所以 T5 之后**在 QGC 里上锁**，再按 T3 → T4 的次序重来一遍（T4 会再把原点锁一次）。
+
 ## T6. 打杆 ⟹ 我们停发 + **PX4 按 `COM_OBL_RC_ACT` 接管**（勾 ticket 06 的 ① 后半）
 
 | | |
 |---|---|
-| **做** | 重起节点（`own_arming=true`）—— T5 只是杀了节点，飞机**还解锁着**（PX4 在 `POSCTL` 里没上锁）⟹ 起完它会自动重新请求 `OFFBOARD`，**不用再解锁**（若它自己上锁了，按 T4 再来一次）。然后**快速推杆**：**半秒内推到半行程以上**（判据是变化率 `100 µs/s`；z0 半行程 511 µs ⟹ 推到底只要 >5.1 s 才不触发。**推到头后保持不动不触发**，变化率为 0） |
+| **做** | 按 T5 的注意事项**先上锁**，再重起节点并按 T4 用 `/control/takeoff` 重新解锁（★ 不要指望"起完自动重新请求 `OFFBOARD`" —— 那是 `own_arming` 参数时代的行为）。然后**快速推杆**：**半秒内推到半行程以上**（判据是变化率 `100 µs/s`；z0 半行程 511 µs ⟹ 推到底只要 >5.1 s 才不触发。**推到头后保持不动不触发**，变化率为 0） |
 | **判据（我们这一半）** | ≤0.3 s 内 **停发 setpoint**（`ros2 topic hz` 归零）；`/control/state` 变 **`MANUAL/RC_OVERRIDE`**；此后**不再请求任何模式**（日志 `degrade=rc_override`） |
 | **判据（PX4 那一半）** | `mode` 由 `OFFBOARD` **离开** ⟹ 按 `COM_OBL_RC_ACT = 0` 落回 **`POSCTL`（Position）** |
 | **记录** | 两个时刻（我们停发 / PX4 换模式）与其差；打杆前 `mode` 的确认值 |
@@ -159,9 +176,8 @@ PX4 那次退出**不是**"模式被从我们手里夺走"（`fsm.hpp` 的 `firs
 ## T8. 收尾
 
 - [ ] **恢复参数**：`COM_RC_OVERRIDE` 回 `3`（若为 T6 的判别跑改过）；`NAV_RCL_ACT` 保持 A1 的 `1`
-- [ ] **`own_arming` 回 `false`**（或用回正常 `ros2 launch control control.launch.py`）
 - [ ] 落地上锁一次，确认闩锁复位（`/control/state` 回 `MANUAL/INIT` 或 `MANUAL/STANDBY`）
-- [ ] 把上面各表的"实测值"回填到 **ticket 05 / 06 / 13**，并勾掉对应框
+- [ ] 把上面各表的"实测值"回填到 **ticket 05 / 06 / 08 / 13**，并勾掉对应框
 - [ ] 若飞控在录 ulog：把 `.ulg` 存档（判据全在 PX4 侧 ⟹ **它才是硬证据**，mavros 只是观察窗）
 
 ---
@@ -184,5 +200,6 @@ T5/T6/T7 的判据**全部在 PX4 里**：
 |---|---|
 | T1 / T2 / T4 | [ticket 13](../../.scratch/phase1/issues/13-mavros-bench-vision-pose.md)（`ready-for-human`；T2 读数还要回填 ticket 04） |
 | T3 / T5 | [ticket 05](../../.scratch/phase1/issues/05-control-offboard-skeleton.md) 的两条遗留 |
+| T4（解锁 + 锁原点 + `TAKEOFF` 斜坡） | [ticket 08](../../.scratch/phase1/issues/08-takeoff-hover-land.md) 的**验收阶梯第 1 级**（阶梯第 2/3/4 级要装桨，不在本清单） |
 | T6 / T7 | [ticket 06](../../.scratch/phase1/issues/06-control-failsafe-paths.md) 的验收项 ① 后半（④ 见 ticket 16） |
 | A1（`NAV_RCL_ACT = 1`） | [`params-changes.md`](../reference/params-changes.md) §A 的首飞阻塞项 |

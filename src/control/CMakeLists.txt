@@ -10,6 +10,7 @@ find_package(rclcpp REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(std_msgs REQUIRED)
+find_package(std_srvs REQUIRED)
 find_package(mavros_msgs REQUIRED)
 
 # `fsm.hpp` 是 header-only（零 ROS 依赖），所以只有两个编译单元。
@@ -22,7 +23,7 @@ target_include_directories(control_node PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>)
 ament_target_dependencies(control_node
-  rclcpp geometry_msgs sensor_msgs std_msgs mavros_msgs)
+  rclcpp geometry_msgs sensor_msgs std_msgs std_srvs mavros_msgs)
 
 install(TARGETS control_node DESTINATION lib/${PROJECT_NAME})
 install(DIRECTORY include/ DESTINATION include)
@@ -51,6 +52,13 @@ if(BUILD_TESTING)
   #   可复位 / 节点不崩。与上面那份分成两个文件：那份问"守卫成立时发了什么"，这份问
   #   "失效时**停止**了什么"，红的时候一眼能看出是哪一类（两者的夹具开销各自算）。
   ament_add_pytest_test(test_control_failsafe test/test_control_failsafe.py
+    TIMEOUT 480)
+
+  # ★ seam 1（话题边界）：**起飞 → 悬停 → 自动降落**（ticket 08）—— 从 `/control/takeoff`
+  #   到 `armed` 降沿的整条链，断言的是外部可观测的话题/服务（setpoint 的**目标**、模式请求、
+  #   解锁请求、`/control/state`）。单独一份的理由：它比前两份都长（要真爬完 1 m 的斜坡），
+  #   夹具开销与超时都该自己算。
+  ament_add_pytest_test(test_control_takeoff test/test_control_takeoff.py
     TIMEOUT 480)
 endif()
 

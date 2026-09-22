@@ -37,11 +37,17 @@ bool pose_is_finite(const geometry_msgs::msg::Pose & p)
          std::isfinite(p.orientation.y) && std::isfinite(p.orientation.z) &&
          std::isfinite(p.orientation.w);
 }
+
+/// 速度三分量是否有限（同一条 MAVLink 消息的 NaN 会同时打到位置与速度上，见 `odometry()`）。
+bool vector_is_finite(const geometry_msgs::msg::Vector3 & v)
+{
+  return std::isfinite(v.x) && std::isfinite(v.y) && std::isfinite(v.z);
+}
 }  // namespace
 
 Px4Interface::Px4Interface(rclcpp::Node & node, const Px4Config & config)
 : node_(node), topics_(config.topics), timeouts_(config.timeouts), limits_(config.limits),
-  modes_(config.modes), own_arming_(config.own_arming)
+  modes_(config.modes)
 {
   // 摇杆阈值来自参数（`COM_RC_STICK_OV` 的 µs 等价物）⟹ 检测器在这里才构造。
   for (StickMoveDetector & det : stick_) {
@@ -61,20 +67,35 @@ Px4Interface::Px4Interface(rclcpp::Node & node, const Px4Config & config)
   inputs_[topics_.state] = {rclcpp::Time(0, 0, RCL_ROS_TIME), false, timeouts_.state_s};
   inputs_[topics_.local_position] = {rclcpp::Time(0, 0, RCL_ROS_TIME), false,
     timeouts_.local_pos_s};
+  // ★ 速度与位置**共用 `local_pos_s`**：它们出自 mavros 的**同一个回调**、同一条 MAVLink
+  //   消息（见 `Px4Topics::local_velocity` 的说明）⟹ 一方静默另一方必然也静默，
+  //   给两个超时参数只会多出一个"调了一个另一个没跟上"的坑。
+  inputs_[topics_.local_velocity] = {rclcpp::Time(0, 0, RCL_ROS_TIME), false,
+    timeouts_.local_pos_s};
   inputs_[topics_.rc] = {rclcpp::Time(0, 0, RCL_ROS_TIME), false, timeouts_.rc_s};
   inputs_[topics_.battery] = {rclcpp::Time(0, 0, RCL_ROS_TIME), false, timeouts_.battery_s};
   inputs_[topics_.mocap] = {rclcpp::Time(0, 0, RCL_ROS_TIME), false, timeouts_.mocap_s};
 
   state_sub_ = node_.create_subscription<mavros_msgs::msg::State>(
     topics_.state, rclcpp::QoS(10).transient_local(),
-    [this](mavros_msgs::msg::State::ConstSharedPtr msg) {
-      state_ = *msg;
-      slot(topics_.state) = {node_.now(), true, timeouts_.state_s};
-    });
+    [this](mavros_msgs::msg::State::ConstSharedPtr msg) {on_state(*msg);});
 
   local_position_sub_ = node_.create_subscription<geometry_msgs::msg::PoseStamped>(
     topics_.local_position, rclcpp::SensorDataQoS(),
     [this](geometry_msgs::msg::PoseStamped::ConstSharedPtr msg) {on_local_position(*msg);});
+
+  // ★ 速度的 QoS 与 `local_position` 逐字相同（同为 `SensorDataQoS` = best_effort）——
+  //   已核对 mavros 源码：两者在 `local_position.cpp` 里由**同一个回调**发布，
+  //   用的也是同一个 publisher QoS。⚠️ 这一层错了不会报错，只会"永远收不到"。
+  local_velocity_sub_ = node_.create_subscription<geometry_msgs::msg::TwistStamped>(
+    topics_.local_velocity, rclcpp::SensorDataQoS(),
+    [this](geometry_msgs::msg::TwistStamped::ConstSharedPtr msg) {
+      // ★ 不做"新鲜度"以外的判断：NaN 的帧**照常刷新新鲜度**（帧确实在到），
+      //   "这一帧能不能用"由 `odometry()` 每次现算 —— 与 `on_local_position` 的做法不同，
+      //   因为那里 NaN 是**降级判据**（`position_invalid`）而这里不是。
+      local_velocity_ = *msg;
+      slot(topics_.local_velocity) = {node_.now(), true, timeouts_.local_pos_s};
+    });
 
   rc_sub_ = node_.create_subscription<mavros_msgs::msg::RCIn>(
     topics_.rc, rclcpp::QoS(10),
@@ -102,6 +123,32 @@ Px4Interface::Px4Interface(rclcpp::Node & node, const Px4Config & config)
   // 反过来（best_effort 发布）会让 mavros 收不到。
   setpoint_pub_ = node_.create_publisher<mavros_msgs::msg::PositionTarget>(topics_.setpoint, 10);
   set_mode_client_ = node_.create_client<mavros_msgs::srv::SetMode>(topics_.set_mode_service);
+  arming_client_ = node_.create_client<mavros_msgs::srv::CommandBool>(topics_.arming_service);
+}
+
+/// `/mavros/state` 一帧 —— 除记录之外，**唯一**的额外职责是在 `armed` 的上升沿上兑现
+/// "这次解锁是谁发起的"（ticket 08）。
+/// ★ 为什么在这里而不是在 `guards()` 里：`guards()` 是**只读**的（`const`），
+///   而上升沿是个**事件** —— 放在每帧都跑、可能被调用多次的只读路径里，
+///   要么改不掉 `const`，要么同一帧被兑现两次。
+void Px4Interface::on_state(const mavros_msgs::msg::State & msg)
+{
+  const bool was_armed = state_.armed;
+  state_ = msg;
+
+  if (state_.armed && !was_armed) {
+    // ★ 上升沿：把"我们请求过"兑现成"这次是我们做的"。**消费掉** pending：
+    //   一次请求只认一次上升沿（否则后续每一次外部解锁都会被记成我们的）。
+    arming_by_us_ = arm_request_pending_;
+    arm_request_pending_ = false;
+  } else if (!state_.armed) {
+    // 上锁：本次解锁的归属作废（下次解锁重新判定）。
+    // ⚠️ **只清归属、不清 `arm_request_pending_`** —— 见它的成员注释：应答与上升沿之间
+    //   必然夹着几帧 `armed == false`，在这里清掉就等于"我们自己的解锁从来不是我们做的"。
+    arming_by_us_ = false;
+  }
+
+  slot(topics_.state) = {node_.now(), true, timeouts_.state_s};
 }
 
 Px4Interface::Input & Px4Interface::slot(const std::string & topic)
@@ -236,8 +283,9 @@ Guards Px4Interface::guards(double now_s) const
   // ★ `in_land` 必须在这里算：它进的是 `mode_is_ours()`，而"我们请求的降落模式生效"被
   //   判成"被夺权"会让飞机一边降落一边把控制权交还给不存在的飞行员（见 `fsm.hpp`）。
   g.in_land = (state_.mode == modes_.land);
-  // ticket 06/08 之间的缝：本张没有解锁路径 ⟹ 由参数告知（ticket 08 改成解锁服务的结果）。
-  g.own_arming = own_arming_;
+  // ticket 08：解锁的**归属**来自解锁服务的应答 + `armed` 的上升沿（见 `on_state`），
+  // 不再是参数。未解锁时恒为 false ⟹ `guard_holds(kArmingByUs)` 恒成立（那条守卫的语义）。
+  g.own_arming = arming_by_us_;
   return g;
 }
 
@@ -265,25 +313,63 @@ std::optional<geometry_msgs::msg::PoseStamped> Px4Interface::local_position() co
   return local_position_;
 }
 
-void Px4Interface::publish_setpoint(
-  const geometry_msgs::msg::PoseStamped & current, float yaw)
+Odometry Px4Interface::odometry() const
 {
-  // ★ 出口再挡一次 NaN：`local_position()` 已经会把 NaN 帧判成"不可用"，但"绝不把 NaN
-  //   发给飞控"这条保证值钱到可以在这里重复一次（PX4 收到 NaN 位置的行为没有明确定义）。
-  if (!pose_is_finite(current.pose)) {
+  Odometry o;
+
+  // ── 位置与姿态：同一条 `/mavros/local_position/pose`（出向已 NED→ENU）──
+  // ★ "最近一帧是 NaN ⟹ 不可用"与 `local_position()` 同一条判据（都看 `position_invalid_`），
+  //   两处必须一致：否则会出现"节点认为位置可用、状态机认为不可用"这种两份事实。
+  o.position_valid = ever_received(topics_.local_position) && !position_invalid_;
+  if (o.position_valid) {
+    o.x = local_position_.pose.position.x;
+    o.y = local_position_.pose.position.y;
+    o.z = local_position_.pose.position.z;
+    const auto & q = local_position_.pose.orientation;
+    // ★ yaw 用 `fsm.hpp` 的纯函数算（seam 2 可测），这里**不做任何加减 π/2 的换算** ——
+    //   ENU 口径进、ENU 口径出，mavros 负责换到 NED。见 `px4_interface.hpp` 文件头第 2 条。
+    o.yaw = yaw_from_quaternion(q.w, q.x, q.y, q.z);
+  }
+
+  // ── 速度：另一条话题（`velocity_local`），但**同一条 MAVLink 消息**、同样是 ENU ──
+  // ★ 这里**现算** NaN，不存标志位：速度的 NaN 不是独立的降级判据（它必然伴随位置 NaN，
+  //   那条已经由 `position_invalid` 管了）⟹ 多存一个标志只是多一处会不同步的状态。
+  if (ever_received(topics_.local_velocity)) {
+    const auto & v = local_velocity_.twist.linear;
+    o.velocity_valid = vector_is_finite(v);
+    if (o.velocity_valid) {
+      o.vx = v.x;
+      o.vy = v.y;
+      o.vz = v.z;
+    }
+  }
+  return o;
+}
+
+void Px4Interface::publish_setpoint(double x, double y, double z, float yaw)
+{
+  // ★ 出口再挡一次非有限值：目标由状态机从 `odometry()` 算出来，而那里已经挡过 NaN，
+  //   但"绝不把 NaN 发给飞控"这条保证值钱到可以在这里重复一次
+  //   （PX4 收到 NaN 位置的行为没有明确定义）。
+  if (!std::isfinite(x) || !std::isfinite(y) || !std::isfinite(z) || !std::isfinite(yaw)) {
     return;
   }
 
   mavros_msgs::msg::PositionTarget msg;
   msg.header.stamp = node_.now();
-  msg.header.frame_id = current.header.frame_id;
+  // ★ `frame_id` 沿用 `local_position` 的（没收到过时是空串）：mavros 对
+  //   `setpoint_raw/local` **只读 `coordinate_frame`**，`frame_id` 不参与换算
+  //   （`setpoint_raw.cpp` 的 `local_cb`）—— 与 ticket 05 的行为逐字一致，改它没有意义。
+  msg.header.frame_id = local_position_.header.frame_id;
   msg.coordinate_frame = mavros_msgs::msg::PositionTarget::FRAME_LOCAL_NED;
   msg.type_mask = kTypeMaskPositionAndYaw;
-  // 「位置 = 当前」⟹ 原地保持。⚠️ 坐标是 **ROS/ENU 口径**（z 向上为正），不是 NED ——
-  // mavros 会在 `local_cb` 里把它 ENU→NED 再发给 PX4（`setpoint_raw.cpp:231`）。
-  // 与入参同源（`/mavros/local_position/pose` 出向已是 ENU，`local_position.cpp:157`）
-  // ⟹ 这一进一出恰好抵消，PX4 收到的是它自己报的那个位置。见头文件注释第 2 条。
-  msg.position = current.pose.position;
+  // ★ 坐标是 **ROS/ENU 口径**（z 向上为正），不是 NED —— mavros 会在 `local_cb` 里把它
+  //   ENU→NED 再发给 PX4（`setpoint_raw.cpp:231`）。与 `/mavros/local_position/pose`
+  //   （出向 NED→ENU，`local_position.cpp:157`）恰好互逆 ⟹ "目标 = 报回来的那个点"
+  //   这句话在数值上成立。见头文件注释第 2 条。
+  msg.position.x = x;
+  msg.position.y = y;
+  msg.position.z = z;
   msg.yaw = yaw;
   setpoint_pub_->publish(msg);
 }
@@ -308,6 +394,50 @@ void Px4Interface::request_set_mode(const std::string & custom_mode, ResultCallb
         done(true, "SET_MODE(" + custom_mode + ") 已发出；等待 /mavros/state.mode 确认");
       } else {
         done(false, "mavros 拒绝了这个 custom_mode（无法解析？）");
+      }
+    });
+}
+
+void Px4Interface::request_arming(bool arm, ResultCallback done)
+{
+  if (!arming_client_->service_is_ready()) {
+    done(false, "服务不可用（" + topics_.arming_service + " 上没有 mavros 的 cmd/arming 服务）");
+    return;
+  }
+
+  auto req = std::make_shared<mavros_msgs::srv::CommandBool::Request>();
+  req->value = arm;
+
+  // ⚠️ 回调里捕获 `this`：`Px4Interface` 是节点的成员、活到 `spin` 结束之后才析构
+  //   （客户端的待处理回调不会在它之后触发）。
+  arming_client_->async_send_request(
+    req,
+    [this, done, arm](rclcpp::Client<mavros_msgs::srv::CommandBool>::SharedFuture future) {
+      const auto res = future.get();
+      const std::string what = arm ? "arming(true)" : "arming(false)";
+      // ★★ `success` 与 `result` 是**两件事**，都要报出来：
+      //   `success` = "命令送到了且没超时"，`result` = MAV_RESULT 码
+      //   （`command.cpp:246`：`success = is_not_timeout && result == enum_value(ACCEPTED)`）。
+      //   MAV_RESULT 是 mavros 唯一的"为什么被拒"载体 ⟹ 只写"被拒了"会让现场只能靠猜。
+      //   ⚠️ 码值**按 MAVLink 定义数**，别凭印象：`ACCEPTED = 0` / `TEMPORARILY_REJECTED = 1`
+      //     / `DENIED = 2` / `UNSUPPORTED = 3` / `FAILED = 4`
+      //     （第一手：`/opt/ros/humble/include/mavlink/v2.0/common/common.h:1135-1136`）。
+      //     ← 这里原本写的是"4 = TEMPORARILY_REJECTED"，**是错的**（4 是 FAILED）。
+      // ★ 用 `MAV_RESULT=` 这个**固定形状**（与 `degrade=` / `traj_origin=` 同一惯例）：
+      //   现场要的是"能 grep 到并读到码"，台架测试也断言这个令牌（见 test_control_takeoff.py）。
+      if (res->success) {
+        if (arm) {
+          // ★ 只在这里置位：**肯定应答**才产生归属。真正的兑现要等 `armed` 的上升沿。
+          arm_request_pending_ = true;
+        }
+        done(true, what + " 已被飞控接受（MAV_RESULT=" + std::to_string(res->result) +
+          "）；等 /mavros/state.armed 确认");
+      } else {
+        if (arm) {
+          // ⚠️ 被拒了就把 pending 清掉：留着它会让**之后**任何一次外部解锁被误认成我们的。
+          arm_request_pending_ = false;
+        }
+        done(false, what + " 被飞控拒绝：MAV_RESULT=" + std::to_string(res->result));
       }
     });
 }

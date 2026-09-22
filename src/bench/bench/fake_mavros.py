@@ -24,6 +24,7 @@
 
 from __future__ import annotations
 
+import math
 import threading
 import time
 from dataclasses import dataclass
@@ -102,7 +103,8 @@ class FakeMavros:
     不需要在测试里到处加锁，也不会出现"两个线程同时碰 rclpy"。
 
     要注入的故障全部是"改一个属性"：静默（`mute`）、改状态（`set_state`）、
-    改电压（`set_voltage`）、改遥控（`set_rc`）、服务应答策略（`set_mode_policy`）。
+    改位置（`set_position`）、改速度（`set_velocity`）、改电压（`set_voltage`）、
+    改遥控（`set_rc`）、服务应答策略（`set_mode_policy` / `set_arming_policy`）。
     """
 
     SILENCEABLE = ("state", "local_position", "local_velocity", "rc", "battery")
@@ -124,6 +126,7 @@ class FakeMavros:
         create_set_mode: bool = True,
         create_arming: bool = True,
         follow_set_mode: bool = True,
+        follow_arming: bool = True,
         mode_transition_delay_s: float = 0.05,
     ) -> None:
         self.node = node
@@ -155,6 +158,11 @@ class FakeMavros:
         self.guided = False
         self.manual_input = False
         self.position = tuple(float(v) for v in position)
+        # 速度（ROS/ENU，m/s）。默认 **零** = "静止" —— 悬停判稳的场景不需要动它；
+        # 需要造"还在动"时用 `set_velocity`（判据的另一半要靠它才能被证伪）。
+        self.velocity = (0.0, 0.0, 0.0)
+        # 机头（ROS/ENU，绕 +z 的 yaw，逆时针为正）。默认 0 ⟹ 单位四元数。
+        self.yaw = 0.0
         self.voltage = float(voltage)
         # 通道 1 起算（长度 16）。默认中位 1500，ch8 = 硬件杀车、ch9 = 开始（见 ticket 02 的分配）。
         self.rc_channels = list(rc_channels) if rc_channels is not None else (
@@ -168,6 +176,12 @@ class FakeMavros:
         self._set_mode_policy = "ok" if create_set_mode else "absent"
         self._arming_policy = "ok" if create_arming else "absent"
         self.follow_set_mode = follow_set_mode
+        # ★ 与 `follow_set_mode` 分开的一个开关：造"**飞控答应了但没真的解锁**"这种局面
+        #   （真机上对应 prearm 检查在 ack 之后才失败 / 被 COM_ARM_CHK 拦下）。
+        #   它和 `set_arming_policy('fail')` 是**两种不同的失效**：
+        #     · `'fail'`          ⟹ 服务应答就是否定的（DUT 立刻知道被拒）
+        #     · `follow_arming=False` ⟹ 应答是肯定的，但 armed 永不上升沿（DUT 只能等到超时）
+        self.follow_arming = follow_arming
         self.mode_transition_delay_s = mode_transition_delay_s
 
         # —— 记录 ——
@@ -265,13 +279,24 @@ class FakeMavros:
         msg.pose.position.x = float(x)
         msg.pose.position.y = float(y)
         msg.pose.position.z = float(z)
-        msg.pose.orientation.w = 1.0
+        # 机头由 `set_yaw` 决定（默认 0 ⟹ 单位四元数，与 ticket 05 那会儿一样）。
+        msg.pose.orientation.w = math.cos(self.yaw / 2.0)
+        msg.pose.orientation.x = 0.0
+        msg.pose.orientation.y = 0.0
+        msg.pose.orientation.z = math.sin(self.yaw / 2.0)
         self._pose_pub.publish(msg)
 
     def _pub_velocity(self) -> None:
+        # ★ 与 `/mavros/local_position/pose` **同一条 MAVLink 消息**（真 mavros 在
+        #   `local_position.cpp` 的同一个回调里发这两个话题）⟹ 两者的频率、时间戳、口径一致。
+        #   速度同样是 **ROS/ENU**（z 向上为正），见 `set_velocity`。
         msg = TwistStamped()
         msg.header.stamp = self._stamp()
         msg.header.frame_id = "map"
+        vx, vy, vz = self.velocity
+        msg.twist.linear.x = float(vx)
+        msg.twist.linear.y = float(vy)
+        msg.twist.linear.z = float(vz)
         self._vel_pub.publish(msg)
 
     def _pub_rc(self) -> None:
@@ -355,8 +380,9 @@ class FakeMavros:
         with self._lock:
             self.arming_requests.append(
                 ArmingRequest(at_s=self.t(), value=bool(request.value)))
-        if response.success and self.follow_set_mode:
-            # 模拟 PX4 真的解锁了：下一次 state 发布时 armed 变真
+        if response.success and self.follow_arming:
+            # 模拟 PX4 真的解锁了：下一次 `/mavros/state`（1 Hz）发布时 armed 变真
+            # ⟹ DUT 看到的上升沿**必然滞后，最多 1 s**（这是真的，不是夹具的毛病）。
             self.armed = bool(request.value)
         return response
 
@@ -397,6 +423,29 @@ class FakeMavros:
     def set_voltage(self, voltage: float) -> None:
         self.voltage = float(voltage)
 
+    def set_yaw(self, yaw: float) -> None:
+        """改假 EKF 报的机头朝向（**ROS/ENU：绕 +z 的 yaw，逆时针为正，弧度**）。
+
+        ★ 为什么 ticket 08 才需要它：ticket 05 里 setpoint 的 yaw 是个固定参数（0），
+          夹具从来不必让"飞机会转向"。ticket 08 起 yaw = **起飞机头**（起飞前跟当前机头，
+          进入 TAKEOFF 那一刻锁一次、之后不变）⟹ 不把机头转到非零角度，
+          "锁定"与"跟随"在台架上**无法区分**（两者都恒等于 0，测试会在两个都成立的情况下变绿）。
+
+        ⚠️ 这是 ENU 口径：它进的是 `/mavros/local_position/pose` 的四元数，而 mavros 出向
+        已做过 NED→ENU（`local_position.cpp:157`）。真 PX4 内部那个 NED yaw 在 ROS 这一侧看不到。
+        """
+        self.yaw = float(yaw)
+
+    def set_velocity(self, vx: float, vy: float, vz: float) -> None:
+        """改假 EKF 报的速度（**ROS/ENU 口径，m/s，z 向上为正**）。
+
+        ⚠️ 与 `set_position` 是**两条独立的话题**（真 mavros 里位置与速度是同一个回调发的，
+        但 DUT 订阅的是两条话题）⟹ 夹具可以造出"位置没变但速度很大"这种**内部不自洽**的场面。
+        这正是要的：悬停稳定判据是 `位置误差 ∧ 速率` 两条**同时**成立，
+        只动位置是证伪不了速率那一半的。
+        """
+        self.velocity = (float(vx), float(vy), float(vz))
+
     def set_rc(self, channels: Sequence[int]) -> None:
         self.rc_channels = [int(c) for c in channels]
 
@@ -414,6 +463,27 @@ class FakeMavros:
             raise ValueError("policy 只能是 ok / fail / absent")
         self.set_mode_service_available(policy != "absent")
         self._set_mode_policy = policy
+
+    def set_arming_policy(self, policy: str) -> None:
+        """`'ok'` / `'fail'` / `'absent'` —— 与 `set_mode_policy` 同一套语义，但**结果字段不同**：
+        `CommandBool` 的应答是 `success` + `result`（MAV_RESULT 码），不是 `mode_sent`。
+        ★ `'fail'` 造的是"飞控**明确拒绝**了这个请求"（`result = 1` = TEMPORARILY_REJECTED），
+        这是 DUT 的"报原因 + 退回 STANDBY、不自动重试"那条路径唯一的注入面。
+        """
+        if policy not in ("ok", "fail", "absent"):
+            raise ValueError("policy 只能是 ok / fail / absent")
+        self.set_arming_service_available(policy != "absent")
+        self._arming_policy = policy
+
+    def set_arming_service_available(self, available: bool) -> None:
+        """生成/销毁 `/mavros/cmd/arming` 服务（模拟"mavros 还没起来"）。
+        ⚠️ 同 `set_mode_service_available`：运行时增删服务要等 DDS 发现传播。"""
+        if available and self._arming_srv is None:
+            self._arming_srv = self.node.create_service(
+                CommandBool, self.topics["arming"], self._on_arming)
+        elif not available and self._arming_srv is not None:
+            self.node.destroy_service(self._arming_srv)
+            self._arming_srv = None
 
     def set_mode_service_available(self, available: bool) -> None:
         """生成/销毁 `/mavros/set_mode` 服务 —— 模拟"mavros 还没起来"。
@@ -448,9 +518,15 @@ class FakeMavros:
             f"- `/mavros/set_mode` 调用：{len(self.mode_requests)} 次"
             + (f"（{', '.join(f'{r.custom_mode}@{r.at_s:.2f}s' for r in self.mode_requests)}）"
                if self.mode_requests else ""),
+            # ★ ticket 08 起 `/mavros/cmd/arming` 也成了被测行为之一 ⟹ 记录要打在证据里。
+            #   没有这一行时，"DUT 到底发没发解锁请求"只能靠读 DUT 日志猜。
+            f"- `/mavros/cmd/arming` 调用：{len(self.arming_requests)} 次"
+            + (f"（{', '.join(f'{r.value}@{r.at_s:.2f}s' for r in self.arming_requests)}）"
+               if self.arming_requests else ""),
             f"- 匹配到的 DUT 订阅者："
             + ", ".join(f"{k}={self.matched_subscribers(k)}" for k in self._pubs),
             f"- 当前状态：connected={self.connected} armed={self.armed} mode={self.mode}"
-            f"；静默中={sorted(self._muted) or '无'}；position={self.position}",
+            f"；静默中={sorted(self._muted) or '无'}"
+            f"；position={self.position} velocity={self.velocity}",
         ]
         return "\n".join(lines)

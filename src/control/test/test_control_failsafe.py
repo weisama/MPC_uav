@@ -16,6 +16,11 @@
 ★ 关于负向断言：每一条"不再发 setpoint / 不再请求模式"都配了**正控**（此前确实在发/在请求），
   否则"DUT 启动就崩了"会让所有负向断言假通过。每条用例末尾都查 `sc.dut_alive()`（验收项 ⑦）。
 
+★★ **ticket 08 之后本文件多了一条前置**：②③④⑥ 这几条判据都只在**已解锁**时成立，
+  而 ticket 08 给了真实的解锁路径 ⟹ 那些用例的基线不再能靠注入 `armed` 造出来，
+  必须真的走一次 `/control/takeoff`（见 `_reach_auto`）。基线状态因此是 `AUTO/TAKEOFF`
+  （一解锁就开始爬升）而不是 `AUTO/STANDBY`。
+
 ★★ 一条**没做到的事**（诚实记账）：① 的后半句"实测确认 PX4 按 `COM_OBL_RC_ACT` 接管"是
   **真机实验**，不能在台架上做（台架里没有真 PX4）。它和 ticket 05 的"断流实验真机那一半"
   一样，属于本包 README 里列出的"还没做的验收项"。本文件能证明的是"我们这边确实停发了"，
@@ -25,12 +30,16 @@
 import re
 
 import pytest
+from std_srvs.srv import Trigger
 
 from bench import Scenario
 from bench.timeline import hold_mocap_stamp, rc_change, voltage_drop
 
 #: DUT =（包名，可执行名）—— 由 `ament_index_python` 解析成 <prefix>/lib/control/control_node
 DUT = ("control", "control_node")
+
+#: 起飞命令的服务名（ticket 08）。★ 本文件用它把飞机送到"已解锁"那个基线态。
+TAKEOFF_SRV = "/control/takeoff"
 
 #: 与 `config/control.yaml` 一致的参数。逐条写出来，是为了让"这一条判据在什么口径下成立"
 #: 在断言旁边就能读到（与 `test_control_standby.py` 同一条纪律）。
@@ -50,21 +59,28 @@ BASE_PARAMS = {
     "rc_stick_ov_us_per_s": 100.0,
     "mocap_stamp_stall_s": 0.5,
     "land_mode": "AUTO.LAND",
-    # ★★ `own_arming = true` 是本张的**台架缝**（ticket 06 / 08 之间，见 `control.yaml` 的注释）：
-    #    本张没有解锁路径（解锁 = ticket 08），而"已解锁时的失效该请求 AUTO.LAND"这条判据
-    #    只在 armed 时成立 ⟹ 台架上必须能造出"这次解锁是我们自己发起"的场面。
-    #    只置了这一个参数的差异由下面一条专门用例守住（`test_未置_own_arming_时...`）。
-    "own_arming": True,
+    # ☠️ 这里原本有一个 `own_arming: True` —— ticket 06 的**台架缝**（本张没有解锁路径，
+    #   而"已解锁时的失效该请求 AUTO.LAND"只在 armed 时成立）。
+    #   **ticket 08 把它删掉了**：解锁路径已经真实存在（`/control/takeoff` +
+    #   `/mavros/cmd/arming`），归属由应答 + `armed` 上升沿真实追踪（`px4_interface.cpp::on_state`）。
+    #   留着那个参数会**打掉** §H.6 的"外部解锁"告警 —— 它会把别人拨的解锁开关也记成我们做的。
+    #   ⟹ 本文件里所有"已解锁"的场面改走**真实解锁路径**（见 `_reach_auto`）。
 }
 
 
 # ───────────────────────────────── 工具 ─────────────────────────────────
 
 def _reach_auto(sc):
-    """把场景推到"**已解锁**、正在 OFFBOARD 里流 setpoint"（= `/control/state` 为 `AUTO/STANDBY`）。
+    """把场景推到"**已解锁**、正在 OFFBOARD 里流 setpoint"（= `/control/state` 为 `AUTO/TAKEOFF`）。
 
-    ★ 顺序是刻意的：先等**模式真的切进 OFFBOARD**（这同时证明 set_mode 那条链路通），再注入
-      `armed` —— 这样后面的"不抢回 OFFBOARD"才有意义（基线是"我们本来在 OFFBOARD 里"）。
+    ★ 顺序是刻意的：先等**模式真的切进 OFFBOARD**（这同时证明 set_mode 那条链路通），
+      再走**真实的解锁路径** `/control/takeoff` —— ticket 08 之后没有"台架专属的解锁缝"
+      （`own_arming` 参数已删）：`armed` 的归属由 `/mavros/cmd/arming` 的应答真实追踪，
+      所以"这次解锁是我们自己发起的"这件事**只能**靠真的解一次来实现。
+
+    ★ 基线状态是 `AUTO/TAKEOFF`（**不是** `AUTO/STANDBY`）：一旦解锁，状态机就开始往上爬。
+      夹具里飞机**不动**（本文件不装 `test_control_takeoff.py` 里那层假飞机）⟹ 到高判据
+      永远不成立 ⟹ 会稳定地停在 TAKEOFF。这些用例注入的是别的东西，不关心飞得多高。
 
     ★ 第一件事不是等时间而是等**匹配**：`matched_subscribers` 计的是已经匹配上的订阅者，
       于是 QoS 不兼容会在这里立刻失败，而不是表现为"莫名其妙没数据"。
@@ -78,9 +94,19 @@ def _reach_auto(sc):
 
     sc.wait_for(lambda: sc.fake.mode == "OFFBOARD", timeout_s=8.0,
                 message="DUT 没有把（假的）PX4 拉进 OFFBOARD ⟹ 后面的判据没有基线")
-    sc.fake.set_state(armed=True)
-    assert sc.wait_for_control_state("AUTO/STANDBY", timeout_s=6.0), (
-        f"own_arming = true 时 armed 上升沿应当进 AUTO/STANDBY（我们正在发会驱动飞机的指令），"
+    # ★ `/mavros/state` 是 1 Hz ⟹ DUT 最多还要 1 s 才知道"已在 OFFBOARD"，
+    #   而那是解锁的前置之一。不等的话这里会变成"解锁被前置判据挡住"的假故障。
+    sc.hold(1.2)
+
+    client = sc.node.create_client(Trigger, TAKEOFF_SRV)
+    assert client.wait_for_service(timeout_sec=6.0), f"DUT 没有提供 {TAKEOFF_SRV}"
+    future = client.call_async(Trigger.Request())
+    assert sc.poll(lambda: future.done(), timeout_s=6.0), f"{TAKEOFF_SRV} 没有回应"
+    assert future.result().success, f"起飞命令被拒：{future.result().message}"
+    sc.node.destroy_client(client)
+
+    assert sc.wait_for_control_state("AUTO/TAKEOFF", timeout_s=10.0), (
+        f"受理 + 解锁之后应当进 AUTO/TAKEOFF（我们正在发会驱动飞机的指令），"
         f"实际 {sc.control_state()!r}")
 
 
@@ -226,8 +252,9 @@ def test_外部把模式切走_退到_RC_OVERRIDE_且不抢回_然后交回即�
 
         # —— ⑤ 复位：外部把模式交回 OFFBOARD ⟹ 立刻恢复（不需要重启节点，也不需要"清故障"命令）——
         sc.fake.set_state(mode="OFFBOARD")
-        assert sc.wait_for_control_state("AUTO/STANDBY", timeout_s=5.0), (
-            f"外部把模式放回 OFFBOARD 之后应当自动复位，实际 {sc.control_state()!r}")
+        assert sc.wait_for_control_state("AUTO/TAKEOFF", timeout_s=5.0), (
+            f"外部把模式放回 OFFBOARD 之后应当自动复位，实际 {sc.control_state()!r}"
+            "（任务层**不**因夺权而复位：飞机还解锁着 ⟹ 应当在 TAKEOFF 里继续飞）")
         assert sc.wait_for_setpoints(len(sc.setpoints()) + 20, timeout_s=5.0), \
             "复位之后必须重新开始流 setpoint（否则「可复位」是空的）"
         assert sc.dut_alive()
@@ -381,8 +408,7 @@ def test_未解锁时输入失效只停发_判据恢复即自动复位():
 
     ★ 而且未解锁的失效**不闩锁**：判据一恢复就自动回 STANDBY（不必落地上锁，因为没有"落地"）。
     """
-    params = dict(BASE_PARAMS, own_arming=True)
-    with Scenario(dut=DUT, params=params) as sc:
+    with Scenario(dut=DUT, params=BASE_PARAMS) as sc:
         # 未解锁、守卫全成立 ⟹ 已经进 STANDBY 并在流（正控）。
         assert sc.wait_for_subscribers("state")
         assert sc.wait_for_setpoints(20, timeout_s=10.0), "正控：未解锁时也该在流 setpoint"
@@ -441,7 +467,7 @@ def test_动捕时间戳冻住会降级_而短促倒退不会():
             f"⟹ 注入没生效，下面「不降级」的断言不成立")
         assert "mocap_stamp_stalled" not in _degrade_tokens(sc), (
             f"短促时间戳倒退不该判成失效（它只让 mavros 丢几帧）；实际降级：{_degrade_tokens(sc)}")
-        assert sc.control_state() == "AUTO/STANDBY", "倒退之后应当仍在正常流"
+        assert sc.control_state() == "AUTO/TAKEOFF", "倒退之后应当仍在正常流（任务没被打断）"
 
         # ② 冻住（戳一直不前进）⟹ 0.5 s 之后降级。
         sc.timeline.extend(hold_mocap_stamp(sc.mocap_source, sc.t() + 0.2, held=True))
@@ -465,7 +491,7 @@ def test_动捕时间戳倒退到旧纪元_持续超过判据即降级():
 
     ★★ 这条的**判别力是实测过的**（2026-09-22，不是推演）：把 `on_mocap` 临时改回
       "基准 = 上一帧的戳、每帧无条件更新"，本节两条用例一个失败一个通过 ——
-      本条失败（DUT 全程停在 `AUTO/STANDBY`，一条降级都没有），冻住那条仍通过。
+      本条失败（DUT 全程停在 `AUTO/TAKEOFF`，一条降级都没有），冻住那条仍通过。
       同时用探针量到窗口内的真实戳：跳变 −4.9955 s 之后**每帧前进 +5 ms**，
       而旧基准就停在倒退前的最大戳上不动 ⟹ 旧判据在窗口里每一帧都判"健康"。
     """
@@ -539,17 +565,22 @@ def test_通道数不足的遥控帧不崩():
         assert sc.control_state() == "MANUAL/STANDBY"
 
 
-# ─────────────────────── own_arming：06/08 之间的缝 ───────────────────────
+# ─────────────────────── §H.6 外部解锁（ticket 08 起是**真的**在追踪归属） ───────────────────────
 
-def test_未置_own_arming_时外部解锁只停发不请求_LAND():
-    """★ 这条守的是**本张的边界**（也是 `own_arming` 唯一的作用面）：
+def test_外部解锁只停发不请求_LAND():
+    """★ 这条守的是 `Guard::kArmingByUs` 的反面：
 
-    实飞（`own_arming = false`，默认）时本张**没有任何解锁路径** ⟹ 看到的任何 `armed` 上升沿
-    都是外面干的 ⟹ 按 `params-changes.md` §H.6 停发 + 告警，而**不是**当作"我们飞起来了"去请求降落
+    **没经过** `/control/takeoff` 的 `armed` 上升沿 ⟹ 是外面干的（QGC / 遥控器拨杆 / 别人）
+    ⟹ 按 `params-changes.md` §H.6 停发 + 告警，而**不是**当作"我们飞起来了"去请求降落
     （飞机可能是别人控制着的，我们不该动它的模式）。
+
+    ★★ ticket 08 之前这条是靠 `own_arming=false` 这个**参数**表达的（一条台架缝）；
+      现在是**真实追踪**：`/mavros/cmd/arming` 的肯定应答才产生归属，之后观察到的
+      第一个 `armed` 上升沿才算我们的（`px4_interface.cpp::on_state`）。
+      所以本用例的注入面从"改参数"变成了"**不调用**那个服务"—— 语义完全一样，
+      但它现在测的是生产路径上真的会跑的那段代码。
     """
-    params = dict(BASE_PARAMS, own_arming=False)
-    with Scenario(dut=DUT, params=params) as sc:
+    with Scenario(dut=DUT, params=BASE_PARAMS) as sc:
         assert sc.wait_for_setpoints(20, timeout_s=10.0), "正控：未解锁时在流 setpoint"
         _assert_requests_recorded(sc)
         n_requests = len(sc.fake.mode_requests)

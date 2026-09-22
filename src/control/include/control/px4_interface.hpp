@@ -34,9 +34,11 @@
 #include <string>
 
 #include "geometry_msgs/msg/pose_stamped.hpp"
+#include "geometry_msgs/msg/twist_stamped.hpp"
 #include "mavros_msgs/msg/position_target.hpp"
 #include "mavros_msgs/msg/rc_in.hpp"
 #include "mavros_msgs/msg/state.hpp"
+#include "mavros_msgs/srv/command_bool.hpp"
 #include "mavros_msgs/srv/set_mode.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include "sensor_msgs/msg/battery_state.hpp"
@@ -52,6 +54,13 @@ struct Px4Topics
 {
   std::string state{"/mavros/state"};
   std::string local_position{"/mavros/local_position/pose"};
+  /// ★ **速度**（ticket 08）：悬停稳定判据的 `|v|` 取自它，而不是拿动捕位姿差分出来
+  /// 的"我们自己的速度" —— 后者带差分噪声，会把一个真在悬停的飞机判成"还在动"。
+  /// ⚠️ 口径与 `local_position` **完全一致**：mavros 在**同一个回调**里从同一条
+  /// `LOCAL_POSITION_NED` 发出这两个话题（`local_position.cpp:181` 与 `:210`），
+  /// 位置走 `transform_frame_ned_enu(position)`、速度走
+  /// `transform_frame_ned_enu(vx, vy, vz)` ⟹ **两者都是 ROS/ENU**，与 setpoint 同系。
+  std::string local_velocity{"/mavros/local_position/velocity_local"};
   std::string rc{"/mavros/rc/in"};
   std::string battery{"/mavros/battery"};
   std::string mocap{"/mocap/pose_enu"};
@@ -134,10 +143,10 @@ struct Px4Config
   Timeouts timeouts;
   Limits limits;
   ModeNames modes;
-  /// 本节点发起的解锁（ticket 06/08 之间的缝，参数 `own_arming`）。
-  /// ★ 语义：`Guards::own_arming` 直接取它；ticket 08 会把它从参数变成"解锁服务的结果"，
-  ///   那时改的也只是这个字段的来源（`fsm.hpp` 一行不用动）。
-  bool own_arming{false};
+  // ★ ticket 08 删掉了这里的 `own_arming` 参数：那条"缝"现在是**真的**
+  //   （`request_arming()` 的应答 ⟹ `Guards::own_arming`），不再需要人工告知。
+  //   ⚠️ 删参数不是洁癖：留着它，`own_arming: true` 会让**任何**人拨的解锁开关都被当成
+  //   我们做的 ⟹ §H.6 要的"外部解锁告警"整条失效（那正是它存在的理由）。
 };
 
 class Px4Interface
@@ -159,9 +168,15 @@ public:
   /// `rc_sticks_moving`（它本身就要求有新鲜数据才成立）。
   Health health(double now_s) const;
 
-  /// 一帧**可用**的 `local_position` 都没有时返回 nullopt（STANDBY 的 setpoint 位置就取自它）。
+  /// 一帧**可用**的 `local_position` 都没有时返回 nullopt（诊断用；位置本身见 `odometry()`）。
   /// ★ 出现 NaN/Inf 的那一帧算"不可用"：宁可不发 setpoint，也不把 NaN 转发给 PX4。
   std::optional<geometry_msgs::msg::PoseStamped> local_position() const;
+
+  /// 本帧的**导航读数**（ticket 08）：位置、速度、机头，**全都是 ROS/ENU 口径**
+  /// ⟹ 与 setpoint 同系，`fsm.hpp` 拿来直接算目标，**不需要任何坐标转换**。
+  /// ★ "哪一路能信"的翻译只在这里（`position_valid` / `velocity_valid`）——
+  ///   与 `guards()` 同一条纪律：`fsm.hpp` 只看布尔量，不碰 `std::isfinite`。
+  Odometry odometry() const;
 
   /// 最近一帧 `/mavros/state` 报的模式（**一帧都没收到过时是空串**）。
   /// ★ 节点**不**再自己拿它比字符串（`in_offboard` / `in_land` 在 `guards()` 里算完）；这里留着是给诊断用
@@ -181,15 +196,30 @@ public:
   /// 诊断用：某条输入距今多久（从未收到返回 `-1.0`）。`key` 取 `Px4Topics` 的成员。
   double age_seconds(const std::string & topic, double now_s) const;
 
-  /// 发布唯一控制输出。`current` 是 EKF2 当前位姿（**ROS/ENU 口径**，见文件头第 2 条），
-  /// 位置原样转发 ⟹ "原地保持"。`yaw` 也是 ENU 口径（⟹ `0` 表示机头朝 ENU 的 +x，不是"NED 的 0"）。
-  void publish_setpoint(const geometry_msgs::msg::PoseStamped & current, float yaw);
+  /// 发布唯一控制输出。三个位置分量是 **ROS/ENU 口径**（见文件头第 2 条，z 向上为正），
+  /// `yaw` 也是 ENU 口径（⟹ `0` 表示机头朝 ENU 的 +x，不是"NED 的 0"；见文件头第 2 条那条 ★）。
+  /// ★★ ticket 08 起这是**目标**而不再是"当前位姿"：STANDBY 时两者恰好相等（原地保持），
+  ///    起飞后目标由状态机给出（爬升斜坡 / 悬停点 / 轨迹原点）。
+  ///    ⚠️ 目标由**调用方**（`fsm.hpp` 的 `Decision`）算好 —— 这里只管发，不做任何几何。
+  void publish_setpoint(double x, double y, double z, float yaw);
 
   /// 请求切换飞行模式（`custom_mode`，如 `"OFFBOARD"`）。
   /// ⚠️ **`mode_sent == true` 只表示 SET_MODE 消息发出去了，不代表 PX4 接受** ——
   /// 真正的判据是稍后 `/mavros/state.mode` 变成期望值（`/mavros/state` 是 1 Hz ⟹ 最多晚 1 s）。
   /// 调用方必须按这个语义重试，不要以为回调返回 ok 就切成功了。
   void request_set_mode(const std::string & custom_mode, ResultCallback done);
+
+  /// 请求解锁 / 上锁（`/mavros/cmd/arming`，`CommandBool`）。
+  ///
+  /// ★★ **本节点只用它来解锁**：上锁交给 PX4 自己的 `COM_DISARM_LAND = 2.0`（z0 实测值，
+  ///    `docs/assets/z0.params:234`），我们只等 `armed` 的降沿（工单裁定）。
+  /// ⚠️ 语义与 `request_set_mode` 一样是**异步**的：`done(true, …)` 只表示**飞控接受了这条命令**
+  ///    （`success = is_not_timeout && result == MAV_RESULT::ACCEPTED`，见 `command.cpp:246`），
+  ///    真正的判据是随后 `/mavros/state.armed`（1 Hz ⟹ 最多晚 1 s）。
+  /// ★ 肯定应答会**记下**"这次解锁是我们发起的"，在之后观察到的第一个 `armed` 上升沿上
+  ///    兑现成 `Guards::own_arming` —— 那是区分"我们解锁"与"别人解锁"（§H.6 的告警）的唯一依据。
+  /// ⚠️ 本函数**不重试**（那是调用方的策略）：被拒就把 `arm_request_pending_` 清掉。
+  void request_arming(bool arm, ResultCallback done);
 
   bool ever_received(const std::string & topic) const;
 
@@ -208,19 +238,30 @@ private:
   void on_rc(const mavros_msgs::msg::RCIn & msg);
   void on_mocap(const geometry_msgs::msg::PoseStamped & msg);
   void on_local_position(const geometry_msgs::msg::PoseStamped & msg);
+  /// `/mavros/state` 一帧 —— 顺带在 `armed` 的**上升沿**上兑现"这次解锁是谁发起的"。
+  void on_state(const mavros_msgs::msg::State & msg);
 
   rclcpp::Node & node_;
   Px4Topics topics_;
   Timeouts timeouts_;
   Limits limits_;
   ModeNames modes_;
-  /// 本节点发起的解锁 —— 进 `Guards::own_arming`（ticket 06/08 之间的缝）。
-  bool own_arming_{false};
+
+  // ── ticket 08：解锁的**归属**追踪（进 `Guards::own_arming`）──
+  /// 解锁请求已被飞控接受、但**还没在 `/mavros/state` 里看到 `armed` 的上升沿**。
+  /// ⚠️⚠️ 它**不能**在任何 `armed == false` 的帧上被清掉：`/mavros/state` 只有 1 Hz，
+  ///   而服务应答是即时的 ⟹ 应答与上升沿之间**必然**夹着若干帧 `armed == false`，
+  ///   清掉就会把**我们自己**的解锁误报成外部解锁（§H.6 的告警，现场最贵的那种误报）。
+  ///   只在"被拒"（`request_arming` 的失败回调）或"上升沿已兑现"时清。
+  bool arm_request_pending_{false};
+  /// 已经兑现的归属：本次解锁是不是我们做的。`armed == false` 时恒为 false。
+  bool arming_by_us_{false};
 
   std::map<std::string, Input> inputs_;
 
   mavros_msgs::msg::State state_;
   geometry_msgs::msg::PoseStamped local_position_;
+  geometry_msgs::msg::TwistStamped local_velocity_;
 
   // ── 失效判据的**记忆**（判据本身在 `health()`，这里只存"最近一帧告诉我们什么"）──
   /// 四个摇杆通道的变化率检测器（顺序同 `Limits::rc_channels()`）。
@@ -245,14 +286,15 @@ private:
 
   rclcpp::Subscription<mavros_msgs::msg::State>::SharedPtr state_sub_;
   rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr local_position_sub_;
+  rclcpp::Subscription<geometry_msgs::msg::TwistStamped>::SharedPtr local_velocity_sub_;
   rclcpp::Subscription<mavros_msgs::msg::RCIn>::SharedPtr rc_sub_;
   rclcpp::Subscription<sensor_msgs::msg::BatteryState>::SharedPtr battery_sub_;
   rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr mocap_sub_;
 
   rclcpp::Publisher<mavros_msgs::msg::PositionTarget>::SharedPtr setpoint_pub_;
   rclcpp::Client<mavros_msgs::srv::SetMode>::SharedPtr set_mode_client_;
-  // 📌 解锁服务（`/mavros/cmd/arming`）本张**不建**：本张没有解锁路径（解锁 = ticket 08）。
-  //    台架夹具**会**提供这个服务，好让 ticket 08 直接接上。
+  /// 解锁服务（ticket 08 起真的建起来了；台架夹具 `fake_mavros` 早就提供了它）。
+  rclcpp::Client<mavros_msgs::srv::CommandBool>::SharedPtr arming_client_;
 };
 
 }  // namespace control

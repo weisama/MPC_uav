@@ -216,6 +216,17 @@ mavros 真丢链路后会在 `conn_timeout`（默认 10 s）时**自己发一帧
    `PYTHONPATH` 里），ctest 因此报 `missing_result`。随后单独跑（9 例绿）与**再次整包跑**
    （96 例 0 失败）都正常。**记账在这里、不再追**：真要复现先怀疑 `install/` 的 setup 链与并发，
    而不是这条用例本身。
+   ★★ **第三次同族偶发**（2026-09-22，ticket 08 收尾的整仓跑）：`test_control_failsafe.py` 13 例中
+   **挂 1 例** —— `test_动捕时间戳冻住会降级_而短促倒退不会` 的第 ② 段
+   （`sc.wait_for_control_state("MANUAL/LAND", 6.0)` 超时，DUT 停在 `AUTO/TAKEOFF`；
+   第 ① 段"短促倒退不降级"是**通过**的 ⟹ 注入链路本身通）。**未复现，机制未查明**：
+   随后单独跑该例 **8.4 s 通过**，再整包跑 `control` **13/13 绿**。
+   已经排掉的两个猜想（省的重复劳动）：**(a)** 不是"事件排在过去被丢掉"——
+   `Timeline.due()` 取的是 `at_s <= t_s` 的全部，晚排也是下一拍就触发；
+   **(b)** 不是"等待期间不触发时序事件"—— `Scenario.wait_for` 的 docstring 明写等判据时照常 `_fire_due()`。
+   ⚠️ 与上面两次**同族但不是同一个**：那两次死在**进程启动**（import/`missing_result`），
+   这次死在**等一个 6 s 的判据**⟹ 嫌疑指向"机器负载把某条真实时限吃掉了"，而不是夹具基础设施。
+   **记账在这里、不再追**（要追先看 `wait_for` 的 `tick_s=0.02` 与实际发帧节拍在负载下的关系）。
 3. **夹具造不出"PX4 自己退出 OFFBOARD"这个形状**（`COM_OF_LOSS_T` 是 PX4 对我们停发的**反应**，
    而假 mavros 不假扮 PX4 —— `CONTEXT.md` 的「假 mavros」条）⟹ `mode_lost` 那条收窄判据的证据
    **只可能在 seam 2**。候选后续：给假 mavros 加一个"我们停发 N 秒后自己掉出 OFFBOARD"的开关

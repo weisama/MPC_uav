@@ -5,8 +5,9 @@
   <version>0.1.0</version>
   <description>
     自主飞行的控制节点：把 PX4 拉进 OFFBOARD 并以 50 Hz 流「位置 + yaw」setpoint。
-    ★ ticket 05 只实现到 STANDBY（未解锁、持续流 setpoint、不发任何会驱动飞机的指令）；
-    起飞/悬停/降落归 ticket 08，轨迹归 ticket 07，失效路径归 ticket 06。
+    ★ ticket 05 到 STANDBY（不发会驱动飞机的指令），ticket 06 是失效路径，
+    ticket 08 是起飞/悬停/自动降落（解锁走 /mavros/cmd/arming，入口是 /control/takeoff 服务）；
+    轨迹归 ticket 09。
   </description>
   <maintainer email="127371350+weisama@users.noreply.github.com">weisama</maintainer>
   <license>TODO: License declaration</license>
@@ -17,6 +18,8 @@
   <depend>geometry_msgs</depend>
   <depend>sensor_msgs</depend>
   <depend>std_msgs</depend>
+  <!-- /control/takeoff 用的是 std_srvs/Trigger（起飞命令只需要"受理/拒绝 + 一句话原因"） -->
+  <depend>std_srvs</depend>
   <!-- setpoint（PositionTarget）/ state / rc 都来自 mavros_msgs；不依赖整个 mavros -->
   <depend>mavros_msgs</depend>
 

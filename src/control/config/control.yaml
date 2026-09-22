@@ -22,12 +22,17 @@ control:
     #   ⚠️ 注意：**真 PX4 只在 OFFBOARD 模式下才读 setpoint_raw** ⟹ 关掉它，飞机不会有任何反应。
     enter_offboard: true
 
-    # setpoint 的 yaw（弧度，**ROS/ENU 口径**：从 ENU 的 +x 逆时针）。
-    # ⚠️ 不是"NED 下的偏航"，也不是"相对当前机头"：mavros 对 FRAME_LOCAL_NED 做 ENU→NED
-    #    （`setpoint_raw.cpp:231/235`，实测换算 `yaw_ned = π/2 − yaw_enu`）
-    #    ⟹ **这里填 0，PX4 收到的是 +90°（机头朝东）**。本张飞机未解锁 ⟹ 不动，但
-    #    ticket 08 定"起飞朝向"时必须按这条来（要么显式给定，要么从当前姿态取，别留着 0 当默认）。
-    yaw: 0.0
+    # ☠️ 这里原本有一个 `yaw` 参数（ticket 05），**ticket 08 删掉了**。
+    #   原因：那个参数默认 0，而 0 在 ROS/ENU 口径下经 mavros 换算后是 PX4 的 +90°（机头朝东）
+    #   （`setpoint_raw.cpp:231/235`，实测 `yaw_ned = π/2 − yaw_enu`）⟹ 一旦在 OFFBOARD 里解锁，
+    #   PX4 会**真的去转机头**。现在 setpoint 的 yaw 一律由状态机给，规则是：
+    #     STANDBY / INIT ⟹ **当前机头**（不转向）；进入 TAKEOFF 那一刻锁一次 ⟹ 全程用锁定值。
+    #   依据与推导见 `src/control/include/control/fsm.hpp` 的文件头 ★。
+    #
+    # ☠️ 这里原本还有一个 `own_arming`（ticket 06 的台架临时缝），**ticket 08 也删掉了**：
+    #   它把任何 `armed` 上升沿都当作"本节点发起的解锁"，正好会**打掉** §H.6 的"外部解锁"告警。
+    #   现在归属由 `Px4Interface::request_arming()` 真实追踪（只有拿到肯定应答之后观察到的
+    #   第一个上升沿才算我们的）。
 
     # 诊断日志周期（INIT 时列出每条输入的话题/静默时长/发布者与 QoS；也用作 /control/state 的心跳）。
     diag_period_s: 1.0
@@ -35,12 +40,22 @@ control:
     # —— 话题 / 服务（与 mavros 2.15.1 的默认名一致）——
     state_topic: "/mavros/state"
     local_position_topic: "/mavros/local_position/pose"
+    # ★ 速度来源（ticket 08 的稳定判据要它）：EKF2 融合过的速度，比我们自己差动捕干净。
+    #   与 local_position **同一条 MAVLink 消息**（mavros 在 `local_position.cpp` 的同一个回调里
+    #   发这两个话题）⟹ 频率、时间戳、口径（都是 ROS/ENU，z 向上为正）一致。
+    local_velocity_topic: "/mavros/local_position/velocity_local"
     rc_topic: "/mavros/rc/in"
     battery_topic: "/mavros/battery"
     mocap_topic: "/mocap/pose_enu"
     setpoint_topic: "/mavros/setpoint_raw/local"
     set_mode_service: "/mavros/set_mode"
+    # ★ 解锁服务（ticket 08）：H.6 的 D3 = **程序解锁**，不靠遥控器拨杆。
+    arming_service: "/mavros/cmd/arming"
     control_state_topic: "/control/state"
+    # ★ 起飞命令入口（`std_srvs/Trigger`）。用服务而不是话题：命令要**有应答** ——
+    #   操作员按了键没反应时，第一个问题永远是"什么缺了"，而那个答案此刻就在手上。
+    #   ticket 09 会把遥控器 ch9 的上升沿接到这里（状态机本身**不读遥控器**）。
+    takeoff_service: "/control/takeoff"
 
     # —— 每条输入的超时判据 ——
     # ★★ `/mavros/state` 的默认值是 2.5 s，**不要照抄 px4ctrl 的 0.5 s**：
@@ -88,8 +103,31 @@ control:
     #    唯一兜底是 PX4 自己的失效保护（`NAV_RCL_ACT` / `COM_OBL_RC_ACT`，见 ticket 06 的保留说明）。
     land_mode: "AUTO.LAND"
 
-    # ★★ ticket 06 与 08 之间的**临时缝**：本张没有解锁路径（解锁 = ticket 08），
-    #   于是"已解锁时的失效该请求 AUTO.LAND"这条没法在台架上验证。
-    #   置 true = 任何 `armed` 上升沿都被当作**本节点发起的解锁**（⟹ 走 LAND 分支、不再报"外部解锁"）。
-    #   ⚠️ **只用于台架注入**；实飞前保持 false，ticket 08 落地时删掉这个参数。
-    own_arming: false
+    # —— 任务判据的阈值（ticket 08）——
+    # ★ 与上面那组**失效判据**（`Limits`）分开：那一组管"什么时候停"，这一组管"飞到什么算到"。
+    #   两者的默认值就是工单里的数（`fsm.hpp::TaskLimits`），这里逐条抄下来只为可调。
+
+    # 起飞目标高度（m，相对**起飞原点**）。
+    takeoff_altitude_m: 1.0
+    # ★ 工单硬要求：**≤ 0.5 m/s**（`docs/control/phase1-implementation.md` 的两阶段路线里，
+    #   第一级自由飞只许垂直慢爬）。这不是"性能参数"，改大直接违反验收项。
+    climb_speed_mps: 0.5
+    # 到高判据：`|z − (起飞原点+高度)| < tol ∧ |v_z| < tol` **持续** takeoff_settle_s。
+    takeoff_alt_tol_m: 0.10
+    takeoff_vel_tol_mps: 0.10
+    takeoff_settle_s: 1.0
+    # ★★ 稳定判据（工单原文）：`位置误差 < 0.10 m ∧ |v| < 0.10 m/s 持续 2 s`。
+    #   位置误差相对的是**悬停点**（= 起飞原点正上方 takeoff_altitude_m），
+    #   不是轨迹原点 —— 轨迹原点恰恰是**判稳那一刻**才记下来的，拿它当基准是循环定义。
+    #   ⚠️ 速率来自 `local_velocity_topic`（EKF2 融合值，三维），不是"z 轴速度"。
+    hover_pos_tol_m: 0.10
+    hover_vel_tol_mps: 0.10
+    hover_settle_s: 2.0
+    # 判稳之后在轨迹原点上**停多久**，够久就自动降落。
+    # ★ 自由飞（阶梯第 4 级）的验收项是"60 s 手不离杆" ⟹ 实飞前若改成 < 30 s，
+    #   飞机会在验收时长走完之前自己下来（节点启动时会为此发一条 WARN）。
+    hover_hold_s: 60.0
+    # 起飞命令的兜底超时：受理之后这么久还没解锁（前置不齐 / 被拒 / 没应答）⟹ 命令作废、
+    # 退回 STANDBY。**不自动重试**是刻意的（用户 2026-09-22 裁定）——
+    # 静默重试会把"解锁参数没配对"这种确定性拒绝变成一串没人看的日志。
+    takeoff_timeout_s: 5.0
