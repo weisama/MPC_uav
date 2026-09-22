@@ -382,18 +382,30 @@ Phase 1 走的是 mavros，**不存在"微秒"这一层**：
 | `LAND` | 自动降落 | 交给 PX4 的 `AUTO.LAND` |
 | `RC_OVERRIDE` | 遥控器打杆接管 | **停止发 setpoint**，退出 OFFBOARD |
 
-> ★ **与 ticket 05 已实现代码的对应关系（2026-09-21）** —— 上表是**目标形态**，代码目前是它的子集：
-> - **已实现**：`INIT`、`STANDBY`（= [`src/control/include/control/fsm.hpp`](../../src/control/include/control/fsm.hpp)
->   的 `Phase::kInit` / `kStandby`）。其余几个**只在枚举里占位，不在转移表里** —— 任何输入组合都到不了。
-> - **`RC_OVERRIDE` 被拆成了另一个维度**：代码里"谁在控制"是独立的 `Authority{MANUAL, AUTO}`，
->   它**没有**作为一个 `Phase` 存在。遥控器打杆 ⟹ 控制权回 `MANUAL`（`COM_OBL_RC_ACT` 由 PX4 处理），
->   当前任务态怎么办归 ticket 06 定。
+> ★ **与已实现代码的对应关系（2026-09-22 更新，含 ticket 06）** —— 上表是**目标形态**，代码是它的子集：
+> - **已实现**：`INIT`、`STANDBY`（ticket 05）、`LAND`、`RC_OVERRIDE`（ticket 06）。
+>   见 [`src/control/include/control/fsm.hpp`](../../src/control/include/control/fsm.hpp) 的 `Phase`。
+> - **`TAKEOFF`/`HOVER`/`TRACK` 仍只在枚举里占位**：任何输入组合都到不了，归 ticket 08/07。
+> - **`RC_OVERRIDE` 与「控制权」是**两个维度**，但夺权时**同时**置位：代码里"谁在控制"是独立的
+>   `Authority{MANUAL, AUTO}`，打杆/模式被切走 ⟹ `Authority = MANUAL` **且** `Phase = RC_OVERRIDE`
+>   （ticket 06 的用户决策 ④）。所以 `/control/state` 在夺权时是 **`MANUAL/RC_OVERRIDE`**。
 > - **`WAIT_START` 代码里还没有**：它是"已稳定、等按键"的中间态，归 ticket 08 引入
 >   （`HOVER` 之后的判据也要那批工作一并定）。**不要**在 ticket 08 之前往枚举里加。
 > - ★ 早期图纸里出现的 `IDLE`（ticket 05 的状态机示意图）**与本文的 `INIT`、代码的 `kInit` 同义** ——
 >   同一件事的三个写法，见 [`CONTEXT.md`](../../CONTEXT.md) §三的「任务态」条。
 
 ### 4.2 转移表
+
+**★ 已实现的部分（ticket 05+06）与本文原表有两处**结构性**差异，先说清楚，再看原表：**
+
+1. **每一条失效边都要按「是否已解锁」分岔**（ticket 06 的用户决策 ①）：
+   未解锁时**没有**可中止的任务，请求 `AUTO.LAND` 不但无意义，还会因为
+   `AUTO.LAND` 在 `mode_req_prevent_arming` 名单里（`mode_requirements.cpp:142`，同处
+   `:141` 还要求 `mode_req_local_position`）而与解锁路径打架
+   —— 反过来 OFFBOARD 的要求里**没有** `prevent_arming`（`:121-124`），所以在 OFFBOARD 里解锁是合法的
+   ⟹ **未解锁的失效 = 停发 + 回 `INIT`，不请求任何模式**；已解锁的失效才走 `LAND`。
+2. **`LAND` 与 `RC_OVERRIDE` 都带"不抢回"语义**：夺权类失效**连 `AUTO.LAND` 也不请求**
+   （那是在跟正在接管飞机的人抢），输入类失效才请求 `AUTO.LAND`。详见新建的 §4.4。
 
 | 从 | 到 | 条件 |
 |---|---|---|
@@ -404,8 +416,19 @@ Phase 1 走的是 mavros，**不存在"微秒"这一层**：
 | `WAIT_START` | `TRACK` | **遥控器按键上升沿**（去抖 200 ms） |
 | `TRACK` | `LAND` | 轨迹执行完毕（`traj_progress ≥ 1.0`） |
 | 任意 | `RC_OVERRIDE` | `COM_RC_OVERRIDE` 触发 / 检测到 `state.mode != "OFFBOARD"` |
-| 任意 | `LAND` | 电池低于阈值 / setpoint 未能持续发布 / `EKF2` 位置失效 |
+| 任意 | `LAND` | 电池低于阈值 / 输入超时 / `EKF2` 位置失效 |
 | `RC_OVERRIDE` | `STANDBY` | 遥控器交还控制且飞机已稳定 |
+
+> ★ **已实现版本的精确条件**（以 `fsm.hpp::first_degrade()` 与 `mode_is_ours()` 为准，不是上面这张目标表）：
+> - ⟹ `RC_OVERRIDE`：**已解锁且**摇杆变化率超 `rc_stick_ov_us_per_s`（`rc_override`）；
+>   或我们持有的模式（OFFBOARD / 我们请求的 `AUTO.LAND`）被外部切走（`mode_lost`）。
+>   ⚠️ 原表写的"检测到 `state.mode != "OFFBOARD"`"太粗 —— 我们自己请求降落造成的
+>   OFFBOARD→`AUTO.LAND` **不算**夺权（`mode_is_ours`）。
+> - ⟹ `LAND`：已解锁 + 下列任一 —— `state_timeout` / `mocap_timeout` / `local_pos_timeout` /
+>   `rc_timeout` / `battery_low` / `position_invalid` / `mocap_stamp_stalled`。逐个 token 见 §4.4。
+> - 原表的"setpoint 未能持续发布"**不作为一条独立判据**：断流的**原因**都在上面那几条里，
+>   而"我们自己停发"是结果不是原因（拿结果当判据会自我循环）。
+> - ⟹ `MANUAL/INIT`（未解锁时的失效）：判据恢复即**自动**回 `STANDBY`（不闩锁）。
 
 ### 4.3 ★ 三个必须实现的细节（"实飞才会想到"的判据，来自 `px4ctrl`）
 
@@ -427,21 +450,111 @@ Phase 1 走的是 mavros，**不存在"微秒"这一层**：
 
    **本项目的超时口径**（ticket 05 实现，见 `src/control/config/control.yaml`）：
 
-   | 输入 | 上游频率 | 超时 | 理由 | ticket 05 是否拿它做判据 |
+   | 输入 | 上游频率 | 超时 | 理由 | 判据（ticket 05 主体入；✅ = 已接上，见 §4.4） |
    |---|---|---|---|---|
-   | `/mavros/state` | **1 Hz** | **2.5 s** | 2.5 个周期；容一次丢帧 | ✅ 超时 ⟹ 回 `INIT`、停发 |
+   | `/mavros/state` | **1 Hz** | **2.5 s** | 2.5 个周期；容一次丢帧 | ✅ 超时 ⟹ 停发（已解锁时 `LAND`） |
    | `/mavros/local_position/pose` | ~30 Hz | 0.5 s | | ✅ 同上 |
    | `/mocap/pose_enu` | ~196 Hz | 0.5 s | | ✅ 同上 |
-   | `/mavros/rc/in` | 10 Hz 级 | 0.5 s | | ❌ **只记账**（"打杆 ⟹ 降级"属 ticket 06） |
-   | `/mavros/battery` | 1 Hz 级 | 2.0 s | | ❌ **只记账**（"低压 ⟹ 降落"属 ticket 09） |
+   | `/mavros/rc/in` | 10 Hz 级 | 0.5 s | | ✅ **只在已解锁时**超时 ⟹ `LAND`（未解锁时"遥控没开"不影响安全） |
+   | `/mavros/battery` | 1 Hz 级 | 2.0 s | | ❌ **`battery_timeout_s` 刻意不做判据**；做的是**低电压**判据（值判断，与超时无关） |
 
    ★ 后两行的 `*_timeout_s` 参数与订阅**在 ticket 05 就位**（值与理由都不会再变），
-   但**判据**分别归 ticket 06 / 09 —— 这样 ticket 06 接进来时只需在 FSM 里加一条守卫，
-   不必再动话题层。**在那些 ticket 落地之前，这两条输入超时不会引起任何动作。**
+   判据在 ticket 06 接上 —— 所以不需要再动话题层。⚠️ **低压保护归 ticket 06，不是 ticket 09**
+   （早期几处文档把它记成 ticket 09，已就地更正；09 是"轨迹任务脚本"）。
+   ⚠️ `battery_timeout_s` 是**唯一一条刻意不做判据的超时**：低压是**值**判断 ——
+   飞控静默之后最后一帧读数若低，它**仍然低**，"超时就不判"是错的方向（详见 §4.4）。
 
    ⚠️ **代价：解锁上升沿最多晚 1 s 被检出**（1 Hz 话题的固有限制）——
    ticket 08 的起飞逻辑必须把这一秒算进去。本张只做"检出外部解锁 ⟹ 停发 setpoint + ERROR"，
    真正的起飞前置判据归 ticket 08。
+
+### 4.4 ★★ 失效降级（ticket 06 实现记录，2026-09-22）
+
+**总原则（`px4ctrl` 的原话是"任何关键输入超时 → 进 LAND"）在本项目被拆成两步：**
+
+1. **先停发 setpoint**（不是"不更新目标" —— 那等于让飞机悬在原目标上，操作员打杆也拉不回来），
+2. **再按「是否已解锁」决定要不要主动中止任务**（用户 2026-09-22 的决策 ①）。
+
+理由是第一手的：`AUTO.LAND` 在 `mode_req_prevent_arming` 名单里（`mode_requirements.cpp:142`）
+⟹ 未解锁时请求它既无意义（没有任务可中止）又**会挡住解锁**。
+所以**未解锁的失效 ⟹ 停发 + 回 `INIT`，判据恢复就自动回 `STANDBY`**；
+**已解锁的失效 ⟹ 停发 + 请求 `AUTO.LAND`（`Phase = LAND`）**。
+
+**两类降级的处置不同，刻意不合并**（`fsm.hpp::is_takeover()`）：
+
+| 类 | 原因 token | 处置 |
+|---|---|---|
+| **控制权被夺走** | `rc_override`、`mode_lost` | 停发 + 交还控制权（`MANUAL/RC_OVERRIDE`），**不请求任何模式** —— 既不抢回 OFFBOARD，**也不请求 `AUTO.LAND`**（那是在跟正在接管飞机的人抢） |
+| **输入坏了** | `state_timeout`、`mocap_timeout`、`local_pos_timeout`、`rc_timeout`、`battery_low`、`position_invalid`、`mocap_stamp_stalled` | 停发；已解锁时请求 `AUTO.LAND` |
+
+**闩锁与复位**（"可判定、可复位"，与 XI35 的 `kf_fusion_fail` 单向 latch 相对）：
+
+| 闩锁种类 | 谁闩 | 复位条件 |
+|---|---|---|
+| 不闩锁 | 未解锁时的任何失效 | 判据恢复 ⟹ 立即回 `STANDBY`（**不需要任何动作**） |
+| `kTakeover` | 夺权（任何解锁状态） | ① 落地上锁（`armed` true→false）；② 模式被**外部**交回 OFFBOARD（升沿 —— 闩锁期间我们不请求 OFFBOARD，所以只可能来自人）；打杆场景下还要求摇杆先停止动作 |
+| `kArmedDegrade` | 已解锁时的输入失效 | **只有**落地上锁（电池不会因为有人切了模式就变满） |
+
+★ 闩锁记的是**首因**（最接近根因），后续判据不改写它；唯一的例外是
+**夺权可以升级已闩锁的输入失效** —— 飞行员永远优先（否则会出现"人在接管、我们还在请求 `AUTO.LAND`"的拉锯）。
+
+★ **首因只在同一帧内按优先级取胜**（`first_degrade()` 的顺序：飞控失联 > 动捕 > 位置 > 遥控 > 低压 …），
+**不同帧之间比的是各自的超时长短** —— 实测：五条输入同时静默时先报 `local_pos_timeout`（0.5 s），
+2.5 s 之后才轮到 `state_timeout`。这不是 bug，日志里两条都会出现。
+
+★ **日志可检索**：每帧降级写 `degrade=<token>`（token 由 `fsm.hpp::to_string(Degrade)` 给，有 `-Wswitch` 兜底），
+复位那帧写 `degrade=none：降级已复位（此前 degrade=<原因>，持续 X s）`。
+`grep -oE "degrade=[a-z_]+" 日志 | grep -v none` 捞全部降级事件。
+
+#### ★★ 两条容易做错的判据细节（2026-09-22 复核补，都有第一手依据）
+
+**(1) `mode_lost` 要看**丢的是哪个模式**。** 判据是"**上一帧**模式是我们的 **且上一帧我们在流
+setpoint（或已经在**我们请求的** `AUTO.LAND` 里）**，这一帧模式不是我们的"。
+只比"模式从 `OFFBOARD` 掉出去"是不够的：我们一停发，PX4 在 `COM_OF_LOSS_T`（1.0 s）后
+**自己**退出 `OFFBOARD` —— 而我们的判据是 0.5 s，（同一个输入坏掉时）**真机上必然先看见"自己退出"那一帧**，
+是确定性发生而不是偶发。误判的代价有两层：日志把排查方向指错；更实际的是
+`is_takeover()` 会把已闩锁的输入失效**升级**成夺权 ⟹ 从此**不再重发 `AUTO.LAND`**
+（闩锁把"降落失败就重试"的能力一起掐掉）。代价是**刻意接受**的：人手动把模式切走、而飞机当时
+并未被我们驱动 ⟹ 交给**打杆**那条判据去抓（这也正是 PX4 `COM_RC_OVERRIDE` 的口径：人一动杆就是接管）。
+★ 这一条的证据**只可能在 seam 2**（`test_fsm.cpp` 的三条用例）：夹具的假 mavros **不假扮 PX4 的
+`COM_OF_LOSS_T` 退出**（`CONTEXT.md`），台架上永远造不出"我们自己停下来、PX4 跟着退出"这个形状。
+
+**(2) 动捕戳的基准是**历史最大戳**，不是"上一帧的戳"。** 依据是 EKF2 自己的尺子：它收外部视觉样本
+的条件是"比**已缓冲的最新样本**还新"（`EKF/estimator_interface.cpp:393`），不满足就只打一条
+`ECL_WARN("EV data too fast")` 把这一帧丢掉（`:401-403`）。拿"上一帧"当基准的话，
+**倒退到旧纪元之后继续正常前进**（夹具 `VrpnSource::rewind` 的形状）每一帧都比上一帧新
+⟹ 我们的判据永远说"健康"，而 PX4 那边每一帧都在丢 —— 那才是真盲区（`position_invalid` 看不见它，
+`mocap_timeout` 也看不见它，帧确实在到）。
+★ 判别力是**实测**的，不是推演（2026-09-22）：探针量到倒退窗口里戳的真实走向 —— 一跳 **−4.9955 s**，
+之后**每帧前进 +5 ms**；把 `on_mocap` 临时改回"基准 = 上一帧的戳、每帧无条件更新"，
+`test_动捕时间戳倒退到旧纪元_持续超过判据即降级` 立刻变红（DUT 全程停在 `AUTO/STANDBY`，
+一条降级都没有），而"戳冻住"那条仍然通过（戳相等 ⟹ 两种基准都成立）。
+
+#### ⚠️ 本张**不能**兑现的两件事（诚实记录，别当成已完成）
+
+1. **「EKF2 位置失效 ⟹ LAND」在这条链上抓不到**（`position_invalid` 判据是**防御性**的）。
+   第一手核实（z0 固件 `4a0e65f2`，见 ticket 06 的 Comments）：
+   `EKF2.cpp::PublishLocalPosition` 发的 `lpos.x/y/z` 没有 NaN 合成；
+   `LOCAL_POSITION_NED.hpp` 在 MAVLink 层就丢掉了 `xy_valid`；mavros 2.15.1 原样转 ENU。
+   ⟹ **真正的兜底是动捕超时**（动捕是本项目唯一的位置源）；`estimator_status` 那条候选载体开在 ticket 16。
+2. **打杆接管的最终执行是 PX4 的事**（`COM_OBL_RC_ACT`，z0 现值 `0` = 回 Position 模式），
+   夹具不模拟 PX4 ⟹ 台架只能验到"我们停发了、退到 `RC_OVERRIDE`、不抢回"。
+   连带 ⚠️：**`NAV_RCL_ACT = 2`（Return）是 A1 阻塞项** —— A1 不落实，"RC 丢失 ⟹ 我们请求 LAND"
+   之后 PX4 自己的 RC 失效保护仍会试图**返航**（室内无 GPS）。
+
+#### ★ ticket 06 与 08 之间的临时缝：`own_arming`
+
+"已解锁时的失效 ⟹ 请求 `AUTO.LAND`"这条在台架上**没法验**（本张没有解锁路径）。
+于是加了参数 `own_arming`（默认 `false`）：置 `true` = 把任何 `armed` 上升沿当作**本节点发起的解锁**
+（⟹ 走 `LAND` 分支、不再报"外部解锁"）。**只在台架注入时用，实飞前保持 `false`，
+ticket 08 落地时删掉它**。
+
+#### ⚠️ `battery_timeout_s` 为什么不用
+
+它的值（2.0 s）没错，错的是"拿它当判据"这个动作：低电压是**值**判断。
+飞控静默之后最后一帧电压若低，它**仍然是低的** —— 此时"超时 ⟹ 不判低压"方向反了。
+而且真出现"电池话题静默"时，`/mavros/state` 那条判据几乎必然一起成立（同一个 mavros）。
+⟹ 本张**不加**"电池话题静默 ⟹ 降级"，保留 `battery_timeout_s` 参数与订阅只为记账/诊断。
 
 ## 5. 判据与轨迹
 
@@ -552,15 +665,26 @@ Phase 1 走的是 mavros，**不存在"微秒"这一层**：
 
 > **★ 第 3 步是"无桨台架"，不是 SITL。** 理由：SITL 验证不了**动捕链路**、**mavros 的真实串口**、**遥控器按键**这三件 Phase 1 真正的风险点。无桨台架能验证全部三件，且不炸机。
 
-### 7.1 ★ 哪些已经进了自动化，哪些还必须上真台架（ticket 05 更新）
+### 7.1 ★ 哪些已经进了自动化，哪些还必须上真台架（ticket 06 更新）
 
-**已经自动化**（`colcon test --packages-up-to control`，共 36 例，不需飞控、不需动捕、可离线跑）：
+**已经自动化**（`colcon test --packages-up-to control`，共 96 例，不需飞控、不需动捕、可离线跑）：
 
-- **seam 1**（`control/test/test_control_standby.py`，`src/bench/` 夹具）：守卫逐条生效 ⟹ 不发 setpoint；
-  50 Hz 流的字段与频率；前置流时长；`/mavros/state` 静默后流在 `state_timeout_s` 内停止；
-  外部解锁 ⟹ 停发；`enter_offboard=false` 只流不切；杀进程后流停止。
-- **seam 2**（`control/test/test_fsm.cpp`，零 ROS）：缺项清单是哪几条、什么顺序；断流后前置流重新计时；
-  `STANDBY` 下控制权仍是 `MANUAL`。
+- **seam 1**（`test/test_control_standby.py` 9 例 + `test/test_control_failsafe.py` 13 例，`src/bench/` 夹具）：
+  守卫逐条生效 ⟹ 不发 setpoint；50 Hz 流的字段与频率；前置流时长；`/mavros/state` 静默后流在
+  `state_timeout_s` 内停止；外部解锁 ⟹ 停发；`enter_offboard=false` 只流不切；杀进程后流停止。
+  **ticket 06 的那一半**：打杆 ⟹ **立刻**停发 + 退 `RC_OVERRIDE` + 不抢回（配正控：此前确实请求过 OFFBOARD）；
+  外部切走模式同前；三条输入超时**各一条判据**、任一条 ⟹ `LAND`（参数化三例）；
+  低压 ⟹ 主动中止任务、落地上锁后复位；NaN 位置 ⟹ 停发 + `LAND`；未解锁时的降级只停发、判据恢复即自动复位；
+  动捕戳**冻住** ⟹ 降级而**短促倒退不降级**；戳**倒退到旧纪元并持续** ⟹ 降级；
+  五条输入同时静默 + `set_mode` 服务撤走 ⟹ 不崩；遥控帧通道数不足 ⟹ 不崩。
+- **seam 2**（`test/test_fsm.cpp` 42 例 + `test/test_rc_stick.cpp` 13 例，零 ROS）：缺项清单是哪几条、
+  什么顺序；断流后前置流重新计时；`STANDBY` 下控制权仍是 `MANUAL`。
+  **ticket 06 的那一半**：两类降级的处置差异、闩锁种类与复位矩阵（含"夺权可升级已闩锁的输入失效"）、
+  首因闩锁、`mode_lost` 按**丢的是哪个模式**区分（含"我们自己停发后 PX4 跟着退出不算夺权"的解锁/未解锁两条 ——
+  见 §4.4(1)，这一条**只能在 seam 2 验**）、摇杆变化率检测器（阈值换算、断链后不复用旧读数、通道不足）。
+
+★ 上面说的 96 例 = `control` 自己的 77（42 gtest + 13 gtest + 9 + 13）+ `bench` 夹具自检 19
+（`test_bench_selftest.py` 13 + `test_timeline.py` 6，**它自己的测试**，不是 `control` 的验收项）。
 
 **`traj`（ticket 07）同样是两层**，`colcon test --packages-up-to traj` = **31 例**全绿
 （seam 2 的 20 + seam 1 的 11；★ 它的 seam 1 也用 `bench` 夹具，所以同样要 `--packages-up-to`）：
@@ -579,14 +703,15 @@ Phase 1 走的是 mavros，**不存在"微秒"这一层**：
 
 **这些都不再需要人守着看。**
 
-**⏳ 必须上真台架**（夹具**不模拟 PX4**，这两条的判据全在 PX4 侧）：
+**⏳ 必须上真台架**（夹具**不模拟 PX4**，下面几条的判据全在 PX4 侧）：
 
 | 项 | 为什么夹具做不了 |
 |---|---|
 | 真 PX4 被**拉进 OFFBOARD** | 模式需求检查（解锁前/后的差异）、`offboard_control_mode` 的存活判据都在 PX4 里 |
-| 杀节点 ⟹ PX4 在 **`COM_OF_LOSS_T`（1.0 s）后自行退出 OFFBOARD** | 同上。夹具已能证明"节点停发了"，**证明不了**"PX4 因此退出了" |
+| 杀节点 / **我们自己停发** ⟹ PX4 在 **`COM_OF_LOSS_T`（1.0 s）后自行退出 OFFBOARD** | 同上。夹具已能证明"节点停发了"，**证明不了**"PX4 因此退出了"。★ 这一条还是 `mode_lost` 判据的**真机现场**（§4.4(1)）：我们的判据是 0.5 s，比 PX4 的 1.0 s 先到 ⟹ 真机上只要输入坏掉就**必然**先看见"PX4 自己退出"这个形状，而夹具永远造不出它 |
+| **打杆 ⟹ PX4 按 `COM_OBL_RC_ACT` 接管**（z0 现值 `0` = 回 Position 模式） | 同上：执行在 PX4。本节点这一半（立刻停发、退到 `RC_OVERRIDE`、**不抢回 OFFBOARD**）已由 `test_control_failsafe.py` 覆盖 |
 
-做这两项时 **必须拆桨**，并走本节的第 3 步序列。⚠️ 当前 `/dev/ttyTHS1` 被另一会话的 mavros 占着
+做这几项时 **必须拆桨**，并走本节的第 3 步序列。⚠️ 当前 `/dev/ttyTHS1` 被另一会话的 mavros 占着
 （见 [ticket 14](../../.scratch/phase1/issues/14-mavros-from-source.md)），**不在 ticket 05 里抢**。
 
 ## 8. ★ 避坑清单（本轮调查挖出来的，逐条都有第一手证据）

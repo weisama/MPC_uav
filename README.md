@@ -54,7 +54,7 @@
     ├── mocap/                        ✅ 相对位姿（两阶段原点 + 仅归零 yaw）→ `/mavros/vision_pose/pose` → EKF2
     ├── traj/                         ✅ 参考轨迹（三条解析轨迹，50 Hz，**相对轨迹原点**；不发 setpoint）
     ├── bench/                        ✅ 台架夹具（**测试基础设施，不是飞行代码**）：假 mavros + 脚本化动捕 + 故障注入
-    └── control/                      ✅ 自主飞行控制节点（ticket 05：**只到 `STANDBY`**，未解锁、不发位移）
+    └── control/                      ✅ 自主飞行控制节点（ticket 05/06：`STANDBY` + **失效降级**；未解锁、不发位移）
 ```
 
 > **构建**（`colcon build` 在**仓库根**跑，不是 `src/`）：
@@ -62,8 +62,8 @@
 > source /opt/ros/humble/setup.bash && cd ~/ros_ws && colcon build
 > ```
 > 依赖与运行方式见 [`src/vrpn_listener/VENDORED.md`](src/vrpn_listener/VENDORED.md) §5；
-> `traj` 见 [`src/traj/README.md`](src/traj/README.md)（`--packages-up-to traj`，**它的 seam 1 也依赖 `bench`**）；
 > `mocap` 与它的测试见 [`src/mocap/README.md`](src/mocap/README.md)（`colcon test --packages-select mocap`）；
+> `traj` 见 [`src/traj/README.md`](src/traj/README.md)（`--packages-up-to traj`，**它的 seam 1 也依赖 `bench`**）；
 > `control` 见 [`src/control/README.md`](src/control/README.md)、夹具见 [`src/bench/README.md`](src/bench/README.md)。
 > ⚠️ `control` 的测试依赖 `bench` ⟹ 用 **`colcon build --packages-up-to control`**，
 > `--packages-select control` 会因缺 `test_depend` 失败。

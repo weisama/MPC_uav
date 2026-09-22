@@ -99,7 +99,7 @@
 | # | 参数 | z0 值 | PX4 默认 | 为什么保留 |
 |---|---|---|---|---|
 | D1 | `COM_RC_OVERRIDE` | **`3`** | `1` | **刻意放宽**了打杆接管的适用范围 —— 是 **Q5 接管方案**的真实参数基础 | 
-| D2 | `COM_RC_STICK_OV` | **`20`** | `30.0` | **刻意收紧**（打杆 20% 即接管，比默认灵敏）。与 D1 合起来说明"打杆接管"被**有意配强过** |
+| D2 | `COM_RC_STICK_OV` | **`20`** | `30.0` | **刻意收紧**。☠️ **阈值语义是「归一化摇杆的每秒变化率」`0.2/s`，不是"打杆 20%"** —— 早期口径已更正，见下文 **§H.11**。与 D1 合起来说明"打杆接管"被**有意配强过** |
 | D3 | `COM_OBL_RC_ACT` | **`0`**（= Position） | — | **Q5 决策**：打杆接管时切到 Position 模式 |
 | D4 | `COM_RC_IN_MODE` | **`3`** | `3`（v1.14 默认） | ✅ **已结案**：`3` = "RC **或** Joystick，保留先到者"。**不是警报**。⚠️ 但注意"先到者保留到重启"这个语义（与 Nxt-FC 的启动时序 bug 相关） |
 | D5 | `EKF2_EV_DELAY` | **`50.0`** | — | ★ **与用户实测的 50 ms 完全一致** —— 强佐证，**不要动** |
@@ -350,6 +350,35 @@ RC_KILLSWITCH_TH = 0.75, getRCSwitchOnOffPosition()  → rc_update.cpp:637 / 558
 - **H.8 的台架复核没做**（被 RC 链路状态阻塞）⟹ ticket 09 对应勾选框**留空**；
 - **H.7.1 的两条连带要求**须落进首飞检查单：① **解锁前确认 RC 在场**（新增，A1 盖不住这个场景）；
   ② **A1 改 `NAV_RCL_ACT = 1`**（本来就是 ★阻塞项，本节只是补了第二重理由）。
+
+### H.11 ☠️ 更正：`COM_RC_STICK_OV` 的语义是**变化率**，不是"打杆 20%"
+
+**2026-09-22（ticket 06 第一手核实）。** 本文 §D2、`params-analysis.md` §3.13 都写作
+"`COM_RC_STICK_OV = 20` ⟹ **打杆 20% 即接管**" —— **这个读法是错的**，更正如下（原句保留在上面，不删）：
+
+第一手链条（z0 固件 `4a0e65f2331b23b9c8352656e9ccb6edeaea5d6c`，v1.14.3 线）：
+
+```
+src/modules/manual_control/ManualControl.cpp:163-168
+    minimum_stick_change = 0.01f * COM_RC_STICK_OV;              // 20 ⟹ 0.2
+    sticks_moving = |_roll_diff.update(roll, dt)| > minimum_stick_change || …（pitch/yaw/throttle）
+src/modules/manual_control/MovingDiff.hpp:40-58
+    new_diff = (value - _last_value) / dt_s;                     // ⟹ 每秒变化率
+src/lib/mathlib/math/filter/AlphaFilter.hpp:62-77,121（setParameters(dt, 0.1f)）
+    alpha = dt / (0.1 + dt);  state = (1-α)·state + α·sample      // 再低通
+```
+
+⟹ 阈值比对的是**归一化摇杆的每秒变化率**（`0.2 /s`），**不是偏移量**。行为差别是真的：
+
+- **任何一次有意的打杆都会触发**（推杆的过程就有变化率）；
+- **"摇杆推到头再保持不动"不会触发**（变化率为 0，低通后衰减到阈值以下）。
+
+★ 对我们这边的影响：`control` 节点用**同一个算法**判"飞行员在打杆"
+（`src/control/include/control/rc_stick.hpp`，零 ROS 依赖、有 13 例 seam 2 单测），
+并按 z0 实测校准 `RC1_MIN = 989 / RC1_MAX = 2012`（半行程 ≈511 µs）把 0.2/s 折成
+**`100 µs/s`**（参数 `rc_stick_ov_us_per_s`）。
+⚠️ **改了 PX4 的 `COM_RC_STICK_OV` 就必须同步改这个参数** —— 否则节点眼里的"夺权"与
+PX4 眼里的"打杆接管"发生在不同时刻。**本张不改任何参数**，只更正口径。
 
 ---
 

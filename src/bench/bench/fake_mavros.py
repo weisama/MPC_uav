@@ -117,7 +117,9 @@ class FakeMavros:
         armed: bool = False,
         mode: str = "POSCTL",
         position: Sequence[float] = (0.0, 0.0, 0.0),
-        voltage: float = 16.0,
+        # ★ 与 `bench/config.py` 的 DEFAULTS["initial"]["voltage"] 保持一致（6S 满电附近）：
+        #   必须明显高于 DUT 的 `low_voltage_v`，否则"没打算注入低压"的场景会立刻降级。
+        voltage: float = 25.0,
         rc_channels: Optional[Sequence[int]] = None,
         create_set_mode: bool = True,
         create_arming: bool = True,

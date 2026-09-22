@@ -52,6 +52,25 @@
 
 - 默认 **`ROS_DOMAIN_ID=73`**（并行跑多份测试时用 `BENCH_ROS_DOMAIN_ID` 覆盖）
 - **拒绝 domain 0**（`init_ros_for_tests()` 与 `Scenario.__enter__` 都硬失败，不给"我以为没事"留口子）
+
+★★ **同一个域里只能有一份夹具** —— 这条是 2026-09-22 用一次事故换来的，症状极具误导性：
+
+两份夹具（或"夹具 + 别包的夹具"）并存时，**两边的假 mavros 会同时往 `/mavros/state` 等话题上发**，
+订阅方（DUT）收到的是**两股帧的混合** ⟹ `armed` 抖动、`mode` 乱跳、发布者计数变 2。
+表现出来是**随机假红**（守卫被别的夹具的帧打翻）或**随机假绿**（判据被别的夹具的帧一直喂饱），
+而日志里 DUT 自己的行为**完全正常** —— 你会去查节点，而罪魁在测试进程里。
+
+第一手证据（同一天，同一份代码）：整仓 `colcon test` 默认**并行跑包**（`bench` 与 `control` 同时在域 73），
+`control` 的 `test_control_standby` **9 条挂了 5 条**（清一色 `MANUAL/STANDBY` + "没在发 setpoint"）；
+把同一份测试**单独跑在域 75** ⟹ **9 条全绿**。`test_bench_selftest` 的 `test_state_是_1Hz`
+（"3.4 s 内 2–3 帧"）也在同样的场面下变成 7 帧。
+
+做法：**每份并发运行的测试各自一个域**。
+- 手动跑单文件：`BENCH_ROS_DOMAIN_ID=75 python3 -m pytest src/control/test/...`（域号随便挑，别用 0/73）
+- 整仓跑：`colcon test --executor sequential`（串行跑包 ⟹ 同一时刻只有一个包在用域 73）。
+  ⚠️ 用 `BENCH_ROS_DOMAIN_ID=<n>` 跑**整仓**并**不能**解决这个问题：那个变量对**所有**包都生效，
+  两个包拿到同一个域，撞法不变。
+- 这套"到底该给谁哪个域"的根治办法还没做，见 ticket 17。
 - **`ROS_LOCALHOST_ONLY=1`**（本机多网卡：动捕 WiFi + 校园网，别把测试组播漏出去）
   ⚠️ 这一条**夹具与 DUT 必须取同一个值**。本机上 `ROS_LOCALHOST_ONLY=0` 是被人设过的；
   夹具若只 `setdefault`、DUT 却强设，两边就会用不同的 DDS 传输配置 ——
@@ -189,14 +208,14 @@ sc.timeline.add(sc.t() + 0.5, sc.stop_dut, "杀掉 DUT")
 
 | 能力 | 谁会用 |
 |---|---|
-| `set_voltage` / `voltage_drop` / `battery_timeout_s` 判据 | ticket 09（低压保护） |
-| `set_rc` / `set_rc_channel` / `rc_change` | ticket 06（RC 夺权） |
-| `arming_requests` / `set_mode_policy` 的 `'absent'` 分支 | ticket 08（解锁） |
-| `VrpnSource` 的 `rewind` / `hold_stamp` / `set_trajectory` | ticket 06/07（时间戳倒退、轨迹跟随） |
+| `arming_requests` | ticket 08（解锁） |
+| `VrpnSource.set_trajectory` | ticket 07（参考轨迹跟随） |
 | `Scenario(start_dut=False)`（只起夹具，手动起节点） | 台架排障时好用，自动化里没用过 |
 
 ★ 反过来，`mute` / `pause` / `set_position` / `set_state` / `wait_for_control_state` /
-`setpoint_rate_hz` / `evidence` 这些**已被 `control` 的测试真实调用过**，可以照着抄。
+`setpoint_rate_hz` / `evidence` / `set_voltage` / `voltage_drop` / `set_rc` / `set_rc_channel` /
+`rc_change` / `rewind` / `hold_stamp` / `set_mode_policy('absent')` 这些
+**已被 `control` 的测试真实调用过**（ticket 05/06），可以照着抄。
 
 ## 三条写测试的纪律
 
@@ -226,12 +245,17 @@ colcon test  --packages-up-to bench
 
 夹具**自己也有测试**（`test/test_bench_selftest.py`）：验它**假得像不像** ——
 频率对不对、`local_position` 是不是 best_effort、`mute` 是不是真的不发、`set_state` 是不是真的走到话题上、
-`set_mode` 的三种应答。★ 理由：**夹具骗不到 DUT 的前提是它先骗过自己**；
+`set_mode` 的三种应答，以及 **ticket 06 新引入的四个注入面各一条**（`set_voltage`、`set_position(nan)`、
+`set_rc_channel`/静置恒定、`hold_stamp`/`rewind`）。★ 理由：**夹具骗不到 DUT 的前提是它先骗过自己**；
 一个把 `local_position` 发成 reliable 的假 mavros，会让**所有**依赖它的测试"莫名其妙收不到数据"，
 而那种故障在日志里看不出来。
 
-⚠️ `bench` 是 Python 包：改 `bench/*.py` 之后**必须重新 `colcon build`**（代码被复制进 `install/`），
-只改 `test/*.py` 则不用（测试从源码树读）。
+⚠️ `bench` 是 Python 包：改 `bench/*.py` 之后**必须重新 `colcon build`**（代码被**复制**进
+`install/bench/local/lib/python3.10/dist-packages/bench/`，**不是软链**；而 `source install/setup.bash`
+把那个目录放进 `PYTHONPATH` ⟹ pytest 导入的是**安装副本**，不是 `src/bench/`），只改 `test/*.py` 则不用。
+★ 这条 2026-09-22 咬过一次：`src/` 里已经修掉的 `FakeMavros.evidence()` 崩溃（`Service` 没有
+`get_num_clients`）在**安装副本**里还活着 ⟹ 任何一次 `Scenario` 超时都变成 `AttributeError` 而不是打印证据，
+"查不到证据"被误当成"夹具没记"。症状指向错误的方向，代价是几十行调试。
 
 ## 目录
 
@@ -243,5 +267,5 @@ bench/scenario.py       Scenario：拼装 + DUT 子进程 + 秒表 + 证据输�
 bench/config.py         DEFAULTS 与 yaml 深合并
 bench/pytest_support.py ★ 会话级 ROS 上下文与 domain 安全边界
 config/bench.yaml       默认频率/话题/初始状态
-test/                   夹具自检（9 条）+ 时序纯逻辑单测（6 条）
+test/                   夹具自检（13 条）+ 时序纯逻辑单测（6 条）
 ```

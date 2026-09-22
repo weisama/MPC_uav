@@ -18,6 +18,7 @@ from rclpy.qos import QoSProfile, ReliabilityPolicy
 
 from bench import Scenario
 from bench.fake_mavros import mavros_sensor_qos, mavros_state_qos
+from bench.vrpn_source import mocap_qos
 
 
 def _fixture_only(**kw):
@@ -202,3 +203,132 @@ def test_set_mode_可以回答失败或不存在():
         sc.fake.set_mode_policy("absent")
         sc.wait_for(lambda: not client.service_is_ready(), timeout_s=15.0,
                     message="销毁服务之后客户端仍认为服务可用（DDS 发现没跟上？）")
+
+
+# ─────────────────── ticket 06（失效路径）第一次用到的注入能力，各来一条自检 ───────────────────
+# ★ 纪律：**第一次用某个能力时，先证明这个能力真的有效**。上面几条是 ticket 05 用过的；
+#   下面这几条都是 ticket 06 新引入的注入面，写在这里是为了让"注入没生效"与"节点没反应"
+#   在测试红的时候能一眼分开。
+
+def test_电压注入真的走到_battery_话题上():
+    """`set_voltage` / `voltage_drop` 必须真的改掉 `/mavros/battery.voltage`。
+
+    ⚠️ 这一条不测"低压会怎样"（那是 DUT 的事），只测**夹具真的把电压送出去了** ——
+    否则 ticket 06 的"低压 ⟹ LAND"测试会在"注入根本没生效"的前提下变绿（假绿）。
+    """
+    import pytest
+    from sensor_msgs.msg import BatteryState
+
+    with _fixture_only() as sc:
+        got = []
+        _subscribe(sc, BatteryState, sc.fake.topics["battery"], got.append,
+                   mavros_sensor_qos())
+        sc.advance_to(1.4)
+        assert got, "假 mavros 一帧 battery 都没发出来"
+        assert got[-1].voltage == 25.0, f"默认电压应该是 25.0（6S 满电附近），实测 {got[-1].voltage}"
+
+        sc.fake.set_voltage(19.3)
+        sc.advance_to(2.6)   # battery 1 Hz ⟹ 最多 1 s 之后
+        # `BatteryState.voltage` 是 **float32**（真 mavros 也一样），19.3 存进去是 19.299999…
+        # ⟹ 这里只能近似比。⚠️ 别把这条改成"恰好相等"：那是在测浮点，不是测夹具。
+        assert got[-1].voltage == pytest.approx(19.3, abs=1e-3), \
+            f"注入的电压没到话题上，实测 {got[-1].voltage}"
+
+
+def test_NAN_位置真的能送到_local_position_话题上():
+    """`set_position(nan, ...)` —— DUT 的 `position_invalid` 判据（NaN/Inf）的注入面。
+
+    ⚠️ **这条注入是"防御性"的，不是真机现象的复现**。第一手核实（2026-09-22，z0 固件
+    `4a0e65f2` 那棵树）：
+      · `src/modules/ekf2/EKF2.cpp::PublishLocalPosition` 直接发 `_ekf.getPosition()`，
+        **没有任何 NaN 合成**（`lpos.x/y/z` 一路是实数；只有 `ref_lat/lon/alt` 在
+        全局原点无效时是 NaN）；
+      · `src/modules/mavlink/streams/LOCAL_POSITION_NED.hpp` 把 x/y/z 原样发出，
+        **不带 `xy_valid`**（这个 flag 在 MAVLink 这一层就丢了）；
+      · mavros 2.15.1 `plugins/local_position.cpp::handle_local_position_ned` 也是原样转 ENU。
+    ⟹ 真机上"EKF2 位置失效"**不会**以 NaN 的形式出现在这条话题上（详见 ticket 06 的 Comments）。
+    这条自检只证明：**夹具送得出 NaN**，所以 DUT 那个防御性分支在台架上是可测的。
+    """
+    with _fixture_only() as sc:
+        got = []
+        _subscribe(sc, PoseStamped, sc.fake.topics["local_position"], got.append,
+                   mavros_sensor_qos())
+        sc.advance_to(0.5)
+        assert got and got[-1].pose.position.x == 0.0, "注入前应当是正常的位置"
+
+        sc.fake.set_position(float("nan"), 0.0, 0.0)
+        sc.advance_to(1.0)
+        assert got[-1].pose.position.x != got[-1].pose.position.x, (
+            "NaN 没有送到话题上（x != x 是 NaN 的判据）—— 那 DUT 的 position_invalid 判据"
+            "在台架上就测不到，ticket 06 的 ④ 会变成假绿")
+        assert got[-1].pose.position.y == 0.0, "只该坏掉被注入的那一轴"
+
+        sc.fake.set_position(0.1, 0.0, 0.0)
+        sc.advance_to(1.5)
+        assert got[-1].pose.position.x == 0.1, "恢复有限值之后必须能回到正常（否则测的是「一去不回」）"
+
+
+def test_遥控注入真的走到_rc_话题上而且静置不动():
+    """两条都要：`set_rc_channel` 改得动；**不动它时通道是恒定的**。
+
+    第二条是本条的重点：DUT 的"打杆夺权"判据看的是**变化率**，所以夹具要是让未注入时的
+    通道值抖动（或每帧随机），就会出现"飞行员什么都没干却触发了夺权"的假故障 ——
+    那种故障在 DUT 的日志里看着完全正常，只有夹具自己是罪魁。
+    """
+    from mavros_msgs.msg import RCIn
+
+    with _fixture_only() as sc:
+        got = []
+        _subscribe(sc, RCIn, sc.fake.topics["rc"], got.append, QoSProfile(depth=10))
+        sc.advance_to(1.0)
+        assert len(got) >= 5, f"1 s 内应收到 ~10 帧 rc（夹具 10 Hz），实收 {len(got)}"
+
+        # 未注入时恒定：所有帧的 1/2/3/4 通道都一样（1500），ch8/ch9 = 1000。
+        for msg in got:
+            assert list(msg.channels[:4]) == [1500, 1500, 1500, 1500], "静置时摇杆通道不该变"
+            assert msg.channels[7] == 1000 and msg.channels[8] == 1000
+        # 而且帧**在动**（否则"恒定"是"根本没发"的另一种说法）。
+        assert got[0] is not got[-1]
+
+        sc.fake.set_rc_channel(1, 1200)   # 通道号 1-based
+        sc.advance_to(1.6)
+        assert got[-1].channels[0] == 1200, f"注入的通道值没到话题上：{got[-1].channels[0]}"
+        assert got[-1].channels[1] == 1500, "只该改被点名的那一路"
+
+
+def test_动捕时间戳可以冻住也可以倒退():
+    """`hold_stamp` / `rewind` —— ticket 06 的"动捕时间戳不前进"判据的两个注入面。
+
+    ★ 与 `pause`（**停止发布**）是两种不同的失效，必须能分开造：
+      · `pause`  ⟹ 话题层没数据（DUT 的"动捕超时"判据抓它）
+      · `hold_stamp` ⟹ 帧照发、戳不动（只有"时间戳不前进"那条判据抓得到）
+    """
+    with _fixture_only() as sc:
+        # 夹具默认就起脚本化动捕源（config 的 `mocap.target = 'mocap'` ⟹ 直接发 /mocap/pose_enu）。
+        assert sc.mocap_source is not None, "夹具没起动捕源"
+        got = []
+        _subscribe(sc, PoseStamped, sc.mocap_source.topic, got.append, mocap_qos())
+        sc.advance_to(0.5)
+        assert got, "脚本化动捕一帧都没发出来"
+
+        # 正常时戳在前进（否则下面的断言证明不了"冻住"是 `hold_stamp` 干的）。
+        assert got[-1].header.stamp != got[0].header.stamp, "默认情况下动捕时间戳应该前进"
+
+        sc.mocap_source.hold_stamp(True)
+        sc.advance_to(1.0)
+        n_before = len(got)
+        assert n_before > 1, "冻住时间戳 ≠ 停止发布：帧必须照发"
+        sc.advance_to(1.5)
+        assert len(got) > n_before, "冻住时间戳期间必须继续发帧（否则测的是 pause）"
+        assert got[-1].header.stamp == got[n_before - 1].header.stamp, "时间戳应该冻在同一个值"
+
+        sc.mocap_source.hold_stamp(False)
+        sc.advance_to(2.0)
+        assert got[-1].header.stamp != got[n_before - 1].header.stamp, "解除冻结之后戳该继续前进"
+
+        # 倒退：戳**比之前更小**（ticket 06 验收项里的"注入时间戳倒退"）。
+        sc.mocap_source.rewind(5.0, hold_s=0.5)
+        sc.advance_to(2.6)
+        stamps = [m.header.stamp.sec + m.header.stamp.nanosec * 1e-9 for m in got]
+        assert min(stamps) < max(stamps) - 1.0, "rewind 没有造出「戳倒退」的场景"
+

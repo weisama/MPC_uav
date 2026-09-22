@@ -37,7 +37,9 @@ initial:
   armed: false
   # POSCTL：真机上"上电后、切 OFFBOARD 之前"的常见模式。
   mode: "POSCTL"
-  voltage: 16.0             # 4S LiPo 满电附近
+  # 6S 满电附近。★ 必须**明显高于** DUT 的 low_voltage_v（默认 20.0 V）：否则每个用到
+  # armed 的场景都会立刻降级到停发/AUTO.LAND，而"低压"是那些测试没打算注入的东西。
+  voltage: 25.0
 
 mocap:
   # 'mocap' = 直接发 /mocap/pose_enu（测 control 时用，旁路 mocap 节点）

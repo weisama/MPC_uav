@@ -45,7 +45,11 @@ DEFAULTS: Dict[str, Any] = {
         "connected": True,
         "armed": False,
         "mode": "POSCTL",
-        "voltage": 16.0,
+        # ★ 25.0 V = 6S 满电附近（4.17 V/cell）。这个默认值必须**明显高于** DUT 的
+        #   `low_voltage_v`（默认 20.0 V），否则每个用到 armed 的场景都会立刻降级到
+        #   `AUTO.LAND`/停发 —— 而"低压"是那些测试**没打算**注入的东西（注入它请显式
+        #   调 `voltage_drop(...)`）。⚠️ 改 DUT 阈值时回头看一眼这里。
+        "voltage": 25.0,
     },
     "mocap": {
         # 'mocap' = 直接发 /mocap/pose_enu（测 control 时用，旁路 mocap 节点）
