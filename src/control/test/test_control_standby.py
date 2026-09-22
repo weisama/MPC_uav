@@ -248,6 +248,41 @@ def test_关掉_enter_offboard_就只流不切():
         assert len(sc.setpoints()) > 20, "但 setpoint 必须照流（开关只管切不切模式）"
 
 
+# ───────────────────────────── 诊断日志：能指认到"是谁" ─────────────────────────────
+
+def test_降级证据里带发布者的节点名():
+    """★ 「话题上有帧 / 没帧」之外，日志还必须能回答「**是谁**在发」。
+
+    缘起是一条没查出来的悬案（2026-09-22 台架）：`/mocap/pose_enu` 上收到过帧，而它唯一的合法
+    发布者当时**没有任何发布路径**；当时日志只写"发布者：N 个（QoS）"⟹ **事后指认不出是谁发的**，
+    十三条候选只能一条条手工排除。数量回答"有没有"，**节点名才回答"是谁"**。
+
+    ★ 本用例刻意走**降级告警的证据**那条路径，而不是 INIT 的诊断块：后者每个周期只打一次，
+      若第一拍的诊断**早于 DDS 发现完成**，它打的就是"0 个"（实测见过），断言会随发现快慢翻脸。
+      这里先在 `_reach_standby` 里等订阅者**匹配上**（= 发现已完成），再制造静默 ⟹ 不依赖时序。
+    """
+    with Scenario(dut=DUT, params=BASE_PARAMS) as sc:
+        _reach_standby(sc)  # ★ 这一句同时是"发现已完成"的屏障（见上面的说明）
+        sc.fake.mute("local_position")  # 有发布者、但没有帧 —— 正是当初排不出来的那一类
+
+        # ★ `wait_for` 自己断言（不返回布尔），别写成 `assert sc.wait_for(...)` —— 那会 `assert None`。
+        sc.wait_for(lambda: "degrade=local_pos_timeout" in sc.dut_log(), timeout_s=6.0,
+                    message="local_position 静默超过 local_pos_timeout_s 之后应当打出降级告警")
+
+        log = sc.dut_log()
+        chunk = log[log.index("degrade=local_pos_timeout"):][:400]
+        assert f"/{sc.node.get_name()}" in chunk, (
+            "降级证据里没有出现发布者的**节点名**："
+            f"夹具这个节点叫 /{sc.node.get_name()}，静默期间它仍然挂在话题图上。\n"
+            "只有数量没有名字 ⟹ 幽灵发布者那类事件事后指认不出来（本条测试的由来）。\n"
+            + sc.evidence())
+        # 正控：QoS 那一列不能被节点名挤掉 —— 它是"静默但没人报错"那类故障的唯一线索。
+        assert "best_effort" in chunk, (
+            "降级证据里丢了 QoS —— local_position 在真 mavros 上是 best_effort，"
+            "这一列是发现「best_effort 发布方配 reliable 订阅方」那种静默故障的仅有线索\n"
+            + sc.evidence())
+
+
 # ───────────────────────────── 断流实验（夹具这一半） ─────────────────────────────
 
 def test_杀掉_DUT_之后_setpoint_流停止():

@@ -64,6 +64,13 @@ std::string qos_summary(const rclcpp::QoS & q)
   return s;
 }
 
+/// `namespace/node`（默认命名空间不写成 `//node`）—— 发布者的**身份**，见 `publisher_summary`。
+std::string node_id(const rclcpp::TopicEndpointInfo & info)
+{
+  const std::string ns = info.node_namespace();
+  return (ns.empty() || ns == "/") ? ("/" + info.node_name()) : (ns + "/" + info.node_name());
+}
+
 /// `(x, y, z)` —— **固定形状**是为了让日志可 grep（`traj_origin=`、`takeoff_origin=`）。
 /// 理由与 `degrade=<token>` 那条一样：现场要的是"能搜到并直接喂给脚本"，
 /// 而不是"读起来顺"（台架对账时要把这些数与动捕报的位置做差）。
@@ -868,6 +875,12 @@ private:
     return std::to_string(age) + " s";
   }
 
+  /// `N 个（/节点名 [QoS], /另一个 [QoS]）`。
+  /// ★ **节点名是刻意加的（2026-09-22）**：台架上抓到过一次"话题上有帧、而它唯一的合法发布者
+  ///   当时没有任何发布路径"的事件，当时这一列只写"发布者：N 个（QoS）"⟹ **事后无法指认是谁发的**。
+  ///   数量能回答"有没有"，**节点名才能回答"是谁"** —— 指认不出来才会变成悬案。
+  ///   夹具里每个场景自带一个节点名，所以这一列在 seam 1 上是可断言的
+  ///   （见 `test/test_control_standby.py::test_日志里能读出发布者的节点名`）。
   std::string publisher_summary(const std::string & topic) const
   {
     const auto infos = get_publishers_info_by_topic(topic);
@@ -876,7 +889,8 @@ private:
     }
     std::string s = std::to_string(infos.size()) + " 个";
     for (size_t i = 0; i < infos.size(); ++i) {
-      s += (i ? ", " : "（") + qos_summary(infos[i].qos_profile());
+      s += (i ? ", " : "（") + node_id(infos[i]) + " [" +
+           qos_summary(infos[i].qos_profile()) + "]";
     }
     return s + "）";
   }
