@@ -468,7 +468,7 @@ Phase 1 走的是 mavros，**不存在"微秒"这一层**：
 
    | 输入 | 上游频率 | 超时 | 理由 | 判据（ticket 05 主体入；✅ = 已接上，见 §4.4） |
    |---|---|---|---|---|
-   | `/mavros/state` | **1 Hz** | **2.5 s** | 2.5 个周期；容一次丢帧 | ✅ 超时 ⟹ 停发（已解锁时 `LAND`） |
+   | `/mavros/state` | **1 Hz** | **2.5 s** | 2.5 个周期；容一次丢帧 | ✅ 超时 ⟹ 停发（已解锁时 `LAND`）。⚠️ **复位侧有个真机陷阱**（合成断连帧 ⟹ §4.4 的「可信的落地上锁」，ticket 18） |
    | `/mavros/local_position/pose` | ~30 Hz | 0.5 s | | ✅ 同上 |
    | `/mocap/pose_enu` | ~196 Hz | 0.5 s | | ✅ 同上 |
    | `/mavros/rc/in` | 10 Hz 级 | 0.5 s | | ✅ **只在已解锁时**超时 ⟹ `LAND`（未解锁时"遥控没开"不影响安全） |
@@ -509,9 +509,50 @@ Phase 1 走的是 mavros，**不存在"微秒"这一层**：
 | 闩锁种类 | 谁闩 | 复位条件 |
 |---|---|---|
 | 不闩锁 | 未解锁时的任何失效 | 判据恢复 ⟹ 立即回 `STANDBY`（**不需要任何动作**） |
-| `kTakeover` | 夺权（任何解锁状态） | ① 落地上锁（`armed` true→false）；② 模式被**外部**交回 OFFBOARD（升沿 —— 闩锁期间我们不请求 OFFBOARD，所以只可能来自人）。
+| `kTakeover` | 夺权（任何解锁状态） | ① **可信的**落地上锁（`connected=true ∧ armed=false` —— 定义见下面那条 ★★）；② 模式被**外部**交回 OFFBOARD（升沿 —— 闩锁期间我们不请求 OFFBOARD，所以只可能来自人）。
 ★ 判据本身**不含**"摇杆要先停下"：那是**自然结果** —— 飞行员若仍在打杆，复位后第一帧 `rc_override` 就重新成立 ⟹ 看上去像"没复位"。行为等价，但别把它当成一条额外条件 |
-| `kArmedDegrade` | 已解锁时的输入失效 | **只有**落地上锁（电池不会因为有人切了模式就变满） |
+| `kArmedDegrade` | 已解锁时的输入失效 | **只有**可信的落地上锁（电池不会因为有人切了模式就变满） |
+
+★★ **「可信的落地上锁」= `connected=true ∧ armed=false`**（ticket 18 收口，2026-09-22；
+`fsm.hpp::update()` ① 与帧首的 `was_armed_` 刷新，**两处是一对，缺一不可**）。
+
+真机上 `/mavros/state` 上会**多出一帧我们没预料的读数**：链路静默满 `conn_timeout`（mavros 参数，
+默认 **10.0 s**）之后，**mavros 自己**发一帧 `connected=false, armed=false, guided=false, manual_input=false, mode=""`
+（`sys_status.cpp:903-911` 的 `publish_disconnection()`，由 `:1411` 的 `connection_cb(false)` 触发；mavros 2.15.1 @ `22ae5b7`；
+第一手核实）。那帧里的 `armed=false` 是**占位值**，不是"飞机被上锁了"这个读数
+（它只说明"现在不知道飞控怎么样"）⟹ 凭它复位 = 把闩锁**在空中**清掉，而链路恢复时若 PX4 仍
+armed（我们停发之后它多半已自行退出 OFFBOARD），节点就会走上"重新准备接管"那条路（⚠️ **第一手实测更正**：
+当前 `kArmingByUs` **恰好也**挡着它 —— 那帧的 `armed=false` 顺手清了归属标记，`px4_interface.cpp:160-164`
+⟹ 恢复时 `own_arming=false` ⟹ 停在 `MANUAL/INIT`；但那是**偶然的安全网**，`arm_request_pending_` 陈旧时
+就不在，判据必须自己挡住）—— 这正是本票单独立票的理由
+（它动的是"什么才算落地上锁"这条**安全语义**，不是一句注释能改的；票面 (a)/(b)/(c) 三个方案由用户裁定选 (a)）。
+
+为什么**两处**都要改（这是本票最不显然的一点，票面没写、改的时候才看出来）：
+- 只加 ① 的 `connected`：那一帧不再复位 ✓，但它仍会把 `armed` 的**降沿**吃掉
+  （旧的 `was_armed_ = guards.armed` 无条件刷新）⟹ 链路恢复后"真的落地上锁"这个降沿
+  **再也对不上边**，闩锁永不复位 = **单向 latch**（本项目的禁忌，只能重启节点）。
+- 只冻结 `was_armed_`：那一帧不污染降沿 ✓，但 `armed=false` 仍会让 ① 的旧判据（只判 `armed`）
+  当场复位 ⟹ 风险照旧。
+⟹ 语义是"**`armed` 的降沿只在可信帧上认**"这一句话的两半。各有一条 seam 2 用例
+（`test_fsm.cpp`）+ 一条 seam 1 用例（`test_control_failsafe.py`）钉着。
+
+★ **判别力是实测的，不是推演**（2026-09-22，seam 1 两条用例 × 三种实现）：
+
+| `fsm.hpp` 的状态 | `…仍走_LAND_不重新接管` | `…已落地上锁_仍然复位` |
+|---|---|---|
+| 完整修复（`connected` 判据 + 冻结） | ✅ 过 | ✅ 过 |
+| 半边（只加 `connected`，不冻结） | ✅ 过 | ❌ **红**（闩锁永不复位，停在 `MANUAL/INIT`） |
+| 全撤（原状） | ❌ **红**（回 `MANUAL/INIT`，闩锁被那帧清掉） | ✅ 过（那帧伪造的降沿"代劳"了复位） |
+
+⚠️ 两处**刻意接受的代价**，读日志时要知道：
+1. 真出现"链路断了之后飞机在地面上被人上锁"时，我们也**看不到**那次上锁 —— 闩锁要等链路恢复、
+   重新看到 `connected=true ∧ armed=false` 才复位（实测就是几秒）。
+2. **合成帧之后的失联期间，对外状态会掉到 `MANUAL/INIT`**（`armed=false` ⟹ ⑤ 不请求 `AUTO.LAND`、
+   ⑦ 又不放行），而闩锁其实还在。两个具体后果：① `/control/state` 上"闩锁还在"这件事**看不出来**
+   （恢复后回到 `MANUAL/LAND` 才是证据）；② `control_node.cpp` 里那条"失效已闩锁"的**限流告警**
+   带 `last_phase_ != kInit` 的门 ⟹ 这段时间不再打它（`degrade=state_timeout` 那条 ERROR 每 10 s 仍在打，
+   文案里就写着"**已闩锁**：不会自己恢复"）。★ 备选的一行改法：⑤ 里把已闩锁的 `kArmedDegrade`
+   当作"已知已解锁"来处理 —— 本票**没做**（超出裁定范围，且会牵扯"未解锁的失效不闩锁"那条语义）。
 
 ★ 闩锁记的是**首因**（最接近根因），后续判据不改写它；唯一的例外是
 **夺权可以升级已闩锁的输入失效** —— 飞行员永远优先（否则会出现"人在接管、我们还在请求 `AUTO.LAND`"的拉锯）。
@@ -626,25 +667,32 @@ z0 的链路跑在 `MAVLINK_MODE_ONBOARD`，该模式配 `ESTIMATOR_STATUS` **1.
 > ☠️ 原先这里的第 1 项「「EKF2 位置失效 ⟹ LAND」在这条链上抓不到」**已由 ticket 16 结清**
 > （见上一小节）。从这条结论里**只有半句还成立**：`position_invalid`（NaN 判据）在真机上恒假，
 > 它只是**防御性**的（夹具能注入 NaN ⟹ 节点行为可测）—— 读文档时别以为它兜住了 EKF2。
+>
+> ✅ 第 2 项（`/mavros/state` 那条的真机形状）**已由 ticket 18 收口**（判据 + 夹具 + 两条 seam 1 用例；
+> 连同它刻意接受的代价，见 §4.4 的「可信的落地上锁」）。下面保留原始记录，因为它是那个风险的现场。
 
 1. **打杆接管的最终执行是 PX4 的事**（`COM_OBL_RC_ACT`，z0 现值 `0` = 回 Position 模式），
    夹具不模拟 PX4 ⟹ 台架只能验到"我们停发了、退到 `RC_OVERRIDE`、不抢回"。
    连带 ⚠️：**`NAV_RCL_ACT = 2`（Return）是 A1 阻塞项** —— A1 不落实，"RC 丢失 ⟹ 我们请求 LAND"
    之后 PX4 自己的 RC 失效保护仍会试图**返航**（室内无 GPS）。
-2. ⚠️ **`/mavros/state` 超时这条在真机上不是"请求 `AUTO.LAND` 直到结束"**（2026-09-22 第二轮复核补，
-   第一手：mavros 2.15.1 `sys_status.cpp`）。真丢链路时 mavros 会在 `conn_timeout`（默认 **10 s**，`:512`
-   的 wall timer → `timeout_cb()` `:1311` → `connection_cb(connected=false)`）之后**自己发一帧合成状态**
-   `connected=false, armed=false, guided=false, mode=""`（`publish_disconnection()` `:903-911`，`:1411` 处调用）。
+2. ✅ **`/mavros/state` 超时这条在真机上不是"请求 `AUTO.LAND` 直到结束"**（2026-09-22 第二轮复核发现，
+   第一手：mavros 2.15.1 `sys_status.cpp`）—— **已由 ticket 18 收口（2026-09-22）**，见上面那条 ★★
+   「可信的落地上锁」。这里保留原始记录（它是那个风险的现场）：
+   真丢链路时 mavros 会在 `conn_timeout`（默认 **10 s**，`:512` 的 wall timer → `timeout_cb()` `:1311`
+   → `connection_cb(connected=false)`）之后**自己发一帧合成状态** `connected=false, armed=false,
+   guided=false, mode=""`（`publish_disconnection()` `:903-911`，`:1411` 处调用）。
    时序：HEARTBEAT 停 ⟹ 本节点 2.5 s 的判据先成立（此时 `armed` 仍是 true）⟹ 停发 + 请求 `AUTO.LAND`；
-   再过 ~7.5 s 那帧合成状态到达 ⟹ `armed` 降沿**把闩锁复位**（`fsm.hpp:396` 只判 `armed`，不判 `connected`）
+   再过 ~7.5 s 那帧合成状态到达 ⟹ 旧代码里 `armed` 的降沿**把闩锁复位**了（复位判据只判 `armed`）
    ⟹ 节点回 `INIT`、不再请求（`guards` 里 `connected=false` ⟹ 仍报 `state_timeout`，日志不停）。
-   **为什么这样不算错**：链路已断，`set_mode` 请求根本到不了 PX4，继续请求只是刷日志；
-   那种场面的兜底是 PX4 自己的失效保护（`COM_OBL_RC_ACT` / `NAV_RCL_ACT`）。
-   ⚠️ **真正的风险在"链路回来"那一刻**：那帧合成的 `armed=false` 把"落地上锁才复位"的闩锁
-   **在空中**清掉了；若链路恢复时 PX4 仍 armed（我们停发后它多半已自行退出 OFFBOARD），
-   节点会回到 `AUTO/STANDBY` 并**重新请求 OFFBOARD** —— 正是闩锁本该拦住的事。见 **ticket 18**（等决策，不擅自改安全语义）。
-   ★ 夹具造不出这个形状：`FakeMavros.mute("state")` 只造**静默**（假 mavros 不假扮 mavros 自己的
-   `conn_timeout` 逻辑）⟹ `test_control_failsafe.py` 的 state 分支证明的是"静默"那一半。
+   ★ 当时的判断"这样不算错"（链路已断、`set_mode` 请求到不了 PX4，继续请求只是刷日志；兜底是 PX4
+   自己的 `COM_OBL_RC_ACT` / `NAV_RCL_ACT`）**只对失联期间那一半成立**；错的是"链路回来"那一刻 ——
+   闩锁已被在空中清掉，若那时 PX4 仍 armed，节点就会走上"重新准备接管"那条路（★ 更正见本节那条 ★★：
+   当前 `kArmingByUs` 恰好也挡着它，但那是偶然的安全网）。**ticket 18 已把这条堵上**：
+   复位判据要求 `connected=true`，且 `armed` 的降沿只在**可信帧**上认（两处一对，见那条 ★★）。
+   ★ 夹具现在**能造这个形状**了：`FakeMavros.synth_disconnect()`（ticket 18 补的夹具能力；在那之前只有
+   `mute("state")` 的**静默**，假 mavros 不假扮 mavros 自己的 `conn_timeout` 计时逻辑）。
+   ⟹ `test_control_failsafe.py` 的 state 分支现在**两半都证**：`_timeout_case` 的 "state" 那条证"静默 ⟹ LAND"，
+   新增的 `合成断连帧…` 两条证"那一帧之后：仍 armed ⟹ 仍走 LAND 且不重新接管 / 已上锁 ⟹ 仍然复位"。
 
 #### ☠️ 已删：ticket 06 与 08 之间的临时缝 `own_arming`
 

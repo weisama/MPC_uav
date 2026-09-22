@@ -127,6 +127,15 @@ mavros 真丢链路后会在 `conn_timeout`（默认 10 s）时**自己发一帧
 我们会自主重新请求 `OFFBOARD`，正是闩锁要拦的事。**要决策**，已在 §4.4(3) 记账。
 ★ 夹具造不出这个形状（`mute("state")` 只造静默）⟹ 本文件 state 分支证明的是"静默"那一半。
 
+> ✅ **2026-09-22 已由 [ticket 18](18-synthetic-disconnect-frame-resets-latch.md) 收口**：用户裁定选 (a)
+> ——「`connected` 纳入"落地上锁"的判据」+「`armed` 的降沿只在可信帧上认」。上面这段里有两句**当时**的
+> 说法要按第一手实测更正：①「那帧的 `armed` 降沿把闩锁复位（`fsm.hpp:396` 只判 `armed`）」是**当时的
+> 代码**，现在判据在 `fsm.hpp` 的 `update()` ①（判据 `guards.connected && prev_armed && !guards.armed`），
+> 合成帧不再复位闩锁；②「链路恢复时我们会自主重新请求 `OFFBOARD`」**当时也不会发生** —— 那帧的
+> `armed=false` 顺手清了归属标记（`px4_interface.cpp:160-164`）⟹ `kArmingByUs` 挡着它。那是**偶然的
+> 安全网**，判据不能靠它。夹具现在能造这个形状了（`FakeMavros.synth_disconnect()`）⟹ 本文件 state 分支
+> **两半都证**（新增的两条用例）。
+
 **另外五处（都属于"文档/证据与代码不符"，已就地改）：**
 
 1. **`kStateTimeout` 的证据文案与判据不符**：判据是"新鲜 **且** `connected`"（`guards()`），
@@ -222,6 +231,13 @@ mavros 真丢链路后会在 `conn_timeout`（默认 10 s）时**自己发一帧
    这次咬到的是：`src/` 里已修掉的 `FakeMavros.evidence()` 崩溃（`Service` 没有 `get_num_clients`）
    在安装副本里还活着 ⟹ **任何一次夹具超时都变成 `AttributeError` 而不是打印证据**，
    "查不到证据"被误当成"夹具没记"。
+   ★★ **中断过的 `colcon build` 会把这套 copies 链留成半截**（2026-09-22 ticket 18 收口时踩到）：
+   `--symlink-install` 下 `build/bench/ament_cmake_python/bench/bench` 本该是**符号链接**，
+   被杀掉的那次构建把它留成了**真目录**（文件是 11:00 的旧拷贝）⟹ 之后每次 build 都失败在
+   `failed to create symbolic link ... because existing path cannot be removed: Is a directory`，
+   而 `install/bench/lib/` 整个**不存在**（`import bench` 一度只能靠 pytest 的 `rootdir` 插入侥幸成功）。
+   解法就是删掉这两个**纯构建产物**（都在 `.gitignore` 里）：`rm -rf build/bench install/bench` 再 build。
+   ⚠️ 症状与"夹具代码不对"毫无关系，别去查代码。
    ★ 同一类症状还有一次**未复现的偶发**（同日 03:37 的整包跑）：`test_control_standby` 的 pytest
    进程 0.74 s 就死掉，留下的是 `ModuleNotFoundError: No module named 'bench'`（`bench` 不在它的
    `PYTHONPATH` 里），ctest 因此报 `missing_result`。随后单独跑（9 例绿）与**再次整包跑**
@@ -238,6 +254,26 @@ mavros 真丢链路后会在 `conn_timeout`（默认 10 s）时**自己发一帧
    ⚠️ 与上面两次**同族但不是同一个**：那两次死在**进程启动**（import/`missing_result`），
    这次死在**等一个 6 s 的判据**⟹ 嫌疑指向"机器负载把某条真实时限吃掉了"，而不是夹具基础设施。
    **记账在这里、不再追**（要追先看 `wait_for` 的 `tick_s=0.02` 与实际发帧节拍在负载下的关系）。
+   ★★ **第四、五次同族偶发**（2026-09-22，[ticket 18](18-synthetic-disconnect-frame-resets-latch.md) 收口时的两轮整仓跑）：
+   同一张用例、同一段（② 冻住不降级，DUT 停在 `AUTO/TAKEOFF`）**两轮各挂 1 条**；而同一份文件
+   **单独跑两轮 19/19 绿**（171 s ×2）、该单例单独跑 **5 次全过**。⟹ 与 ticket 18 的改动无关
+   （它只动闩锁的**复位判据**，不碰 `first_degrade()`；且失败形状是"根本没降级"）。
+   ★ 这一轮**多拿到一条时间线证据**：`build/control/Testing/Temporary/` 下的 `LastTest_*.log` /
+   `LastTestsFailed_*.log` 记着今天**每一次** `colcon test` 的结果 ⟹ 把这张用例的既有失败排出来：
+
+   | 时间 | 症状 |
+   |---|---|
+   | 03:38 | 正控：**假 mavros 一条 `OFFBOARD` 请求都没记到**（`_reach_auto` 的辅助正控，`test_control_failsafe.py:120`） |
+   | 03:55 / 03:57 / 04:00 | **① 段**正控：注入的"向后跳变"没出现在话题上（戳差最小 ≈ +0.003 s） |
+   | 06:54 / 07:34 | **② 段**：冻住没降级，DUT 停在 `AUTO/TAKEOFF` |
+   | 11:06 / 11:15 | **② 段**：同上（ticket 18 收口的两轮） |
+
+   ⟹ ① ② 两种症状**都是既有偶发**，且 03:38–04:00 那三条**早于 ticket 16/18 对这张文件的任何改动**
+   （当时是 13 例）⟹ 这条用例的偶发**不是**本票之后才有的。
+   ⚠️ **新线索**：它**只在 `colcon test`（ctest，`cwd=build/control`）语境下复现**，
+   手跑 pytest（`cwd=仓库根`）从未复现。机制仍未查明；**已排掉的第二个猜想**：不是"同域两份夹具"
+   —— 这台机器上 ctest 是**串行**跑的（`LastTest_20260922-1115.log` 里 `1/5 → 5/5` 顺序执行）。
+   ★ 若将来要追：先量"ctest 包装层（`run_test.py` + 输出重定向 + `cwd`）对夹具定时/发帧节拍的影响"。
 3. **夹具造不出"PX4 自己退出 OFFBOARD"这个形状**（`COM_OF_LOSS_T` 是 PX4 对我们停发的**反应**，
    而假 mavros 不假扮 PX4 —— `CONTEXT.md` 的「假 mavros」条）⟹ `mode_lost` 那条收窄判据的证据
    **只可能在 seam 2**。候选后续：给假 mavros 加一个"我们停发 N 秒后自己掉出 OFFBOARD"的开关

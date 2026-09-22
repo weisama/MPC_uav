@@ -622,6 +622,129 @@ def test_未解锁时输入失效只停发_判据恢复即自动复位():
         assert sc.dut_alive()
 
 
+# ─── ⑤ 复位判据的边界：mavros 的**合成断连帧**不算"落地上锁"（ticket 18） ───
+
+def _latch_then_synth_disconnect(sc):
+    """把场景推到"已解锁 ⟹ 链路静默 ⟹ 已闩锁在 LAND"，然后让夹具发**那一帧**。
+
+    这条时间线是**真机的形状**（ticket 18 的证据链，mavros 2.15.1 @ `22ae5b7`，第一手核实）：
+      · HEARTBEAT 停 ⟹ `/mavros/state` 只剩最后一帧（mavros 只在收到 HEARTBEAT 时发这个话题）；
+      · +`state_timeout_s`（2.5 s）⟹ 本节点闩锁 `kArmedDegrade`，停发 + 请求 `AUTO.LAND`；
+      · +`conn_timeout`（mavros 参数，默认 **10.0 s**）⟹ mavros **自己**发一帧
+        `connected=false, armed=false, guided=false, manual_input=false, mode=""` —— `sys_status.cpp:903-911` 的
+        `publish_disconnection()`，由 `:1411` 的 `connection_cb(false)` 触发。
+
+    ★ 台架上把 10 s 直接压成"请夹具发这一帧"（`fake_mavros.synth_disconnect()`）：夹具**不假扮**
+      mavros 的 `conn_timeout` 计时逻辑，只假扮那一帧的**内容与时机**。所以本文件证明的是"收到
+      这一帧之后本节点怎么走"，不是"mavros 会在 10 s 后发它"（后者只能第一手读源码，票面有）。
+
+    返回"请求 AUTO.LAND 之后"的模式请求条数（给后面断言"没有新的 OFFBOARD"当基线）。
+
+    ⚠️ **这一帧到达时无法断言"闩锁还在"** —— 那帧之后状态话题上唯一可见的是
+      `connected=false ∧ armed=false`，而按 ⑤ 的处置，当时的对外状态就是 `MANUAL/INIT`：
+      **改前改后同形**（改前 = 被这帧清掉闩锁后回 INIT；改后 = 闩锁还在但 `armed` 为假 ⟹ 也停在
+      INIT）。区别只在**链路恢复那一刻**才外显 ⟹ 判别性断言全在恢复之后，见下面两条用例。
+    """
+    _reach_auto(sc)
+    _assert_requests_recorded(sc)
+    n_before = len(sc.fake.mode_requests)
+
+    # ① 链路静默 ⟹ 停发 + 请求 AUTO.LAND。这一段是 ticket 06 已验的行为，这里当**正控**用：
+    #    没有它，后面那句"仍然在 LAND"可能只是"压根没闩锁过"（假绿比红危险）。
+    sc.fake.mute("state")
+    assert sc.wait_for_control_state("MANUAL/LAND", timeout_s=8.0), (
+        f"链路静默之后应当进 LAND（已解锁 ⟹ 主动中止任务），实际 {sc.control_state()!r}")
+    _wait_degrade(sc, "state_timeout")
+    _stopped(sc)
+    assert "AUTO.LAND" in [r.custom_mode for r in sc.fake.mode_requests[n_before:]], (
+        "正控：闩锁期间应当请求过 AUTO.LAND")
+    n_requests_at_latch = len(sc.fake.mode_requests)
+
+    # ② mavros 自己发的那一帧（真机上是 10 s 之后）。它只发一帧，此后 state 继续静默。
+    sc.fake.synth_disconnect()
+    sc.hold(2.0)
+    return n_requests_at_latch
+
+
+def test_合成断连帧之后链路恢复且_PX4_仍_armed_仍走_LAND_不重新接管():
+    """ticket 18 的本体：合成断连帧**不算落地上锁** ⟹ 链路恢复时闩锁还在、任务仍在中止中。
+
+    链路回来时 PX4 很可能**仍然 armed**（我们停发之后它自己退出了 OFFBOARD，但没落地）——
+    这正是"已解锁的输入失效要落地上锁才复位"那条闩锁存在的理由：此刻回 STANDBY 并重新请求
+    OFFBOARD，就等于**我们的失效保护在失效之后自己撤销了**。判别力在头两条断言上
+    （`MANUAL/LAND` 仍然在 + 继续请求 `AUTO.LAND`；改回原状 ⟹ 节点停在 `MANUAL/INIT`）。
+
+    ⚠️ 下面"没有请求 OFFBOARD"那一条**没有判别力**（三种实现都成立）：拦住自主接管的是
+      `kArmingByUs` 守卫 —— 合成帧那个假的 `armed=false` 顺手清掉了归属标记
+      （`px4_interface.cpp:160-164`）⟹ 链路恢复时的上升沿被记成"别人解锁"。那是**撞上的**
+      安全网、不是本票设计的；这条断言钉的是**性质**（以后别让它漏出去），不是"修好了"的证据。
+
+    ★ 与下面那条**成对**：只有两条都绿，"合成断连帧不算落地上锁，但真落地上锁仍然算"这句话
+      才是完整的（只拦合成帧 ⟹ 真上锁也复位不了 = 单向 latch，ticket 06 验收项 ⑤ 禁止）。
+    """
+    with Scenario(dut=DUT, params=BASE_PARAMS) as sc:
+        n_requests_at_latch = _latch_then_synth_disconnect(sc)
+
+        # ③ 链路恢复：mavros 重连、HEARTBEAT 回来，而飞机**还没上锁**。
+        #    ★ 模式显式写 POSCTL：真机上我们那几帧 `AUTO.LAND` 请求**根本没到** PX4（链路是断的），
+        #      而假 mavros 的 set_mode 服务在静默期间照样答应成功（它不假扮"链路断"）⟹ 必须以
+        #      "重连时 PX4 的真实模式"为准把它覆盖一次，否则测的是夹具的一厢情愿。
+        sc.fake.reconnect_state(connected=True, armed=True, mode="POSCTL")
+
+        assert sc.wait_for_control_state("MANUAL/LAND", timeout_s=6.0), (
+            f"链路恢复时闩锁必须还在 ⟹ 仍是 LAND（任务已中止），实际 {sc.control_state()!r}"
+            "—— 回 MANUAL/INIT 或 MANUAL/STANDBY 都说明闩锁被那帧合成断连帧清掉了")
+        # 还在 LAND 的实现细节之一：PX4 此刻在 POSCTL ⟹ 不重新请求就没人让它降落。
+        # ★ 用 `sc.poll()` 而**不是** `sc.wait_for()`：后者成功时返回 `None` ⟹ 写进 `assert`
+        #   恒假（本文件里 `wait_for` 一律当语句用，`poll` 才是断言用的那个）。
+        assert sc.poll(lambda: "AUTO.LAND" in [r.custom_mode
+                                               for r in sc.fake.mode_requests[n_requests_at_latch:]],
+                       timeout_s=6.0), "闩锁还在 ⟹ 应当继续请求 AUTO.LAND（PX4 此刻在 POSCTL）"
+        _stopped(sc, hold_s=1.0)
+        # ★ 而**从头到尾**不许再请求 OFFBOARD —— 见用例开头那条 ⚠️：这条**没有判别力**
+        #   （改回原状也成立），它钉的是"别让自主接管漏出去"这个性质。
+        #   ★ 放在 `_stopped()` 之后：那 1 s 是按"复位后多久会重新请求"的量级取的
+        #     （前置流 `offboard_prestream_s` = 1 s），所以这条负断言真的能看见它。
+        assert "OFFBOARD" not in [r.custom_mode
+                                  for r in sc.fake.mode_requests[n_requests_at_latch:]], (
+            f"不许自主重新接管，实际请求了 {_mode_requests_after(sc, n_requests_at_latch)}")
+        # 不是昙花一现：静了 1 s 之后**还是** LAND（闩锁不会被"等一会儿"熬掉）。
+        assert sc.control_state() == "MANUAL/LAND", (
+            f"恢复之后应当**稳定**停在 LAND，实际 {sc.control_state()!r}")
+        assert sc.dut_alive(), "验收项 ⑦"
+
+
+def test_合成断连帧之后链路恢复且已落地上锁_仍然复位():
+    """★ 另一半，也是**防单向 latch** 的那一半（ticket 06 验收项 ⑤）。
+
+    同一条时间线，只是链路回来时飞机**真的已经在地面上并已上锁**（`connected=true ∧ armed=false`
+    —— 这才是"可信的落地上锁"）。闩锁必须在这里复位：回 STANDBY、重新流 setpoint、重新请求
+    OFFBOARD，等下一次起飞命令。**只能重启节点才能退出去的降级是本项目的禁忌。**
+
+    ⚠️ 它拦的是**半边修复**：只在复位判据里加 `connected`、却不同时冻结 `was_armed_`
+      （那帧合成状态里的 `armed=false` 会把降沿吃掉），恢复时"真的上锁"这个降沿就**对不上边**
+      ⟹ 闩锁永不复位，节点永远停在 `MANUAL/INIT`。seam 2 有一条同名用例（`test_fsm.cpp`），
+      改一半时就是它先红。
+      ★ 注意：**整个修复都撤掉**时这条反而是绿的（那帧伪造的降沿把闩锁清了，于是"照常复位"）
+        —— 所以判别性最强的是上面那条；这条钉的是"别把另一半弄丢"。
+    """
+    with Scenario(dut=DUT, params=BASE_PARAMS) as sc:
+        n_requests_at_latch = _latch_then_synth_disconnect(sc)
+
+        sc.fake.reconnect_state(connected=True, armed=False, mode="POSCTL")
+        assert sc.wait_for_control_state("MANUAL/STANDBY", timeout_s=6.0), (
+            f"链路恢复且飞机已上锁 ⟹ 必须复位回 STANDBY，实际 {sc.control_state()!r}"
+            "（停在 MANUAL/INIT = 闩锁变成单向的了，只能重启节点）")
+        assert sc.wait_for_setpoints(len(sc.setpoints()) + 20, timeout_s=6.0), "复位之后要重新流"
+        assert "none" in _degrade_tokens(sc), f"复位要可检索，实际 {_degrade_tokens(sc)}"
+        # 正控：节点**真的**回到了正常工作（前置流 1 s 之后重新请求 OFFBOARD），
+        # 不是"停在 STANDBY 但已经不干活了"。
+        assert sc.poll(lambda: "OFFBOARD" in [r.custom_mode
+                                              for r in sc.fake.mode_requests[n_requests_at_latch:]],
+                       timeout_s=8.0), "复位之后应当重新请求 OFFBOARD（正常路径回来了）"
+        assert sc.dut_alive(), "验收项 ⑦"
+
+
 # ─────────────────────── ⑥ 动捕时间戳：冻住 vs 单次倒退 ───────────────────────
 
 def test_动捕时间戳冻住会降级_而短促倒退不会():

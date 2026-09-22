@@ -523,6 +523,69 @@ def test_pos_horiz_abs注入真的走到_estimator_status_话题上():
         assert sc.fake.estimator_status_frames > n0, "帧计数停住了"
 
 
+# ─────────────── ticket 18（mavros 的合成断连帧）第一次用到的注入能力，各来一条自检 ───────────────
+
+def test_合成断连帧只发一帧_且字段是常量不是夹具属性():
+    """`synth_disconnect()` —— mavros **自己**发的那帧状态（ticket 18）唯一注入面。
+
+    ★ 必须复刻的两点，缺一个测的就不是真机那个形状：
+      1. **只发一帧** —— 真 mavros 由 `conn_timeout` 的 wall timer 发它（`sys_status.cpp:903-911`，
+         `:1411` 触发），而 state 此后只在**收到 HEARTBEAT** 时才发 ⟹ 链路断着就一条都不再有。
+         夹具若继续 1 Hz 发这一帧，"闩锁会不会被清掉"测的就不再是"那一帧"了。
+      2. **字段是常量、不是夹具属性** —— 真 mavros 直接填 `armed=false`，
+         与它对飞控的了解无关。下面的正控先让夹具自己**armed=True**，再按合成帧，
+         断言话题上来的仍是 `armed=false`：两者分不开的话，DUT 那边"这帧的 armed 不能当读数"
+         这条语义在台架上就无法被证伪。
+
+    ⚠️ 只证明夹具送得出、送得对，不断言 DUT 会怎样（那是 `src/control/test/` 的事）。
+    """
+    with _fixture_only() as sc:
+        got = []
+        _subscribe(sc, State, sc.fake.topics["state"], got.append, mavros_state_qos())
+        sc.fake.set_state(connected=True, armed=True, mode="OFFBOARD",
+                          guided=True, manual_input=True)
+        sc.advance_to(1.4)   # 1 Hz ⟹ 先让"真状态"（armed=True）到过话题上
+
+        assert got[-1].armed is True and got[-1].connected is True, \
+            "正控：合成帧之前，话题上应当是那次「真状态」"
+        # ★ 正控的第二半：那四个 `false` 字段在夹具里**本来是真的** ⟹ 下面"它们全为 false"
+        #   才是「常量覆盖了属性」，而不是"夹具从来没说过 true"（否则那条断言恒真、零判别力）。
+        assert got[-1].guided is True and got[-1].manual_input is True, \
+            "正控：合成帧之前，guided / manual_input 应当是夹具设的 true"
+        n_before = len(got)
+
+        sc.fake.synth_disconnect()
+        # ⚠️ 用 `sc.poll()` 而**不是** `sc.wait_for()`：后者成功时返回 `None`（超时抛
+        #    `BenchTimeout`），写进 `assert` 会永远失败 —— 夹具的等待 API 有"抛异常版"与
+        #    "布尔版"两种，别混用（`bench/README.md` 的运行纪律，ticket 06 踩过一次）。
+        assert sc.poll(lambda: len(got) > n_before, timeout_s=3.0), \
+            "合成断连帧一帧都没发出来（它该由 state 的定时器拍发一次）"
+
+        frame = got[n_before]
+        assert frame.connected is False and frame.armed is False, (
+            f"合成帧的字段不对：connected={frame.connected}, armed={frame.armed} —— "
+            "真 mavros 在这帧里填的是常量 false，不是它对飞控的读数")
+        assert frame.guided is False and frame.manual_input is False, (
+            f"合成帧的 guided / manual_input 也是常量 false：guided={frame.guided}, "
+            f"manual_input={frame.manual_input} —— 与 `armed` 同源，四个布尔全是占位值")
+        assert frame.mode == "", "合成帧的 mode 是空串（真 mavros 逐字如此）"
+        assert frame.system_status == 0, "合成帧的 system_status 是 UNINIT(0)"
+        assert sc.fake.armed is True, (
+            "★ 合成帧**不该改夹具自己的属性** —— 那些代表「下一帧真状态会说什么」，"
+            "真 mavros 也不改它的内部状态")
+
+        # ★ 只发一帧：此后静默（等 `reconnect_state`）。
+        sc.advance_to(sc.t() + 3.0)
+        assert len(got) == n_before + 1, (
+            f"合成帧之后 state 应当**静默**（等下一帧 HEARTBEAT），却又来了 {len(got) - n_before - 1} 帧")
+
+        # ★ 恢复：真 mavros 收到 HEARTBEAT ⟹ 话题回来了，报的是**真的**状态。
+        sc.fake.reconnect_state(connected=True, armed=True, mode="POSCTL")
+        assert sc.poll(lambda: len(got) > n_before + 1, timeout_s=3.0), \
+            "reconnect_state 之后 state 没有恢复发布"
+        assert got[-1].connected is True and got[-1].armed is True and got[-1].mode == "POSCTL"
+
+
 def test_estimator_status的QoS与真_mavros一致():
     """夹具的发布方 QoS 必须是 `mavros::StateQoS()`（可靠 + **瞬态本地**）。
 

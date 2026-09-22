@@ -44,6 +44,31 @@ control::Guards armed_ok()
   return g;
 }
 
+/// 已解锁 **∧ 这次解锁是我们的（`own_arming`）∧ 已在 OFFBOARD`** —— ticket 08 的爬升/悬停场面，
+/// ticket 18 的"链路静默"场面也用它（真飞起来时我们必然在 OFFBOARD 里：切进 OFFBOARD 本来就是
+/// 解锁的前置）⟹ 少了这一位，用例就少测了一个真实存在的输入。
+/// ★ ticket 18 时从 ticket 08 那段**上移**到这里：它现在两张票的用例都在用，
+///   而 C++ 的 free function 必须先声明后使用（原位置在文件下半部分）。
+control::Guards armed_offboard()
+{
+  control::Guards g = armed_ok();
+  g.in_offboard = true;
+  return g;
+}
+
+/// **mavros 那帧合成断连状态**的逐字形状（ticket 18）—— `publish_disconnection()` 的那几个字段
+/// 全是**常量**、与夹具/真机的实际状态无关（真 mavros 这时也联系不上飞控）。
+/// ★ 与 `synthetic_disconnect` 相关的场景一律用它构造，别各写一遍：这一帧的要点正是
+///   "字段是占位的"，散着构造迟早有人顺手写成"当前状态的拷贝"。
+control::Guards disconnect_frame()
+{
+  control::Guards g = all_ok();
+  g.connected = false;
+  g.armed = false;
+  g.in_offboard = false;   // `mode = ""` ⟹ 既不是 OFFBOARD 也不是我们请求的 AUTO.LAND
+  return g;
+}
+
 /// 一切输入都健康（`Health` 的默认值就是"没有坏消息"）。
 control::Health health_ok()
 {
@@ -536,6 +561,108 @@ TEST(Fsm, 已解锁的失效在落地上锁之后复位)
   EXPECT_TRUE(back.stream_setpoint);
 }
 
+/// ★★ ticket 18：mavros 的**合成断连帧**不是"落地上锁"。
+///
+/// 真 mavros 在链路超时（`conn_timeout` 默认 10 s）后会**自己发一帧**
+/// `connected=false, armed=false, guided=false, manual_input=false, mode=""`（`sys_status.cpp:903-911`
+/// 的 `publish_disconnection()`，由 `:1411` 的 `connection_cb(false)` 触发；
+/// mavros 2.15.1 @ `22ae5b7`，第一手核实）。那一帧里的 `armed=false` **不是读数**，
+/// 是占位值 —— 它只说明"我们现在不知道飞控怎么样"。
+/// 把它当成落地上锁的降沿，就会把闩锁**在空中**清掉；链路恢复时若 PX4 仍 armed
+/// （很可能：我们停发之后它自己退出了 OFFBOARD，但没落地），闩锁要拦的正是那一刻。
+TEST(Fsm, 合成断连帧不算落地上锁_闩锁不被它清掉)
+{
+  control::Fsm fsm(0.0, control::TaskLimits{});
+  const control::Guards armed = armed_offboard();   // 已解锁 ∧ 已在 OFFBOARD
+  fsm.update(armed,  health_ok(), odom_ok(),  100.0);
+
+  // 链路静默（`/mavros/state` 超时）⟹ 已解锁时的失效 ⟹ 闩锁。
+  control::Guards silent = armed;
+  silent.connected = false;
+  fsm.update(silent,  health_ok(), odom_ok(),  103.0);
+  ASSERT_TRUE(fsm.latched()) << "正控：这一帧必须已经闩锁，否则下面的「没被清掉」不成立";
+  ASSERT_EQ(fsm.latched_reason(), control::Degrade::kStateTimeout);
+
+  // mavros 的合成断连帧到达（字段逐字照 `publish_disconnection()`）。
+  const control::Decision d = fsm.update(disconnect_frame(),  health_ok(), odom_ok(),  113.0);
+
+  EXPECT_TRUE(fsm.latched()) << "★ 合成帧的 armed=false 不是落地上锁 ⟹ 闩锁必须还在";
+  EXPECT_EQ(fsm.latched_reason(), control::Degrade::kStateTimeout) << "首因不被改写";
+  EXPECT_FALSE(d.stream_setpoint);
+  EXPECT_FALSE(d.request_offboard) << "失联期间不抢回任何模式";
+  EXPECT_EQ(d.degrade, control::Degrade::kStateTimeout) << "日志里的原因仍是「飞控失联」";
+  // ⚠️ 代价（刻意接受，见 ticket 18 的 Comments）：合成帧之后**对外任务态**是 `INIT` ——
+  //    ⑤ 那句「已解锁就请求 AUTO.LAND」看的是 `guards.armed`，而这一帧把它报成了 false。
+  //    闩锁与"任务已中止"都在，链路一恢复就回到 `LAND`（下一条用例钉住）。
+  //    要让它这期间也显示 `LAND`，得让 ⑤ 把「已闩锁的 kArmedDegrade」也算作已解锁 ——
+  //    那是另一条语义改动，本票**未采纳**（选的是 (a)：只改复位判据）。
+  EXPECT_EQ(d.phase, control::Phase::kInit);
+}
+
+/// ★★ ticket 18 的本体：合成帧之后**链路恢复**，而那期间 PX4 **没有落地**
+/// （它多半只是按 `COM_OF_LOSS_T` 自己退出了 OFFBOARD）。
+/// ⟹ 闩锁必须仍然在：不许从 INIT 重新来过，而是回到 LAND 并**重发 `AUTO.LAND`**。
+///   本条的判别力就在这两句上（改回原状 ⟹ 节点停在 `INIT`）。
+///
+/// ⚠️ **`request_offboard` 为假这一句没有判别力**（三种实现——全修复 / 只修一半 / 全撤——都成立）：
+///   拦住"自主重新接管"的是 `kArmingByUs` 守卫（合成帧那个假的 `armed=false` 顺手把 `own_arming`
+///   清掉了，链路回来那次**真的**上升沿于是被记成"别人解锁"），那是**撞上的**安全网、不是本票
+///   设计的。留着这条断言是为了钉住**性质**（以后别让它漏出去），别把它当成"本票修好了"的证据。
+TEST(Fsm, 合成帧之后链路恢复且PX4仍armed_继续走LAND且不接管)
+{
+  control::Fsm fsm(0.0, control::TaskLimits{});
+  const control::Guards armed = armed_offboard();
+  fsm.update(armed,  health_ok(), odom_ok(),  100.0);
+
+  control::Guards silent = armed;
+  silent.connected = false;
+  fsm.update(silent,  health_ok(), odom_ok(),  103.0);
+
+  fsm.update(disconnect_frame(),  health_ok(), odom_ok(),  113.0);
+  ASSERT_TRUE(fsm.latched());
+
+  // 链路恢复、PX4 仍 armed：模式是它自己的（`COM_OBL_RC_ACT` / `NAV_RCL_ACT` 决定的），
+  // 而这次解锁**不是**我们做的（假降沿已把归属清掉）—— 与真机逐字一致。
+  control::Guards back = armed;
+  back.in_offboard = false;
+  back.own_arming = false;
+  const control::Decision d = fsm.update(back,  health_ok(), odom_ok(),  130.0);
+
+  EXPECT_TRUE(fsm.latched()) << "闩锁撑过整段失联";
+  EXPECT_EQ(d.phase, control::Phase::kLand) << "任务已中止（不是回 INIT 重新来过）";
+  EXPECT_TRUE(d.request_land) << "链路回来了 ⟹ 重发 AUTO.LAND（中止任务这件事不放弃）";
+  EXPECT_FALSE(d.request_offboard) << "不许自主重新接管（见文件里的 ⚠️：这条不是本票的判别力所在）";
+  EXPECT_FALSE(d.stream_setpoint);
+  EXPECT_EQ(d.degrade, control::Degrade::kStateTimeout) << "闩锁保持**首因**，日志指向飞控失联";
+}
+
+/// ★★ ticket 18 的第二半（票面没写、第一手读代码才发现）：合成帧**不能把 `armed` 的降沿吃掉**。
+///
+/// 复位是**降沿**（`prev_armed && !guards.armed`），而 `was_armed_` 若在 `connected=false`
+/// 的合成帧上也被刷新，那么链路恢复时（`connected=true ∧ armed=false`，**真的**落地上锁）
+/// 上一帧的 `armed` 已经是 false ⟹ 降沿早就被吃掉了 ⟹ **闩锁永远不复位**。
+/// 那就成了 ticket 06 验收项 ⑤ 明令禁止的单向 latch（只能重启节点）。
+TEST(Fsm, 合成帧之后链路恢复且已落地上锁_仍然复位)
+{
+  control::Fsm fsm(0.0, control::TaskLimits{});
+  const control::Guards armed = armed_offboard();
+  fsm.update(armed,  health_ok(), odom_ok(),  100.0);
+
+  control::Guards silent = armed;
+  silent.connected = false;
+  fsm.update(silent,  health_ok(), odom_ok(),  103.0);
+
+  fsm.update(disconnect_frame(),  health_ok(), odom_ok(),  113.0);
+  ASSERT_TRUE(fsm.latched());
+
+  // 链路恢复：PX4 在失联期间已经落地并上锁 ⟹ 这是**可信的**落地上锁，必须复位。
+  const control::Decision d = fsm.update(all_ok(),  health_ok(), odom_ok(),  130.0);
+  EXPECT_FALSE(fsm.latched()) << "★ 不许变成单向 latch：只能重启节点才能退出去的降级是 ticket 06 的禁忌";
+  EXPECT_EQ(d.phase, control::Phase::kStandby);
+  EXPECT_TRUE(d.stream_setpoint) << "复位之后重新开始流 setpoint";
+  EXPECT_EQ(d.degrade, control::Degrade::kNone);
+}
+
 /// ★ 已在 LAND 里（低压闩锁）时飞行员打杆 ⟹ **升级成夺权**：交还控制权、**停发
 /// `AUTO.LAND` 请求**。飞行员永远优先，不能跟他抢。
 TEST(Fsm, 低压闩锁之后打杆会升级成夺权)
@@ -846,16 +973,6 @@ TEST(Fsm, 动捕时间戳不前进时降级)
 
 namespace
 {
-
-/// 已解锁 **∧ 这次解锁是我们的（`own_arming`）∧ 已在 OFFBOARD** —— ticket 08 的爬升/悬停场面。
-/// ★ 与 `armed_ok()` 的区别只是多了 `in_offboard`：真飞起来时我们必然在 OFFBOARD 里
-///   （切进 OFFBOARD 本来就是解锁的前置）⟹ 少了这一位，用例就少测了一个真实存在的输入。
-control::Guards armed_offboard()
-{
-  control::Guards g = armed_ok();
-  g.in_offboard = true;
-  return g;
-}
 
 /// 一帧带指定位置 / 速度 / 机头的读数。
 control::Odometry odom_at(double x, double y, double z, double yaw = 0.0,

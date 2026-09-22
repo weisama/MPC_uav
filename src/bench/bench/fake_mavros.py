@@ -109,7 +109,8 @@ class FakeMavros:
 
     要注入的故障全部是"改一个属性"：静默（`mute`）、改状态（`set_state`）、
     改位置（`set_position`）、改速度（`set_velocity`）、改电压（`set_voltage`）、
-    改遥控（`set_rc`）、服务应答策略（`set_mode_policy` / `set_arming_policy`）。
+    改遥控（`set_rc`）、服务应答策略（`set_mode_policy` / `set_arming_policy`）、
+    以及 mavros **自己会发的那帧合成断连状态**（`synth_disconnect`，ticket 18）。
     """
 
     SILENCEABLE = ("state", "local_position", "local_velocity", "rc", "battery",
@@ -162,6 +163,8 @@ class FakeMavros:
         # —— 可注入的状态（主线程改，executor 线程读）——
         # ⚠️ 全是"读一次就够"的标量/元组替换，不做就地修改 ⟹ 不用锁。
         self._muted: set = set()
+        # ★ 合成断连帧的待发标记（ticket 18）：主线程置位，**定时器线程**消费（见 `_tick`）。
+        self._pending_disconnect_frame = False
         self.connected = connected
         self.armed = armed
         self.mode = mode
@@ -273,9 +276,34 @@ class FakeMavros:
     # ─────────────────── 发布 ───────────────────
 
     def _tick(self, key: str, cb) -> None:
+        # ★★ 合成断连帧（ticket 18）优先于静默：真 mavros 是从 `conn_timeout` 那个 **wall timer**
+        #   里发它的，与"收到 HEARTBEAT 才发 state"**不是同一条路径** ⟹ 即使 state 已被静默，
+        #   这一帧也必须发出去（而且只发一次 —— 发完 flag 就清了）。
+        if key == "state" and self._pending_disconnect_frame:
+            self._pending_disconnect_frame = False
+            self._publish_disconnect()
+            return
         if key in self._muted:
             return
         cb()
+
+    def _publish_disconnect(self) -> None:
+        """`publish_disconnection()` 的逐字复刻（`sys_status.cpp:903-911`）。
+
+        ★★ 六个字段**全是常量**（`connected`/`armed`/`guided`/`manual_input` 全 `False`、
+           `mode=""`、`system_status=UNINIT`），与夹具自己的属性无关 ——
+           真 mavros 也不看它们（它连飞控都联系不上）。这就是"那帧的 `armed=false` 不是读数"
+           在夹具里的落点；控制节点把它当读数的后果见 ticket 18。
+        """
+        msg = State()
+        msg.header.stamp = self._stamp()
+        msg.connected = False
+        msg.armed = False
+        msg.guided = False
+        msg.manual_input = False
+        msg.mode = ""
+        msg.system_status = 0   # MAV_STATE::UNINIT（`enum_value(MAV_STATE::UNINIT)`）
+        self._state_pub.publish(msg)
 
     def _stamp(self):
         return self.node.get_clock().now().to_msg()
@@ -448,6 +476,39 @@ class FakeMavros:
             if not hasattr(self, key):
                 raise ValueError(f"/mavros/state 没有字段 {key}")
             setattr(self, key, value)
+
+    def synth_disconnect(self) -> None:
+        """造 mavros **自己那帧合成断连状态**（ticket 18）。
+
+        真 mavros 在链路超时后（参数 `conn_timeout`，默认 **10 s**）会**自己往
+        `/mavros/state` 上发一帧** `connected=false, armed=false, guided=false, manual_input=false, mode=""`、
+        `system_status=UNINIT` —— `sys_status.cpp:903-911` 的 `publish_disconnection()`，
+        由 `:1411` 的 `connection_cb(false)` 触发（mavros 2.15.1 @ `22ae5b7`，第一手核实）。
+
+        ★ 两个要点必须复刻对，否则测的就不是真机那个形状：
+
+          1. **只发一帧，此后静默** —— state 只在 `handle_heartbeat` 里发 ⟹ 链路断着就没有下一帧。
+             ⟹ 本方法发完那一帧就把 `state` 静默掉（`mute` 的语义：真的一条都不发）。
+          2. **那帧里的 `armed=false` 是常量占位值，不是读数** —— 真 mavros 直接填 `false`，
+             与它对飞控的了解无关。控制节点若把它当成"落地上锁"，就会把闩锁**在空中**清掉，
+             这正是 ticket 18 的病灶。⟹ 本方法**不改**夹具自己的 `connected`/`armed`/`mode`
+             属性（那些代表"下一帧真状态会说什么"），只发那一个常量帧。
+
+        ⟹ 恢复用 `reconnect_state(**fields)`（= 真 mavros 收到下一帧 HEARTBEAT）。
+        ⚠️ 帧由**定时器线程**发（真 mavros 也是从 wall timer 里发的）：主线程只置两个属性，
+           下一拍（≤1 s）才发出去 —— 本文件的线程纪律见类 docstring。
+        """
+        self._pending_disconnect_frame = True
+        self.mute("state")
+
+    def reconnect_state(self, **fields) -> None:
+        """链路恢复（= 真 mavros 收到下一帧 HEARTBEAT）：改回字段并恢复 1 Hz 发布。
+
+        ★ 与 `synth_disconnect()` 是一对：那帧合成状态之后 `state` 是**静默**的，
+          必须显式恢复，否则后面的用例等的是一个永远不来的话题。
+        """
+        self.set_state(**fields)
+        self.unmute("state")
 
     def set_position(self, x: float, y: float, z: float) -> None:
         """搬动假 EKF 的位置（**ROS/ENU 口径，z 向上为正**）。用它可以造"飞机被移动"的场景。

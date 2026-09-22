@@ -752,7 +752,15 @@ inline Decision Fsm::update(const Guards & guards, const Health & health, const 
 
   const bool prev_armed = was_armed_;
   const PrevFrame prev = prev_;          // ★ 本帧的判据看的是**上一帧**（本帧的事实见 `record`）
-  was_armed_ = guards.armed;
+  // ★★ `was_armed_` **只在可信帧上刷新**（ticket 18 的第二半，票面没写、读代码才发现）：
+  //   复位判据是 `armed` 的**降沿**，而 mavros 那帧合成断连帧（`connected=false`）里的
+  //   `armed=false` 是**占位值**而不是读数。让它把降沿吃掉，链路恢复时"真的落地上锁"
+  //   （`connected=true ∧ armed=false`）就再也对不上边 ⟹ 闩锁永远不复位 = **单向 latch**
+  //   （ticket 06 验收项 ⑤ 明令禁止的形状，只能重启节点）。
+  //   ⟹ 这里与 ① 的 `guards.connected` 是**同一条语义的两半，缺一不可**，各有一条用例钉着。
+  if (guards.connected) {
+    was_armed_ = guards.armed;
+  }
 
   // ★★ 取的是**本帧结束时**的台账，因为 `streaming_` 正是**本帧**被改动的
   //   （⑥ 置真、`halt()` 置假，两者都在 `record` 之前落定）——在函数开头抄一份会差一帧，
@@ -765,11 +773,22 @@ inline Decision Fsm::update(const Guards & guards, const Health & health, const 
   };
 
   // ── ① 复位（先复位、再判据 ⟹ 判据在同一帧恢复就立刻生效）──
-  //   (a) `armed` true→false：飞机落地/上锁 ⟹ 任务结束，一切重来。**这是"可复位"的主路径** ——
-  //       不需要重启节点，也不需要任何"清故障"命令，操作员落地上锁即可。
+  //   (a) **可信的**落地上锁：`connected` 且 `armed` true→false ⟹ 飞机落地/上锁，任务结束、一切重来。
+  //       **这是"可复位"的主路径** —— 不需要重启节点，也不需要任何"清故障"命令，操作员落地上锁即可。
+  //       ★★ `guards.connected` 这一半是 ticket 18 加的（2026-09-22）：mavros 在链路超时后会
+  //       **自己发一帧** `connected=false, armed=false, guided=false, manual_input=false, mode=""`
+  //       （`sys_status.cpp:903-911` 的 `publish_disconnection()`，`:1411` 触发；第一手核实）。
+  //       那帧里的 `armed=false` **不是读数**而是占位值（它只说明"现在不知道飞控怎么样"），
+  //       凭它复位 = 把闩锁**在空中**清掉，而链路恢复时若 PX4 仍 armed，本节点就会走上"重新准备接管"
+  //       那条路（⑦ 的 `request_offboard`）。⚠️ 当前 `kArmingByUs` **恰好也**挡着它 —— 那帧的
+  //       `armed=false` 顺手清了归属标记（`px4_interface.cpp:160-164`）⟹ 恢复时 `own_arming=false`
+  //       ⟹ 守卫不成立、停在 `MANUAL/INIT`。但那是**偶然的安全网**（它依赖"合成帧恰好也清了归属"），
+  //       判据必须自己挡住这件事 —— 且 `arm_request_pending_` 陈旧时那层网就不在了。
+  //       ⚠️ 代价（刻意接受）：真出现"链路断了之后飞机被人工落地上锁"时，我们也**看不到**那次上锁
+  //       —— 闩锁要等链路恢复、重新看到 `connected=true ∧ armed=false` 才复位（实测就是几秒）。
   //   (b) 模式**被外部**交回我们手里（升到 OFFBOARD）：闩锁期间我们从不自己请求 OFFBOARD
   //       ⟹ 这条只可能是外部动作。
-  if (prev_armed && !guards.armed) {
+  if (guards.connected && prev_armed && !guards.armed) {
     latch_ = Latch::kNone;
     latched_reason_ = Degrade::kNone;
     // ★★ 任务层**同时**归零（ticket 08）：落地上锁 = 这一轮飞完了。不清的话，

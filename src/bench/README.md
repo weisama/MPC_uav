@@ -157,6 +157,7 @@ with Scenario(dut=("control", "control_node")) as sc:
 |---|---|
 | `mute(*keys)` / `unmute(*keys)` | 让话题**停止发布**。可选 `state` `local_position` `local_velocity` `rc` `battery` |
 | `set_state(**fields)` | 改 `connected` / `armed` / `mode` / `guided` / `manual_input` |
+| `synth_disconnect()` / `reconnect_state(**fields)` | ★ ticket 18：**mavros 自己那帧合成断连状态** —— 发一帧 `connected=armed=guided=manual_input=False, mode=""` 然后**静默**（真 mavros 的 `publish_disconnection()`，`sys_status.cpp:903-911`，链路静默满 `conn_timeout` 后发出）；`reconnect_state` 是它的一对（改回字段 + 恢复发布）。★ 那帧的六个字段是**常量**（`connected`/`armed`/`guided`/`manual_input` 全 `False`、`mode=""`、`system_status=UNINIT`）、与夹具属性无关 —— 这就是"那帧的 `armed=false` 不是读数"在夹具里的落点 |
 | `set_position(x, y, z)` | 搬动假 EKF（**ROS/ENU，z 向上为正**；⚠️ 不是 NED —— 见 `fake_mavros.py` 的 docstring） |
 | `set_velocity(vx, vy, vz)` | 搬动假 EKF 的**速度**（ROS/ENU，与 `set_position` **互不影响** —— 它们是两条独立话题） |
 | `set_yaw(yaw)` | 改假 EKF 报的**机头**（ROS/ENU，从 +x 逆时针）。★ ticket 08 加：此前 setpoint 的 yaw 是固定 0，夹具没有"会转的飞机"⟹"锁没锁住机头"在 0 上分不出来 |
@@ -224,8 +225,9 @@ sc.timeline.add(sc.t() + 0.5, sc.stop_dut, "杀掉 DUT")
 
 ★ 反过来，`mute` / `pause` / `set_position` / `set_state` / `wait_for_control_state` /
 `setpoint_rate_hz` / `evidence` / `set_voltage` / `voltage_drop` / `set_rc` / `set_rc_channel` /
-`rc_change` / `rewind` / `hold_stamp` / `set_mode_policy('absent')` 这些
-**已被 `control` 的测试真实调用过**（ticket 05/06），可以照着抄。
+`rc_change` / `rewind` / `hold_stamp` / `set_mode_policy('absent')` / `synth_disconnect` /
+`reconnect_state` 这些
+**已被 `control` 的测试真实调用过**（ticket 05/06/18），可以照着抄。
 
 ★ ticket 08 新引入的三个注入面（`set_velocity` / `set_yaw` / `set_arming_policy`）**都已各有一条自检**，
 并且**都已被 `control` 的测试真实调用**（`set_velocity` 与 `set_arming_policy` 在
@@ -280,6 +282,12 @@ colcon test  --packages-up-to bench
 （其余位保持假，因为 DUT 只读那一位）、以及这条话题的**发布方 QoS 与真 mavros 一致**
 （`mavros::StateQoS()` = 可靠 + **瞬态本地**；DUT 侧**故意用易失订阅** ⟹ 这条自检钉的是
 "易失订阅者接得上、但不会拿到启动前的历史回放"这个性质 —— 见 `px4_interface.cpp` 那段 ★★）。
+**ticket 18 的一条**（`synth_disconnect`）：复刻的"合成断连帧"**只发一帧**（发完把 `state` 静默，
+因为真 mavros 只在收到 HEARTBEAT 时发这个话题），且那帧的六个字段是**常量**
+`connected=armed=guided=manual_input=False, mode=""` —— 与夹具自己 `set_state` 写过的字段**无关**
+（真 mavros 也看不到飞控，这就是"那帧的 `armed=false` 不是读数"在夹具里的落点）。
+★ 这条自检必须带正控（先把 `armed=True` 放到话题上，再断言那帧是 `False`、且 `sc.fake.armed` 没被改），
+否则"字段都是常量"在夹具根本没发帧时也会通过（负向断言在本包的纪律，见下面第 3 条）。
 ★ 理由：**夹具骗不到 DUT 的前提是它先骗过自己**；
 一个把 `local_position` 发成 reliable 的假 mavros，会让**所有**依赖它的测试"莫名其妙收不到数据"，
 而那种故障在日志里看不出来。
@@ -301,5 +309,5 @@ bench/scenario.py       Scenario：拼装 + DUT 子进程 + 秒表 + 证据输�
 bench/config.py         DEFAULTS 与 yaml 深合并
 bench/pytest_support.py ★ 会话级 ROS 上下文与 domain 安全边界
 config/bench.yaml       默认频率/话题/初始状态
-test/                   夹具自检（18 条）+ 时序纯逻辑单测（6 条）
+test/                   夹具自检（19 条）+ 时序纯逻辑单测（6 条）
 ```

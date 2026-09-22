@@ -30,7 +30,8 @@
    ⚠️ **起飞的前置里有一条"遥控在线"**（§H.7.1），所以**台上没有遥控接收机时永远解不了锁**
    —— 这是刻意的（ticket 09 的起飞键就在遥控器上），不是 bug。
 5. **降级之后想复位，只有两条路**（都不要去"帮它一把"）：
-   - **落地上锁**（`armed` true→false）—— 主路径，对四类原因都有效；
+   - **落地上锁**（`connected=true ∧ armed=false` —— **可信的**那次降沿，见下面第 2 条）—— 主路径，
+     对四类原因都有效；
    - **夺权场景**：让**摇杆停止动作**，再把模式**离开、然后交回** OFFBOARD（判的是模式升沿，
      所以我们得先看到它离开；摇杆还在动的话一复位就会立刻重新夺权）。
    ⚠️ 闩锁期间节点**从不自己请求 OFFBOARD** ⟹ 模式回到我们手里的那条升沿**只可能来自人**。
@@ -193,9 +194,16 @@ AUTO/TAKEOFF ──爬到 origin+1 m，≤0.5 m/s──▶ AUTO/HOVER ──判�
 ★ **可复位（不是单向 latch）**，两条路径：
 
 1. **未解锁的失效不闩锁** ⟹ 判据一恢复就自动回 `STANDBY`（台架上的证据就在这条）。
-2. **已解锁的失效闩锁到"落地上锁"** —— `armed` 的 true→false 沿。**不需要重启节点、
-   也不需要任何"清故障"命令**：操作员落地上锁即复位。这是与 XI35 的 `kf_fusion_fail`
-   （一旦置位只能手动着陆）刻意不同的地方。
+2. **已解锁的失效闩锁到"落地上锁"** —— `armed` 的 true→false 沿，**且那次降沿必须是可信的**
+   （`connected=true`）。**不需要重启节点、也不需要任何"清故障"命令**：操作员落地上锁即复位。
+   这是与 XI35 的 `kf_fusion_fail`（一旦置位只能手动着陆）刻意不同的地方。
+   ★★ **「可信」这一半是 ticket 18 加的**（2026-09-22）：链路静默满 `conn_timeout`（mavros 参数，
+   默认 10 s）后，**mavros 自己**会往 `/mavros/state` 上发一帧 `connected=false, armed=false, …`
+   （`sys_status.cpp:903-911` 的 `publish_disconnection()`）—— 那帧里的 `armed=false` 是**占位值**、
+   不是读数，凭它复位 = 把闩锁**在空中**清掉（链路恢复时若 PX4 仍 armed，节点就会走上"重新准备接管"
+   那条路 —— ★ 当前 `kArmingByUs` **恰好也**挡着它，但那是**偶然的安全网**，判据必须自己挡住）。
+   ⟹ 判据是"`connected` **且** `armed` true→false"，而 `armed` 的降沿**只在可信帧上认**
+   （两处一对，缺一不可 —— 细节与刻意接受的代价见 `docs/control/phase1-implementation.md` §4.4）。
 3. 夺权闩锁额外可由"外部把模式交回 OFFBOARD"复位（闩锁期间我们从不自己请求 OFFBOARD
    ⟹ 那条升沿只可能来自人）。**已解锁的输入失效不因切模式复位**（电池不会因为有人切了模式就变满）。
 4. 闩锁记的是**首因**（最接近根因），不被后续判据改写；但**夺权可以升级**一个已闩锁的降级
@@ -216,13 +224,16 @@ AUTO/TAKEOFF ──爬到 origin+1 m，≤0.5 m/s──▶ AUTO/HOVER ──判�
 室内无 GPS 会去返航，这是 `params-changes.md` **A1** 的阻塞项 ⟹ **A1 不落实，
 本节点的"RC 超时"路径后果就不是"就地悬停"而是"试图返航"**。
 
-⚠️ **`state_timeout` 这条在真机上不是"请求 `AUTO.LAND` 直到结束"**（2026-09-22 复核补，第一手）：
-真丢链路时 mavros 会在 `conn_timeout`（默认 10 s）之后**自己发一帧** `connected=false, armed=false, mode=""`
-的合成状态（`sys_status.cpp:903-911`，由 `:1411` 的 `connection_cb(false)` 触发）⟹ 我们在 2.5 s 报超时并请求
-`AUTO.LAND`，~7.5 s 后那帧的 `armed` 降沿**把闩锁复位**（`fsm.hpp:396` 只判 `armed`，不判 `connected`）
-⟹ 节点回 `INIT`、不再请求。链路已断时继续请求本来也到不了 PX4，所以不算错 —— 但⚠️ **链路回来那一刻**
-闩锁已被清，PX4 若仍 armed，节点会自主重新请求 `OFFBOARD`。详见 `docs/control/phase1-implementation.md`
-§4.4(3) 与 **ticket 18**（要决策，别擅自改）。
+⚠️ **`state_timeout` 这条在真机上不是"请求 `AUTO.LAND` 直到结束"**（2026-09-22 复核补，第一手：
+mavros 2.15.1 @ `22ae5b7`）：真丢链路时 mavros 会在 `conn_timeout`（默认 10 s）之后**自己发一帧**
+`connected=false, armed=false, guided=false, manual_input=false, mode=""` 的合成状态（`sys_status.cpp:903-911`，由 `:1411`
+的 `connection_cb(false)` 触发）⟹ 我们在 2.5 s 报超时并请求 `AUTO.LAND`，~7.5 s 后那一帧到达。
+链路已断时继续请求本来也到不了 PX4，所以那几个请求不算错。
+★ **2026-09-22（ticket 18）已把这一帧的复位语义收口**：它**不算落地上锁** ⟹ 闩锁不被它清掉，
+链路恢复时若 PX4 仍 armed 就**仍然走 `LAND`**（判据 = `connected=true ∧ armed=false`，且 `armed` 的降沿
+只在**可信帧**上认；详见上面第 2 条与 `docs/control/phase1-implementation.md` §4.4 的「可信的落地上锁」）。
+⚠️ 那一帧之后失联期间，对外状态会掉到 `MANUAL/INIT`（`armed=false` ⟹ 不再请求 `AUTO.LAND`，
+**而闩锁其实还在**）—— 这是刻意接受的代价，别把它当成"复位了"。
 
 ⚠️ **`position_invalid`（EKF2 位置失效的 NaN 判据）是防御性的，真机这条链上抓不到东西**。
 第一手核实（z0 固件 `4a0e65f2`）：`EKF2.cpp::PublishLocalPosition` 发的 `lpos.x/y/z` 不含 NaN 合成；
@@ -408,13 +419,17 @@ vendored 的 `vrpn_listener`，新包再加 lint 只是增加噪声）。
 `enter_offboard = false` 只流不切、杀进程后流停止、以及冒烟用例对 setpoint 逐字段与频率的断言
 （以上 `test/test_control_standby.py`）。
 
-失效路径（seam 1，`test/test_control_failsafe.py`，17 例）：打杆 ⟹ setpoint 在 0.3 s 内停且
+失效路径（seam 1，`test/test_control_failsafe.py`，19 例）：打杆 ⟹ setpoint 在 0.3 s 内停且
 `RC_OVERRIDE` 且**不再请求任何模式**、外部切模式 ⟹ 同样不抢回、**交出即复位**、
 三条输入超时各一条判据（`mocap`/`state`/`rc`，每条都断言 `degrade=` token 与 `AUTO.LAND` 请求）、
-低压 ⟹ `LAND` 且**落地上锁才复位**（复位前一直请求、复位后 `degrade=none`）、NaN 位置 ⟹ 停发 + `LAND`、
-`ekf2_pos_lost` 四条（ticket 16）：报无绝对位置 ⟹ 停发 + `LAND` 且**落地上锁才复位**、
+低压 ⟹ `LAND` 且**可信的落地上锁才复位**（复位前一直请求、复位后 `degrade=none`）、NaN 位置 ⟹ 停发 + `LAND`、
+`ekf2_pos_lost` 四条（ticket 16）：报无绝对位置 ⟹ 停发 + `LAND` 且**可信的落地上锁才复位**、
 **未解锁时不判**（只停发之外什么都不做）、"连续 2 帧"是**连续不是累计**（假-真交替 3 轮都不降级）、
 `estimator_status` 静默 ⟹ **陈旧的坏读数不作数**（这条同时是新鲜度门的变异检查），
+`mavros` 的**合成断连帧**两条（ticket 18，夹具 `synth_disconnect()` 补的能力）：
+那一帧**不算落地上锁** ⟹ 链路恢复时 PX4 仍 armed 则**仍走 `LAND` 且不重新请求 OFFBOARD**；
+而恢复时**真的已上锁**则**仍然复位**（闩锁不许变成单向的；这条钉的是"别把修复只做一半"——
+判别力矩阵见 §4.4）、
 未解锁失效 ⟹ 只停发且判据恢复**自动复位**、动捕戳**冻住** ⟹ 降级而**短促倒退不降级**、
 戳**倒退到旧纪元并持续** > `mocap_stamp_stall_s` ⟹ 降级、
 所有输入同时静默 ⟹ 节点不退出且报出最根本那条、通道数不足的遥控帧不崩、
@@ -436,12 +451,15 @@ vendored 的 `vrpn_listener`，新包再加 lint 只是增加噪声）。
 与 `Timeline` 同类），用的是已经被自检过的注入面。⚠️ ticket 09/10 若要复用，再把它提升进 `bench`
 并补自检（`src/bench/README.md` 的纪律）。
 
-seam 2（`test/test_fsm.cpp`，59 例）：四条守卫**逐条**掀掉时缺项清单恰好是那一条（不是只断言"不放行"——
+seam 2（`test/test_fsm.cpp`，62 例）：四条守卫**逐条**掀掉时缺项清单恰好是那一条（不是只断言"不放行"——
 那样"某条守卫恒假"也会通过）、缺项顺序固定、全零 `Guards` 里"未解锁"成立（默认值的纪律）、
 `STANDBY` 下控制权仍是 `MANUAL`、前置流时长两侧、已在 OFFBOARD 不再请求、**断流后前置流重新计时**；
 降级路径的**每条分支**：原因优先级（同一帧里多个判据成立时谁说话）、未解锁失效不闩锁 ⟹ 自动复位、
-已解锁失效闩锁 ⟹ **不因输入恢复而空中自动接管**、落地上锁才复位、**低压闩锁被夺权升级**、
-夺权闩锁不被输入超时改写、自己请求的 `AUTO.LAND` 生效**不算夺权**、降级期间不抢回 OFFBOARD、
+已解锁失效闩锁 ⟹ **不因输入恢复而空中自动接管**、可信的落地上锁才复位、
+**合成断连帧不算落地上锁**（三条，ticket 18：那一帧之后闩锁仍在、链路恢复且 PX4 仍 armed ⟹ 仍走
+`LAND` 而不重新请求 OFFBOARD、而真的已上锁 ⟹ 仍然复位 —— 后者拦的是"只改一半"：判据加了
+`connected` 却仍无条件刷新 `was_armed_` 的话，那帧会把 `armed` 的降沿吃掉 ⟹ 单向 latch）、
+**低压闩锁被夺权升级**、夺权闩锁不被输入超时改写、自己请求的 `AUTO.LAND` 生效**不算夺权**、降级期间不抢回 OFFBOARD、
 外部交回即复位、`rc_override` 与 `mode_lost` 的先后（打杆后模式才掉出来仍报打杆）、
 `ekf2_pos_lost` 的解锁门（未解锁不算失效）与**优先级**（同一帧里 `mocap_stamp_stalled` 说话，
 理由：戳冻住是**原因**、EKF2 拒用是**结果**）、以及 `DegradeNames` 的**逐字符守卫**

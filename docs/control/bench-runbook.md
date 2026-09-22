@@ -202,7 +202,7 @@ PX4 的 **offboard 断流保护**（`COM_OF_LOSS_T` 1.0 s → `COM_OBL_RC_ACT`�
 | **做** | 在 `OFFBOARD` + 已解锁 + 正在流的状态下，**停掉上游动捕**（`Ctrl-C` `vrpn_listener`，或直接停 `mocap` 节点），先 `ros2 topic hz /mocap/pose_enu` **确认它真的停了**（正控） |
 | **判据** | ① 我们 0.5 s 的 `mocap_timeout` 先成立 ⟹ 停发 + 请求 `AUTO.LAND`，日志 `degrade=mocap_timeout`；② ≈1.0 s 后 PX4 **自己**退出 `OFFBOARD`；③ ★ **日志里不应出现 `degrade=mode_lost`**，`/control/state` **不应**变成 `MANUAL/RC_OVERRIDE` |
 | **记录** | 三条各一条证据（时刻 + token + `/control/state`）；**若第 ③ 条不符 ⟹ 是判据错了，回来改 `first_degrade` 并补 seam 2 用例** |
-| **卡住看哪** | 若 PX4 接受了 `AUTO.LAND`（台架上本来就在地面）可能**立刻落地上锁** ⟹ 闩锁复位、节点回 `INIT` —— 那本身是"可复位"的真机证据，记下来，别当成失败 |
+| **卡住看哪** | 若 PX4 接受了 `AUTO.LAND`（台架上本来就在地面）可能**立刻落地上锁** ⟹ 闩锁复位、节点回 `INIT` —— 那本身是"可复位"的真机证据，记下来，别当成失败。★ 但这条复位要求上锁那一刻链路是**活着的**（`connected=true ∧ armed=false`，ticket 18 的「可信的落地上锁」，§4.4）：若那时 `/mavros/state` 已静默（mavros 发过它那帧合成断连帧），复位会推迟到**链路恢复之后**，别记成"没复位" |
 
 ★ 为什么断言"**不**应出现 `mode_lost`"：我们一 `halt()`，`prev_.streaming` 就转 false，
 PX4 那次退出**不是**"模式被从我们手里夺走"（`fsm.hpp` 的 `first_degrade` 与 §4.4(1)）。
@@ -211,7 +211,9 @@ PX4 那次退出**不是**"模式被从我们手里夺走"（`fsm.hpp` 的 `firs
 ## T8. 收尾
 
 - [ ] **恢复参数**：`COM_RC_OVERRIDE` 回 `3`（若为 T6 的判别跑改过）；`NAV_RCL_ACT` 保持 A1 的 `1`
-- [ ] 落地上锁一次，确认闩锁复位（`/control/state` 回 `MANUAL/INIT` 或 `MANUAL/STANDBY`）
+- [ ] 落地上锁一次，确认闩锁复位（`/control/state` 回 `MANUAL/INIT` 或 `MANUAL/STANDBY`）。
+      ★ 看的是上锁那一下 `/mavros/state` 上 `connected=true ∧ armed=false`（**可信的**降沿，ticket 18）——
+      链路断过、mavros 已发过合成断连帧的场面里，复位要**等链路恢复**才发生
 - [ ] 把上面各表的"实测值"回填到 **ticket 05 / 06 / 08 / 13**，并勾掉对应框
 - [ ] 若飞控在录 ulog：把 `.ulg` 存档（判据全在 PX4 侧 ⟹ **它才是硬证据**，mavros 只是观察窗）
 
