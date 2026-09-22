@@ -99,6 +99,14 @@
 室内无 GPS 会去返航，这是 `params-changes.md` **A1** 的阻塞项 ⟹ **A1 不落实，
 本节点的"RC 超时"路径后果就不是"就地悬停"而是"试图返航"**。
 
+⚠️ **`state_timeout` 这条在真机上不是"请求 `AUTO.LAND` 直到结束"**（2026-09-22 复核补，第一手）：
+真丢链路时 mavros 会在 `conn_timeout`（默认 10 s）之后**自己发一帧** `connected=false, armed=false, mode=""`
+的合成状态（`sys_status.cpp:903-911`，由 `:1411` 的 `connection_cb(false)` 触发）⟹ 我们在 2.5 s 报超时并请求
+`AUTO.LAND`，~7.5 s 后那帧的 `armed` 降沿**把闩锁复位**（`fsm.hpp:396` 只判 `armed`，不判 `connected`）
+⟹ 节点回 `INIT`、不再请求。链路已断时继续请求本来也到不了 PX4，所以不算错 —— 但⚠️ **链路回来那一刻**
+闩锁已被清，PX4 若仍 armed，节点会自主重新请求 `OFFBOARD`。详见 `docs/control/phase1-implementation.md`
+§4.4(3) 与 **ticket 18**（要决策，别擅自改）。
+
 ⚠️ **`position_invalid`（EKF2 位置失效的 NaN 判据）是防御性的，真机这条链上抓不到东西**。
 第一手核实（z0 固件 `4a0e65f2`）：`EKF2.cpp::PublishLocalPosition` 发的 `lpos.x/y/z` 不含 NaN 合成；
 `LOCAL_POSITION_NED.hpp` 在 MAVLink 层就丢掉了 `xy_valid`；mavros 2.15.1 原样转 ENU。
@@ -236,15 +244,16 @@ vendored 的 `vrpn_listener`，新包再加 lint 只是增加噪声）。
 `enter_offboard = false` 只流不切、杀进程后流停止、以及冒烟用例对 setpoint 逐字段与频率的断言
 （以上 `test/test_control_standby.py`）。
 
-失效路径（seam 1，`test/test_control_failsafe.py`，12 例）：打杆 ⟹ setpoint 在 0.3 s 内停且
+失效路径（seam 1，`test/test_control_failsafe.py`，13 例）：打杆 ⟹ setpoint 在 0.3 s 内停且
 `RC_OVERRIDE` 且**不再请求任何模式**、外部切模式 ⟹ 同样不抢回、**交出即复位**、
 三条输入超时各一条判据（`mocap`/`state`/`rc`，每条都断言 `degrade=` token 与 `AUTO.LAND` 请求）、
 低压 ⟹ `LAND` 且**落地上锁才复位**（复位前一直请求、复位后 `degrade=none`）、NaN 位置 ⟹ 停发 + `LAND`、
-未解锁失效 ⟹ 只停发且判据恢复**自动复位**、动捕时间戳冻住 ⟹ 降级而**单次倒退不算**、
+未解锁失效 ⟹ 只停发且判据恢复**自动复位**、动捕戳**冻住** ⟹ 降级而**短促倒退不降级**、
+戳**倒退到旧纪元并持续** > `mocap_stamp_stall_s` ⟹ 降级、
 所有输入同时静默 ⟹ 节点不退出且报出最根本那条、通道数不足的遥控帧不崩、
 未置 `own_arming` 时外部解锁 ⟹ 只停发不请求 `LAND`。
 
-seam 2（`test/test_fsm.cpp`，39 例）：四条守卫**逐条**掀掉时缺项清单恰好是那一条（不是只断言"不放行"——
+seam 2（`test/test_fsm.cpp`，42 例）：四条守卫**逐条**掀掉时缺项清单恰好是那一条（不是只断言"不放行"——
 那样"某条守卫恒假"也会通过）、缺项顺序固定、全零 `Guards` 里"未解锁"成立（默认值的纪律）、
 `STANDBY` 下控制权仍是 `MANUAL`、前置流时长两侧、已在 OFFBOARD 不再请求、**断流后前置流重新计时**；
 以及降级路径的**每条分支**：原因优先级（同一帧里多个判据成立时谁说话）、未解锁失效不闩锁 ⟹ 自动复位、
@@ -256,7 +265,7 @@ seam 2（`test/test_rc_stick.cpp`，13 例）：变化率判据的边界 —— 
 **慢速大行程漂移不算在动**、推到头保持不动会衰减到阈值以下、非正周期与 NaN 不作判断（且不污染状态）、
 单帧越过阈值不算、默认阈值与固件 `COM_RC_STICK_OV` 同源。
 
-⚠️ **没被自动化覆盖的一处**：`request_offboard()` 的重试节流（重复请求抑制、悬空请求丢弃、
+⚠️ **没被自动化覆盖的一处**：`request_mode()` 的重试节流（重复请求抑制、悬空请求丢弃、
 重试间隔）。它是**输出侧的发送节奏**而非输入判据，只有"切模式恰好失败/悬空"时才走到 ——
 真台上的表现是"日志说在重试，实际没重试"，改动这段请连带跑一次台架。
 

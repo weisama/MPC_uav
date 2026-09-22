@@ -164,8 +164,15 @@ public:
   std::optional<geometry_msgs::msg::PoseStamped> local_position() const;
 
   /// 最近一帧 `/mavros/state` 报的模式（**一帧都没收到过时是空串**）。
-  /// 节点用它算 `Guards::in_land`（"当前是不是我们请求的那个降落模式"）。
+  /// ★ 节点**不**再自己拿它比字符串（`in_offboard` / `in_land` 在 `guards()` 里算完）；这里留着是给诊断用
+  /// （告警里写"模式从「OFFBOARD」变成了「POSCTL」"）。
   const std::string & mode() const {return state_.mode;}
+
+  /// 最近一帧 `/mavros/state` 报的 `connected`（**一帧都没收到过时是 `false`**）。
+  /// ★ 诊断用，且**必须能单独读到**：`kStateTimeout` 的判据是"新鲜 **且** `connected`"，
+  ///   而 mavros 在链路超时后会发一帧"话题新鲜但 `connected=false`"的合成状态
+  ///   （`sys_status.cpp:903-911`）⟹ 只写"静默 X s"的告警会把排查方向指错。
+  bool state_connected() const {return state_.connected;}
 
   /// 最近一帧电池电压（V）；**没数据时返回 nullopt**（NaN、0 V 也算没数据，见回调里的说明）。
   /// 诊断用：告警里写"报电压 20.3 V"比只写"低压"有用得多。

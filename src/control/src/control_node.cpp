@@ -120,8 +120,9 @@ public:
     fsm_ = std::make_unique<control::Fsm>(offboard_prestream_s_);
     // ★ 边界层的配置一次交齐：话题/超时/阈值/**模式名**/解锁来源 ——
     //   后两项也在这里，是为了让 `Guards` 的每一条都在边界层算完（`guards()` 的注释）。
-    //   `modes.offboard` 保持默认（"OFFBOARD" 是本栈固定的口径，本张没有为它开参数；
-    //   而 `land_mode` 是可换的，ticket 06 的验收项点名要它可配）。
+    //   `modes.offboard` 保持默认（"OFFBOARD" 是本栈固定的口径，本张刻意不为它开参数）；
+    //   `land_mode` 走参数是**本张自己的选择**（多机/换固件时不用改代码）—— ticket 06
+    //   点名的是"已解锁的失效要**请求 `AUTO.LAND`**"这个动作，没有要求它可配。
     control::Px4Config px4_config;
     px4_config.topics = topics_;
     px4_config.timeouts = timeouts_;
@@ -429,8 +430,14 @@ private:
       case control::Degrade::kModeLost:
         return "模式从「" + mode_before_ + "」变成了「" + px4_->mode() + "」";
       case control::Degrade::kStateTimeout:
+        // ★ 判据是"新鲜 **且** `connected`"两条合起来的（`px4_interface.cpp::guards()`）
+        //   ⟹ 证据必须两条都写：只写"静默 X s"会在 `connected=false` 而话题**新鲜**时报出
+        //   "静默 0.0 s"，把排查方向指错。这种"新鲜但 disconnected"的帧是真会出现的 ——
+        //   mavros 在链路超时后自己发一帧合成状态（`sys_status.cpp:903-911`，见 ticket 06 的 Comments）。
         return topics_.state + " 静默 " + age_str(topics_.state, now_s) + "（超时判据 " +
-               std::to_string(timeouts_.state_s) + " s）；发布者：" + publisher_summary(topics_.state);
+               std::to_string(timeouts_.state_s) + " s）、connected=" +
+               (px4_->state_connected() ? "true" : "false") + "；发布者：" +
+               publisher_summary(topics_.state);
       case control::Degrade::kMocapTimeout:
         return topics_.mocap + " 静默 " + age_str(topics_.mocap, now_s) + "；发布者：" +
                publisher_summary(topics_.mocap);

@@ -310,7 +310,7 @@ private:
   /// （动捕节点还没起、mavros 还没连上）会被记成 degrade，而那是 INIT 的常态。
   bool ever_streamed_{false};
   bool was_armed_{false};
-  /// **上一帧**的三个事实（每帧开头刷新；判据与复位都只看它，不看本帧）。
+  /// **上一帧**的三个事实（**帧末**刷新 —— 见 `update()` 里 `record()` 的说明；判据与复位只看它，不看本帧）。
   PrevFrame prev_{};
   Latch latch_{Latch::kNone};
   Degrade latched_reason_{Degrade::kNone};
@@ -380,9 +380,11 @@ inline Decision Fsm::update(const Guards & guards, const Health & health, double
   const PrevFrame prev = prev_;          // ★ 本帧的判据看的是**上一帧**（本帧的事实见 `record`）
   was_armed_ = guards.armed;
 
-  // ★★ 帧末才刷新"上一帧的事实"：`streaming_` 往往是**本帧**才被置真/置假的
-  //   （⑥ 置真、`halt()` 置假），在函数开头抄一份会差一帧 —— 那正好把
-  //   "我们正驱动着 OFFBOARD" 判成否，于是夺权判据漏报（第一版就是这么错的，测试抓住的）。
+  // ★★ 取的是**本帧结束时**的台账，因为 `streaming_` 正是**本帧**被改动的
+  //   （⑥ 置真、`halt()` 置假，两者都在 `record` 之前落定）——在函数开头抄一份会差一帧，
+  //   那正好把"我们正驱动着 OFFBOARD"判成否 ⟹ 夺权判据漏报（第一版就是这么错的，测试抓住的）。
+  //   `mode_is_ours(guards)` / `guards.in_land` 由入参 `guards` 派生、`update()` 全程只读
+  //   ⟹ 帧首帧末同值；三者放在一处落账只是为了让"上一帧的三个事实"同一时刻取值，语义一致。
   auto record = [&](Decision d) {
     prev_ = PrevFrame{mode_is_ours(guards), streaming_, guards.in_land};
     return d;

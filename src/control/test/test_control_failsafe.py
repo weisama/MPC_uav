@@ -111,6 +111,45 @@ def _mode_requests_after(sc, n_before):
     return [r.custom_mode for r in sc.fake.mode_requests[n_before:]]
 
 
+def _watch_mocap_stamps(sc):
+    """开始记录 `/mocap/pose_enu` 上的时间戳，返回 `(stamps, 订阅句柄)`。
+
+    ★ 给"注入真的生效了"当正控用：**负向**断言（"短促倒退不降级"）在注入静默失效时会**假绿**
+      —— 那种绿比红危险。所以先用话题上的**向后跳变**证明注入到达了（`bench/README.md` 的运行纪律）。
+
+    ★★ 返回前要过**两道**关，两道都缺一不可（第一版两道都没过，红得莫名其妙，两处都是探针查出来的）：
+
+      1. **等自己这个旁路订阅匹配上**（发现屏障，`bench/README.md` 的同名条目）。新建的订阅要
+         几十~上百 ms 才匹配，而这类用例的注入窗口只有 0.2 s（**必须**短于 `mocap_stamp_stall_s`，
+         否则就不是"短促"了）⟹ 不等匹配，窗口会在订阅还没接上时开完、关完。
+      2. **等基线的几帧真的到了**再返回调用方去注入。★ 这条更隐蔽：倒退是**相对前一帧**的，
+         如果调用方拿到句柄就立刻 `rewind`，我们收到的**第一帧就是倒退后的那一帧**
+         ⟹ `_stamp_deltas` 里根本没有那个负值可看（探针实测：窗口里全是 +5 ms 的小步进，
+         只有窗口结束时的 **+5.0 s** 一次前跳可见）—— 于是"没看见向后跳变"会误报，
+         而注入其实是好的。
+    """
+    from bench.vrpn_source import mocap_qos
+    from geometry_msgs.msg import PoseStamped
+
+    before = sc.mocap_source.matched_subscribers()
+    stamps: list = []
+    sub = sc.node.create_subscription(
+        PoseStamped, sc.mocap_source.topic,
+        lambda m: stamps.append(m.header.stamp.sec + m.header.stamp.nanosec * 1e-9),
+        mocap_qos())
+    assert sc.poll(lambda: sc.mocap_source.matched_subscribers() > before, timeout_s=2.0), (
+        f"旁路订阅没接上动捕话题（匹配数一直停在 {sc.mocap_source.matched_subscribers()}）"
+        f"⟹ 下面这个 0.2 s 的注入窗口太短，正控会假绿")
+    assert sc.poll(lambda: len(stamps) >= 3, timeout_s=2.0), (
+        f"旁路订阅匹配上了却只收到 {len(stamps)} 帧 ⟹ 没有基线帧，下面的「向后跳变」判不出来")
+    return stamps, sub
+
+
+def _stamp_deltas(stamps):
+    """相邻两帧的戳差（s）。**倒退**表现为一个大幅负值。"""
+    return [b - a for a, b in zip(stamps, stamps[1:])]
+
+
 def _assert_requests_recorded(sc, timeout_s=6.0):
     """**负向断言的正控**：假 mavros 确实在记模式请求（`OFFBOARD` 已经到过）。
 
@@ -390,8 +429,16 @@ def test_动捕时间戳冻住会降级_而短促倒退不会():
         assert "mocap_stamp_stalled" not in _degrade_tokens(sc), "正控：注入之前不该有这条降级"
 
         # ① 短促倒退：窗口 0.2 s < 0.5 s 判据 ⟹ 只丢几帧，不降级（窗口一结束戳就跳回当前时刻）。
+        #    ★ 先起一个旁路订阅当**正控**：只有话题上真出现了向后跳变，
+        #      下面"不降级"这句话才是在说我们的判据，而不是在说"注入没生效"。
+        stamps, sub = _watch_mocap_stamps(sc)
         sc.mocap_source.rewind(5.0, hold_s=0.2)
         sc.hold(1.5)
+        sc.node.destroy_subscription(sub)
+        deltas = _stamp_deltas(stamps)
+        assert deltas and min(deltas) < -1.0, (
+            f"正控失败：注入之后话题上没出现向后跳变（戳差最小 {min(deltas) if deltas else '没收到帧'}）"
+            f"⟹ 注入没生效，下面「不降级」的断言不成立")
         assert "mocap_stamp_stalled" not in _degrade_tokens(sc), (
             f"短促时间戳倒退不该判成失效（它只让 mavros 丢几帧）；实际降级：{_degrade_tokens(sc)}")
         assert sc.control_state() == "AUTO/STANDBY", "倒退之后应当仍在正常流"

@@ -492,7 +492,8 @@ Phase 1 走的是 mavros，**不存在"微秒"这一层**：
 | 闩锁种类 | 谁闩 | 复位条件 |
 |---|---|---|
 | 不闩锁 | 未解锁时的任何失效 | 判据恢复 ⟹ 立即回 `STANDBY`（**不需要任何动作**） |
-| `kTakeover` | 夺权（任何解锁状态） | ① 落地上锁（`armed` true→false）；② 模式被**外部**交回 OFFBOARD（升沿 —— 闩锁期间我们不请求 OFFBOARD，所以只可能来自人）；打杆场景下还要求摇杆先停止动作 |
+| `kTakeover` | 夺权（任何解锁状态） | ① 落地上锁（`armed` true→false）；② 模式被**外部**交回 OFFBOARD（升沿 —— 闩锁期间我们不请求 OFFBOARD，所以只可能来自人）。
+★ 判据本身**不含**"摇杆要先停下"：那是**自然结果** —— 飞行员若仍在打杆，复位后第一帧 `rc_override` 就重新成立 ⟹ 看上去像"没复位"。行为等价，但别把它当成一条额外条件 |
 | `kArmedDegrade` | 已解锁时的输入失效 | **只有**落地上锁（电池不会因为有人切了模式就变满） |
 
 ★ 闩锁记的是**首因**（最接近根因），后续判据不改写它；唯一的例外是
@@ -530,7 +531,7 @@ setpoint（或已经在**我们请求的** `AUTO.LAND` 里）**，这一帧模�
 `test_动捕时间戳倒退到旧纪元_持续超过判据即降级` 立刻变红（DUT 全程停在 `AUTO/STANDBY`，
 一条降级都没有），而"戳冻住"那条仍然通过（戳相等 ⟹ 两种基准都成立）。
 
-#### ⚠️ 本张**不能**兑现的两件事（诚实记录，别当成已完成）
+#### ⚠️ 本张**不能**兑现的三件事（诚实记录，别当成已完成）
 
 1. **「EKF2 位置失效 ⟹ LAND」在这条链上抓不到**（`position_invalid` 判据是**防御性**的）。
    第一手核实（z0 固件 `4a0e65f2`，见 ticket 06 的 Comments）：
@@ -541,6 +542,20 @@ setpoint（或已经在**我们请求的** `AUTO.LAND` 里）**，这一帧模�
    夹具不模拟 PX4 ⟹ 台架只能验到"我们停发了、退到 `RC_OVERRIDE`、不抢回"。
    连带 ⚠️：**`NAV_RCL_ACT = 2`（Return）是 A1 阻塞项** —— A1 不落实，"RC 丢失 ⟹ 我们请求 LAND"
    之后 PX4 自己的 RC 失效保护仍会试图**返航**（室内无 GPS）。
+3. ⚠️ **`/mavros/state` 超时这条在真机上不是"请求 `AUTO.LAND` 直到结束"**（2026-09-22 第二轮复核补，
+   第一手：mavros 2.15.1 `sys_status.cpp`）。真丢链路时 mavros 会在 `conn_timeout`（默认 **10 s**，`:512`
+   的 wall timer → `timeout_cb()` `:1311` → `connection_cb(connected=false)`）之后**自己发一帧合成状态**
+   `connected=false, armed=false, guided=false, mode=""`（`publish_disconnection()` `:903-911`，`:1411` 处调用）。
+   时序：HEARTBEAT 停 ⟹ 本节点 2.5 s 的判据先成立（此时 `armed` 仍是 true）⟹ 停发 + 请求 `AUTO.LAND`；
+   再过 ~7.5 s 那帧合成状态到达 ⟹ `armed` 降沿**把闩锁复位**（`fsm.hpp:396` 只判 `armed`，不判 `connected`）
+   ⟹ 节点回 `INIT`、不再请求（`guards` 里 `connected=false` ⟹ 仍报 `state_timeout`，日志不停）。
+   **为什么这样不算错**：链路已断，`set_mode` 请求根本到不了 PX4，继续请求只是刷日志；
+   那种场面的兜底是 PX4 自己的失效保护（`COM_OBL_RC_ACT` / `NAV_RCL_ACT`）。
+   ⚠️ **真正的风险在"链路回来"那一刻**：那帧合成的 `armed=false` 把"落地上锁才复位"的闩锁
+   **在空中**清掉了；若链路恢复时 PX4 仍 armed（我们停发后它多半已自行退出 OFFBOARD），
+   节点会回到 `AUTO/STANDBY` 并**重新请求 OFFBOARD** —— 正是闩锁本该拦住的事。见 **ticket 18**（等决策，不擅自改安全语义）。
+   ★ 夹具造不出这个形状：`FakeMavros.mute("state")` 只造**静默**（假 mavros 不假扮 mavros 自己的
+   `conn_timeout` 逻辑）⟹ `test_control_failsafe.py` 的 state 分支证明的是"静默"那一半。
 
 #### ★ ticket 06 与 08 之间的临时缝：`own_arming`
 
