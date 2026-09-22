@@ -108,6 +108,10 @@ ros2 topic hz /mavros/state        # ★ 定案：它是不是 1 Hz？见下方"
       ⏳ **需要人解锁**（agent 不主动解锁真机）。★ 台架要求：**拆桨**、飞机摆好后静止不动
 - [ ] 把两条验收的读数**回填到 [ticket 04](04-mocap-relative-pose.md)**，并把 04 的 `Status` 改成 `done`
 
+★ **剩下这三条（① 目视 / ⑥ 轴标签 / 解锁切原点）已收进 [`docs/control/bench-runbook.md`](../../../docs/control/bench-runbook.md)
+的 T1 / T2 / T4**（2026-09-22）：那张清单把"当下必须由人做的这一薄层"排成一次会话的顺序
+（还含 ticket 05/06 的 4 条），并带上前置参数与记录表。做台架照它走。
+
 ## 为什么这两条非做不可
 
 `phase1-implementation.md` §7 的验证顺序里，**第 1 步与第 1b/1c 步就是它们**。

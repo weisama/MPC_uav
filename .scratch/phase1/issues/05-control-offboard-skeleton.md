@@ -188,7 +188,8 @@ Phase 2/3 的所有节点级测试都建在它上面。
 ⏳ **遗留（需人 + 空闲飞控 + 拆桨台架）**：真 PX4 被拉进 OFFBOARD；杀节点后 PX4 在
 `COM_OF_LOSS_T`（1.0 s）后自行退出 OFFBOARD。**夹具不模拟 PX4**，这两条的判据全在 PX4 侧。
 当前 `/dev/ttyTHS1` 由另一会话的 mavros 占着（[ticket 14](14-mavros-from-source.md)），**本张不抢**。
-步骤见实施清单 §7.1。
+★ **步骤、判据、记录表见 [`docs/control/bench-runbook.md`](../../../docs/control/bench-runbook.md) 的 T3 与 T5**
+（2026-09-22 起）：一次台架会话就能把动捕链、坐标轴、这两条、以及 ticket 06 的打杆/`mode_lost` 一起做完。
 
 ### 2026-09-21 —— ★★ `/code-review` 双轴审查（fixpoint `HEAD = 0964172`）与随后的修正
 

@@ -33,6 +33,7 @@
 │   ├── agents/                       skill 配置（issue tracker / triage / 域文档规则）
 │   ├── control/
 │   │   ├── phase1-implementation.md  ★★ Phase 1 实施清单
+│   │   ├── bench-runbook.md          ★★ 拆桨台架清单（Phase 1 必须由人做的那一薄层）
 │   │   ├── phase2-implementation.md  ★★ Phase 2/3 实施清单（Phase 3 spec 引用它）
 │   │   └── mpc-roadmap.md            Phase 2 资料汇总（含 D1–D10）
 │   ├── reference/

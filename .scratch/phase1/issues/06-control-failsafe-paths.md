@@ -238,9 +238,19 @@ mavros 真丢链路后会在 `conn_timeout`（默认 10 s）时**自己发一帧
 
 lint 失败数**不增**（仍全是 vendored `vrpn_listener` 的既有 172 条）。
 
-### 遗留给人（拆桨台架，按 `docs/control/phase1-implementation.md` §7 的顺序）
+### 遗留给人（拆桨台架）
 
-- **打杆 ⟹ PX4 按 `COM_OBL_RC_ACT` 接管**（z0 现值 `0` = 回 Position 模式）——本张验收项 ① 的后半句；
-- 真 PX4 被拉进 OFFBOARD / 杀节点后自行退出（ticket 05 的两条）；
-- 真电池读数的可信度（ticket 01 的 ADC 判定）；
-- ⚠️ **首飞前确认 RC 在场**（H.7.1：解锁那一刻 RC 就是丢的 ⟹ PX4 的 RC 丢失保护被忽略）。
+★ **步骤、判据、要记录的读数、前置参数全部整理成清单了：[`docs/control/bench-runbook.md`](../../../docs/control/bench-runbook.md)**
+（做台架**照它走**，不要照 `phase1-implementation.md` §7 的表走 —— 那张是"整个 Phase 1 的顺序"，
+含尚未落地的 ticket 08/09，第 3b 步今天做不了）：
+
+- **打杆 ⟹ PX4 按 `COM_OBL_RC_ACT` 接管**（z0 现值 `0` = 回 Position 模式）——本张验收项 ① 的后半句
+  ⟹ runbook 的 **T6**（★ 内含"两次跑分开两条机制"的判别法：`COM_RC_OVERRIDE = 3` 与
+  `COM_OF_LOSS_T`→`COM_OBL_RC_ACT` 会指向同一结果）；
+- ★ **`mode_lost` 收窄的真机现场**（§4.4(1) 预测：输入坏掉后**不应**出现 `degrade=mode_lost`）⟹ runbook 的 **T7**；
+- 真 PX4 被拉进 OFFBOARD / 杀节点后自行退出 ⟹ runbook 的 **T3 / T5**（那是 ticket 05 的两条）；
+- 真电池读数的可信度（ticket 01 的 ADC 判定）——★ 其实 [A4 已实测判为**未中招**](../../../docs/reference/params-changes.md)
+  （读数 36…38 有变化）；要更硬就是"换一次上电再采一组"，不必单列一步；
+- ⚠️ **首飞前确认 RC 在场**（H.7.1：解锁那一刻 RC 就是丢的 ⟹ PX4 的 RC 丢失保护被忽略）⟹ runbook 的 **P0**。
+
+⚠️ **④ 不在台架清单里**：它在本链路上判据恒假（EKF2 不发 NaN），**上飞机也验不出** ⟹ 见 ticket 16。
