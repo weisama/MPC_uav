@@ -1,14 +1,15 @@
 # 04: `mocap` 节点 —— 相对位姿 + 两阶段原点 + 仅归零 yaw
 
-Status: ready-for-human
+Status: done
 Type: task
 
-> ⚠️ **2026-09-21：代码完成并提交，但本张还差两条验收 —— 别读成"飞控已经吃到动捕了"。**
-> 剩下两条（① QGC 的 `LOCAL_POSITION_NED` 稳定 + `VISION_POSITION_ESTIMATE`；⑥ 坐标系确认实验的 **QGC 那一半**）
-> **需要飞控上电 + `mavros` 装好 + QGC 打开**，且要有人把飞机平移 0.5 m / 升高 0.3 m。
-> 当前**飞控未上电**，且本机**还没装 `mavros`**（只有 `mavros_msgs`）⟹ 已另开
-> [ticket 13](13-mavros-bench-vision-pose.md) 承接（它同时是 [ticket 05](05-control-offboard-skeleton.md) 的前置）。
-> **其余 6 条已用"假 `/vrpn/z0/pose` + 假 `/mavros/state`"在无飞控条件下验完**，读数见 Comments §三。
+> ✅ **2026-09-22：最后两条验收已由人在台架上答回（QGC 目视）⟹ 本张 `done`。**
+> 证据：操作者原话 + agent 的解读 + 数据窗，见 [ticket 13](13-mavros-bench-vision-pose.md) §实测 2026-09-22。
+> **残留（不藏在 `done` 下面，在 13 里点名跟踪）**：
+> ① 的"**不跳**"、① ⑥ 的**具体 Δ 读数**、⑥ 的**观测时刻**均未留档
+> —— 操作者当日明确"**不用太严谨，验证坐标系正确即可**" ⟹ ⑥ 按**定性判据**收下，数值不追；
+> 「解锁上升沿切原点」（阶段 B）**今天没做成**（动捕输入断流 ⟹ 边沿被错过），同在 13 里。
+> 其余 6 条早在无飞控条件下用"假 `/vrpn/z0/pose` + 假 `/mavros/state`"验完，读数见 Comments §三。
 
 **What to build:** 动捕位姿变成「以我摆放飞机的位置为原点的相对位姿」并喂给 EKF2，使 **QGC 在解锁之前就已经有稳定收敛的位置估计**。
 
@@ -177,12 +178,19 @@ Type: task
 
 #### 七、遗留（**已另开 [ticket 13](13-mavros-bench-vision-pose.md)**，不在本张里"done 掉"）
 
-1. ⏳ 两条验收的 **QGC 那一半**（① `VISION_POSITION_ESTIMATE` 有数 + `LOCAL_POSITION_NED` 稳定；⑥ `y` 变化 0.5 / 高度向上）
+> 2026-09-22：第 1 条已答回（见下），第 2、4 条早已 ✅。**只剩第 3 条**（`EKF2_EV_POS_Z` 未标定），
+> 它是**参数**问题、已被 [ticket 15](15-fcu-param-reconciliation.md) 点名（对账确认飞控上 `EKF2_EV_POS_X/Y/Z = 0/0/0`）。
+
+1. ✅ **2026-09-22 答回** —— 两条验收的 **QGC 那一半**（① `VISION_POSITION_ESTIMATE` 有数 + `LOCAL_POSITION_NED` 稳定；⑥ `y` 变化 0.5 / 高度向上）
    —— 需**飞控上电 + mavros + QGC**，且需人把飞机平移/升高。
    ★ **2026-09-21 进展**：mavros 已装好（源码构建）并连上飞控，**飞控侧已证 EKF2 真的在用动捕**
    （`/mavros/estimator_status` 的 `pos_horiz_abs_status_flag` 反转实验：有视觉 True / 停动捕 4 s 后 False / 恢复 True）——
    这比"QGC 看着有数"更硬（是飞控自己的估计器状态）。**只剩 QGC 目视 + ⑥ 的轴向确认**（那一步必须看飞控自己的 NED 读数）。
    证据见 [ticket 13](13-mavros-bench-vision-pose.md) §实测 ③。
+   ★ **2026-09-22 人报（QGC 目视）**：两个话题都有数；轴约定为**左 `x+` / 机头 `y+` / 下 `z+`**
+   ⟹ 显示的是 **NED**（`z+` 向下）⟹ **mavros 的 ENU→NED 转换确实发生了**。原话、解读与数据窗见
+   [ticket 13](13-mavros-bench-vision-pose.md) §实测 2026-09-22。
+   ⚠️ **残留（在 13 里跟踪，不在本张）**：① 的"不跳"、① ⑥ 的**具体 Δ 读数**、⑥ 的观测时刻。
 2. ✅ **已解决（2026-09-21）**：`mavros` 与 `mavros_extras` 的**arm64 二进制在十个可达镜像里全都没有**
    （同仓库的 `mavros_msgs` 反而有）⟹ 已**从源码构建 2.15.1**（`~/mavros_ws`；tag commit `22ae5b7c`），
    含 `mavros_extras`（`vision_pose_estimate` 插件在其中）。步骤见
@@ -238,3 +246,21 @@ Type: task
 
 **审查后再跑一遍的结论**：`colcon build --packages-select mocap` 0 warning；`colcon test --packages-select mocap` **22 项（21 gtest + 1 ctest 包装）0 失败**；
 全仓库 176 条失败**仍全部来自 vendored `vrpn_listener` 的 lint**（既有，ticket 03 不许动）。
+
+### 2026-09-22 —— ★ 最后两条验收答回 ⟹ 本张 `done`
+
+操作者在台架上手动做完，报回 QGC 侧的目视结果（原话、agent 解读、数据窗全部落在
+[ticket 13](13-mavros-bench-vision-pose.md) §实测 2026-09-22，本节不复制，避免两处数字打架）：
+
+- **①/⑥ 的核心结论成立**：`VISION_POSITION_ESTIMATE` 与 `LOCAL_POSITION_NED` 都有数，
+  轴约定 **左 `x+` / 机头 `y+` / 下 `z+`** ⟹ 显示的是 **NED**（`z+` 向下），
+  ⟹ **ENU→NED 的转换确实发生**（本节点"只减原点、不做转换"的设计前提被端到端印证）。
+- **两条必须带上的前提**（否则读数会被读高）：**桨是拆的、飞机是手持举到 1 m 的**；
+  且动捕输入今天**断过两次**（`06:52:02.8→07:05:22.9` 共 800.2 s，`07:15:13` 起至今未恢复）
+  —— 只有通的那两段读到的才是活数据。
+- ⏳ **残留**（在 13 里跟踪）：① 的"不跳"未单独报、① ⑥ 的具体 Δ 未报、⑥ 的观测时刻未报；
+  「解锁上升沿切原点」（阶段 B）**没做成**（阶段性结论：阶段 B 只在 `on_pose` 内触发，
+  而今天所有解锁都落在断流窗口里 ⟹ 边沿被错过。**不是本节点的缺陷**）。
+- ⚠️ 顺带发现一条**缺陷级未解异常**（与本张代码无关，但与本张的话题有关）：
+  `07:05:00` 有控制节点从 `/mocap/pose_enu` 收到了消息，而本节点当时**没有任何发布路径**
+  ⟹ 已另开 [ticket 19](19-unidentified-pose-enu-publisher.md)。
