@@ -3,6 +3,13 @@
 Status: ready-for-human
 Type: task
 
+> 📌 **2026-09-22 状态说明（为什么还是 `ready-for-human` 而不是 `done`）**：
+> ★人裁定**已做**（§四 第 4 框 ✅）、文档回填**已补齐**（第 8 框 ✅）。**还剩 3 框**：
+> ① **写 3 条参数** —— 已裁定，但**卡在"飞控没上电"**（硬件，不是判断）；
+> ② **量 `EKF2_EV_POS_*` 外参** —— **尺子量**，纯人的事；
+> ③ **`MPC_THR_HOVER` / `THR_MDL_FAC` 标定** —— **推力台**，纯人的事。
+> ⟹ 按 [`triage-labels.md`](../../../docs/agents/triage-labels.md)，验收项**没勾完就不许标 `done`**；剩的是人的事，故维持 `ready-for-human`。
+
 **为什么单开一张：** [`PROJECT.md`](../../../docs/PROJECT.md) 的"推荐动作"原话是
 *"从 **z0 的飞控**导出参数，与 `z0.params` 做 diff —— 差异就是'从上游参考值到 z0 实际值'要改的东西"*；
 `PROJECT.md` §参数与 `phase1-implementation.md` §6 也都标着 **"尚未在 z0 的飞控上核实"**。
@@ -48,6 +55,12 @@ ros2 param get /mavros/param EKF2_EV_CTRL      # 单条读
 | 飞行计数器（4） | `COM_FLIGHT_UUID` | `1144` | **`0`** | 飞控**从未有过飞行记录** |
 | | `LND_FLIGHT_T_HI` / `_LO` | `3` / `-616518067` | **`0`** / `0` | 同上（累计飞行时间 = 0） |
 | 遥控器校准（14） | `RC1_MIN`、`RC2_MAX`、`RC3_MAX`、`RC4_MAX`、`RC6_MIN/TRIM`、`RC7_MIN/TRIM`、`RC9_MIN/TRIM`、`RC10_MIN/TRIM` | 各自的上游值 | 差 1–7 µs | **遥控器校准**（行程/微调），设备相关 |
+
+> ☠️ **2026-09-22 更正本表的两个分类计数**（写这张时数错了，**总数 21 与全部结论不受影响**）：
+> 「飞行计数器（**4**）」实为 **3** 条（`COM_FLIGHT_UUID`、`LND_FLIGHT_T_HI`、`LND_FLIGHT_T_LO`）；
+> 「遥控器校准（**14**）」实为 **12** 条（`RC1_MIN` + `RC2/3/4_MAX` + `RC6/7/9/10` 各 `MIN`+`TRIM`）。
+> 6 + 12 + 3 = **21** ✓ —— 原来的 6+4+14 = 24 与上一张表的合计对不上。
+> 判据：**以本表自己列出的参数名逐个数为准**（`params-analysis.md` §5 已同步为 6+12+3）。
 
 ### 逐条核实了文档里声称的每一条（**全部一致**）
 
@@ -113,12 +126,19 @@ ros2 param get /mavros/param EKF2_EV_CTRL      # 单条读
 - [x] 从飞控导出全量参数（`ros2 param dump /mavros/param`，915 条）
 - [x] 与 [`docs/assets/z0.params`](../../../docs/assets/z0.params) 逐条 diff，差异分类
 - [x] 逐条核实 `phase1-implementation.md` §6 与 `PROJECT.md` §参数 声称的每一条
-- [ ] ★ **人裁定**：上表 8 条待处理项哪些现在就改、哪些留到标定/飞行阶段（改哪条 ⇒ 谁来改 ⇒ 怎么验）
-- [ ] 若决定改：**只写配置类参数**（用 `/mavros/param/set`，类型 `ParamSetV2`），改完**再 dump 一次对账**，回填本张
+- [x] ★ **人裁定（2026-09-22，用户拍板）**：8 条里**现在就改 3 条**（`EKF2_GPS_CTRL = 0` + `SYS_HAS_GPS = 0`、
+      `MPC_XY_VEL_MAX = 2.0`），其余 5 条分别留到 **系统辨识 / 推力标定 / 尺子量 / 飞行阶段**。
+      逐条处置（含"谁改、怎么验"）见 [`params-changes.md`](../../../docs/reference/params-changes.md) **§I**
+- [ ] 若决定改：**只写配置类参数**，改完**再 dump 一次对账**，回填本张
+      —— ⏸ **已裁定、尚未写入**：2026-09-22 探 `/dev/ttyTHS1` **无心跳**（飞控没上电），
+      命令已备好在 `params-changes.md` **§I.1**。★ **顺带更正本条括注**：写参数**不必**用 `ParamSetV2` ——
+      `ros2 param set /mavros/param <名> <值>` 就会转发给飞控（`param.cpp:1148`），见 **§I.2**
 - [ ] `EKF2_EV_POS_X/Y/Z` 外参：量出刚体→IMU 的实际偏移（`hardware.md` §6 的"尺子量"）后写入
 - [ ] `MPC_THR_HOVER` 标定（`thrust_calibrate` 流程）与 `THR_MDL_FAC` 的取舍（两者至少一个错）
-- [ ] 把本张的结论回填 [`PROJECT.md`](../../../docs/PROJECT.md)（"尚未核实"的那段）与
-      [`phase1-implementation.md`](../../../docs/control/phase1-implementation.md) §6
+- [x] 把本张的结论回填 —— ★ **实际范围比本条写的更大**（原文只点了两处，**漏了 `params-analysis.md`**）：
+      [`PROJECT.md`](../../../docs/PROJECT.md) §5.1、[`phase1-implementation.md`](../../../docs/control/phase1-implementation.md) §6、
+      **`params-analysis.md`**（页首 ★ / §3.7 / §5 / §6 待办清单）、
+      **`params-changes.md`**（页首警告 / F2 / §G / 新增 §I）、[`bench-runbook.md`](../../../docs/control/bench-runbook.md) P0
 
 ## 五、坑
 
@@ -138,3 +158,52 @@ ros2 param get /mavros/param EKF2_EV_CTRL      # 单条读
   因此文档里所有"⚠️ 可疑值"都是**飞机上真实存在的待改项**，且**整份烧参数是错的**（会覆盖标定）。
 - 原始导出与 diff 脚本落在 `/tmp`（`/tmp/fcu_params.yaml`、`/tmp/diff_params.py`），**不入库**；
   本文档 §二 已把结论与 21 条差异逐条记全。
+
+### 2026-09-22 —— ★ 人裁定 + 文档回填补齐（agent）
+
+**触发**：用户 `/implement #15`。
+
+**① ★ 人裁定（用户拍板）** —— 就是 §四 第一个框，8 条待处理项的处置：
+
+| # | 待处理项 | 裁定 | 谁来改 | 怎么验 |
+|---|---|---|---|---|
+| 1 | `EKF2_GPS_CTRL` + `SYS_HAS_GPS` | ★ **现在就改** `0` / `0` | agent（mavros） | re-dump 对账 |
+| 2 | `MPC_XY_VEL_MAX` | ★ **现在就改** `2.0` | agent（mavros） | re-dump 对账 + 飞时看轨迹 2/3 |
+| 3 | `CA_ROTOR0..3_PX/PY` | **不改**（分配器按几何范数归一化，均匀缩放被约掉；要它的是 (D) 方案） | — | — |
+| 4 | `BAT1_R_INTERNAL` | 留到**系统辨识**（里程碑 2） | 人 | 只影响 sag 补偿 |
+| 5 | `MPC_THR_HOVER` | 留到**推力标定**（里程碑 2） | 人 | `thrust_calibrate`，且要同时回填 MPC 模型 |
+| 6 | `THR_MDL_FAC` | 留到**推力标定**（与 5 一并） | 人 | 与 XI35 的 `K3=0.6786` 至少一个错 |
+| 7 | `EKF2_EV_POS_X/Y/Z` | 留到"**尺子量**" | 人 | 量刚体原点→IMU 偏移后写入 |
+| 8 | `EKF2_EVP_NOISE` | 留到**飞行阶段**判定 | 人 | 台架 30 min 未发散 ⟹ 台架证不了它过小 |
+
+⟹ 落纸在 [`params-changes.md` §I](../../../docs/reference/params-changes.md)。
+
+**② ⏸ 第 1/2 条没写进去 —— 因为飞控没上电**：`mavlink_probe.py --port /dev/ttyTHS1 --baud 921600`
+**无 HEARTBEAT**，mavros 也没在跑。所以状态是「**已裁定、待写入**」，不是"已改"。
+命令备在 `params-changes.md` **§I.1**；`bench-runbook.md` P0 已加指针 —— **下次上电就是补写的机会**。
+
+**③ 文档回填原先只做了一半，这次补齐**：§四 最后一条当时点的是 `PROJECT.md`（已做）与
+`phase1-implementation.md` §6（已做），但**本张「被它影响的」那行还点名了 `params-analysis.md`** —— **那处漏了**。
+本次补齐 5 份文档：
+
+- `params-analysis.md`：页首加对账 ★；§5「与你自己飞控的参数做 diff」标为**已执行**
+  （实际走 `ros2 param dump`，**不是** QGC 导出）；§6 待办清单加「2026-09 状态」列；§3.7 加裁定行
+- `params-changes.md`：页首「所有『现值』都还没有在 z0 自己的飞控上核对过」**作废**；
+  F2「`z0.params` 是另一台参考机导出的」**结案**；§G 第 1 项标已做；**新增 §I**（裁定表 + 执行清单 + §I.2）
+- `bench-runbook.md` P0：加 3 条待写入参数的指针（★ 标注它们**不是**台架判据，只是共用这次上电）
+- `phase1-implementation.md` §6：`MPC_XY_VEL_MAX` / `MPC_THR_HOVER` / `EKF2_EVP_NOISE` 三行加裁定注
+
+**④ 本轮顺带查出的三处（都在上面落纸里更正了）**：
+
+1. ☠️ **本张 §二 的两个分类计数写错了**：飞行计数器写 **4**（实 **3**）、遥控器校准写 **14**（实 **12**）——
+   6+4+14 = 24 与本张自己给的合计 **21** 对不上。**更正为 6+12+3 = 21**（**总数与全部结论不变**）。
+2. ★ **本张 §一「只有 `~/pull` 与 `~/set`」这一句不完整**（第一手重读 `mavros/src/plugins/param.cpp`）：
+   还有 **`~/get_parameters`**（`:468`）与 **`~/set_parameters`**（`:476`）——
+   后者正是 `ros2 param set` 走的路径，`set_parameters_cb` 里确实调 `send_param_set_and_wait()` 发给飞控（`:1148`）；
+   而 `~/set_parameters_atomically` 是**硬编码不支持**（`:1157-1164`）。
+   排除名单（`:357-369`）里**没有我们的 3 条** ⟹ §四「用 `ParamSetV2`」那句括注**可以放宽**：`ros2 param set` 就够。
+   详见 `params-changes.md` **§I.2**。
+3. ⚠️ **`params-analysis.md` 里 6 处引的固件真身 `Peize-Liu/PX4-Autopilot @ 5ba2e91f` 是已被推翻的那一版**
+   （其中 `:270` 还明写"**z0 实际在跑的**"）—— 按 `params-changes.md` **F3**，真身应是 `4a0e65f2`。
+   **不属本张范围，没有动**（本张只改参数结论，不改固件身份）—— 归
+   [ticket 10](10-docs-1-14-sweep.md) 的全库清扫。**在此点名，免得它随本张的"回填完成"被静默盖过去。**

@@ -641,7 +641,11 @@ ticket 08 落地时删掉它**。
 对账全文与待办见 [`.scratch/phase1/issues/15-fcu-param-reconciliation.md`](../../.scratch/phase1/issues/15-fcu-param-reconciliation.md)。
 ☠️ **不要整份烧 `z0.params`**（会覆盖 z0 自己的加速度计与遥控器标定）—— 要改只挑配置类参数写。
 
-★ 下表保留 Phase 1 前逐条确认的用途（**确认动作已做，结论见上**）：
+★ 下表保留 Phase 1 前逐条确认的用途（**确认动作已做，结论见上**）。
+
+★ **2026-09-22 人裁定**：8 条待处理项里，**只有 3 条参数现在就改**（`EKF2_GPS_CTRL=0`、`SYS_HAS_GPS=0`、
+`MPC_XY_VEL_MAX=2.0`），其余留到标定 / 尺子 / 飞行阶段。逐条处置见
+[`params-changes.md`](../reference/params-changes.md) **§I**。下表受影响的只有 `MPC_XY_VEL_MAX` 一行。
 
 | 参数 | 现值 | 判断 | 说明 |
 |---|---|---|---|
@@ -653,10 +657,10 @@ ticket 08 落地时删掉它**。
 | `COM_OBL_RC_ACT` | `0` | ✅ 对 | Offboard 被 RC 接管后回 Position 模式 |
 | `COM_OF_LOSS_T` | `1.0` | ✅ 对 | Offboard 掉线 1 s 后触发 failsafe |
 | `MAV_1_CONFIG` / `MAV_1_MODE` | `102` / `2` | ✅ 对 | TELEM2 = Onboard，**mavros 走这个口** |
-| ⚠️ **`EKF2_EVP_NOISE`** | **`0.061`** | ⚠️ **偏小，需重调** | 用户实测笔记：**1.0 可用，0.1 过小**（过小 → `LOCAL_POSITION_NED` 发散）。**0.061 比 0.1 还小。** Phase 1 前按笔记的建议从 **1.0** 起步往下调 |
-| ⚠️ **`MPC_XY_VEL_MAX`** | **`12.0`** | ⚠️ **过高，建议降** | 12 m/s 对 152 mm 涵道机是失控速度。Phase 1 建议降到 **1.0–2.0**，与 ≤0.5 m/s 的轨迹匹配 |
+| ⚠️ **`EKF2_EVP_NOISE`** | **`0.061`** | ⚠️ **偏小，需重调** | 用户实测笔记：**1.0 可用，0.1 过小**（过小 → `LOCAL_POSITION_NED` 发散）。**0.061 比 0.1 还小。** Phase 1 前按笔记的建议从 **1.0** 起步往下调。★ **2026-09-22 裁定：留到飞行阶段判定** —— ticket 13 台架静止 ~30 min **未发散**、`pos_horiz_abs` 稳定 True ⟹ **台架证不了它过小**（见 [`params-changes.md`](../reference/params-changes.md) §I 第 8 条） |
+| ⚠️ **`MPC_XY_VEL_MAX`** | **`12.0`** | ★ **已裁定：改 `2.0`**（**待写入**） | 12 m/s 对 152 mm 涵道机是失控速度。Phase 1 建议降到 **1.0–2.0**，与 ≤0.5 m/s 的轨迹匹配 —— ★ **2026-09-22 裁定取上界 `2.0`**（留 4× 余量），见 [`params-changes.md`](../reference/params-changes.md) §I |
 | ⚠️ **`BAT1_N_CELLS`** | `6` | ✅ 对（6S） | 但**同平台的板级默认是 4**，说明这份参数已按 z0 改过 |
-| ⚠️ **`MPC_THR_HOVER`** | `0.50` | ⚠️ **需标定** | 悬停推力 50%。XI35 的实测值是 0.45。**这直接决定高度控制的好坏**，用 `thrust_calibrate` 流程标定 |
+| ⚠️ **`MPC_THR_HOVER`** | `0.50` | ⚠️ **需标定** | 悬停推力 50%。XI35 的实测值是 0.45。**这直接决定高度控制的好坏**，用 `thrust_calibrate` 流程标定。★ **2026-09-22 裁定：留到推力标定**（里程碑 2），与 `THR_MDL_FAC` 一并定（§I 第 5/6 条） |
 | `THR_MDL_FAC` | `0.45` | ✅ 对 | 与 XI35 的 `K3: 0.6786` **不同**，★ 两个值至少有一个是错的，**标定时一并确认** |
 | `MC_ROLLRATE_MAX` / `MC_PITCHRATE_MAX` | `220` | 🔶 记录 | Phase 2 的 MPC 角速率上限不得越过它 |
 | `COM_RC_IN_MODE` | `3` | 🔶 **待核实** | 含义与 z0 的遥控器接法要对上（见 [`params-analysis.md`](../reference/params-analysis.md) 3.9） |

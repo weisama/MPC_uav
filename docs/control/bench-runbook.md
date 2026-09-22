@@ -37,6 +37,13 @@
 | `COM_RC_STICK_OV` | `20`（= 归一化 `0.2/s`） | 与我们的 `rc_stick_ov_us_per_s = 100` **同源**（`config/control.yaml:68-73`） | |
 | `COM_OF_LOSS_T` | `1.0 s` | ★ T5 的判据就是这个数 | |
 
+> ★ **另有 3 条参数是「已裁定、待写入」，与本表 A1 那一条同批做**（ticket
+> [15](../../.scratch/phase1/issues/15-fcu-param-reconciliation.md) §四 的人裁定，2026-09-22）：
+> `EKF2_GPS_CTRL` `7 → 0`、`SYS_HAS_GPS` `1 → 0`、`MPC_XY_VEL_MAX` `12.0 → 2.0`。
+> 理由、命令与验收步骤见 [`params-changes.md`](../reference/params-changes.md) **§I**（用 `ros2 param set`，改完 re-dump 对账）。
+> ⚠️ **它们不是台架 T1–T7 的判据** —— 只是**恰好共用这次上电**，别混进下面的验收表。
+> 裁定时的状态是"飞控没上电所以没写成"；这次上电就是补写的机会。
+
 ### 台架专用缝：`own_arming: true`
 
 本张还没有解锁路径（解锁 = ticket 08），而"已解锁时的失效该请求 `AUTO.LAND`"只在 `armed` 时成立

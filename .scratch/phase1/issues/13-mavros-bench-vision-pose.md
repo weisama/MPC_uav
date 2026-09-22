@@ -202,6 +202,10 @@ mavros 只在**收到 MAVLink `HEARTBEAT` 时**才发这个话题（`sys_status.
    得先用 `/mavros/set_message_interval` 请求该流。
 3. **`/mavros/param/get` 在 ROS2 版 mavros 里不存在** —— `mavros/src/plugins/param.cpp` 里那行被注释掉了
    （`// rclcpp::Service<mavros_msgs::srv::ParamGet>::SharedPtr get_srv;`），只有 `~/pull` 与 `~/set`。
+   ⚠️ **"只有两个服务"这句不完整**（2026-09-22 重读 `param.cpp` 更正）：还有 `~/get_parameters`（`:468`）与
+   `~/set_parameters`（`:476`，`ros2 param set` 走的就是它）；`~/set_parameters_atomically` 硬编码不支持。
+   **"没有 `~/get`"这个判断本身是对的**，不影响下面的结论。逐条表格见
+   [ticket 15 的评论](15-fcu-param-reconciliation.md) 与 `params-changes.md` §I.2。
    读飞控参数的正确方式是 **`ros2 param get /mavros/param <参数名>`**（飞控参数被暴露成标准 ROS 参数，
    启动时自动拉取；本次缓存到 **915 条**）。见 [ticket 15](15-fcu-param-reconciliation.md)。
 

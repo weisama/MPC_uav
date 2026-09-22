@@ -6,10 +6,18 @@
 > - **「现值」一律第一手取自 [`../assets/z0.params`](../assets/z0.params)**（928 行 / 914 条），
 >   不是从别处转述。
 > - **「理由」都指回 `params-analysis.md` 的具体小节**，那里有完整的取证链。
-> - **⚠️ 前置警告：所有「现值」都还没有在 z0 自己的飞控上核对过。**
->   `z0.params` 是**另一台参考机**导出的（`Huan-qun/Sim2real-UAV-Params-` 的 `uav1.params`）。
->   **→ 本表第 0 步永远是「导出 z0 自己的参数并 diff」**（`params-analysis.md` §5），
->   差异才是真正要改的东西。本表是**预期差异的清单**，不是可以直接导入的参数文件。
+> - ✅ **2026-09-21 已对账 —— 本条原写「⚠️ 前置警告：所有『现值』都还没有在 z0 自己的飞控上核对过」，
+>   现更正（原句见 git 历史）**：`ros2 param dump /mavros/param` 导出 z0 飞控真身 **915 条**，
+>   与 `z0.params` 逐条 diff ⟹ **914/915 条名字全对上、值也一致**（唯一多出的是飞控内部的 `_HASH_CHECK`），
+>   21 条值差异**全是设备标定（加速度计 6 + 遥控器校准 14）与飞行计数器（4）**。
+>   ⟹ **下表的「现值」就是飞控现状**，不再是"另一台参考机"的预期值。
+>   对账全文见 [`.scratch/phase1/issues/15-fcu-param-reconciliation.md`](../../.scratch/phase1/issues/15-fcu-param-reconciliation.md)。
+> - ☠️ **"一致"恰恰意味着下表那些可疑值真的在飞机上** —— 不是文件过时。
+> - ☠️ **且不要整份烧 `z0.params`**：它含 6 条加速度计标定 + 14 条遥控器校准，而**飞控上那两组才是 z0 自己的**。
+>   要改就**只挑配置类参数**写 —— 执行方式与已裁定的清单见 **§I**。
+> - 📌 **历史（保留，说明本表的来历）**：本表最初是**对账前**的"预期差异清单"，当时的第 0 步是
+>   「导出 z0 自己的参数并 diff」（`params-analysis.md` §5）—— **该步已于 2026-09-21 执行完毕**，
+>   实际用的是 `ros2 param dump`，**不是 QGC 导出**。
 >
 > ☠️ **2026-09-21 更正（本行原先整个反了）**：这里原写「本轮已判定 z0 固件是 **v1.15 世代**而非 1.14」。
 > **不成立** —— 真身是 **`Minderring/PX4-Autopilot` @ `4a0e65f2`**，属 **v1.14.3 系**的 MicoAir
@@ -70,13 +78,14 @@
 
 | # | 参数 | 现值 | 建议值 | 理由 | 阻塞 |
 |---|---|---|---|---|---|
-| B1 | `EKF2_GPS_CTRL` | **`7`**（经纬度+高度+速度全开） | **`0`** | 室内纯动捕飞行，把 GPS 这条线**彻底断干净**，避免"偶尔收到几颗星"造成估计抖动 | ⬜ 建议（§3.7） |
-| B2 | `SYS_HAS_GPS` | **`1`** | **`0`** | 与 B1 配套。对照 `SYS_HAS_MAG = 0`（无磁罗盘是**显式声明**的）—— GPS 反而是显式开着的 | ⬜ 建议（§3.7） |
+| B1 | `EKF2_GPS_CTRL` | **`7`**（经纬度+高度+速度全开） | **`0`** | 室内纯动捕飞行，把 GPS 这条线**彻底断干净**，避免"偶尔收到几颗星"造成估计抖动 | ★ **2026-09-22 裁定：现在就改**（§I） |
+| B2 | `SYS_HAS_GPS` | **`1`** | **`0`** | 与 B1 配套。对照 `SYS_HAS_MAG = 0`（无磁罗盘是**显式声明**的）—— GPS 反而是显式开着的 | ★ **2026-09-22 裁定：现在就改**（§I） |
 | B3 | `CBRK_SUPPLY_CHK` | **`894281`**（魔术值＝**禁用电源预检**） | **恢复检查** | 对一台**真装了电源模块**的机器，这条没必要，且会**掩盖"电池没接/没读"** —— 与 A4 叠加风险更高 | ⬜ 建议评估（§3.15 g） |
 | B4 | `BAT1_CAPACITY` | **`-1`**（未知） | 实测容量 | 不填就无法做剩余电量估算 | ⬜ 建议（§3.5） |
 | B5 | `BAT1_R_INTERNAL` | **`0.005 Ω`** | **`≈0.078 Ω`** | 比 VTC6 6S1P 的真实内阻（≈13 mΩ/节 × 6）**小 15 倍**。⚠️ **只在你想做电压 sag 补偿时才需要改** —— 而 A4 可能让电压根本读不准 | ⬜ 可选（§3.4） |
 | B6 | `COM_LOW_BAT_ACT` | **`0`**（低电无动作） | 视 B3/A4 结果定 | 阈值 `BAT_LOW_THR=0.15` / `CRIT=0.07` / `EMERGEN=0.05` **都设了，但没有动作** → 阈值形同虚设 | ⬜ 建议（§3.5） |
 | B7 | `NAV_DLL_ACT` | **`0`**（Disabled） | 评估是否需要动作 | 数传丢失无动作。⚠️ **Phase 1 的控制指令就走数传**（TELEM2 → mavros）—— 但数传断掉时 `COM_OF_LOSS_T = 1.0 s` 的 **offboard 失效保护会先生效**（→ `COM_OBL_RC_ACT = 0` = Position，见 D3），所以影响有限。**注意 `NAV_DLL_ACT` 有 `@value 0 Disabled`，与 A1 的 `NAV_RCL_ACT` 枚举不对称** | ⬜ 建议 |
+| B8 | `MPC_XY_VEL_MAX` | **`12.0`** | **`2.0`** | 12 m/s 对 152 mm 涵道机是**失控速度**；Phase 1 三条轨迹的速度上限是 **≤0.5 m/s**（`phase1-implementation.md` §5.2），2.0 给它留 **4×** 余量。⚠️ 它同时是 **(C)/(D) 方案里 MPC 速度约束的直接来源**（见 §E3）—— 改它会连带影响 Phase 2 抄过去的约束 | ★ **2026-09-22 裁定：现在就改**（§I） |
 
 ---
 
@@ -130,7 +139,7 @@
 | # | 事项 | 结论 | 依据 |
 |---|---|---|---|
 | F1 | 电池**电流**采样读错通道 | ❌ **只能重编重刷固件** —— `ADC_CHANNELS` 是编译期宏，带 `#ifndef`/`#error` 守卫，board_adc 模块**没有任何参数**，也从不采样通道 8。`BAT1_I_CHANNEL = 8` 这条"工作区猜想"已**被证伪**（board_adc 根本不产通道 8 的样本）。★ **但"重编"的代价已查明是 1 行**：fork 的 `pr_fix_hkust_nxt_dual` @ `8161c4cd` = `main` + 一行 `CH(5)`→`CH(8)`。**要不要做，是 Phase 1 的一个独立决策（Q37）** | §3.5.1 / refs-manifest §2.7(b) |
-| F2 | `z0.params` 本身不是 z0 的参数 | ⚠️ 它是**另一台参考机**导出的。**唯一的解法是导出 z0 自己的参数做 diff**，不是改哪一条 | §5 |
+| F2 | ~~`z0.params` 本身不是 z0 的参数~~ | ✅ **【已结案，2026-09-21】** 对账证明**它就是 z0 飞控真身**（914/915 一致）—— 原判"`z0.params` 是另一台参考机导出的"**作废**。★ **但那条第 0 步的教训换个形式仍然成立**：`CAL_*`（加速度计标定）与 `RC*_MIN/MAX/TRIM`（遥控器校准）**不要照抄** —— 飞控上那两组才是本机的 | ticket [15](../../.scratch/phase1/issues/15-fcu-param-reconciliation.md) |
 | F3 | 固件版本标签 | ☠️ **2026-09-21 更正**：本行原写「参数头的 `4a0e65f2` 与固件**真身 `5ba2e91f`** 不一致」—— **真身已被推翻**。经 git 实测，**`4a0e65f2` 才是飞控真身**（v1.14.3 系的 MicoAir 厂商构建，2024-11-18，`add micoair743-aio to PX4-Autopilot v1.14.3`），`5ba2e91f` 是 fork 上另一个 commit。⟹ 参数头与真身**本来就是一致的**，不是"不一致"。**唯一终审仍 = 在 QGC 里读飞控实际报出的版本号** | §H 的复核方式 + refs-manifest §2.5 |
 | F4 | `px4_msgs` 选版 | ☠️ **2026-09-21 更正**：「`release/1.14` 不兼容」这个**判定本身仍成立**（28/184 字段布局不同），但把它归因于"1.14.x 标签"的说法**作废** —— 真身 `4a0e65f2` 属 **1.14.3 系的厂商构建**。★ 结论不变（Q31=a）：**从 fork 自身 `msg/`+`srv/` 生成**；SITL 被控对象从**同一个真身**构建。⚠️ 本行与 Phase 2 文档里所有 `5ba2e91f` 的引用都是**待改的**，已列入 [ticket 10](../../.scratch/phase1/issues/10-docs-1-14-sweep.md) | §H 的复核方式 + refs-manifest §2.5 / §2.6 |
 
@@ -138,10 +147,14 @@
 
 ## G. 一页速查：**只做三件事**的话
 
-1. **导出 z0 自己的参数，与本表 diff** —— 因为 `z0.params` 是别的机器导出的（F2）。
-2. **改 `NAV_RCL_ACT = 1`（Hold）**，并**上电核实电池电流是否中招**（A1 / A4）。
+1. ~~**导出 z0 自己的参数，与本表 diff**~~ ✅ **已做（2026-09-21）**：914/915 一致，本表即现状（F2 已结案）。
+2. **改 `NAV_RCL_ACT = 1`（Hold）** —— **A1，仍是首飞阻塞项**。
+   ~~并上电核实电池电流是否中招~~ ✅ **已核实：未中招**（2026-09-21，读数见 A4 小节）。
 3. **量电机位置 + 量 `EKF2_EV_POS_*` 外参 + 实测悬停油门**（A2 / C2 / C1）——
-   然后**判断几何是否只是均匀缩放**（若是，A3 不用重调）。
+   然后**判断几何是否只是均匀缩放**（若是，A3 不用重调）。★ 仍是**人的事**，**未做**。
+
+> ★ **2026-09-22 人裁定后**，另有 **3 条配置类参数待写入**（飞控一上电就做）：`EKF2_GPS_CTRL = 0`、
+> `SYS_HAS_GPS = 0`、`MPC_XY_VEL_MAX = 2.0`（B1 / B2 / B8）。执行方式见 **§I.1**。
 
 ---
 
@@ -382,6 +395,80 @@ PX4 眼里的"打杆接管"发生在不同时刻。**本张不改任何参数**�
 
 ---
 
+## I. ★ 人裁定（2026-09-22，用户拍板）—— 8 条待处理项怎么处置
+
+> **这是 ticket [15](../../.scratch/phase1/issues/15-fcu-param-reconciliation.md) §四 里那个「★ 人裁定」框的产物。**
+> 对账（见本表页首的 ✅）把问题从"文件过时"翻转成「**飞机上真有的待改项**」，
+> 于是"改哪条 / 谁来改 / 怎么验"必须由人拍一次板 —— 就是本节。
+> 裁定**只回答"什么时候改"**，不改动 A/B/C/D 各节对"该不该改"的判断。
+
+| # | 待处理项 | 真身值 | 裁定 | 谁来改 | 怎么验 |
+|---|---|---|---|---|---|
+| 1 | `EKF2_GPS_CTRL` + `SYS_HAS_GPS` | `7` / `1` | ★ **现在就改** → `0` / `0` | agent（mavros） | 改完 re-dump 对账（§I.1） |
+| 2 | `MPC_XY_VEL_MAX` | `12.0` | ★ **现在就改** → `2.0` | agent（mavros） | 改完 re-dump 对账；飞的时候看轨迹 2/3 不超调 |
+| 3 | `CA_ROTOR0..3_PX/PY` | `±0.15` | **不改** | — | 分配器按几何自身范数归一化，均匀缩放**会被完全约掉** ⟹ 改了没效果（§A2 的 2026-09-20 更正）。真正要它的是 **(D) 方案**与力矩饱和估算，**那时再实测** |
+| 4 | `BAT1_R_INTERNAL` | `0.005 Ω` | **留到系统辨识**（里程碑 2） | 人 | 只在做电压 sag 补偿时才需要；A4 已核实电流能读，不阻塞 |
+| 5 | `MPC_THR_HOVER` | `0.5` | **留到推力标定**（里程碑 2） | 人 | `thrust_calibrate` 实测后回填，**且要同时**回填 MPC 模型的 hover thrust（只改一处 = 静默的推力增益错误） |
+| 6 | `THR_MDL_FAC` | `0.45` | **留到推力标定**（里程碑 2） | 人 | 与 XI35 的 `K3 = 0.6786` **至少有一个是错的**，标定时一并定 |
+| 7 | `EKF2_EV_POS_X/Y/Z` | `0/0/0` | **留到"尺子量"**（`hardware.md` §6） | 人 | 量出动捕刚体原点 → IMU 中心的偏移（机体系 x前/y右/z下，m）后写入；不量就是**常值位置偏移** |
+| 8 | `EKF2_EVP_NOISE` | `0.061` | **留到飞行阶段**判定 | 人 | ticket 13 台架静止 ~30 min **未发散**、`pos_horiz_abs` 稳定 True ⟹ **台架证不了它过小**；笔记里"0.1 会发散"说的是**飞的时候**。**故意不改**，留给飞行阶段 |
+
+★ **裁定后仍留白的**（不许用 `done` 掩盖）：第 3–8 条**一条都还没做**；
+第 1–2 条**已裁定但尚未写入**（原因见下）。
+
+### I.1 第 1/2 条：**已裁定、待写入**（飞控上电时执行）
+
+**2026-09-22 裁定时的状态：飞控没有上电** —— `/dev/ttyTHS1` 上探不到心跳
+（`python3 tools/prereq-evidence/mavlink_probe.py --port /dev/ttyTHS1 --baud 921600` 无 HEARTBEAT），
+mavros 也没在跑 ⟹ 这 3 条参数**不是"已改"，是"待执行"**。
+
+```bash
+source /opt/ros/humble/setup.bash && source ~/mavros_ws/install/setup.bash
+
+# ① 先存旧值（§五 坑 4：参数写下去就留在飞机上，每次写都要有记录、能回退）
+ros2 param get /mavros/param EKF2_GPS_CTRL     # 期望 7
+ros2 param get /mavros/param SYS_HAS_GPS       # 期望 1
+ros2 param get /mavros/param MPC_XY_VEL_MAX    # 期望 12.0
+
+# ② 写（★ 浮点要写 2.0 而不是 2 —— PX4 参数是 float32）
+ros2 param set /mavros/param EKF2_GPS_CTRL 0
+ros2 param set /mavros/param SYS_HAS_GPS 0
+ros2 param set /mavros/param MPC_XY_VEL_MAX 2.0
+
+# ③ 读回确认（★ 别只看命令有没有报错）
+ros2 param get /mavros/param EKF2_GPS_CTRL && ros2 param get /mavros/param SYS_HAS_GPS && \
+  ros2 param get /mavros/param MPC_XY_VEL_MAX
+
+# ④ 改完再 dump 一次对账，回填 ticket 15（★ 915 条要 ~45 s，别以为卡死）
+ros2 param dump /mavros/param > /tmp/fcu_params_after.yaml
+```
+
+☠️ **不要用 `/mavros/param/get`** —— ROS2 版 mavros 没这个服务（`param.cpp` 里那行被注释掉了），
+见 ticket 15 §一 / §五 坑 1。
+
+### I.2 ★ 顺带的更正：mavros 的**写参数路径**不止 `~/set` 一条
+
+ticket 15 §一 写「只有 `~/pull`（`ParamPull`）与 `~/set`（`ParamSetV2`）」——
+**"没有 `~/get`"是对的，但"只有两个服务"不完整**。第一手核对
+`mavros/src/plugins/param.cpp`（本次读的是工作树 `~/mavros_ws/src/mavros`，与 ticket 14 的构建源同一份）：
+
+| 服务 | 服务类型 | 行 | 说明 |
+|---|---|---|---|
+| `~/pull` | `ParamPull` | 456 | ✅ 拉全量（断连重连后自动拉，缓存 915 条） |
+| `~/set` | **`ParamSetV2`** | **461** | ★ **`force_set: true` 可绕过排除名单** |
+| `~/get_parameters` | `rcl_interfaces/GetParameters` | 468 | ★ **ticket 15 §一 漏了这条** |
+| `~/set_parameters` | `rcl_interfaces/SetParameters` | 476 | ★ **`ros2 param set` 走的就是它**，`set_parameters_cb` 里确实调 `send_param_set_and_wait()` 发给飞控（`:1148`） |
+| `~/set_parameters_atomically` | `SetParametersAtomically` | 480 | ⛔ **硬编码不支持**（`:1157-1164` 直接 `RCLCPP_ERROR` + `successful = false`） |
+
+**排除名单**（`check_exclude_param_id()`，`:357-369`）里是 `_HASH_CHECK` / `SYSID_SW_MREV` / `SYS_NUM_RESETS` /
+`ARSPD_OFFSET` / `GND_ABS_PRESS*` / `STAT_BOOTCNT` / `STAT_FLTTIME` / `STAT_RESET` 等 ——
+**我们这 3 条都不在里面**，所以上面用 `ros2 param set` 是够的；真需要写被排除的 id 才用 `~/set` + `force_set: true`。
+
+⚠️ **`ros2 param set` 的成功回报来自飞控的 `PARAM_SET` ACK**（`send_param_set_and_wait` 等 ACK），
+比"命令没报错"硬；但**仍然要读回**（§I.1 第 ③ 步）—— 飞控可能接受写入却因范围校验而拒绝取值。
+
+---
+
 ## 附：本表与旧文档的关系
 
 - 本表**取代** `params-analysis.md` §6「待办清单」作为**行动清单**；
@@ -390,3 +477,6 @@ PX4 眼里的"打杆接管"发生在不同时刻。**本张不改任何参数**�
   ① `CA_METHOD = 2` 是 **Auto** 不是"归一化分配"；
   ② 几何缩放被分配器归一化**约掉**（推翻"几何偏差被调参吸收"）；
   ③ `SER_GPS1_BAUD = 0` 是 **Auto** 不是"GPS 口关着"。
+- 本表已同步 **2026-09-21/22 的两处翻转**（都由 ticket [15](../../.scratch/phase1/issues/15-fcu-param-reconciliation.md) 的第一手对账带来）：
+  ① 页首那条「所有『现值』都还没有在 z0 自己的飞控上核对过」**已作废** —— 914/915 条一致，**本表即飞控现状**；
+  ② F2「`z0.params` 是另一台参考机导出的」**已结案** —— 它就是真身（连带新增 **§I** 的人裁定与执行清单）。

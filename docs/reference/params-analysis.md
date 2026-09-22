@@ -3,6 +3,13 @@
 > 对 [`../assets/z0.params`](../assets/z0.params) 的调查记录。
 > 标注规则：✅ **可直接用** / ⚠️ **需核实或修改** / ❌ **必须改** / 📌 **对 MPC 有直接价值**
 > 相关文件：[`../PROJECT.md`](../PROJECT.md) 第 5.1 节、[`px4-interface.md`](px4-interface.md)
+>
+> ★ **2026-09-21 已对账 —— 本文所有 ⚠️「需核实」项的总答复**：`z0.params` 与 z0 飞控真身
+> **914/915 条完全一致**（唯一多出的是飞控内部的 `_HASH_CHECK`）⟹ **本文写的每个"现值"都是飞控现状**。
+> 于是 ⚠️ 这个标注的**含义变了**：**不再意味着"怀疑文件过时"，而是"飞机上真有的待改项"**。
+> 对账全文见 [`.scratch/phase1/issues/15-fcu-param-reconciliation.md`](../../.scratch/phase1/issues/15-fcu-param-reconciliation.md)；
+> 逐项处置（改/不改/何时改）见 [`params-changes.md`](params-changes.md) **§I**。
+> ⚠️ **本文是取证正文，不是行动清单** —— 行动清单看 `params-changes.md`（它已取代本文 §6）。
 
 ---
 
@@ -320,11 +327,15 @@ ADC(uint32_t base_address = SYSTEM_ADC_BASE, uint32_t channels = ADC_CHANNELS, b
 
 **建议**：室内纯动捕飞行时设 `EKF2_GPS_CTRL = 0` + `SYS_HAS_GPS = 0`，把 GPS 这条线彻底断干净，避免"偶尔收到几颗星"造成的估计抖动。**需确认这是否会影响你想保留的 GPS 使用场景。**
 
+> ★ **2026-09-22 已裁定：就按上面改（`0` / `0`）** —— 见 [`params-changes.md`](params-changes.md) §I 第 1 条。
+> 裁定时的状态是「**已裁定、待写入**」（飞控没上电，`/dev/ttyTHS1` 上探不到心跳）。
+
 ### 3.8 ⚠️ `UXRCE_DDS_CFG = 0` —— uXRCE-DDS **当前是禁用**的
 
 **事实**：`UXRCE_DDS_CFG = 0`（Disabled），全文件只有这 1 条 `UXRCE_` 参数。
 
-**含义**：这台参考机的机载电脑链路走的是 **MAVLink**（`MAV_1_CONFIG = 102` / `MAV_1_MODE = 2` = TELEM2 / Onboard），**不是 uXRCE-DDS**。
+**含义**：z0 的机载电脑链路走的是 **MAVLink**（`MAV_1_CONFIG = 102` / `MAV_1_MODE = 2` = TELEM2 / Onboard），**不是 uXRCE-DDS**
+（原文写"这台**参考机**"—— 2026-09-21 对账后已确认 `z0.params` 就是 z0 飞控真身，见页首 ★）。
 
 **对项目的影响**：本项目 `(C)` 方案打算用 uXRCE-DDS 发 `/fmu/in/vehicle_rates_setpoint`，**必须改这个参数**。具体配置方式见 [`px4-interface.md`](px4-interface.md)。
 
@@ -660,9 +671,22 @@ PARAM_DEFINE_INT32(COM_RC_IN_MODE, 3);
 
 ---
 
-## 5. ★ 推荐动作：与你自己飞控的参数做 diff
+## 5. ★ 推荐动作：与你自己飞控的参数做 diff —— ✅ **已执行（2026-09-21）**
 
-**这是解决本文件所有 ⚠️ 项的最快路径。** 差异就是"从参考参数到你机器"要改的东西。
+> ✅ **结论**：**914/915 条名字全对上、值也一致**（唯一多出的是飞控内部的 `_HASH_CHECK`）；
+> 21 条值差异**全是设备标定（加速度计 6 + 遥控器校准 14）与飞行计数器（4）**。
+> ⟹ **本文没有一处"文件过时"** —— 所有 ⚠️ 项都是**飞机上的真实现状**。
+> **执行时走的不是下面那段 QGC 路径，而是 `ros2 param dump`**（mavros 已连通，见 ticket 14）；
+> 下面的原始步骤**保留作历史记录**，因为 `diff` 的比对方法本身没变。
+
+```bash
+# ★ 实际用的（2026-09-21，mavros 已连通时）—— 915 条，~45 s
+ros2 param list /mavros/param | wc -l
+ros2 param dump /mavros/param > /tmp/fcu_params.yaml
+# ⚠️ 读参数别用 /mavros/param/get —— ROS2 版 mavros 没这个服务（ticket 15 §五 坑 1）
+```
+
+**原步骤（QGC 路径，未走；保留）**：
 
 ```bash
 # 1) 用 QGC 连上 z0 的飞控 → 参数页 → 右上角"工具" → "保存到文件"
@@ -687,20 +711,36 @@ diff <(grep -v '^#' z0.params | sort) <(grep -v '^#' /path/to/z0-export.params |
 - `EKF2_EV_POS_*` —— 外参（3.6）
 - `UXRCE_DDS_CFG` —— 中间件（3.8）
 
-> 💡 **一个可能的结果**：`CAL_*` 那 49 条会全部显示为差异（因为标定值跟具体硬件绑定）。**这是正常的，不要照抄 `CAL_*`。**
+> ✅ **实际结果（2026-09-21）**：上面这 7 组**一组都没出现在差异里**。差异只有 **21 条** ——
+> `CAL_ACC0/1_XOFF/YOFF/ZOFF`（**6** 条加速度计标定）、
+> `RC1_MIN` / `RC2_MAX` / `RC3_MAX` / `RC4_MAX` / `RC6_MIN+TRIM` / `RC7_MIN+TRIM` / `RC9_MIN+TRIM` / `RC10_MIN+TRIM`（**12** 条遥控器校准）、
+> `COM_FLIGHT_UUID` + `LND_FLIGHT_T_HI` + `LND_FLIGHT_T_LO`（**3** 条飞行计数器）。6+12+3 = **21** ✓
+> ⟹ **原来那批"⚠️ 需核实"不是文件过时，是飞机上的真实现状**。
+
+> 💡 **原预判 vs 实际**：原文写"`CAL_*` 那 **49 条**会全部显示为差异"—— **方向对（`CAL_*` 确实会差），幅度错**：
+> 实际只有 **6 条**（全是 `CAL_ACC*`；`CAL_MAG*` / `CAL_GYRO*` 在真身上与文件**一致**，21 条差异里没有它们）。
+> **教训不变：不要照抄 `CAL_*`**（它跟具体硬件绑定）。
+
+> ☠️ **顺带更正 ticket 15 的两个分类计数**：ticket 15 §二 的小标题写「飞行计数器（**4**）」「遥控器校准（**14**）」，
+> 但它**自己列出的名字**分别是 **3** 条与 **12** 条，且 6+4+14 = 24 ≠ 它自己给的合计 **21**。
+> **以本行的 6+12+3 = 21 为准**（与它列的参数名逐一对得上）。**总数 21 与结论都不受影响。**
 
 ---
 
-## 6. 待办清单
+## 6. 待办清单 —— ⚠️ **已被 [`params-changes.md`](params-changes.md) 取代**，保留作取证记录
 
-| # | 事项 | 方法 | 优先级 |
-|---|---|---|---|
-| 1 | 导出自己的 `.params` 并 diff | QGC → 保存到文件 → `diff` | ★★★ |
-| 2 | 核实 `CA_ROTORx_PX/PY` 实际值 | `param show CA_ROTOR*` | ★★★ |
-| 3 | 核实遥控器链路（`COM_RC_IN_MODE` 枚举含义 + `MAV_0`/CRSF 协议） | QGC 参数页悬停提示 + 实机验证 | ★★★ **安全** |
-| 4 | 核实电池监测是否工作 | `listener battery_status` | ★★ **安全** |
-| 5 | 确认电机序与桨转向的**对应关系**（不是只看电机序） | 实机 + 对照 `CA_ROTOR` 表 | ★★★ |
-| 6 | 量出 `EKF2_EV_POS_X/Y/Z` 外参 | 尺子量刚体原点→IMU | ★★ |
-| 7 | 实测悬停油门，回填 `MPC_THR_HOVER` | `thrust_calibrate.py` 或 Autotune | ★★ |
-| 8 | 决定 `EKF2_GPS_CTRL` 是否设 0 | 看是否需要 GPS 场景 | ★ |
-| 9 | 打开 uXRCE-DDS（`UXRCE_DDS_CFG`） | 见 [`px4-interface.md`](px4-interface.md) | ★★（走 `(C)` 方案时） |
+> ★ **行动清单看 `params-changes.md`**（它有"阻塞/建议"分级，2026-09-22 起还有 **§I 的人裁定**）。
+> 本表保留，是因为它是**对账前**写下的原始待办 —— 对照它的"状态"列能看出**哪些"核实"动作被对账直接替代掉了**。
+> 状态由 ticket [15](../../.scratch/phase1/issues/15-fcu-param-reconciliation.md) 的对账回填（2026-09-21/22）。
+
+| # | 事项 | 方法 | 优先级 | 2026-09 状态 |
+|---|---|---|---|---|
+| 1 | 导出自己的 `.params` 并 diff | ~~QGC → 保存到文件~~ → 实走 `ros2 param dump` | ★★★ | ✅ **已做（09-21）**：914/915 一致 |
+| 2 | 核实 `CA_ROTORx_PX/PY` 实际值 | `ros2 param get /mavros/param CA_ROTOR0_PX` | ★★★ | ✅ **值已核实 = ±0.15**（真身就是它，见 `params-changes.md` §A2）；⚠️ **"实测几何"仍未做** —— 归 §I 第 3 条 |
+| 3 | 核实遥控器链路（`COM_RC_IN_MODE` 枚举含义 + `MAV_0`/CRSF 协议） | QGC 参数页悬停提示 + 实机验证 | ★★★ **安全** | 🔶 **各自一半**：`COM_RC_IN_MODE = 3` 已结案（§3.9）；**`MAV_0`/CRSF 的物理接法仍未验** —— 且 09-21 实测时 **RC 链路是断的**（`params-changes.md` §H.9），没做成 |
+| 4 | 核实电池监测是否工作 | `listener battery_status` | ★★ **安全** | ✅ **已做（09-21）：未中招** —— 读数与判据见 `params-changes.md` §A4 |
+| 5 | 确认电机序与桨转向的**对应关系**（不是只看电机序） | 实机 + 对照 `CA_ROTOR` 表 | ★★★ | ⬜ **未做**（人的事，要上真台架） |
+| 6 | 量出 `EKF2_EV_POS_X/Y/Z` 外参 | 尺子量刚体原点→IMU | ★★ | ⬜ **未做** —— §I 第 7 条 |
+| 7 | 实测悬停油门，回填 `MPC_THR_HOVER` | `thrust_calibrate.py` 或 Autotune | ★★ | ⬜ **未做** —— §I 第 5 条；`THR_MDL_FAC` 一并定 |
+| 8 | 决定 `EKF2_GPS_CTRL` 是否设 0 | 看是否需要 GPS 场景 | ★ | ★ **已裁定：现在就改 `0`**（09-22，§I 第 1 条），**待写入** |
+| 9 | 打开 uXRCE-DDS（`UXRCE_DDS_CFG`） | 见 [`px4-interface.md`](px4-interface.md) | ★★（走 `(C)` 方案时） | ⬜ **Phase 2**（`params-changes.md` §E1） |
