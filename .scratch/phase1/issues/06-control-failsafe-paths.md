@@ -1,12 +1,16 @@
 # 06: `control` 失效路径 —— RC 打杆接管 / 消息超时 / 低电压 / EKF2 失效
 
-Status: ready-for-human
+Status: done
 Type: task
 
-> ⚠️ **为什么是 `ready-for-human` 而不是 `done`**：代码与台架夹具**已完成并全绿**（96 例，见 Comments 的
-> 「复核时的数字」），但**两条验收项判的是 PX4 侧行为、夹具不模拟 PX4**：
-> ① 的后半句"实测确认 PX4 按 `COM_OBL_RC_ACT` 接管"、④ 整条（见下）。这些需要**人 + 空闲飞控 + 拆桨台架**。
-> 另外 ④ 还引出一个**第一手发现**：本链条上"EKF2 位置失效"**根本不会**以 NaN 出现 ⟹ 已开 ticket 16。
+> ✅ **2026-09-22 用户裁定：收 `done`**（原为 `ready-for-human`）。代码与台架夹具已完成并全绿
+> （96 例，见 Comments 的「复核时的数字」）。
+> ★ **两条没勾的验收项仍然在，并且各自有归属**（`done` 不等于"没人管了"）：
+> ① 的后半句「实测确认 PX4 按 `COM_OBL_RC_ACT` 接管」—— 需**人 + 空闲飞控 + 拆桨台架**，
+> 步骤与判别法在 [`docs/control/bench-runbook.md`](../../../docs/control/bench-runbook.md) 的 **T6**；
+> ④ 整条「EKF2 位置失效 ⟹ `LAND`」—— **本链条上判据恒假**（第一手：EKF2 不发 NaN、
+> MAVLink 丢 `xy_valid`、mavros 原样转）⟹ **已移交 [ticket 16](16-ekf2-position-failure-carrier.md) 跟踪**，
+> 它不属于台架清单（上飞机也验不出）。
 
 **What to build:** 让**每一条单链路静默失效**都有确定的反应，而不是继续发指令。这一张是安全机制的主体 —— 那些看起来多余的判据，**每一条都是用事故换来的**。
 
@@ -199,7 +203,8 @@ mavros 真丢链路后会在 `conn_timeout`（默认 10 s）时**自己发一帧
 
 ### ⚠️ 顺带发现的两个夹具/基础设施问题（都不是本张的代码问题，但会咬下一个人）
 
-1. **同一个 ROS 域里不能有两份夹具**（已开 **ticket 17**）。
+1. **同一个 ROS 域里不能有两份夹具**（曾开过 ticket 17；2026-09-22 按"不影响飞行"删票归档，
+   见 [`DELETED.md`](../DELETED.md)）。
    第一手证据：整仓 `colcon test` **默认并行跑包**，`bench` 的夹具（假 mavros，`armed=False`/`POSCTL`）
    与 `control` 的 DUT 同时在域 73 ⟹ **`test_control_standby` 9 条挂了 5 条**（清一色 `MANUAL/STANDBY`、
    "没在发 setpoint"）；同一份测试单独跑域 75 ⟹ **9 条全绿**。
@@ -230,7 +235,8 @@ mavros 真丢链路后会在 `conn_timeout`（默认 10 s）时**自己发一帧
 3. **夹具造不出"PX4 自己退出 OFFBOARD"这个形状**（`COM_OF_LOSS_T` 是 PX4 对我们停发的**反应**，
    而假 mavros 不假扮 PX4 —— `CONTEXT.md` 的「假 mavros」条）⟹ `mode_lost` 那条收窄判据的证据
    **只可能在 seam 2**。候选后续：给假 mavros 加一个"我们停发 N 秒后自己掉出 OFFBOARD"的开关
-   （与 ticket 17 同类的夹具能力）。
+   （与"发布者节点名"同类的夹具能力 —— 后者已在 2026-09-22 做掉，见
+   `test/test_control_standby.py::test_降级证据里带发布者的节点名`）。
 
 ### 复核时的数字
 

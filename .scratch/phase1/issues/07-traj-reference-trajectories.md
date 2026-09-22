@@ -1,7 +1,14 @@
 # 07: `traj` —— 三条参考轨迹
 
-Status: ready-for-human
+Status: done
 Type: task
+
+> ✅ **2026-09-22 用户裁定：收 `done`**（原为 `ready-for-human`；7/7 勾选框本就已对，`done` 的判据
+> 按 `triage-labels.md` 满足）。
+> ★ **一处残留仍记在这里、不藏在 `done` 下面**：验收项「RViz 里能看出三条几何的形状与尺寸对不对」
+> **只在消息层核过**（顶点数 / 边长 / 幅度 / 闭合 / `frame_id` / 周期重发），本机 `DISPLAY` 为空、
+> **没真的开 RViz 看一眼**。⟹ 台架时若有屏幕，顺手 `rviz2` 加一条 `/traj/marker` 目视即可
+> （`marker_frame_id` 默认 `map`，理由见 §二.5）；没看也不影响控制逻辑。
 
 **What to build:** 三条在**轨迹原点**下定义、按时间采样的**解析**参考轨迹，以 **50 Hz** 输出，与 setpoint 同频。
 

@@ -1,13 +1,14 @@
 # 08: `TAKEOFF → HOVER →` 稳定判据 `→` 自动降落
 
-Status: ready-for-human
+Status: done
 Type: task
 
-> ⚠️ **为什么是 `ready-for-human` 而不是 `done`**：代码与两层测试**已完成并全绿**
-> （`control` 100 例、`bench` 自检 22 例，见 [`src/control/README.md`](../../../src/control/README.md)），
-> 但**验收阶梯的 1–4 级每一步都是人的物理动作**（拆桨 / 系绳 / 扶飞机 / 按 `/control/takeoff`），
-> 夹具替代不了；而且"上锁真的由 PX4 的 `COM_DISARM_LAND` 完成""prearm 检查被拒时是哪个
-> `MAV_RESULT` 码"这两条**只有真飞控能给**。见下面的 Comments。
+> ✅ **2026-09-22 用户裁定：收 `done`**（原为 `ready-for-human`）。代码与两层测试已完成并全绿
+> （`control` 100 例、`bench` 自检 22 例，见 [`src/control/README.md`](../../../src/control/README.md)）。
+> ★ **验收阶梯 1–4 级与两条"只有真飞控能给"的读数仍然没做，逐条列在下方
+> 「⏳ 还没做的（人的物理步骤，未验）」，并由 [`docs/control/bench-runbook.md`](../../../docs/control/bench-runbook.md)
+> 承接**（第 1 级 = 它的 **T4**；第 2/3/4 级要装桨，不属于拆桨清单）。本票的 `done` 判的是
+> **代码与测试**，不表示这些物理关卡已经过了。见下面的 Comments。
 
 **What to build:** 飞机第一次真正**自主离地并稳定悬停**。
 

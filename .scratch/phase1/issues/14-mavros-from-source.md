@@ -124,7 +124,7 @@ colcon build --parallel-workers 4 --cmake-args -DCMAKE_BUILD_TYPE=Release
       - ⏳ **拆桨解锁一次（阶段 B）上午没做成**：当天动捕输入在 `06:52:02.8→07:05:22.9` 断流 800.2 s，
         而当时的解锁都落在断流窗口里 ⟹ 边沿被错过
         （阶段 B 的触发在 `on_pose` 内，`mocap_rel_pose_node.cpp:171/190`，**不是代码缺陷**）；
-        另有飞控 `crash dumps present on SD` 拦解锁一道（见 [ticket 20](20-fcu-hardfault-i2c1-crash-dump.md)）。
+        另有飞控 `crash dumps present on SD` 拦解锁一道（见 [ticket 20（已删）](../DELETED.md)）。
       ✅ **2026-09-22 08:17:53 三项全部达成**：飞控经清障后可解锁，操作者**拆桨**解锁、电机点转 4.2 s，
       `mocap` 节点打出「★ 阶段 B：解锁上升沿后的起飞前原点已锁定 —— 切换发生在此刻」。
       ⚠️ 同刻 WARN 掉了「启动到解锁之间飞机被移动」这条纪律判据 —— **按用户裁定判为已验证**
@@ -195,7 +195,7 @@ provenance 已入 [`mocap-setup.md`](../../../docs/reference/mocap-setup.md) §5
 它本身在 [ticket 13](13-mavros-bench-vision-pose.md) 的验收项里跟踪）。
 🚧 **2026-09-22 追加阻塞**：操作者随后试解锁，被**飞控自己**拒绝 ——
 `crash dumps present on SD, vehicle needs service`（SD 卡根目录有硬故障转储，内容 = `wq:I2C1` 硬故障）
-⟹ **清障之前"拆桨解锁一次"做不了**，见 [ticket 20](20-fcu-hardfault-i2c1-crash-dump.md)。
+⟹ **清障之前"拆桨解锁一次"做不了**，见 [ticket 20（已删）](../DELETED.md)。
 ✅ **同日 07:57 已清障**（用户授权，删前已留档）⟹ 阻塞解除，可重做最后一步（还差动捕数据通）。
 ★ 这条阻塞**不属于 mavros**（mavros 侧本张已全部实测完），只是挡在最后一步前面。
 ★ 不把这一格勾掉的理由很直白：`done` 的定义是"验收项**全部**勾上"，而这一格的三项里有一项没发生 ——

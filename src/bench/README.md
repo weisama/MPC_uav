@@ -72,7 +72,11 @@
 - 整仓跑：`colcon test --executor sequential`（串行跑包 ⟹ 同一时刻只有一个包在用域 73）。
   ⚠️ 用 `BENCH_ROS_DOMAIN_ID=<n>` 跑**整仓**并**不能**解决这个问题：那个变量对**所有**包都生效，
   两个包拿到同一个域，撞法不变。
-- 这套"到底该给谁哪个域"的根治办法还没做，见 ticket 17。
+- 这套"到底该给谁哪个域"的根治办法**还没做**（曾开过一张 ticket，2026-09-22 按"不影响飞行"删票归档，
+  `git log --diff-filter=D -- .scratch/phase1/issues/17-*.md` 可取回）。现状就是上面这两条约定：
+  单文件手动挑域号、整仓加 `--executor sequential`。
+  ⚠️ 两处已知挡不住的场面：**同一包并发两轮**（两个会话）、以及**忘了加 `--executor sequential`** ——
+  症状是随机假红/假绿，而 DUT 自己的日志完全正常（排查方向天然指错）。
 - **`ROS_LOCALHOST_ONLY=1`**（本机多网卡：动捕 WiFi + 校园网，别把测试组播漏出去）
   ⚠️ 这一条**夹具与 DUT 必须取同一个值**。本机上 `ROS_LOCALHOST_ONLY=0` 是被人设过的；
   夹具若只 `setdefault`、DUT 却强设，两边就会用不同的 DDS 传输配置 ——

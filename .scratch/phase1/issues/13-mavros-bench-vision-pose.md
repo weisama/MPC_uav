@@ -121,7 +121,7 @@ ros2 topic hz /mavros/state        # ★ 定案：它是不是 1 Hz？见下方"
       当时所有解锁都落在**输入断流窗口**里 ⟹ 边沿被错过
       🚧 **同日又添一道阻塞（与上面那条独立）**：操作者解锁时被**飞控自己**拦下 ——
       `crash dumps present on SD, vehicle needs service`（SD 卡根目录有硬故障转储 `fault_2000_01_01_00_00_01.log`，
-      内容 = `wq:I2C1` 硬故障）⟹ 见 [ticket 20](20-fcu-hardfault-i2c1-crash-dump.md)（只读取证 + 清障）
+      内容 = `wq:I2C1` 硬故障）⟹ 见 [ticket 20（已删）](../DELETED.md)（只读取证 + 清障）
       ✅ **同日 07:57 已清障**（用户授权，`/mavros/ftp/remove`，删前已留档）★ 但**真正放行要等一次重启**（见下）
       ✅ **同日 08:17:53 触发成功**（操作者解锁、**拆桨**、电机点转 4.2 s 后上锁）：
       日志打出「★ 阶段 B：解锁上升沿后的起飞前原点已锁定 —— 切换发生在此刻」（帧 stamp `1790065073.227048635`），
@@ -368,7 +368,7 @@ router 日志 `link[1002] opened successfully`。
 1. `ros2 topic hz /vrpn/z0/pose` 在断流期**打不出任何读数**（只 `Terminated`）⟹ **上游就没在发**，
    不是订阅侧丢帧；★ 这个观察者是**宽容**的（best_effort 订阅方兼容两种发布方）⟹ "零帧"是真零帧；
 2. `ros2 topic info -v /mocap/pose_enu` → `Publisher count: 1`（`mocap_rel_pose`）、`Subscription count: 0`
-   ⟹ 图上**没有第二个发布者**（详见 [ticket 19](19-unidentified-pose-enu-publisher.md) 的排除清单）；
+   ⟹ 图上**没有第二个发布者**（详见 [ticket 19（已删）](../DELETED.md) 的排除清单）；
 3. `mocap` 节点的订阅与其 QoS 自 `06:27:33` 起未变，同一订阅在断前断后都收到 ~200 Hz
    ⟹ 不是"best_effort 发布方配 reliable 订阅方"那类**静默收不到**（那个坑的表现是"从来收不到"，不是"收 280 万帧后停"）。
    旁证：`/tmp/z0_vrpn.log`（mtime `07:04`）里 Nokov 侧反复 TCP `dropping connection`。
@@ -413,14 +413,14 @@ router 日志 `link[1002] opened successfully`。
 唯一发布点 `:196-197`（在 `on_pose` 内）、`on_state`（`:126-130`）只写 `has_state_/armed_`、
 订阅只有 `/vrpn/z0/pose`（`:84-86`）与 `/mavros/state`（`:87-89`）。
 
-已排除的候选（每条都有第一手证据，**清单见 [ticket 19](19-unidentified-pose-enu-publisher.md)**）：
+已排除的候选（每条都有第一手证据，**清单见 [ticket 19（已删）](../DELETED.md)**）：
 第二个发布者、mavros、`control` 节点自己、QoS 错配、sim time / `/clock`、第二份工作区或第二个 `mocap` 进程、
 rosbag 回放、本仓库的 bench fixture（硬拒 domain 0）、cron/systemd/自启。
 
 ★ **安全含义要写清**：这一帧只影响 `control` 的**守卫**（"动捕有数据"），**没有**污染控制律
 （位置来自 EKF2 的 `local_position`）；同一时刻 `/mavros/vision_pose/pose` 上
 `Publisher count: 1`（仍是 `mocap_rel_pose`）⟹ **EKF2 那 800.2 s 确实没有视觉**。
-但"守卫能被一个来历不明的发布者满足"本身是缺陷级问题 ⟹ 已另开 [ticket 19](19-unidentified-pose-enu-publisher.md)。
+但"守卫能被一个来历不明的发布者满足"本身是缺陷级问题 ⟹ 已另开 [ticket 19（已删）](../DELETED.md)。
 
 #### 台架前提（★ 记录读数时必须带上，否则会被读高）
 
@@ -483,7 +483,7 @@ rosbag 回放、本仓库的 bench fixture（硬拒 domain 0）、cron/systemd/�
   拒绝（见上方验收项）；`07:52–07:59` 删掉转储后，飞控**到 `08:02:46` 仍在报同一条** ——
   直到 `sess259`（`08:11:01`）/ `sess260`（`08:15:13`）**两次开机之后**，`08:17:52` 的解锁才通过。
   ⟹ 准确说法是「**被拦 → 删 + 重启 → 能解锁**」；别写成"删了就通"（细节见
-  [ticket 20](20-fcu-hardfault-i2c1-crash-dump.md) §四，那条**机制未验**，只作操作纪律）。
+  已删的 ticket 20 §四，那条**机制未验**，只作操作纪律 —— 纪律本身现已落进 [`bench-runbook.md`](../../../docs/control/bench-runbook.md) 的 P0）。
 - **点转没有产生新转储**：解锁 + 电机无桨点转 4.2 s 之后，SD 卡根目录仍是
   `APM / dataman / log / parameters_backup.bson`（**无 `fault_*` 文件**）⟹ 这次点转没有触发硬故障。
 - `/mavros/vision_pose/pose` 同时刻 **197.7 Hz**（10 s / 1977 帧）⟹ 链路在跑，不是"EKF2 拿到了空输入"。

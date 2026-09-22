@@ -1,12 +1,17 @@
 # 05: `control` 骨架 —— mavros 接口 + OFFBOARD 心跳流 + `INIT→STANDBY`，含假 mavros 台架
 
-Status: ready-for-human
+Status: done
 Type: task
 
-> ⚠️ **为什么是 `ready-for-human` 而不是 `done`**：代码与台架夹具**已完成并全绿**，
-> 但**两条验收项判的完全是 PX4 侧行为**（真 PX4 被拉进 OFFBOARD；杀节点后 PX4 在 `COM_OF_LOSS_T`
-> 后自行退出）—— 夹具**不模拟 PX4**（那是 SITL / 真机的职责），而且当前 `/dev/ttyTHS1`
-> 被另一会话的 mavros 占着。剩下的事需要**人 + 空闲的飞控 + 拆桨台架**。详见下方 Comments。
+> ✅ **2026-09-22 用户裁定：收 `done`**（原为 `ready-for-human`）。代码与台架夹具已完成并全绿。
+> ★ **但两条验收项仍然没勾，它们没有消失，也没被 `done` 盖住**（按 `triage-labels.md` 对 `done` 的
+> 定义，未决事项必须**点名**）：
+> ① 的后半句「台架上节点把 PX4 拉进 OFFBOARD + setpoint 50 Hz 字段正确」
+> 与 ② 「断流实验：杀节点 ⟹ PX4 在 `COM_OF_LOSS_T` 后自行退出 OFFBOARD」——
+> **判据全在 PX4 一侧**（夹具不模拟 PX4），只能由人 + 空闲飞控 + 拆桨台架给。
+> ⟹ 两步的操作、判据、要记的读数已整理进
+> [`docs/control/bench-runbook.md`](../../../docs/control/bench-runbook.md) 的 **T3 / T5**，
+> 台架时照它走；跑完把读数回填本票并把框勾上。详见下方 Comments。
 
 **What to build:** 机载电脑第一次真正"接管"飞机：节点把 PX4 拉进 OFFBOARD，并以 **50 Hz** 持续流「位置 + yaw」setpoint —— 但**先不飞任何轨迹**，状态只走到 `STANDBY`（未解锁、已在流）。
 
