@@ -120,7 +120,8 @@ ros2 topic hz /mocap/pose_enu                                #    有数
 ★ 此时期望 `/control/state` = **`MANUAL/STANDBY`**（未解锁 ⟹ 控制权 `MANUAL`，`fsm.hpp:475`）。
 
 ## T4. `/control/takeoff` 程序解锁 ⟹ 锁原点 + 进 `TAKEOFF`
-（**ticket 08 阶梯第 1 级**；同时勾 ticket 13 的未勾项）
+（**ticket 08 阶梯第 1 级**；[ticket 13](../../.scratch/phase1/issues/13-mavros-bench-vision-pose.md) 已于 2026-09-22 `done`
+—— 本项若这次的**跳变量**没记，回填 [ticket 13](../../.scratch/phase1/issues/13-mavros-bench-vision-pose.md) 的 **§残留读数** 第 3 行）
 
 ★ **这是全程唯一的解锁动作**（ticket 08 起 QGC 手动解锁会被判成"外部解锁 ⟹ 停发"）。
 
@@ -139,7 +140,7 @@ ros2 topic hz /mocap/pose_enu                                #    有数
 | **做** | 承接 T3 的状态（未解锁 + `OFFBOARD` + `STANDBY` + 正在流），然后：`ros2 service call /control/takeoff std_srvs/srv/Trigger` |
 | **判据** | ① 服务应答 `success: true` **且有 `message`**（◎ 被拒时 `message` 要能说出缺什么）；② 日志 `MAV_RESULT=0`（`ACCEPTED`，`common.h:1135`；**被拒时把这个码原样记下来** —— prearm 失败到底报哪个码，只有真飞控能给）；③ 日志 `takeoff_origin=(x, y, z)`，且**不等于动捕原点**（EKF2 局部原点是它自己的）；④ `/control/state` 变 **`AUTO/TAKEOFF`**；⑤ `ros2 topic echo /mavros/setpoint_raw/local` 的 `z` **线性上升、斜率 ≤0.5 m/s、封顶 1.0 m**，水平两轴钉在 `takeoff_origin` 上；⑥ `mocap` 节点日志打出「★ 阶段 B … 切换发生在此刻」，**切换瞬间位置跳变 ≈ 0**（> 0.05 m 会同时 WARN） |
 | **判据（止于此）** | ⚠️ **无桨 ⟹ 没有推力 ⟹ 飞机一直在起飞原点上，`/control/state` 永远停在 `AUTO/TAKEOFF`**。`TAKEOFF→HOVER` 的判据 `\|z − (原点+1.0)\| < 0.10 m` **按字面不可能成立** ⟹ **本项不判 `HOVER`**，那是阶梯第 2/3 级（要装桨）。别在台架上等 `WAIT_START` |
-| **记录** | `MAV_RESULT` 码；`takeoff_origin` 三个数；`z` 斜坡的终点与用时；跳变量（m）；`armed` 上升沿与"进 `OFFBOARD`"的时刻 |
+| **记录** | `MAV_RESULT` 码；`takeoff_origin` 三个数；`z` 斜坡的终点与用时；★ **跳变量（m）—— 期望 ≈ 0**（越 0.05 m 时节点会打 `⚠️ 两阶段原点切换量 … 超过阈值`，把那一行原样记下来；台架至今只观测到"越阈值"那一情形，见 [ticket 13](../../.scratch/phase1/issues/13-mavros-bench-vision-pose.md) 的 §残留读数）；`armed` 上升沿与"进 `OFFBOARD`"的时刻 |
 | **卡住看哪** | 服务被拒 ⟹ 看 `message` 缺哪一条前置（遥控在线是最常见的：台上没接接收机时**永远解不了锁**，刻意如此）；`MAV_RESULT=4` ⟹ `FAILED`，看 QGC 的 STATUSTEXT |
 
 ## T5. 杀节点 ⟹ PX4 在 `COM_OF_LOSS_T` 后**自行退出** `OFFBOARD`（勾 ticket 05 的 ②）
@@ -215,3 +216,4 @@ T5/T6/T7 的判据**全部在 PX4 里**：
 | T4（解锁 + 锁原点 + `TAKEOFF` 斜坡） | [ticket 08](../../.scratch/phase1/issues/08-takeoff-hover-land.md) 的**验收阶梯第 1 级**（阶梯第 2/3/4 级要装桨，不在本清单） |
 | T6 / T7 | [ticket 06](../../.scratch/phase1/issues/06-control-failsafe-paths.md) 的验收项 ① 后半（④ 见 ticket 16） |
 | A1（`NAV_RCL_ACT = 1`） | [`params-changes.md`](../reference/params-changes.md) §A 的首飞阻塞项 |
+| **T1 / T2 / T4 的「记录」列里还没填的三处读数**（① 的"不跳"、⑥ 的三个 Δ、T4 的跳变量） | [ticket 13](../../.scratch/phase1/issues/13-mavros-bench-vision-pose.md) 的 **§残留读数** —— 13 已 `done`，这三处是**不藏在 `done` 下面**的残留（`done` 的语义见 [`triage-labels.md`](../agents/triage-labels.md)） |

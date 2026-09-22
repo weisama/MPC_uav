@@ -156,7 +156,7 @@ Type: task
     （或改用 `python3 /tmp/z0_ftp_ls.py /fs/microsd` 手工列）。
 - **2026-09-22（agent，★ 一处引用的可靠性提醒 —— 待复核，不是结论）**：
   本票 §2.2 的源码引用**全部**取自 `/home/chen/refs/px4-z0` @ **`5ba2e91f`**，而
-  [`spec.md`](../../.scratch/phase1/spec.md) §Further Notes 已更正过：`5ba2e91f` 是**与 z0 无关**的 fork，
+  [`spec.md`](../spec.md) §Further Notes 已更正过：`5ba2e91f` 是**与 z0 无关**的 fork，
   z0 的固件真身是 `Minderring/PX4-Autopilot` @ **`4a0e65f2`**（v1.14.3 系的 MicoAir 厂商构建）。
   ⟹ **"无关 fork 的源码"不能直接当作 z0 的证据**。现状：§2.2 里**只有一条**做了官方对照
   （`DShot.cpp` 的 `outputs_on`：官方 v1.14.3 @ `1dacb4c` `:458` 写法一字不差），

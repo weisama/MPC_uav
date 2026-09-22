@@ -167,7 +167,7 @@ mavros 的判据是 `conn_timeout`（**默认 10.0 s**，`mavros/src/plugins/sys
 2. 真要做根因排查时（**不急**）：`HKUST_NXT_DUAL` / `micoair743-v1.14.3` 板级配置里 I2C1 挂了谁、
    `wq:I2C1` 在跑谁的驱动。★ 本机**有** PX4 参考树：`/home/chen/refs/px4-z0`（ticket 21 引的 `5ba2e91f`）、
    `px4-v1.14.3`（官方 `1dacb4c`）、`px4-v1.15.0`、`px4-v1.16.0`。
-   ⚠️ **别把 `px4-z0` 当 z0 的固件树**：`5ba2e91f` 是**与 z0 无关**的 fork（[`spec.md`](../../.scratch/phase1/spec.md) §Further Notes 已更正过这条）；
+   ⚠️ **别把 `px4-z0` 当 z0 的固件树**：`5ba2e91f` 是**与 z0 无关**的 fork（[`spec.md`](../spec.md) §Further Notes 已更正过这条）；
    z0 的固件真身 = `Minderring/PX4-Autopilot` @ **`4a0e65f2`**（v1.14.3 系的 MicoAir 厂商构建）
    ⟹ 引源码时**优先官方 `px4-v1.14.3`（`1dacb4c`）那棵**，`px4-z0` 只作旁证，且两条结论要对得上。
    ⚠️ **2026-09-22 实测踩到的坑：这些树的工作区文件已被删**（`px4-v1.14.3` 是 staged 删除 5867 个文件，
