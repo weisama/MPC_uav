@@ -1,6 +1,6 @@
 # 14: 装 mavros 2.15.1 —— ★ arm64 二进制在可达镜像里**全都没有**，改源码构建（pin tag 2.15.1）
 
-Status: ready-for-agent
+Status: ready-for-human
 Type: task
 
 **为什么单开一张：** [ticket 13](13-mavros-bench-vision-pose.md) 的第 1 步写的是
@@ -117,6 +117,14 @@ colcon build --parallel-workers 4 --cmake-args -DCMAKE_BUILD_TYPE=Release
       ⟹ ✅ 已写进 [`mocap-setup.md`](../../../docs/reference/mocap-setup.md) **§5.1**（apt 那条已就地作废）
 - [ ] 回到 [ticket 13](13-mavros-bench-vision-pose.md) 做 QGC 侧验收
       ⏳ 余下两条**需要人到 QGC 现场**（① 目视 + ⑥ 轴向确认）与**拆桨解锁**一次；其余已就地做完
+      ★ **2026-09-22 拆分（三项里两项已答回、一项没做成 ⟹ 本格不勾）**：
+      - ✅ **① QGC 目视**（`VISION_POSITION_ESTIMATE` 与 `LOCAL_POSITION_NED` 都有数）—— 操作者报回；
+      - ✅ **⑥ 轴向确认**（左 `x+` / 机头 `y+` / 下 `z+` ⟹ 显示的是 NED ⟹ **ENU→NED 转换确实发生了**）；
+        两项的原话、agent 解读、数据窗见 [ticket 13](13-mavros-bench-vision-pose.md) §实测 2026-09-22；
+      - ⏳ **拆桨解锁一次（阶段 B）没做成**：当天动捕输入在 `06:52:02.8→07:05:22.9` 断流 800.2 s，
+        而所有解锁都落在断流窗口里 ⟹ 边沿被错过
+        （阶段 B 的触发在 `on_pose` 内，`mocap_rel_pose_node.cpp:171/190`，**不是代码缺陷**）。
+        **本项在 [ticket 13](13-mavros-bench-vision-pose.md) 的验收项里跟踪**，须在动捕数据通时重做。
 
 ## 坑（开做前先看）
 
@@ -164,3 +172,21 @@ colcon build --parallel-workers 4 --cmake-args -DCMAKE_BUILD_TYPE=Release
 **本张的连带产出**：读飞控参数的正确方式被摸清（`/mavros/param/get` 在 ROS2 版**不存在**，
 参数走标准 ROS 参数接口；缓存 915 条）⟹ 已就地做了 `z0.params` ↔ 飞控真身的**逐条对账**，
 另开 [ticket 15](15-fcu-param-reconciliation.md)。
+
+### 2026-09-22 —— 最后一条验收：三项里 ✅ 两项，第 3 项（阶段 B）没做成 ⟹ **本张保持 open**
+
+**mavros 这一侧的东西全部做完并已实测**：源码构建三包 0 失败（tag/commit 已核）、连飞控、
+`/mavros/state` = `1.00 Hz`、`vision_pose` 链路被**飞控自己的** EKF2 证实真的在融合（`pos_horiz_abs` 反转实验）、
+provenance 已入 [`mocap-setup.md`](../../../docs/reference/mocap-setup.md) §5.1。
+本张唯一的开口就是验收项最后一条"回到 13 做 QGC 侧验收"—— 今天被拆成三项：
+
+| 子项 | 结果 |
+|---|---|
+| ① QGC 目视（两话题有数） | ✅ 操作者报回 |
+| ⑥ 轴向确认（左 `x+` / 机头 `y+` / 下 `z+` ⟹ NED ⟹ 转换确实发生） | ✅ 操作者报回 |
+| **拆桨解锁一次（阶段 B）** | ⏳ **没做成** —— 当天动捕输入断流 800.2 s，解锁边沿全被错过 |
+
+⟹ `Status: ready-for-agent → ready-for-human`（剩下的一步要人到现场，且**要先让动捕数据通**；
+它本身在 [ticket 13](13-mavros-bench-vision-pose.md) 的验收项里跟踪）。
+★ 不把这一格勾掉的理由很直白：`done` 的定义是"验收项**全部**勾上"，而这一格的三项里有一项没发生 ——
+按本仓库的规矩，不能靠 `done` 掩盖（`docs/agents/triage-labels.md`）。
