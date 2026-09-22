@@ -191,6 +191,7 @@ provenance 已入 [`mocap-setup.md`](../../../docs/reference/mocap-setup.md) §5
 🚧 **2026-09-22 追加阻塞**：操作者随后试解锁，被**飞控自己**拒绝 ——
 `crash dumps present on SD, vehicle needs service`（SD 卡根目录有硬故障转储，内容 = `wq:I2C1` 硬故障）
 ⟹ **清障之前"拆桨解锁一次"做不了**，见 [ticket 20](20-fcu-hardfault-i2c1-crash-dump.md)。
+✅ **同日 07:57 已清障**（用户授权，删前已留档）⟹ 阻塞解除，可重做最后一步（还差动捕数据通）。
 ★ 这条阻塞**不属于 mavros**（mavros 侧本张已全部实测完），只是挡在最后一步前面。
 ★ 不把这一格勾掉的理由很直白：`done` 的定义是"验收项**全部**勾上"，而这一格的三项里有一项没发生 ——
 按本仓库的规矩，不能靠 `done` 掩盖（`docs/agents/triage-labels.md`）。
