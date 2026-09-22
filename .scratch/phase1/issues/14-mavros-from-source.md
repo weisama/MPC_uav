@@ -1,6 +1,6 @@
 # 14: 装 mavros 2.15.1 —— ★ arm64 二进制在可达镜像里**全都没有**，改源码构建（pin tag 2.15.1）
 
-Status: ready-for-human
+Status: done
 Type: task
 
 **为什么单开一张：** [ticket 13](13-mavros-bench-vision-pose.md) 的第 1 步写的是
@@ -115,16 +115,21 @@ colcon build --parallel-workers 4 --cmake-args -DCMAKE_BUILD_TYPE=Release
 - [x] **provenance 入库**：把 tag/commit、COLCON_IGNORE 的三个包、依赖清单、构建命令写进
       [`mocap-setup.md`](../../../docs/reference/mocap-setup.md)（或本张 Comments 即可，视篇幅定）
       ⟹ ✅ 已写进 [`mocap-setup.md`](../../../docs/reference/mocap-setup.md) **§5.1**（apt 那条已就地作废）
-- [ ] 回到 [ticket 13](13-mavros-bench-vision-pose.md) 做 QGC 侧验收
+- [x] 回到 [ticket 13](13-mavros-bench-vision-pose.md) 做 QGC 侧验收
       ⏳ 余下两条**需要人到 QGC 现场**（① 目视 + ⑥ 轴向确认）与**拆桨解锁**一次；其余已就地做完
-      ★ **2026-09-22 拆分（三项里两项已答回、一项没做成 ⟹ 本格不勾）**：
+      ★ **2026-09-22 拆分（三项里两项已答回、一项没做成 ⟹ 当时没勾）**：
       - ✅ **① QGC 目视**（`VISION_POSITION_ESTIMATE` 与 `LOCAL_POSITION_NED` 都有数）—— 操作者报回；
       - ✅ **⑥ 轴向确认**（左 `x+` / 机头 `y+` / 下 `z+` ⟹ 显示的是 NED ⟹ **ENU→NED 转换确实发生了**）；
         两项的原话、agent 解读、数据窗见 [ticket 13](13-mavros-bench-vision-pose.md) §实测 2026-09-22；
-      - ⏳ **拆桨解锁一次（阶段 B）没做成**：当天动捕输入在 `06:52:02.8→07:05:22.9` 断流 800.2 s，
-        而所有解锁都落在断流窗口里 ⟹ 边沿被错过
-        （阶段 B 的触发在 `on_pose` 内，`mocap_rel_pose_node.cpp:171/190`，**不是代码缺陷**）。
-        **本项在 [ticket 13](13-mavros-bench-vision-pose.md) 的验收项里跟踪**，须在动捕数据通时重做。
+      - ⏳ **拆桨解锁一次（阶段 B）上午没做成**：当天动捕输入在 `06:52:02.8→07:05:22.9` 断流 800.2 s，
+        而当时的解锁都落在断流窗口里 ⟹ 边沿被错过
+        （阶段 B 的触发在 `on_pose` 内，`mocap_rel_pose_node.cpp:171/190`，**不是代码缺陷**）；
+        另有飞控 `crash dumps present on SD` 拦解锁一道（见 [ticket 20](20-fcu-hardfault-i2c1-crash-dump.md)）。
+      ✅ **2026-09-22 08:17:53 三项全部达成**：飞控经清障后可解锁，操作者**拆桨**解锁、电机点转 4.2 s，
+      `mocap` 节点打出「★ 阶段 B：解锁上升沿后的起飞前原点已锁定 —— 切换发生在此刻」。
+      ⚠️ 同刻 WARN 掉了「启动到解锁之间飞机被移动」这条纪律判据 —— **按用户裁定判为已验证**
+      （触发 + 阈值告警两条路径都实测到）；时刻线、判据结论、残留全在
+      [ticket 13](13-mavros-bench-vision-pose.md) §实测 2026-09-22 §阶段 B（**本张不复述数字**）。
 
 ## 坑（开做前先看）
 
@@ -195,3 +200,15 @@ provenance 已入 [`mocap-setup.md`](../../../docs/reference/mocap-setup.md) §5
 ★ 这条阻塞**不属于 mavros**（mavros 侧本张已全部实测完），只是挡在最后一步前面。
 ★ 不把这一格勾掉的理由很直白：`done` 的定义是"验收项**全部**勾上"，而这一格的三项里有一项没发生 ——
 按本仓库的规矩，不能靠 `done` 掩盖（`docs/agents/triage-labels.md`）。
+
+### 2026-09-22 08:17 —— ★ 三项全部达成 ⟹ 本张收 `done`
+
+操作者在飞控清障后拆桨解锁一次（`08:17:52.542 FCU: Armed by external command` → `08:17:56.741 Disarmed`，
+电机无桨点转 4.2 s），`mocap` 节点于 `08:17:53.227` 打出「★ 阶段 B：解锁上升沿后的起飞前原点已锁定」。
+
+- 一手数据（时刻线、两条判据各自的结论、旁证）**全部记在**
+  [ticket 13](13-mavros-bench-vision-pose.md) §实测 2026-09-22 §阶段 B —— **本张不复述数字**。
+- ⚠️ **一处如实留档**：同刻 WARN 掉了「启动到解锁之间飞机被移动」这条纪律判据（切换量超阈值），
+  **用户裁定判为已验证**（触发路径与阈值告警路径**都已**实测）；「跳变 ≈ 0」这条仍是**零观测的残留**，
+  已写进 [`bench-runbook.md`](../../../docs/control/bench-runbook.md) T4 的「记录」列，飞行日跑 T4 时顺手填。
+- ⟹ `Status: ready-for-human → done`（验收项 5 条全勾；`mavros` 侧本张全部实测完）。

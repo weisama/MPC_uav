@@ -81,6 +81,8 @@ ros2 topic hz /mocap/pose_enu                                #    有数
 ```
 
 ⚠️ **串口归属**：`/dev/ttyTHS1` 只能有一个 mavros。别让另一个会话占着（ticket 14）。
+★ **③ 会在 T3 之前被重起一次**（不是笔误）：T1/T2 要搬飞机，而阶段 A 原点在节点启动时就锁定了
+⟹ **重起它，让阶段 A 原点 = 起飞点**（重起后别再碰飞机）。见 T4 的 ★ 那条。
 ⚠️ **别在 domain 0 上跑夹具**（夹具**拒绝** domain 0 —— 那里跑着真 mavros + 真飞控，见 ticket 05/17）。
 
 ---
@@ -121,6 +123,16 @@ ros2 topic hz /mocap/pose_enu                                #    有数
 （**ticket 08 阶梯第 1 级**；同时勾 ticket 13 的未勾项）
 
 ★ **这是全程唯一的解锁动作**（ticket 08 起 QGC 手动解锁会被判成"外部解锁 ⟹ 停发"）。
+
+★ **在 T3 起链之前，把 `mocap` 节点重起一次**（`Ctrl-C` 掉 `ros2 launch mocap mocap.launch.py`，
+确认飞机**已摆好、静止**，再起；等日志打出「★ 阶段 A：启动原点已锁定」且 `/mocap/pose_enu` 有数 ⟹ 之后**别再碰飞机**）。
+- **为什么**：**阶段 A 原点在节点启动时锁定**（30 帧均值），解锁上升沿才切到阶段 B（60 帧均值）。
+  而 T1/T2 要求搬飞机（T2 的 ⑥ 就是"人挪 59.4 cm"）⟹ **走到这里时阶段 A 原点通常已经过期**；
+  不重起的话两阶段切换量 > 0.05 m ⟹ 节点打 WARN，并把这**同量的位置跳变灌给 EKF2**（EKF2 当成真实运动）。
+- **为什么放在 T3 之前而不是 T3/T4 之间**：T3 只是起链与进 `OFFBOARD`，**不动飞机**；
+  夹在 T3 与 T4 之间重起会让 EKF2 在解锁前几秒丢掉视觉输入（台架上无害，但没必要）。
+- ⚠️ **2026-09-22 实测**：未重起 ⟹ 切换量 **`0.5738 m`**（`mocap_rel_pose_node` 日志 WARN 原文见
+  [ticket 13](../../.scratch/phase1/issues/13-mavros-bench-vision-pose.md) §实测 2026-09-22 §阶段 B）。
 
 | | |
 |---|---|
@@ -198,7 +210,7 @@ T5/T6/T7 的判据**全部在 PX4 里**：
 
 | 本清单的项 | 关掉哪张票的验收 |
 |---|---|
-| T1 / T2 / T4 | [ticket 13](../../.scratch/phase1/issues/13-mavros-bench-vision-pose.md)（`ready-for-human`；T2 读数还要回填 ticket 04） |
+| T1 / T2 / T4 | [ticket 13](../../.scratch/phase1/issues/13-mavros-bench-vision-pose.md)（✅ **`done`**：① ⑥ 与阶段 B 已于 2026-09-22 达成；★ 但 T4 的「跳变量（m）」当时未记 ⟹ 飞行日跑 T4 时顺手填，见 [ticket 13](../../.scratch/phase1/issues/13-mavros-bench-vision-pose.md) §实测 2026-09-22 §阶段 B） |
 | T3 / T5 | [ticket 05](../../.scratch/phase1/issues/05-control-offboard-skeleton.md) 的两条遗留 |
 | T4（解锁 + 锁原点 + `TAKEOFF` 斜坡） | [ticket 08](../../.scratch/phase1/issues/08-takeoff-hover-land.md) 的**验收阶梯第 1 级**（阶梯第 2/3/4 级要装桨，不在本清单） |
 | T6 / T7 | [ticket 06](../../.scratch/phase1/issues/06-control-failsafe-paths.md) 的验收项 ① 后半（④ 见 ticket 16） |
