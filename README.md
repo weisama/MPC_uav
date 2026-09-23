@@ -50,6 +50,8 @@
 │   └── assets/
 │       ├── z0.params                 z0 飞控参数（928 行，待上机核实）
 │       └── papers/                   6 篇参考文献 + 中文索引
+├── run/                              ★ **人工启动层**：`z0.py` 交互菜单（起链 + 每步核对）——
+│                                          不含飞行逻辑，也不替代台架清单 —— 见 [`run/README.md`](run/README.md)
 ├── tools/prereq-evidence/            ★ 前置条件取证脚本（只读）—— 服务 ticket 01
 └── src/                              ★ ROS2 工作区（**colcon 根 = 仓库根**，构建产物已被 .gitignore 挡住）
     ├── vrpn_listener/                ✅ 动捕链路，vendored 原样 —— 读它的 VENDORED.md，**别读它的 README.md**
@@ -68,7 +70,8 @@
 > `mocap` 与它的测试见 [`src/mocap/README.md`](src/mocap/README.md)（`colcon test --packages-select mocap`）；
 > `traj` 见 [`src/traj/README.md`](src/traj/README.md)（`--packages-up-to traj`，**它的 seam 1 也依赖 `bench`**）；
 > `control` 见 [`src/control/README.md`](src/control/README.md)、夹具见 [`src/bench/README.md`](src/bench/README.md)；
-> **一键启动与操作台**见 [`src/bringup/README.md`](src/bringup/README.md)（`ros2 launch bringup z0.launch.py` + `ros2 run bringup fly.py`）。
+> **一键启动与操作台**见 [`src/bringup/README.md`](src/bringup/README.md)（`ros2 launch bringup z0.launch.py` + `ros2 run bringup fly.py`）；
+> **现场那几条命令与每步核对**收在 [`run/z0.py`](run/z0.py) 的菜单里（`run/z0.py --list` 看有哪些，见 [`run/README.md`](run/README.md)）。
 > ⚠️ `control` 的测试依赖 `bench` ⟹ 用 **`colcon build --packages-up-to control`**，
 > `--packages-select control` 会因缺 `test_depend` 失败。
 > ★ 全仓库既有 **172 条 lint 失败**全部来自 vendored 的 `vrpn_listener`（`mocap`/`traj`/`bench`/`control`/`bringup`

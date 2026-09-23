@@ -95,6 +95,10 @@ ticket 06 时期本张还没有解锁路径，于是有个参数 `own_arming` �
 
 ### 起链（顺序不能反）
 
+> ★ **这一节的命令与核对已收进 [`run/z0.py`](../../run/z0.py) 的菜单**（3= mavros / 4= vrpn /
+> 5= mocap / **2= 起链核对**；它自带你上面那三条 `source`）。★ 但**本表仍是判据与记录的权威** ——
+> 脚本只把命令送出去、把读数摊开，**不含任何解锁/起飞入口**（见 [`run/README.md`](../../run/README.md)）。
+
 ```bash
 source /opt/ros/humble/setup.bash && source ~/mavros_ws/install/setup.bash && source ~/ros_ws/install/setup.bash
 ros2 launch mavros px4.launch fcu_url:=/dev/ttyTHS1:921600   # ① 串口定案见 ticket 13/14

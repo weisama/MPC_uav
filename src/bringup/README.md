@@ -9,6 +9,11 @@ ros2 run    bringup fly.py                # 操作台：选轨迹 1/2/3 + 实时
 ros2 launch bringup mavros.launch.py      # 单独起 mavros（上游 px4.launch 的薄包装）
 ```
 
+★ **懒得手打上面这几条**（以及 mavros/vrpn/mocap 分开起、起完核对）：[`run/z0.py`](../../run/z0.py)
+是给人工用的启动菜单（用法与排障见 [`run/README.md`](../../run/README.md)）—— 它带 `source` 前缀、
+每步给读数、并且**不含任何解锁/起飞入口**（与下面的「起完之后**还差两步**」一致）；
+`use_vrpn:=false` 这条**它在起之前会问一句**。本文件仍是参数的权威出处。
+
 ## 一键 bringup
 
 | 参数 | 默认 | 说明 |
