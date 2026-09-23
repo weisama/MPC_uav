@@ -427,6 +427,16 @@ PARAM_DEFINE_INT32(COM_RC_IN_MODE, 3);
 4. **仍待核实**（见 §3.10）：物理接收机到底接在哪个口、走 CRSF 还是 MAVLink。`COM_RC_IN_MODE` 只决定
    "接受哪类源"，不决定"接收机接在哪"。
 
+☠️ **2026-09-23 更正：上面第 3 条从"预测"变成了"实测"，且处置反过来 —— 值已改成 `0`。**
+
+第 3 条预言的场面**在真机上发生了**：QGC 先上线 ⟹ MAVLink 源被 `_first_valid_source` 锁到重启
+（`ManualControlSelector.cpp:59-62`，真身 `4a0e65f2`）⟹ `ManualControl::processSwitches()` 那条
+`if (data_source == SOURCE_RC)`（`ManualControl.cpp:172`）永不成立 ⟹ **ch6 模式开关 / ch5 解锁开关 /
+☠️ ch8 杀车 / 内八手势 全部静默失效**（现场症状：拨 ch6 模式不变，且**没有任何 STATUSTEXT**）。
+**⟹ 本节第 1/2 条（"枚举含义没问题"）仍然成立，但"不是警报"这个处置是错的。**
+现役值 = **`0`**（RC only）。完整链条、复现证据与两条操作纪律见
+[`params-changes.md`](params-changes.md) **§I.3**（本节不再重复）。
+
 
 ### 3.10 ⚠️ `MAV_0` / `SER_TEL1_BAUD` 与遥控器接收机的关系
 

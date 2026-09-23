@@ -110,7 +110,7 @@
 | D1 | `COM_RC_OVERRIDE` | **`3`** | `1` | **刻意放宽**了打杆接管的适用范围 —— 是 **Q5 接管方案**的真实参数基础 | 
 | D2 | `COM_RC_STICK_OV` | **`20`** | `30.0` | **刻意收紧**。☠️ **阈值语义是「归一化摇杆的每秒变化率」`0.2/s`，不是"打杆 20%"** —— 早期口径已更正，见下文 **§H.11**。与 D1 合起来说明"打杆接管"被**有意配强过** |
 | D3 | `COM_OBL_RC_ACT` | **`0`**（= Position） | — | **Q5 决策**：打杆接管时切到 Position 模式 |
-| D4 | `COM_RC_IN_MODE` | **`3`** | `3`（v1.14 默认） | ✅ **已结案**：`3` = "RC **或** Joystick，保留先到者"。**不是警报**。⚠️ 但注意"先到者保留到重启"这个语义（与 Nxt-FC 的启动时序 bug 相关） |
+| D4 | `COM_RC_IN_MODE` | **`0`** ← 2026-09-23 由 `3` 改（用户当场拍板） | `3` | ☠️ **原判「已结案、不是警报」已被实测推翻**（2026-09-23）。`3` = "保留先到者到**重启**"，而 QGC 一上来就发 `MANUAL_CONTROL` ⟹ 飞控把 **MAVLink 源锁成首选源**；`ManualControl` **只在选中源 `== SOURCE_RC` 时评估开关** ⟹ **整个遥控开关层被静默旁路**：ch6 模式开关 / ch5 解锁开关 / ☠️ **ch8 杀车** / 内八手势**全部失效**（现场症状："拨 ch6 模式不变"，且**连拒绝的 STATUSTEXT 都没有**）。改成 `0`（只收 RC）后当场复现：ch6 拨档 ⟹ 模式跟着走。★ 本节原意是"别按默认值改回去"—— 这一条的现役值就是 **`0`，别改回 `3`**。第一手链条与复现证据见 **§I.3** |
 | D5 | `EKF2_EV_DELAY` | **`50.0`** | — | ★ **与用户实测的 50 ms 完全一致** —— 强佐证，**不要动** |
 | D6 | `EKF2_BARO_CTRL` + `EKF2_BARO_GATE` | `1` + **`1000`** | — | 这是 **1.14 时代"变相禁用气压计"的写法**（大 gate）。用户笔记 1.16 段建议 `EKF2_BARO_CTRL = 0` —— **两者不矛盾，是同一意图的两个版本写法**。⚠️ **别按 1.16 的思路把这个 `1` 直接改成 `0` 而忘了 gate** |
 | D7 | `PWM_MAIN_FUNC1..4` | **`103, 102, 101, 104`** | `1,2,3,4` | **刻意改过的非默认电机序 `3-2-1-4`**，且有独立第二来源印证。⚠️ **仍需现场确认"物理口→机体角"的完整映射**（要配合 `CA_ROTOR` 表一起看），但**别在没确认前乱改** |
@@ -367,7 +367,11 @@ RC_KILLSWITCH_TH = 0.75, getRCSwitchOnOffPosition()  → rc_update.cpp:637 / 558
 - 手段：`/mavros/rc/in`，看 `channels[8]`（ch9）在拨开关时**由低到高**；顺手拨 ch6 确认模式切换只认 ch6。
 - ⚠️ **要试 ch8 杀车必须先拆桨**。
 - **不符就回 ticket 02 改决定，不要就地改代码**（ticket 02 原文要求）。
-- ⚠️ **当前做不了** —— 遥控链路现在是断的，见 H.9。
+- ⏳ **截至 2026-09-23 仍未做**，但**阻塞换了**：**遥控链路已通**（2026-09-23 实测
+  `/mavros/rc/in` ≈8–10 Hz —— H.9 那句"链路是断的"只描述 **09-21 那一刻**，不是现状），
+  剩下的唯一阻塞是 **H.4 的 EdgeTX 侧 CH9 分配**（纯人工动作）。
+- ★ **做本项之前先读 §I.3**：`COM_RC_IN_MODE` 曾是 `3`，会让**整个遥控开关层静默失效**
+  —— 在那个状态下做本项，得到的会是"拨了没反应"的**假结论**（当时的实测症状正是如此）。
 
 ### H.9 2026-09-21 的实测状态（诚实交代）
 
@@ -471,11 +475,24 @@ rclpy 定时器**，抖动是真实的：`test_control_track.py` 的 T1/T6 里�
 ★ **裁定后仍留白的**（不许用 `done` 掩盖）：第 3–8 条**一条都还没做**；
 第 1–2 条**已裁定但尚未写入**（原因见下）。
 
-### I.1 第 1/2 条：**已裁定、待写入**（飞控上电时执行）
+### I.1 第 1/2 条：✅ **已于 2026-09-23 写入**（原为"已裁定、待写入"）
 
 **2026-09-22 裁定时的状态：飞控没有上电** —— `/dev/ttyTHS1` 上探不到心跳
 （`python3 tools/prereq-evidence/mavlink_probe.py --port /dev/ttyTHS1 --baud 921600` 无 HEARTBEAT），
-mavros 也没在跑 ⟹ 这 3 条参数**不是"已改"，是"待执行"**。
+mavros 也没在跑 ⟹ 那 3 条参数当时**不是"已改"，是"待执行"**。
+
+**2026-09-23 补写（本次上电就是 bench-runbook P0 说的那个机会）**：
+
+| 参数 | 原值（读回） | 写入 | 读回确认 | dump 对账 |
+|---|---|---|---|---|
+| `EKF2_GPS_CTRL` | `7` | `0` | `0` ✅ | ✅ |
+| `SYS_HAS_GPS` | `1` | `0` | `0` ✅ | ✅ |
+| `MPC_XY_VEL_MAX` | `12.0` | `2.0` | `2.0` ✅ | ✅ |
+
+- 三条 `ros2 param set /mavros/param <名> <值>` 均回 `Set parameter successful`；
+  `ros2 param dump /mavros/param > /tmp/fcu_params_after.yaml` 得 **918 行**，五条（含
+  `NAV_RCL_ACT = 1`、`COM_RC_IN_MODE = 0`）逐条对上。
+- ⚠️ **§I.2 的更正之外，还缺一条前置：`set` 之前必须先 `~/pull`** —— 见下面的 ★。
 
 ```bash
 source /opt/ros/humble/setup.bash && source ~/mavros_ws/install/setup.bash
@@ -501,6 +518,19 @@ ros2 param dump /mavros/param > /tmp/fcu_params_after.yaml
 ☠️ **不要用 `/mavros/param/get`** —— ROS2 版 mavros 没这个服务（`param.cpp` 里那行被注释掉了），
 见 ticket 15 §一 / §五 坑 1。
 
+★ **本节的脚本缺了一条前置：`set` 之前必须先 `~/pull`**（2026-09-23 实测）——
+本次第一次 `ros2 param set` 直接报 `Setting parameter failed: Undeclared parameter`
+（`~/pull` 之前 `ros2 param list /mavros/param` 也几乎为空）。补上
+
+```bash
+ros2 service call /mavros/param/pull mavros_msgs/srv/ParamPull "{force_pull: true}"
+# 本次回：success=True, param_received=915
+```
+
+之后同一批 `set` 全部成功。⟹ **完整的顺序是：`~/pull` → `get`（记原值）→ `set` → `get`（读回）→ `dump`（对账）**。
+（同一晚更早还有一次 `pull` 回 `success=False, param_received=0` 而随后的 `set` 却成功了的情形 ——
+**别把 `pull` 的返回值当门槛**，以"`get` 能不能读出真值"为准。）
+
 ### I.2 ★ 顺带的更正：mavros 的**写参数路径**不止 `~/set` 一条
 
 ticket 15 §一 写「只有 `~/pull`（`ParamPull`）与 `~/set`（`ParamSetV2`）」——
@@ -521,6 +551,46 @@ ticket 15 §一 写「只有 `~/pull`（`ParamPull`）与 `~/set`（`ParamSetV2`
 
 ⚠️ **`ros2 param set` 的成功回报来自飞控的 `PARAM_SET` ACK**（`send_param_set_and_wait` 等 ACK），
 比"命令没报错"硬；但**仍然要读回**（§I.1 第 ③ 步）—— 飞控可能接受写入却因范围校验而拒绝取值。
+
+### I.3 ☠️ 2026-09-23 实测：`COM_RC_IN_MODE = 3` 让**整个遥控开关层静默失效**（推翻 §D4 / §3.9 的处置）
+
+**现场症状**：拨 ch6，QGC 里的模式**不变**；`/mavros/statustext/recv` 上**连一条拒绝都没有**
+（"请求根本没离开 `ManualControl`"与"到了 commander 被拒"这两种病因，靠这一点分开）。
+
+**第一手链条**（★ 全部按 **真身 `Minderring/PX4-Autopilot @ 4a0e65f2`** 复核过 —— 早期版本引的是
+`Peize-Liu @ 5ba2e91f`，那是 fork、**与 z0 无关**，见 [`refs-manifest.md`](refs-manifest.md) §2.5(d)）：
+
+| # | 位置 | 事实 |
+|---|---|---|
+| 1 | `src/modules/commander/commander_params.c:168-186` | `3` = "The first available source is selected and **used until reboot**"（`:186` 是 `PARAM_DEFINE_INT32(COM_RC_IN_MODE, 3)`） |
+| 2 | `src/modules/manual_control/ManualControlSelector.cpp:59-62` | `_first_valid_source` **只在 `== SOURCE_UNKNOWN` 时赋一次** ⟹ 上电后首个可用源被**锁到重启** |
+| 3 | 同上 `:73` / `:82-84` | `_rc_in_mode == 0` ⟹ 只收 `SOURCE_RC`；`== 3` ⟹ 只收 `_first_valid_source` |
+| 4 | `src/modules/mavlink/mavlink_receiver.cpp:2056-2058` | GCS 的任意 `MANUAL_CONTROL` 都发一条 `data_source = SOURCE_MAVLINK_0 + instance` 的 `manual_control_input` |
+| 5 | `src/modules/rc_update/rc_update.cpp:677` | 遥控器那一路发的是 `data_source = SOURCE_RC` |
+| 6 | `src/modules/manual_control/ManualControl.cpp:172` + `:277/:281` | `processSwitches()` **只在选中源 `== SOURCE_RC` 时**评估开关，否则 `_previous_switches_initialized = false` ⟹ **模式开关 / 解锁开关 / 杀车开关 / 内八手势 一起失效** |
+
+⟹ **QGC 先于遥控器上线**（现场常态）就把 MAVLink 源锁死，第 6 条那条分支**从此永不成立**。
+⚠️ 注意第 5 条的另一面：真身里 `UpdateManualControlInput`（`rc_update.cpp:673-695`）**从不给
+`.valid` 赋值**，准入靠 `ManualControlSelector::isInputValid`（`:66-88`）的**时间戳新鲜度 + 源匹配**
+—— **不是**靠 `.valid`（fork 版曾是 `valid = _rc_calibrated`，**别照 fork 读**）。
+
+**修复与复现（两侧独立互证）**：
+- 写 `COM_RC_IN_MODE = 0`（用户当场拍板）⟹ 读回 `0`；**无需重启**（`ManualControl::updateParams`
+  → `setRcInMode` 当场生效）。`rcCalibrationCheck` 判的 `mode ∈ {0,2,3}` 集合不变 ⟹ **不新增解锁前置**。
+- **操作者侧**：在上位机看到模式**开始跟着档位走**；
+- **agent 侧探针**同时录到 `ch6 = 999`（第 1 档）⟹ `mode = POSCTL`（`COM_FLTMODE1 = 2` = Position），
+  以及 ch8 杀车的 STATUSTEXT 序列 `Kill-switch engaged` → `Preflight Fail: Kill switch engaged`
+  → `Preflight Fail: Flight termination active` → `Kill-switch disengaged` ⟹ **ch8 也一并复活**。
+
+⚠️ **两条操作纪律**（本次的教训）：
+1. **每次上电后、起飞前，先拨一下 ch6 看模式跟不跟** —— 不跟就是这一条又回来了
+   （例如有人把参数恢复成默认值）；
+2. **"拨了没反应"且没有任何 STATUSTEXT ⟹ 先怀疑"开关层压根没在评估"**（本节），
+   不要去查 RC 链路、更不要去查 commander 的拒绝 —— 未解锁时 `UserModeIntention::always_allow`
+   恒真，请求真到了它**一定会执行**。
+
+★ 本节**不改动** §3.9 对**枚举含义**的核实（那部分是对的），推翻的只是它给出的**处置**（"不是警报"）。
+§3.9 第 3 条其实**预言过**这个机制，本节只是把它从"预测"变成"实测"。**§D4 的现役值是 `0`。**
 
 ---
 

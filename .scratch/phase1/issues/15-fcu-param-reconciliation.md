@@ -3,11 +3,11 @@
 Status: ready-for-human
 Type: task
 
-> 📌 **2026-09-22 状态说明（为什么还是 `ready-for-human` 而不是 `done`）**：
-> ★人裁定**已做**（§四 第 4 框 ✅）、文档回填**已补齐**（第 8 框 ✅）。**还剩 3 框**：
-> ① **写 3 条参数** —— 已裁定，但**卡在"飞控没上电"**（硬件，不是判断）；
-> ② **量 `EKF2_EV_POS_*` 外参** —— **尺子量**，纯人的事；
-> ③ **`MPC_THR_HOVER` / `THR_MDL_FAC` 标定** —— **推力台**，纯人的事。
+> 📌 **2026-09-23 状态说明（为什么还是 `ready-for-human` 而不是 `done`）**：
+> ★人裁定**已做**（§四 第 4 框 ✅）、**3 条参数已于 2026-09-23 写入并对账**（第 5 框 ✅）、
+> 文档回填**已补齐**（第 8 框 ✅）。**还剩 2 框，都是纯人的事**：
+> ① **量 `EKF2_EV_POS_*` 外参** —— **尺子量**；
+> ② **`MPC_THR_HOVER` / `THR_MDL_FAC` 标定** —— **推力台**。
 > ⟹ 按 [`triage-labels.md`](../../../docs/agents/triage-labels.md)，验收项**没勾完就不许标 `done`**；剩的是人的事，故维持 `ready-for-human`。
 
 **为什么单开一张：** [`PROJECT.md`](../../../docs/PROJECT.md) 的"推荐动作"原话是
@@ -136,10 +136,12 @@ ros2 param get /mavros/param EKF2_EV_CTRL      # 单条读
 - [x] ★ **人裁定（2026-09-22，用户拍板）**：8 条里**现在就改 3 条**（`EKF2_GPS_CTRL = 0` + `SYS_HAS_GPS = 0`、
       `MPC_XY_VEL_MAX = 2.0`），其余 5 条分别留到 **系统辨识 / 推力标定 / 尺子量 / 飞行阶段**。
       逐条处置（含"谁改、怎么验"）见 [`params-changes.md`](../../../docs/reference/params-changes.md) **§I**
-- [ ] 若决定改：**只写配置类参数**，改完**再 dump 一次对账**，回填本张
-      —— ⏸ **已裁定、尚未写入**：2026-09-22 探 `/dev/ttyTHS1` **无心跳**（飞控没上电），
-      命令已备好在 `params-changes.md` **§I.1**。★ **顺带更正本条括注**：写参数**不必**用 `ParamSetV2` ——
-      `ros2 param set /mavros/param <名> <值>` 就会转发给飞控（`param.cpp:1148`），见 **§I.2**
+- [x] 若决定改：**只写配置类参数**，改完**再 dump 一次对账**，回填本张
+      —— ✅ **2026-09-23 已写入**：`EKF2_GPS_CTRL` `7→0`、`SYS_HAS_GPS` `1→0`、`MPC_XY_VEL_MAX` `12.0→2.0`
+      （三条都是 `Set parameter successful` + 读回确认；`ros2 param dump` 918 行对账通过）。见 Comments。
+      ★ **顺带更正本条括注**：写参数**不必**用 `ParamSetV2` ——
+      `ros2 param set /mavros/param <名> <值>` 就会转发给飞控（`param.cpp:1148`），见 **§I.2**；
+      ⚠️ 但**必须先 `~/pull`**，否则报 `Undeclared parameter`（2026-09-23 实测，`params-changes.md` §I.1 的 ★）
 - [ ] `EKF2_EV_POS_X/Y/Z` 外参：量出刚体→IMU 的实际偏移（`hardware.md` §6 的"尺子量"）后写入
 - [ ] `MPC_THR_HOVER` 标定（`thrust_calibrate` 流程）与 `THR_MDL_FAC` 的取舍（两者至少一个错）
 - [x] 把本张的结论回填 —— ★ **实际范围比本条写的更大**（原文只点了两处，**漏了 `params-analysis.md`**）：
@@ -214,3 +216,36 @@ ros2 param get /mavros/param EKF2_EV_CTRL      # 单条读
    （其中 `:270` 还明写"**z0 实际在跑的**"）—— 按 `params-changes.md` **F3**，真身应是 `4a0e65f2`。
    **不属本张范围，没有动**（本张只改参数结论，不改固件身份）—— 归
    [ticket 10](10-docs-1-14-sweep.md) 的全库清扫。**在此点名，免得它随本张的"回填完成"被静默盖过去。**
+
+### 2026-09-23 —— ★ 3 条参数**已写入**（第 5 框勾掉）+ 顺带查出 `COM_RC_IN_MODE` 那条硬伤（agent）
+
+**① 第 5 框（写参数）结清** —— 借着本次上电补写（`bench-runbook.md` P0 说的"这次上电就是机会"）：
+
+| 参数 | 原值 | 写入 | 读回 | dump 对账 |
+|---|---|---|---|---|
+| `EKF2_GPS_CTRL` | `7` | `0` | `0` ✅ | ✅ |
+| `SYS_HAS_GPS` | `1` | `0` | `0` ✅ | ✅ |
+| `MPC_XY_VEL_MAX` | `12.0` | `2.0` | `2.0` ✅ | ✅ |
+
+`ros2 param dump /mavros/param` → **918 行**；顺带复核到 **`NAV_RCL_ACT = 1`**（A1 首飞阻塞项
+**已落地**）与 **`COM_RC_IN_MODE = 0`**（见下）。
+⚠️ **新增一条前置**：`set` 之前必须先 `~/pull`，否则报 `Undeclared parameter`（实测）——
+已补进 `params-changes.md` **§I.1** 的 ★。
+
+**② 顺带查出的硬伤：`COM_RC_IN_MODE = 3` 会让整个遥控开关层静默失效** ——
+完整第一手链条与两侧互证的复现证据在 `params-changes.md` **§I.3**。
+**它推翻了本张 §二 引用的两处处置**（`params-changes.md` §D4 与 `params-analysis.md` §3.9 都判"不是警报"）
+—— 已在两处落更正；那两处对**枚举含义**的核实仍然成立，推翻的是处置。
+★ 直接后果：**ticket [02](02-rc-channel-decision.md) 的裁定（ch9 = 开始键）在 `3` 之下根本走不到**
+——`ManualControl::processSwitches()` 在选中源不是 RC 时**压根不评估开关** ⟹
+§H.8 的台架核对若在那时做，得到的是"拨了没反应"的**假结论**（当时的实测症状正是如此）。
+
+**③ 与真身口径的对齐**：本次引用的固件位置**全部按真身 `4a0e65f2` 复核** ——
+`ManualControlSelector.cpp:59-62 / :73 / :82-84`、`ManualControl.cpp:172 / :277 / :281`、
+`rc_update.cpp:673-695 / :677`、`mavlink_receiver.cpp:2056-2058`。
+★ 顺带**更正一条此前的读法**：真身的 `UpdateManualControlInput`（`rc_update.cpp:673-695`）
+**从不给 `.valid` 赋值**，RC 输入的准入靠 `ManualControlSelector::isInputValid`（`:66-88`）的
+**时间戳新鲜度 + 源匹配** —— fork 版那句 `valid = _rc_calibrated` **不适用**。
+
+**④ 仍未动的框**（都是纯人的事，故本张维持 `ready-for-human`）：
+`EKF2_EV_POS_X/Y/Z` 的**尺子量**、`MPC_THR_HOVER` / `THR_MDL_FAC` 的**推力台标定**。
