@@ -346,3 +346,7 @@ run/down.sh --dry-run # 只扫一眼"会停谁"，一个信号都不发
 
   **测试**（2026-09-23，改完之后重跑）：`run/tests/test_z0_menu.py` ⟹ **60 passed**；
   `source … && python3 -m pytest run/tests -q` ⟹ **70 passed**；`run/down.sh --dry-run` 只扫不发。
+
+  ★ **2026-09-23 改名（操作者要求，不改上面这些记录）**：`docs/control/flight-runbook.md` →
+  **仓库根 `operation_manual.md`**，守卫测试 → `run/tests/test_operation_manual.py`。
+  本文提到旧名的那两处（§八 判据 4、上面复核表第 2 行）是**当时的原文**，照实留着。

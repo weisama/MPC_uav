@@ -24,6 +24,7 @@
 
 ```
 ├── CONTEXT.md                        术语表（含 MPC 歧义澄清）
+├── operation_manual.md               ★★ **现场那一页**：遥控各通道 + FSM + 起链命令（人工飞一次）
 ├── .scratch/                         ★ 本地 issue tracker（随 git 入库，不是临时目录）
 │   ├── phase1/spec.md                Phase 1 spec —— offboard 位置定点飞行
 │   ├── phase2/spec.md                Phase 2 spec —— MPC 接管 PID：SITL 验证
@@ -35,7 +36,6 @@
 │   ├── control/
 │   │   ├── phase1-implementation.md  ★★ Phase 1 实施清单
 │   │   ├── bench-runbook.md          ★★ 拆桨台架清单（Phase 1 必须由人做的那一薄层）
-│   │   ├── flight-runbook.md         ★★ **现场那一页**：遥控各通道 + FSM + 起链命令（人工飞一次）
 │   │   ├── phase2-implementation.md  ★★ Phase 2/3 实施清单（Phase 3 spec 引用它）
 │   │   └── mpc-roadmap.md            Phase 2 资料汇总（含 D1–D10）
 │   ├── reference/
@@ -76,7 +76,7 @@
 > **一键启动与操作台**见 [`src/bringup/README.md`](src/bringup/README.md)（`ros2 launch bringup z0.launch.py` + `ros2 run bringup fly.py`）；
 > **现场那几条命令与每步核对**收在 [`run/z0.py`](run/z0.py) 的菜单里（`run/z0.py --list` 看有哪些，见 [`run/README.md`](run/README.md)）；
 > **人工怎么按遥控器飞一次轨迹**（通道作用 → FSM → 起链 → 每步判读 → 排障）看
-> [`docs/control/flight-runbook.md`](docs/control/flight-runbook.md)。
+> [`operation_manual.md`](operation_manual.md)（在**仓库根**）。
 > ⚠️ `control` 的测试依赖 `bench` ⟹ 用 **`colcon build --packages-up-to control`**，
 > `--packages-select control` 会因缺 `test_depend` 失败。
 > ★ 全仓库既有 **172 条 lint 失败**全部来自 vendored 的 `vrpn_listener`（`mocap`/`traj`/`bench`/`control`/`bringup`

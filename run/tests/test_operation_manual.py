@@ -1,8 +1,8 @@
-"""`docs/control/flight-runbook.md`（现场那一页）的守卫 —— 编号与命令**只有一个出处**。
+"""`operation_manual.md`（现场那一页，仓库根）的守卫 —— 编号与命令**只有一个出处**。
 
 跑法：
 
-    python3 -m pytest run/tests/test_flight_runbook.py -q
+    python3 -m pytest run/tests/test_operation_manual.py -q
 
 ★ **为什么单开一份**：ticket 22 的复核抓到过一条真会误导现场的错 ——
 `bench-runbook.md` 的指针把菜单号写成「**9= 起链核对**」（9 是操作台 `fly.py`，起链核对是 **2**），
@@ -34,7 +34,7 @@ sys.path.insert(0, str(RUN_DIR))
 
 import z0  # noqa: E402  （路径注入了才 import 得到）
 
-DOC = REPO / "docs" / "control" / "flight-runbook.md"
+DOC = REPO / "operation_manual.md"
 FSM_HPP = REPO / "src" / "control" / "include" / "control" / "fsm.hpp"
 
 

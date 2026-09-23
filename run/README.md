@@ -115,7 +115,7 @@ run/down.sh --dry-run    # 只扫一眼"会停谁"，**一个信号都不发**
 ⚠️ **它不是降落，也不解锁、不切模式、不碰飞控**：setpoint 一停，PX4 在 `COM_OF_LOSS_T`（1.0 s）后
 自己退出 OFFBOARD，按 `COM_OBL_RC_ACT`（现值 `0`）落回 Position；**A1 未落实** ⟹ 遥控同时丢了
 `NAV_RCL_ACT = 2` 会**试图返航**（室内没有 GPS）。飞机还在空中时先按
-[`flight-runbook.md`](../docs/control/flight-runbook.md) §1.2 处置。
+[`operation_manual.md`](../operation_manual.md) §1.2 处置。
 ⚠️ **按名字扫 ⟹ 别人会话 / 跑着的测试起的同类节点也在清单里**（现场只有一套飞机，这个代价是明说的）
 —— 动手前**看一眼命令行**，不是你这套的就答 n。
 
@@ -187,7 +187,7 @@ run/down.sh --dry-run    # 只扫一眼"会停谁"，**一个信号都不发**
 
 ```bash
 python3 -m pytest run/tests/test_z0_menu.py -q          # 纯函数 + 命令行拼装 + 安全不变式 + 一键起链/清除编排（不需要 ROS，57 例）
-python3 -m pytest run/tests/test_flight_runbook.py -q   # ★ 现场那一页的守卫：菜单号/命令/话题/degrade token 都钉在代码上（不需要 ROS，5 例）
+python3 -m pytest run/tests/test_operation_manual.py -q   # ★ 现场那一页的守卫：菜单号/命令/话题/degrade token 都钉在代码上（不需要 ROS，5 例）
 
 # ★ 正控：对着台架夹具（假 mavros）跑一遍 check，读数必须真的读到东西（5 例）
 source /opt/ros/humble/setup.bash && source install/setup.bash

@@ -5,7 +5,7 @@
 #
 # ⚠️ 两件必须先知道的事：
 #   ① **它不是降落**：setpoint 一停，PX4 在 COM_OF_LOSS_T（1.0 s）后自己退出 OFFBOARD ⟹ 空中先按
-#      flight-runbook.md **§1.2「想停任务，只有两条软路径」**处置（依据在 params-changes.md §H.7）。
+#      operation_manual.md **§1.2「想停任务，只有两条软路径」**处置（依据在 params-changes.md §H.7）。
 #   ② **按名字扫**⟹ 别人会话 / 跑着的测试起的同类节点也会在清单里（现场只有一套飞机，代价是明说过的）。
 set -euo pipefail
 

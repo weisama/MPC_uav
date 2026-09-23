@@ -269,7 +269,7 @@ def test_可选参数的值也受安全不变式扫查():
 # ─────────────────────────── 一键起链（ticket 22 §七） ───────────────────────────
 
 
-def test_起链的顺序就是_runbook_那条():
+def test_起链的顺序就是操作手册那条():
     assert z0.UP_CHAIN == ("mavros", "vrpn", "mocap", "traj", "control")
     assert set(z0.UP_CHAIN) <= set(z0.ACTION_BY_KEY), "起链里出现了动作表里没有的东西"
     assert set(z0.UP_OPTIONALS) <= set(z0.ACTION_BY_KEY)
@@ -728,8 +728,8 @@ def test_dry_run_down_只看不停(capsys, monkeypatch):
 
 
 def test_第_11_项是清除_前十条一个没动():
-    """★ 菜单号被跨文件钉死了（`docs/control/flight-runbook.md` 引用 1–10、
-    `test_flight_runbook.py` 逐条对齐）⟹ 新项**只能追加在末尾**。"""
+    """★ 菜单号被跨文件钉死了（`operation_manual.md` 引用 1–10、
+    `test_operation_manual.py` 逐条对齐）⟹ 新项**只能追加在末尾**。"""
     assert [a.key for a in z0.ACTIONS[:10]] == [
         "env", "check", "mavros", "vrpn", "mocap", "traj", "control", "bringup", "fly", "up"]
     assert z0.ACTIONS[10].key == "down"

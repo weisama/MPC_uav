@@ -36,7 +36,7 @@
    所以**别人会话 / 跑着的测试**起的同类节点也会在清单里（现场只有一套飞机，这个代价是明说过的）；
    顺序是**先列清单 ⟹ 一次 y/N ⟹ SIGINT →（超时）SIGTERM →（超时）SIGKILL**，只发**单个 pid**
    不发进程组（按名字扫出来的进程可能与别人终端的 shell 同组）。⚠️ **停进程不是降落**：
-   空中先按 `flight-runbook.md` **§1.2**（两条软路径）处置，理由写在 `DOWN_WARNING` 里。
+   空中先按 `operation_manual.md` **§1.2**（两条软路径）处置，理由写在 `DOWN_WARNING` 里。
 """
 
 from __future__ import annotations
@@ -1012,13 +1012,13 @@ DOWN_TARGETS: Tuple[DownTarget, ...] = (
 )
 
 #: 停之前**必须让人看见**的那句话。事实来源是 `params-changes.md` §H.7（"急停 = 停桨"那张表）/
-#: `flight-runbook.md` §1.2（"想停任务，只有两条软路径"，操作者那一版）—— **屏上要指人去看的那一处
+#: `operation_manual.md` §1.2（"想停任务，只有两条软路径"，操作者那一版）—— **屏上要指人去看的那一处
 #: 写 runbook §1.2**：这行字是给手上拿着遥控器的人看的，他手边那一页就是 runbook。
 DOWN_WARNING = (
     "⚠️ 清除 = **停进程**，它**不会让飞机降落**：setpoint 一停，PX4 会在 `COM_OF_LOSS_T`（1.0 s）后\n"
     "   自己退出 OFFBOARD，按 `COM_OBL_RC_ACT`（现值 `0`）落回 Position；而 **A1 还没落实**，\n"
     "   遥控同时丢失时 `NAV_RCL_ACT = 2` 会让它**试图返航**（室内没有 GPS）。\n"
-    "   飞机若还在空中，先按 `flight-runbook.md` **§1.2 的两条软路径**处置（打杆接管 / 拨 ch6），\n"
+    "   飞机若还在空中，先按 `operation_manual.md` **§1.2 的两条软路径**处置（打杆接管 / 拨 ch6），\n"
     "   别指望这一条 —— 依据在 `params-changes.md` §H.7。\n"
     "★ 这是**按名字**扫的（`DOWN_TARGETS`）：**别人会话、跑着的测试**起的同类节点也会在清单里。"
 )
