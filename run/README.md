@@ -9,6 +9,8 @@ run/z0.py                # 交互菜单：敲数字
 run/z0.py --list         # 只列菜单（不进交互）
 run/z0.py env            # 环境自检（只读）
 run/z0.py check          # 起链核对（只读，约 5 s 一张表）
+run/z0.py up             # ★ 一键起链（第 10 项；run/up.sh 是它的一行别名）
+run/z0.py --dry-run up   # 把顺序、每条命令、每步判据全列出来，**一条都不起**
 run/z0.py --dry-run mocap   # 只打印将要执行的命令，**不执行**
 run/z0.py mavros|vrpn|mocap|traj|control|bringup|fly   # 单条起（前台）
 ```
@@ -37,6 +39,34 @@ source /opt/ros/humble/setup.bash && source ~/mavros_ws/install/setup.bash && so
 | 7 | 起 control | 前台 | 台架 T3 用的就是这一条；`MANUAL/INIT` 是正常起始态 |
 | 8 | 起 bringup | 前台 | 一键起 mocap+traj+control；同样要确认飞机摆好；再问一句"已经单独起过 vrpn 了吗"（y ⟹ `use_vrpn:=false`）；其余参数见 [`bringup/README.md`](../src/bringup/README.md) |
 | 9 | 操作台 `fly.py` | 前台 | 选轨迹 1/2/3（**起飞前选好**） |
+| 10 | ★ **一键起链** | 本进程编排 + 前台守着 | 把上面 3→5→4→6→7 五步**按序**起齐（`bench-runbook.md` 的「起链（顺序不能反）」），每步**等判据成立**再加下一步；起完打印第 2 项那张核对表。详见下节 |
+
+## ★ 一键起链（第 10 项 / `run/up.sh`）
+
+```bash
+run/up.sh          # 等价于 run/z0.py up
+```
+
+把 5 个终端收成 1 个：**mavros（带 GCS 桥）→ vrpn_listener → mocap → traj + control**，
+**逐段等它真的起来**再走下一步，最后打印上面第 2 项那张核对表，然后**前台守着**。
+
+| 步 | 起什么 | 起之前 | 起来的判据（**等**，不是"起了就算"） |
+|---|---|---|---|
+| 1 | `mavros` + **`gcs_url` 桥给 QGC** | 串口被谁占着；**已经有 mavros 在跑（`connected=True`）就问一句"沿用还是照样再起"** | `/mavros/state` 的 **`connected=True`**（≤60 s）★ **有帧 ≠ 连上飞控** |
+| 2 | `vrpn_listener` | — | `/vrpn/<刚体>/pose` 有帧（≤30 s；`Z0`/`z0` 都认） |
+| 3 | `mocap` | ★ **要你确认"飞机已摆好、静止、固定？"** | `/mocap/pose_enu` 有帧（≤30 s） |
+| 4 | `traj` | — | **不等**（没 `select` 就一帧不发，等它等于等到天荒地老） |
+| 5 | `control` | — | `/control/state` 有帧（≤30 s） |
+| 6 | — | — | 打印核对表 ⟹ 前台守着（**Ctrl-C 一起停**） |
+
+- **日志**：`run/logs/<时间戳>/01-mavros.log … 05-control.log`（已在 `.gitignore` 里）。
+  某步等超时、或**子进程半路自己退了**，就把那个日志的**最后几行**打出来 —— 卡住了先看它。
+- **Ctrl-C 一起停**：子进程各自成组（`start_new_session`）⟹ 停的时候**整组一起**停
+  （先 SIGINT、超时才 SIGKILL）。★ 前台那个 `Ctrl-C` **到不了**子进程（它们自成会话），
+  必须由本脚本转发 —— 所以**别 `kill -9` 本脚本**：`SIGKILL` 不可捕获，转发就没了，
+  会**留下 mavros 占着串口**。
+- **它不代做"还差的那两步"**（见下节）：选轨迹（`fly.py` 敲 1/2/3）与起飞（**遥控器开始键**）——
+  `up` 起完把这两步**打印出来提醒**，但不做。
 
 ## ★ 它**不**做什么（安全边界）
 
@@ -52,6 +82,9 @@ source /opt/ros/humble/setup.bash && source ~/mavros_ws/install/setup.bash && so
 
 可以多问一句的两条参数（mavros 的 `gcs_url`、bringup 的 `use_vrpn`）**做成了 y/N，值写在动作表里**：
 有意**不给"随手输一段参数"**的自由 —— 那等于把任意 shell 片段送进 `bash -c`，与上面这条边界相冲。
+
+★ **一键起链（第 10 项）不新开一条"起链用的命令表"**：`up` 的动作表项 `cmd=None`（本进程里编排），
+它起的每一条都**只写 key**（`UP_CHAIN`），命令取自上面那张动作表 ⟹ 下面这套守卫**不用改就盖住它**。
 
 ★ 这条由 `run/tests/test_z0_menu.py` 的用例盯着：一条扫**动作表**（主命令**与**可选参数的取值，
 不含 `ros2 service call` / `ros2 param set` / `ros2 topic pub` / `ros2 action send_goal`），
@@ -95,7 +128,7 @@ source /opt/ros/humble/setup.bash && source ~/mavros_ws/install/setup.bash && so
 ## 测试
 
 ```bash
-python3 -m pytest run/tests/test_z0_menu.py -q          # 纯函数 + 命令行拼装 + 安全不变式（不需要 ROS，26 例）
+python3 -m pytest run/tests/test_z0_menu.py -q          # 纯函数 + 命令行拼装 + 安全不变式 + 一键起链编排（不需要 ROS，40 例）
 
 # ★ 正控：对着台架夹具（假 mavros）跑一遍 check，读数必须真的读到东西（5 例）
 source /opt/ros/humble/setup.bash && source install/setup.bash

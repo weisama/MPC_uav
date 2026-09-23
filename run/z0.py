@@ -38,18 +38,22 @@ import argparse
 import importlib
 import os
 import shutil
+import signal
 import subprocess
 import sys
 import time
 import unicodedata
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import IO, Callable, Dict, Iterable, List, Optional, Sequence, Tuple
 
 # ─────────────────────────── 常量（都是第一手的路径/值） ───────────────────────────
 
 #: 仓库根 = `run/` 的上一级。★ 本脚本**必须在仓库里**跑：install/ 与 docs 都相对它。
 REPO = Path(__file__).resolve().parents[1]
+
+#: `run/` 自己 —— 一键起链的日志写在它下面（`run/logs/<时间戳>/`，已被 .gitignore 挡住）。
+RUN_DIR = Path(__file__).resolve().parent
 
 ROS_DISTRO = os.environ.get("ROS_DISTRO", "humble")
 ROS_SETUP = Path(f"/opt/ros/{ROS_DISTRO}/setup.bash")
@@ -340,15 +344,17 @@ class OptionalArg:
 
     ★ 有意**不做成"随便输一段参数"** —— 那样等于把任意 shell 片段送进 `bash -c`，
     与本脚本"命令出口只有 `ACTIONS` 那几条"的边界相冲（每条的 `suffix` 都写在表里，测试扫得到）。
+    `name` 只用于"一键起链默认带上哪几条"（`UP_OPTIONALS`）与测试指认，不参与命令拼装。
     """
 
+    name: str
     prompt: str
     suffix: str
 
 
 @dataclass(frozen=True)
 class Action:
-    """一个菜单项。`cmd=None` ⟹ 在本进程里做（只读检查），不 fork。"""
+    """一个菜单项。`cmd=None` ⟹ 在**本进程**里做（只读检查、或像 `up` 那样做编排）。"""
 
     key: str
     title: str
@@ -357,19 +363,23 @@ class Action:
     confirm: Optional[str] = None      # 起之前必须人工确认的那句话
     warn_serial: bool = False          # 起之前先看串口有没有被别人占着
     optionals: Tuple[OptionalArg, ...] = ()   # 起之前逐条问的可选参数（y/N）
+    read_only: bool = False            # ★ 只读（`--dry-run` 与"什么都不起"的判据都靠它）
 
 
 #: ★ 这张表是**唯一的**命令出口 —— `run/tests/test_z0_menu.py` 扫的就是它。
 #: 加一条之前先读文件头的「不提供任何让飞机动的入口」。
 ACTIONS: Tuple[Action, ...] = (
     Action("env", "环境自检（只读）", None,
-           "三条 setup / 六个包 / 串口 / 域号 / 当前 commit"),
+           "三条 setup / 六个包 / 串口 / 域号 / 当前 commit",
+           read_only=True),
     Action("check", "起链核对（只读，约 5 s）", None,
-           "每个话题有没有帧、多少 Hz；state 的 connected/armed/mode"),
+           "每个话题有没有帧、多少 Hz；state 的 connected/armed/mode",
+           read_only=True),
     Action("mavros", "起 mavros", f"ros2 launch mavros px4.launch fcu_url:={FCU_URL}",
            "★ 它**独占**串口；`/mavros/state` **1 Hz 是正常的**；另开终端 `ros2 topic hz /mavros/state` 核对",
            warn_serial=True,
            optionals=(OptionalArg(
+               "gcs_url",
                f"要把 MAVLink 桥给笔记本上的 QGC 吗？（y ⟹ 追加 gcs_url:={GCS_URL}）",
                f"gcs_url:={GCS_URL}"),)),
     Action("vrpn", "起 vrpn_listener", "ros2 launch vrpn_listener sync_entity_state.launch",
@@ -385,16 +395,20 @@ ACTIONS: Tuple[Action, ...] = (
            "★ 起之前飞机要摆好（内含 mocap）；mavros **默认不起**（独占串口、要人看一眼）",
            confirm="飞机已摆好、静止、固定？（bringup 里有 mocap）",
            optionals=(OptionalArg(
+               "use_vrpn",
                "已经单独起过 vrpn_listener 了吗？（y ⟹ 追加 use_vrpn:=false）",
                "use_vrpn:=false"),)),
     Action("fly", "操作台 fly.py", "ros2 run bringup fly.py",
            "选轨迹 1/2/3；它**不发** `/traj/start`、不解锁 —— 那两条都在开始键上"),
+    Action("up", "★ 一键起链（mavros+GCS 桥 → vrpn → mocap → traj+control，顺序起）", None,
+           "逐段**等它真的起来**再走下一步；自带核对表，Ctrl-C 一起停（只停它起的那些）"),
 )
 
 ACTION_BY_KEY: Dict[str, Action] = {a.key: a for a in ACTIONS}
 
-#: 只读动作（表里 `cmd=None` 的那两条）—— 它们没有命令可打印，在本进程里直接跑。
-READ_ONLY_KEYS: Tuple[str, ...] = tuple(a.key for a in ACTIONS if a.cmd is None)
+#: 只读动作（`env` / `check`）—— 判据是表里那个 `read_only`，不是"`cmd` 是不是空"：
+#: `up` 的 `cmd` 也是空，但它会**起进程**（本进程里做编排）。
+READ_ONLY_KEYS: Tuple[str, ...] = tuple(a.key for a in ACTIONS if a.read_only)
 
 
 def optionals_suffix(action: Action, answers: Sequence[bool]) -> str:
@@ -530,8 +544,8 @@ def _msg_class(type_string: str):
     return getattr(module, parts[2], None)
 
 
-def collect_snapshot(window_s: float = 4.0) -> dict:
-    """订阅 + 计数 + 图查询，返回**纯数据**（表由 `render_snapshot` 拼）。
+class Probe:
+    """一个**只订阅**的 rclpy 节点 —— 同一张图上可以反复采（一键起链要一步一步等读数）。
 
     ★ 用**本进程的 rclpy 节点**，不经过 `ros2` CLI：CLI 的 daemon 会让图**静默为空**
     （第一手：同域内 daemon 与夹具的 `ROS_LOCALHOST_ONLY` 不一致时，
@@ -540,67 +554,401 @@ def collect_snapshot(window_s: float = 4.0) -> dict:
     只要求 offered ≥ requested）⟹ 「我订上了没有」不会变成第二个静默坑。
     **本节点只订阅，从不发布**（安全不变式由测试盯着）。
     """
-    import rclpy
-    from rclpy.node import Node
-    from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
 
-    started_here = not rclpy.ok()
-    if started_here:
-        rclpy.init(args=[])
-    node = Node(f"z0_probe_{os.getpid()}")
-    qos = QoSProfile(depth=200,
-                     reliability=ReliabilityPolicy.BEST_EFFORT,
-                     durability=DurabilityPolicy.VOLATILE,
-                     history=HistoryPolicy.KEEP_LAST)
+    def __init__(self, discover_s: float = 1.5):
+        import rclpy
+        from rclpy.node import Node
+        from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
 
-    def spin_for(seconds: float) -> None:
+        self._rclpy = rclpy
+        self._started_here = not rclpy.ok()
+        if self._started_here:
+            rclpy.init(args=[])
+        self._node = Node(f"z0_probe_{os.getpid()}")
+        self._qos = QoSProfile(depth=200,
+                               reliability=ReliabilityPolicy.BEST_EFFORT,
+                               durability=DurabilityPolicy.VOLATILE,
+                               history=HistoryPolicy.KEEP_LAST)
+        self._discover_s = discover_s
+        self._subs: Dict[str, object] = {}
+        self._counts: Dict[str, int] = {}      # 累计帧数（对外报的是**窗口内**的增量）
+        self._last: Dict[str, str] = {}        # ★ 累计：最后一个窗口不一定有帧，等待判据要靠它
+
+    def _spin(self, seconds: float) -> None:
         deadline = time.monotonic() + seconds
         while time.monotonic() < deadline:
-            rclpy.spin_once(node, timeout_sec=0.1)
+            self._rclpy.spin_once(self._node, timeout_sec=0.1)
 
-    # 先给发现一点时间，再按图里**真实存在**的话题订（免得对着不存在的话题空等）
-    spin_for(1.5)
-    topics = {name: types[0] for name, types in node.get_topic_names_and_types() if types}
-    wants = [t for t, _ in PROBES] + [t for t in topics if t.startswith("/vrpn/") and t.endswith("/pose")]
+    def _discover(self) -> Dict[str, str]:
+        """按图里**真实存在**的话题订。
 
-    counts: Dict[str, int] = {}
-    last: Dict[str, str] = {}
-    for topic in wants:
-        if topic not in topics:
-            continue
-        cls = _msg_class(topics[topic])
-        if cls is None:
-            continue
-        counts[topic] = 0
+        ★ 每次都重看一遍图：一键起链里话题是**逐步出现**的（mavros 起了才有 `/mavros/state`），
+        一次性的发现会让后面的步子对着不存在的话题空等。
+        """
+        topics = {name: types[0] for name, types in self._node.get_topic_names_and_types() if types}
+        wants = [t for t, _ in PROBES] + [
+            t for t in topics if t.startswith("/vrpn/") and t.endswith("/pose")]
+        for topic in wants:
+            if topic in self._subs or topic not in topics:
+                continue
+            cls = _msg_class(topics[topic])
+            if cls is None:
+                continue
+            self._counts.setdefault(topic, 0)
+            self._subs[topic] = self._node.create_subscription(
+                cls, topic, self._on_msg(topic), self._qos)
+        return topics
 
-        def on_msg(msg, topic=topic):
-            counts[topic] += 1
-            last[topic] = describe_message(msg)
+    def _on_msg(self, topic: str) -> Callable[[object], None]:
+        def callback(msg: object) -> None:
+            self._counts[topic] += 1
+            self._last[topic] = describe_message(msg)
+        return callback
 
-        node.create_subscription(cls, topic, on_msg, qos)
+    def snapshot(self, window_s: float = 4.0) -> dict:
+        """采**一段窗口**，返回**纯数据**（表由 `render_snapshot` 拼）。
 
-    spin_for(window_s)
-    snapshot = {
-        "window_s": window_s,
-        "domain": os.environ.get("ROS_DOMAIN_ID"),
-        "localhost_only": os.environ.get("ROS_LOCALHOST_ONLY"),
-        "topics": topics,
-        "nodes": node.get_node_names(),
-        "counts": counts,
-        "last": last,
-        "serial": {"path": SERIAL_PORT, "exists": Path(SERIAL_PORT).exists(),
-                   "holders": _serial_holders(SERIAL_PORT)},
-    }
-    node.destroy_node()
-    if started_here:
-        rclpy.try_shutdown()
-    return snapshot
+        `counts` 是**这段窗口内**的帧数（`rate_text` 按它算 Hz）；
+        `last` 是**到目前为止**最后一帧的原文（跨窗口累积 —— 等待判据靠它，
+        否则 1 Hz 的 `/mavros/state` 会有一半窗口读不到）。
+        """
+        if not self._subs:                      # 先给发现一点时间（只在第一次）
+            self._spin(self._discover_s)
+        self._discover()
+        base = dict(self._counts)
+        self._spin(window_s)
+        topics = self._discover()
+        return {
+            "window_s": window_s,
+            "domain": os.environ.get("ROS_DOMAIN_ID"),
+            "localhost_only": os.environ.get("ROS_LOCALHOST_ONLY"),
+            "topics": topics,
+            "nodes": self._node.get_node_names(),
+            "counts": {t: n - base.get(t, 0) for t, n in self._counts.items()},
+            "last": dict(self._last),
+            "serial": {"path": SERIAL_PORT, "exists": Path(SERIAL_PORT).exists(),
+                       "holders": _serial_holders(SERIAL_PORT)},
+        }
+
+    def close(self) -> None:
+        self._node.destroy_node()
+        if self._started_here:
+            self._rclpy.try_shutdown()
+
+
+def collect_snapshot(window_s: float = 4.0) -> dict:
+    """采一张（用完就把节点收掉）—— `check` 与现场用例走这条。"""
+    probe = Probe()
+    try:
+        return probe.snapshot(window_s)
+    finally:
+        probe.close()
 
 
 def cmd_check() -> int:
     ensure_sourced()
     print(render_snapshot(collect_snapshot()))
     return 0
+
+
+# ─────────────────────── 一键起链（ticket 22 §七） ───────────────────────
+#
+# ★ 它**不代做**"还差的那两步"（选轨迹 `fly.py` / 起飞 = 遥控器开始键）—— 见 ticket 22 §二：
+#   `z0.launch.py` 的「本包**不给**"程序起飞"的入口，因为它会绕开"开始键之前不发控制指令"这条防线」。
+
+
+#: 起链的顺序 —— 与 `bench-runbook.md` 的「起链（顺序不能反）」一致。
+#: ★ 每一项都是 `ACTIONS` 里的 key（**不是另抄一份命令**）⟹ ticket 22 那条不变式天然盖住它们。
+UP_CHAIN: Tuple[str, ...] = ("mavros", "vrpn", "mocap", "traj", "control")
+
+#: 一键起链**默认带上**的可选参数（按 `OptionalArg.name` 指认；值仍写在 `ACTIONS` 里）。
+UP_OPTIONALS: Dict[str, Tuple[str, ...]] = {"mavros": ("gcs_url",)}
+
+#: 每一步"起来了没有"等的那个话题。`None` ⟹ **不等**。
+#: ★ `traj` 是 `None` 不是偷懒：它没被 `select` 就一帧都不发（等它等于等到天荒地老）。
+STEP_TOPIC: Dict[str, Optional[str]] = {
+    "mavros": "/mavros/state",
+    "vrpn": None,                     # 话题名带刚体名 ⟹ 动态发现，判据见 STEP_READY
+    "mocap": "/mocap/pose_enu",
+    "traj": None,
+    "control": "/control/state",
+}
+
+#: "起来了没有"的判据 —— **纯函数**（喂一张 snapshot 就出答案，可离线测）。
+STEP_READY: Dict[str, Callable[[dict], bool]] = {
+    # ★ 有帧 ≠ 连上飞控：`/mavros/state` 的 1 Hz 心跳在飞控链路通之前就在发 ⟹ 判据是 connected
+    "mavros": lambda snap: "connected=True" in (snap.get("last") or {}).get("/mavros/state", ""),
+    # 刚体名不做归一化（`Z0`/`z0` 都出现过）⟹ 任何一个 `/vrpn/<刚体>/pose` 在发就算
+    "vrpn": lambda snap: any(t.startswith("/vrpn/") and n > 0
+                             for t, n in (snap.get("counts") or {}).items()),
+    "mocap": lambda snap: (snap.get("counts") or {}).get("/mocap/pose_enu", 0) > 0,
+    "control": lambda snap: (snap.get("counts") or {}).get("/control/state", 0) > 0,
+}
+
+#: 每一步最多等多久（mavros 最慢：开串口 + 与飞控握手）。
+STEP_TIMEOUT_S: Dict[str, float] = {"mavros": 60.0, "vrpn": 30.0, "mocap": 30.0, "control": 30.0}
+
+
+def wait_hint(key: str) -> str:
+    """这一步在等什么（人话）—— 打印出来，别让人对着一动不动的屏猜。"""
+    if key == "mavros":
+        return "等 `/mavros/state` 的 **connected=True**（★ 有帧 ≠ 连上飞控：心跳在链路通之前就在发）"
+    if key == "vrpn":
+        return "等 `/vrpn/<刚体>/pose` 有帧（刚体名 `Z0`/`z0` 都认）"
+    topic = STEP_TOPIC.get(key)
+    return f"等 `{topic}` 有帧" if topic else "不等（它本来就不发东西）"
+
+
+@dataclass
+class Child:
+    """本脚本起的**一个后台子进程**，以及它的日志。"""
+
+    key: str
+    cmd: str
+    proc: subprocess.Popen
+    log: Path
+    fh: IO[str]
+
+    def alive(self) -> bool:
+        return self.proc.poll() is None
+
+    def tail(self, lines: int = 12) -> str:
+        """日志的最后几行 —— 等超时或半路退了，人要看的正是它。"""
+        try:
+            text = self.log.read_text(encoding="utf-8", errors="replace").splitlines()
+        except OSError:
+            return ""
+        return "\n".join("      " + line for line in text[-lines:])
+
+    def close_log(self) -> None:
+        if not self.fh.closed:
+            self.fh.close()
+
+    def stop(self, grace_s: float = 5.0) -> None:
+        """停掉它**以及 `ros2 launch` 拉起来的整棵子树**。
+
+        ★ 它自成一个进程组（`start_new_session=True`）—— 好的一面是停整组不会误伤别人，
+        代价是操作者在前台按的 Ctrl-C **不会**传给它，必须由本脚本转发（`stop_children`）。
+        ★ 先 SIGINT（与操作者自己按 Ctrl-C 同一个信号 ⟹ 各节点走自己的收摊逻辑），
+        超时才 SIGKILL —— **不能留下 mavros 占着串口**。
+        """
+        try:
+            if self.proc.poll() is None:
+                try:
+                    os.killpg(os.getpgid(self.proc.pid), signal.SIGINT)
+                    self.proc.wait(timeout=grace_s)
+                except (ProcessLookupError, subprocess.TimeoutExpired):
+                    try:
+                        os.killpg(os.getpgid(self.proc.pid), signal.SIGKILL)
+                    except ProcessLookupError:
+                        pass
+                    try:
+                        self.proc.wait(timeout=grace_s)
+                    except subprocess.TimeoutExpired:
+                        pass
+        finally:
+            self.close_log()
+
+
+def stop_children(children: Sequence[Child]) -> None:
+    """收尾：把本脚本起的都停掉。★ **绝不能留下 mavros 占着串口。**"""
+    for child in children:
+        if child.alive():
+            print(f"  停 {child.key} … ", end="", flush=True)
+            child.stop()
+            print("好")
+    for child in children:              # 已经自己退了的，句柄也要关
+        child.close_log()
+
+
+def start_child(key: str, log_path: Path) -> Child:
+    """起一条动作的后台子进程，输出**进日志文件**（★ 不丢日志：判读靠它们）。"""
+    action = ACTION_BY_KEY[key]
+    defaults = UP_OPTIONALS.get(key, ())
+    cmd = (action.cmd or "") + optionals_suffix(
+        action, [opt.name in defaults for opt in action.optionals])
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    fh = log_path.open("w", encoding="utf-8")
+    proc = subprocess.Popen(["bash", "-c", sourced_command(cmd)],
+                            stdout=fh, stderr=subprocess.STDOUT, start_new_session=True)
+    return Child(key=key, cmd=cmd, proc=proc, log=log_path, fh=fh)
+
+
+def wait_for_step(probe: Probe, key: str, *, window_s: float = 2.0,
+                  alive: Optional[Callable[[], bool]] = None,
+                  echo: Optional[Callable[[dict], None]] = None,
+                  timeout_s: Optional[float] = None) -> Tuple[bool, dict]:
+    """反复采一小口，直到这一步**真的起来**（`STEP_READY`）或超时。
+
+    返回 `(成不成, 最后一次读数)` —— **超时也把读数交回去**：人要看的正是"它现在到哪一步了"。
+    """
+    limit = STEP_TIMEOUT_S.get(key, 30.0) if timeout_s is None else timeout_s
+    deadline = time.monotonic() + limit
+    ready = STEP_READY[key]
+    snap = probe.snapshot(window_s)
+    while True:
+        if ready(snap):
+            return True, snap
+        if time.monotonic() >= deadline:
+            return False, snap
+        if alive is not None and not alive():
+            return False, snap          # 子进程半路退了 ⟹ 不要再空等
+        if echo is not None:
+            echo(snap)
+        snap = probe.snapshot(window_s)
+
+
+def echo_waiter(key: str, every_s: float = 5.0) -> Callable[[dict], None]:
+    """等的时候每隔几秒报一句"现在的读数" —— 否则长时间不动看着像卡死了。"""
+    last = [0.0]
+
+    def echo(snap: dict) -> None:
+        now = time.monotonic()
+        if now - last[0] < every_s:
+            return
+        last[0] = now
+        if key == "vrpn":
+            live = [t for t, n in (snap.get("counts") or {}).items()
+                    if t.startswith("/vrpn/") and n > 0]
+            print(f"        · 还没到：{'、'.join(live) if live else '一个 /vrpn/<刚体>/pose 都还没发'}")
+        else:
+            topic = STEP_TOPIC.get(key)
+            if topic:
+                print(f"        · 还没到：`{topic}` " + (snap.get("last", {}).get(topic) or "无帧"))
+
+    return echo
+
+
+def serial_gate(action: Action) -> bool:
+    """起之前先看串口有没有被别人占着；占着就问一句。返回 True = 可以继续。
+
+    ★ 理由是第一手的：第二个 mavros 打不开串口，而**那个报错长得像 launch 坏了**。
+    """
+    if not action.warn_serial:
+        return True
+    holders = _serial_holders(SERIAL_PORT)
+    if not holders:
+        return True
+    print(f"⚠️ {SERIAL_PORT} 已被占用：{'、'.join(holders)}")
+    print("   第二个 mavros 打不开串口，而那个报错**长得像 launch 坏了** —— 先确认真的是同一个。")
+    return ask_confirm("仍然要起？")
+
+
+def start_and_wait(probe: Probe, key: str, log_dir: Path, started: List[Child],
+                   *, index: int, total: int) -> Tuple[bool, dict]:
+    """起一步 + **等它真的起来**（`STEP_READY`）。失败就把那个日志的最后几行打出来。"""
+    action = ACTION_BY_KEY[key]
+    if not serial_gate(action):
+        return False, {}
+    if action.confirm and not ask_confirm(action.confirm):
+        print("已取消。")
+        return False, {}
+    log_path = log_dir / f"{index:02d}-{key}.log"
+    child = start_child(key, log_path)
+    started.append(child)
+    extra = [opt.suffix for opt in action.optionals if opt.name in UP_OPTIONALS.get(key, ())]
+    print(f"[{index}/{total}] {action.title}")
+    print(f"      命令：{child.cmd}" + (f"（默认带上 {'、'.join(extra)}）" if extra else ""))
+    print(f"      日志：{log_path}")
+    if key not in STEP_READY:                      # 这一步没有"起来了"的判据 ⟹ 起了就往下走
+        print(f"      不等：{wait_hint(key)}")
+        return True, {}
+    print(f"      {wait_hint(key)}（最多 {STEP_TIMEOUT_S[key]:.0f} s）")
+    t0 = time.monotonic()
+    ok, snap = wait_for_step(probe, key, alive=child.alive, echo=echo_waiter(key))
+    if ok:
+        print(f"      ✓ 起来了（{time.monotonic() - t0:.1f} s）")
+        return True, snap
+    reason = "子进程自己退了" if not child.alive() else f"等超时（{STEP_TIMEOUT_S[key]:.0f} s）"
+    print(f"      ✗ {reason} —— 它的日志最后几行：")
+    print(child.tail())
+    if not child.alive():
+        print(f"      （看完整日志：`cat {log_path}`）")
+    return False, snap
+
+
+def watch_children(children: Sequence[Child], interval_s: float = 1.0) -> int:
+    """前台守着：谁**自己退了**就报出来（连同它的日志尾巴）。
+
+    ★ 这是"起完别撒手"的那一步：中间某个节点悄悄挂了没人知道，是现场最贵的错法之一
+    （`control` 一挂，飞机就停在最后一次 setpoint 上）。
+    """
+    while True:
+        time.sleep(interval_s)
+        dead = next((c for c in children if not c.alive()), None)
+        if dead is not None:
+            print(f"⚠️ `{dead.key}` 自己退了（不是 Ctrl-C）—— 它的日志最后几行：")
+            print(dead.tail())
+            return 1
+
+
+def render_chain() -> str:
+    """`--dry-run up` 打印的东西：顺序、每步命令、判据、要人确认的话 —— **一条都不起**。"""
+    lines = ["一键起链（`run/z0.py up` 或 `run/up.sh`）—— 本模式**一条都不起**，只是把要发生的事摊开：", ""]
+    for index, key in enumerate(UP_CHAIN, start=1):
+        action = ACTION_BY_KEY[key]
+        defaults = UP_OPTIONALS.get(key, ())
+        cmd = (action.cmd or "") + optionals_suffix(
+            action, [opt.name in defaults for opt in action.optionals])
+        lines.append(f"{index}. {action.title}")
+        lines.append(f"   $ {sourced_command(cmd)}")
+        wait = (f"（最多 {STEP_TIMEOUT_S[key]:.0f} s）" if key in STEP_READY else "")
+        lines.append(f"   等：{wait_hint(key)}{wait}")
+        if action.warn_serial:
+            lines.append(f"   起之前先看 `{SERIAL_PORT}` 被谁占着（占了就问一句）")
+        if action.confirm:
+            lines.append(f"   起之前会问：{action.confirm}")
+    lines += [
+        "",
+        "★ 它**不代做**那两步（ticket 22 §二）：① 选轨迹（`ros2 run bringup fly.py` 敲 1/2/3）；",
+        "  ② 起飞（**遥控器开始键**第 1 次上升沿 = 解锁起飞、第 2 次 = 进 TRACK）。",
+        "★ 收尾：跑起来之后前台守着，**Ctrl-C 一起停**（只停它起的那些）。",
+    ]
+    return "\n".join(lines)
+
+
+def cmd_up() -> int:
+    """一键起链：按 `UP_CHAIN` 的顺序逐段起，**每段等到它的判据成立**再走下一步。"""
+    ensure_sourced()
+    log_dir = RUN_DIR / "logs" / time.strftime("%Y%m%d-%H%M%S")
+    started: List[Child] = []
+    probe = Probe()
+    total = len(UP_CHAIN)
+    try:
+        print(f"一键起链：{' → '.join(UP_CHAIN)}")
+        print(f"日志目录：{log_dir}/")
+        print("★ 起 `mocap` 之前飞机必须**已摆好并静止**（阶段 A 原点在它启动那一刻锁定）。")
+        print()
+        for index, key in enumerate(UP_CHAIN, start=1):
+            if key == "mavros" and STEP_READY["mavros"](probe.snapshot(2.0)):
+                # 现场常态：mavros 在别的终端里长期跑着 ⟹ 别起第二个（串口只有一个）
+                if ask_confirm("★ 检测到 mavros **已经在跑**（`/mavros/state` connected=True）—— 沿用它？"
+                               "（n = 照样再起一个，多半会因串口被占而失败）", default=True):
+                    print(f"[{index}/{total}] mavros：**沿用已经在跑的那个** —— 不起新的，"
+                          "收尾时也不会停它。")
+                    continue
+            ok, _ = start_and_wait(probe, key, log_dir, started, index=index, total=total)
+            if not ok:
+                print()
+                print("✗ 起链中断 —— 先把这一步的问题解决掉（日志在上面），再重跑 `run/z0.py up`。")
+                return 1
+            print()
+
+        print("=" * 72)
+        print(render_snapshot(probe.snapshot(4.0)))
+        print("=" * 72)
+        print("★ 还差的两步（**本脚本刻意不代做**）：")
+        print("   ① 选轨迹：`ros2 run bringup fly.py` 敲 1/2/3（**起飞前选好**）")
+        print("   ② 起飞：遥控器开始键第 1 次上升沿 = 解锁起飞、第 2 次 = 进 TRACK（压住 ≥ 0.3 s 再松）")
+        print(f"★ 日志：{log_dir}/（例如 `tail -f {log_dir}/{total:02d}-control.log`）")
+        print("★ 现在前台守着 —— **Ctrl-C 一起停**（只停本脚本起的那些）。")
+        return watch_children(started)
+    except KeyboardInterrupt:
+        print("\n（Ctrl-C：停本脚本起的那些 —— 先 SIGINT 让各节点自己收摊，最多等 5 s）")
+        return 0
+    finally:
+        probe.close()
+        stop_children(started)
 
 
 # ─────────────────────────── 交互菜单 ───────────────────────────
@@ -622,20 +970,19 @@ def menu_text() -> str:
     return "\n".join(lines)
 
 
-def ask_confirm(question: str) -> bool:
-    reply = input(f"{question} [y/N] ").strip().lower()
-    return reply in ("y", "yes")
+def ask_confirm(question: str, default: bool = False) -> bool:
+    """问一句 y/N。`default` 决定**空回车**算什么（提示符里看得出来）。"""
+    try:
+        reply = input(f"{question} {'[Y/n]' if default else '[y/N]'} ").strip().lower()
+    except EOFError:                    # 非交互（管道/重定向）⟹ 走默认，别抛异常
+        return default
+    return default if not reply else reply in ("y", "yes")
 
 
 def launch_action(action: Action) -> int:
     """跑一个启动动作：先看串口、再要确认，最后前台跑（Ctrl-C 回到菜单）。"""
-    if action.warn_serial:
-        holders = _serial_holders(SERIAL_PORT)
-        if holders:
-            print(f"⚠️ {SERIAL_PORT} 已被占用：{'、'.join(holders)}")
-            print("   第二个 mavros 打不开串口，而那个报错**长得像 launch 坏了** —— 先确认真的是同一个。")
-            if not ask_confirm("仍然要起？"):
-                return 1
+    if not serial_gate(action):
+        return 1
     if action.confirm and not ask_confirm(action.confirm):
         print("已取消。")
         return 1
@@ -650,14 +997,30 @@ def launch_action(action: Action) -> int:
         return 0
 
 
+#: **在本进程里做**的动作（不起子进程）：两条只读的 + 一键起链的编排。
+IN_PROCESS_KEYS: Tuple[str, ...] = ("env", "check", "up")
+
+
+def in_process_command(key: str) -> Callable[[], int]:
+    """按名字**现取**（不是 import 期就绑死）—— 这样用例能把它们替换掉。"""
+    return {"env": cmd_env, "check": cmd_check, "up": cmd_up}[key]
+
+
+def dry_run_note(key: str) -> str:
+    """`--dry-run` 对**在本进程里做**的动作说什么 —— 两条只读的与 `up` 说的不一样。"""
+    if key == "up":
+        return render_chain()
+    return f"（`{key}` 是只读动作：本进程里直接跑，没有命令可打印；`--dry-run` 不执行）"
+
+
 def dispatch(key: str, dry_run: bool = False) -> int:
-    if key in READ_ONLY_KEYS:
-        # ★ `--dry-run` 对只读动作**也是"不执行"** —— 否则它就名不副实了
-        # （`--dry-run check` 会真起一个 5 s 的探测，环境不对时还会连带重新 exec 一次）。
+    if key in IN_PROCESS_KEYS:
+        # ★ `--dry-run` 对**所有在本进程里做**的动作都是"不执行" —— 否则它就名不副实了
+        # （`--dry-run check` 会真起一个 5 s 的探测，`--dry-run up` 会真把五个进程拉起来）。
         if dry_run:
-            print(f"（`{key}` 是只读动作：本进程里直接跑，没有命令可打印；`--dry-run` 不执行）")
+            print(dry_run_note(key))
             return 0
-        return cmd_env() if key == "env" else cmd_check()
+        return in_process_command(key)()
     action = ACTION_BY_KEY.get(key)
     if action is None:
         print(f"不认识的动作：{key}（用 `run/z0.py --list` 看有哪些）")

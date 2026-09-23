@@ -257,5 +257,221 @@ def test_可选参数的值也受安全不变式扫查():
     """可选参数的 `suffix` 与主命令走同一条 `bash -c` ⟹ 必须一起扫。"""
     assert z0.forbidden_commands(z0.ACTIONS) == []
     forged = z0.Action("伪", "伪动作", None, "伪",
-                       optionals=(z0.OptionalArg("问一句", "&& ros2 service call /x"),))
+                       optionals=(z0.OptionalArg("伪参数", "问一句", "&& ros2 service call /x"),))
     assert z0.forbidden_commands([forged]) != []
+
+
+# ─────────────────────────── 一键起链（ticket 22 §七） ───────────────────────────
+
+
+def test_起链的顺序就是_runbook_那条():
+    assert z0.UP_CHAIN == ("mavros", "vrpn", "mocap", "traj", "control")
+    assert set(z0.UP_CHAIN) <= set(z0.ACTION_BY_KEY), "起链里出现了动作表里没有的东西"
+    assert set(z0.UP_OPTIONALS) <= set(z0.ACTION_BY_KEY)
+    for key, names in z0.UP_OPTIONALS.items():
+        have = {opt.name for opt in z0.ACTION_BY_KEY[key].optionals}
+        assert set(names) <= have, f"{key} 默认要带的可选参数不在它的表项里：{set(names) - have}"
+
+
+def test_起链里没有会动飞机的入口():
+    """★ `up` 起的命令**全部**来自 `ACTIONS`（它只写 key）⟹ 22 号票那条不变式盖住它。"""
+    assert z0.forbidden_commands([z0.ACTION_BY_KEY[k] for k in z0.UP_CHAIN]) == []
+    assert "control" in z0.UP_CHAIN          # 控制节点在链上，但**起飞**不在（下面那条）
+    assert z0.ACTION_BY_KEY["up"].cmd is None
+    assert not z0.ACTION_BY_KEY["up"].read_only, \
+        "`up` 会起进程，不能算只读 —— 否则 `--dry-run` 与核对表都会撒谎"
+
+
+def test_每一步要么有起来的判据要么明说不等():
+    for key in z0.UP_CHAIN:
+        if key == "traj":
+            assert key not in z0.STEP_READY and z0.STEP_TOPIC[key] is None
+            assert "不等" in z0.wait_hint(key)
+        else:
+            assert key in z0.STEP_READY and key in z0.STEP_TIMEOUT_S
+    assert set(z0.STEP_READY) <= set(z0.UP_CHAIN)
+
+
+def test_mavros_的判据是_connected_不是有帧():
+    """★ 第一手：`/mavros/state` 的 1 Hz 心跳在飞控链路通之前就在发 —— **有帧 ≠ 连上了**。"""
+    ready = z0.STEP_READY["mavros"]
+    assert not ready({"counts": {"/mavros/state": 3},
+                      "last": {"/mavros/state": "connected=False armed=False"}})
+    assert ready({"counts": {"/mavros/state": 1},
+                  "last": {"/mavros/state": "connected=True armed=False mode=POSCTL"}})
+    assert not ready({"counts": {}, "last": {}})
+
+
+def test_动捕判据认任意刚体名():
+    """刚体名不做归一化（`Z0`/`z0` 都出现过）⟹ 有**任何一个**在发就算起来。"""
+    ready = z0.STEP_READY["vrpn"]
+    assert ready({"counts": {"/vrpn/Z0/pose": 40}})
+    assert ready({"counts": {"/vrpn/z0/pose": 1}})
+    assert not ready({"counts": {"/vrpn/Z0/pose": 0, "/mocap/pose_enu": 100}})
+
+
+def test_mocap_与_control_的判据看帧数():
+    assert z0.STEP_READY["mocap"]({"counts": {"/mocap/pose_enu": 12}})
+    assert not z0.STEP_READY["mocap"]({"counts": {"/mocap/pose_enu": 0}})
+    assert z0.STEP_READY["control"]({"counts": {"/control/state": 3}})
+    assert not z0.STEP_READY["control"]({"counts": {}})
+
+
+def test_dry_run_up_把顺序与判据全摊开_且一条都不起(capsys, monkeypatch):
+    def boom(*_args, **_kwargs):
+        raise AssertionError("`--dry-run up` 起了东西")
+
+    monkeypatch.setattr(z0, "start_child", boom)
+    monkeypatch.setattr(z0, "cmd_up", boom)
+    assert z0.main(["--dry-run", "up"]) == 0
+    out = capsys.readouterr().out
+    for key in z0.UP_CHAIN:
+        assert z0.ACTION_BY_KEY[key].cmd in out, f"{key} 的命令没摊出来"
+    assert "gcs_url" in out            # ★ 默认带上的那条要看得见（否则现场不知道它在）
+    assert "connected=True" in out     # 判据也摊开
+    assert "遥控器开始键" in out        # 还差的那两步写清楚了
+    assert "飞机已摆好" in out          # `mocap` 那条人工确认
+
+
+# ── 编排（把外部世界全换成假的：探测 / 起进程 / 等 / 确认 / 日志目录）──
+
+
+@pytest.fixture
+def fake_child():
+    class FakeChild:
+        def __init__(self, key, cmd, log):
+            self.key, self.cmd, self.log = key, cmd, log
+            self.running, self.stopped, self.closed = True, False, False
+
+        def alive(self):
+            return self.running
+
+        def tail(self, lines=12):
+            return f"      （{self.key} 的假日志尾）"
+
+        def stop(self, grace_s=5.0):
+            self.stopped, self.running = True, False
+
+        def close_log(self):
+            self.closed = True
+
+    return FakeChild
+
+
+@pytest.fixture
+def up_world(monkeypatch, tmp_path, fake_child):
+    """把 `cmd_up` 的外部世界全换成假的；返回 (喂探测的快照表, 起过的子进程表)。"""
+    snapshots: list = [{}]
+    started: list = []
+
+    monkeypatch.setattr(z0, "ensure_sourced", lambda: None)     # 否则会真的带 source 重 exec
+    monkeypatch.setattr(z0, "RUN_DIR", tmp_path)
+    monkeypatch.setattr(z0, "Probe", lambda *a, **k: _Probe(snapshots))
+    monkeypatch.setattr(z0, "watch_children", lambda *a, **k: 0)
+
+    def start_child(key, log_path):
+        child = fake_child(key, "假命令", log_path)
+        started.append(child)
+        return child
+
+    monkeypatch.setattr(z0, "start_child", start_child)
+    monkeypatch.setattr(z0, "ask_confirm", lambda *a, **k: True)
+    monkeypatch.setattr(z0, "render_snapshot", lambda snap: "（假核对表）")
+    return snapshots, started
+
+
+class _Probe:
+    """假探测：按脚本喂的快照依次返回，用完之后一直返回最后一个。"""
+
+    def __init__(self, snapshots):
+        self._snapshots, self._calls, self.closed = snapshots, 0, False
+
+    def snapshot(self, window_s=4.0):
+        self._calls += 1
+        return self._snapshots[min(self._calls - 1, len(self._snapshots) - 1)]
+
+    def close(self):
+        self.closed = True
+
+
+def test_一键起链按顺序起五条_每步都等到判据(up_world, monkeypatch):
+    snapshots, started = up_world
+    waited = []
+    monkeypatch.setattr(z0, "wait_for_step",
+                        lambda probe, key, **k: (waited.append(key), (True, {}))[1])
+
+    assert z0.cmd_up() == 0
+    assert [c.key for c in started] == list(z0.UP_CHAIN)
+    assert [c.log.name for c in started] == ["01-mavros.log", "02-vrpn.log", "03-mocap.log",
+                                             "04-traj.log", "05-control.log"]
+    # `traj` 没有判据（没 select 就一帧不发）⟹ 不空等它
+    assert waited == ["mavros", "vrpn", "mocap", "control"]
+
+
+def test_mavros_已经在跑就问沿用_并且收尾不停它(up_world, monkeypatch, capsys):
+    snapshots, started = up_world
+    snapshots[0] = {"counts": {"/mavros/state": 1},      # 第一口探测就看到 mavros 在跑
+                    "last": {"/mavros/state": "connected=True armed=False mode=POSCTL"}}
+    monkeypatch.setattr(z0, "wait_for_step", lambda *a, **k: (True, {}))
+
+    assert z0.cmd_up() == 0
+    assert [c.key for c in started] == ["vrpn", "mocap", "traj", "control"]   # 没有第二个 mavros
+    assert "沿用" in capsys.readouterr().out
+    # ★ 收尾只停**本脚本起的**：别人的 mavros 根本不在 `started` 里，也就停不到它
+    assert all(c.log.name != "01-mavros.log" for c in started)
+
+
+def test_某一步超时_打日志尾巴_停掉其余的_返回_1(up_world, monkeypatch, capsys):
+    snapshots, started = up_world
+    monkeypatch.setattr(z0, "wait_for_step",
+                        lambda probe, key, **k: (key != "mocap", {}))   # 卡在 mocap
+
+    assert z0.cmd_up() == 1
+    out = capsys.readouterr().out
+    assert "等超时" in out and "假日志尾" in out
+    assert [c.key for c in started] == ["mavros", "vrpn", "mocap"]      # 没往下起 traj/control
+    assert all(c.stopped for c in started), "中断后不能留下任何子进程（尤其是 mavros）"
+    assert all(c.closed for c in started)
+
+
+def test_子进程半路退了_不当成超时(up_world, monkeypatch, capsys):
+    snapshots, started = up_world
+
+    def wait(probe, key, *, alive=None, **k):
+        started[-1].running = False        # 模拟它自己退了
+        assert alive is not None and not alive()
+        return False, {}
+
+    monkeypatch.setattr(z0, "wait_for_step", wait)
+    assert z0.cmd_up() == 1
+    assert "子进程自己退了" in capsys.readouterr().out
+
+
+def test_守着时某个节点自己退了要报出来(fake_child, monkeypatch, capsys, tmp_path):
+    class Dying(fake_child):
+        def __init__(self):
+            super().__init__("control", "假命令", tmp_path / "05-control.log")
+            self.calls = 0
+
+        def alive(self):
+            self.calls += 1
+            return self.calls < 3          # 第三次问的时候它已经没了
+
+    assert z0.watch_children([Dying()], interval_s=0.01) == 1
+    assert "自己退了" in capsys.readouterr().out
+
+
+def test_串口被占时先问一句(monkeypatch, capsys):
+    monkeypatch.setattr(z0, "_serial_holders", lambda path: ["mavros(1)"])
+    monkeypatch.setattr(z0, "ask_confirm", lambda *a, **k: False)
+    assert z0.serial_gate(z0.ACTION_BY_KEY["mavros"]) is False
+    assert "被占用" in capsys.readouterr().out
+    assert z0.serial_gate(z0.ACTION_BY_KEY["mocap"]) is True     # 不起串口的动作不问
+
+
+def test_日志尾巴读的是最后几行(tmp_path):
+    log = tmp_path / "x.log"
+    log.write_text("\n".join(f"第{i}行" for i in range(1, 21)), encoding="utf-8")
+    child = z0.Child(key="k", cmd="c", proc=None, log=log, fh=None)
+    tail = child.tail(lines=3)
+    assert "第20行" in tail and "第18行" in tail and "第17行" not in tail

@@ -13,6 +13,8 @@ ros2 launch bringup mavros.launch.py      # 单独起 mavros（上游 px4.launch
 是给人工用的启动菜单（用法与排障见 [`run/README.md`](../../run/README.md)）—— 它带 `source` 前缀、
 每步给读数、并且**不含任何解锁/起飞入口**（与下面的「起完之后**还差两步**」一致）；
 `use_vrpn:=false` 这条**它在起之前会问一句**。本文件仍是参数的权威出处。
+★ 要**一条命令起齐**（mavros 带 GCS 桥 → vrpn → mocap → traj + control，顺序起）：菜单 **10= 一键起链**
+或 `run/up.sh` —— 它同样**不含**下面那两步的入口。
 
 ## 一键 bringup
 

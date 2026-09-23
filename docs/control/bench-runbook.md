@@ -98,6 +98,10 @@ ticket 06 时期本张还没有解锁路径，于是有个参数 `own_arming` �
 > ★ **这一节的命令与核对已收进 [`run/z0.py`](../../run/z0.py) 的菜单**（3= mavros / 4= vrpn /
 > 5= mocap / **2= 起链核对**；它自带你上面那三条 `source`）。★ 但**本表仍是判据与记录的权威** ——
 > 脚本只把命令送出去、把读数摊开，**不含任何解锁/起飞入口**（见 [`run/README.md`](../../run/README.md)）。
+>
+> ★ **懒得一条条敲**：菜单 **10= 一键起链**（或 `run/up.sh`）按**本节这个顺序**一次起齐
+> （mavros 那条**自带 `gcs_url` 桥**），每步**等判据成立**再加下一步，起完把那张核对表摊开 ——
+> 但它**不代做**"还差的那两步"（选轨迹、起飞 = 上面 T4 那条路），与上一段的边界一致。
 
 ```bash
 source /opt/ros/humble/setup.bash && source ~/mavros_ws/install/setup.bash && source ~/ros_ws/install/setup.bash

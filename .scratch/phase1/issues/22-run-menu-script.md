@@ -7,11 +7,16 @@ Type: task
 > **§三的 5 条判据全部达成**（证据在 §六）；**§五 那一项**（在真机/真飞控上把"起链"那几个动作
 > 真的跑一遍）**agent 做不了** —— 起它们要占飞控串口、要人在场摆飞机 ⟹ 照实留着，**不假装已过**。
 > 按 [`triage-labels.md`](../../../docs/agents/triage-labels.md)，`done` 是**操作者的裁定**（同 05/08/09 的做法）。
+>
+> ★★ **2026-09-23 追加：菜单加了第 10 项「一键起链」**（`run/z0.py up` / `run/up.sh`）——
+> 5 个终端收成 1 个，**顺序起 + 每步等判据 + 起完给核对表**。见 **§七**（范围、边界、判据、
+> 三条拍板决策都在那儿）；它**不代做**"选轨迹 / 起飞"那两步，§二 那条边界**一条没动**。
 
 **What to build:** 把「起链」那几条**天天要手打**的命令收进仓库根的一个入口：
 
 ```
 run/z0.py            # 交互菜单（不认识的直接敲数字）
+run/up.sh            # ★ 一键起链（= 菜单第 10 项，见 §七）
 ```
 
 **为什么单开一张**：Phase 1 的启动知识现在**散在四处**，每处都只讲自己那一段 ——
@@ -40,6 +45,7 @@ run/z0.py            # 交互菜单（不认识的直接敲数字）
 | 起 bringup | `ros2 launch bringup z0.launch.py`（可选 `use_vrpn:=false`） | 前台阻塞 |
 | 操作台 | `ros2 run bringup fly.py` | 前台阻塞 |
 | 起链核对 | 一张表：每个话题**有没有帧、多少 Hz**，`/mavros/state` 的 `connected/armed/mode`、`/control/state` 的原文 | 只读 |
+| ★ 一键起链（第 10 项） | `mavros`（带 GCS 桥）→ `vrpn_listener` → `mocap` → `traj` + `control`，**逐段等它真的起来**再加下一步；起完自动给上面那张核对表 | 本进程编排（前台守着，Ctrl-C 一起停）—— 详见 **§七** |
 
 ★ 每个动作**自己带 `source` 前缀**（`bash -c 'source … && <命令>'`）⟹ 操作者不必再手打三条 `source`；
 `check` 这一项还要在**自己的进程里** `import rclpy`，所以脚本在发现 `rclpy` 不在时会
@@ -99,6 +105,7 @@ run/z0.py            # 交互菜单（不认识的直接敲数字）
 ## 五、现场待做（agent 做不了的部分）
 
 **"起链"那几个动作没在真机/真飞控上跑过** —— 起它们要占飞控串口、要人在场摆飞机。
+★ §七 的**一键起链整条**也在这条残留里（它起的正是这几条；编排逻辑有用例，**真串口那一段没有**）。
 ⟹ 下一次台架/飞行日**照着菜单走一遍**（起 mavros → vrpn → mocap → bringup → 核对），
 把与 [`bench-runbook.md`](../../../docs/control/bench-runbook.md) 那几行的**差异**回填到本票 Comments。
 ★ `check` 的**读数与判读**已经在台架夹具上验过（§三.3）⟹ "命令写错 / 读数解析错"这一类不在残留里；
@@ -108,8 +115,8 @@ run/z0.py            # 交互菜单（不认识的直接敲数字）
 
 | 判据 | 命令 | 结果 |
 |---|---|---|
-| 1 + 4 | `python3 -m pytest run/tests/test_z0_menu.py -q` | **26 passed**（纯函数 + 命令行拼装 + 两条安全不变式；不需要 ROS）。★ 复核后补了 `--list` / `--dry-run`（含"只读动作也不执行"）的用例 —— 原来这两条判据**一条用例都没有**，§六却把它们记进了"已达成" |
-| 3 | `python3 -m pytest run/tests/test_z0_check_live.py -q`（对着夹具，域 73） | **5 passed** |
+| 1 + 4 | `python3 -m pytest run/tests/test_z0_menu.py -q` | **26 passed**（当时；★ §七 之后同一个文件是 **40 passed**）（纯函数 + 命令行拼装 + 两条安全不变式；不需要 ROS）。★ 复核后补了 `--list` / `--dry-run`（含"只读动作也不执行"）的用例 —— 原来这两条判据**一条用例都没有**，§六却把它们记进了"已达成" |
+| 3 | `python3 -m pytest run/tests/test_z0_check_live.py -q`（对着夹具，域 73） | **5 passed** ★ 2026-09-23 §七 落地后**复跑仍 5 passed**（`Probe` 那次重构没碰它） |
 | 2 | 空机器：`python3 run/z0.py check`（域 0，什么都没起） | 不抛异常；7 条话题逐条给判据，`/traj/reference` 记 `·`（本该为空），其余 6 条进「缺什么」并写明**「话题都不在图里 ⟹ 发布者没起」** |
 | 3（现场读数） | 夹具在跑时：`ROS_DOMAIN_ID=73 ROS_LOCALHOST_ONLY=1 python3 run/z0.py check` | `✓ /mavros/state 4 帧 / 4 s ≈ 1 Hz connected=True armed=False mode=POSCTL`、`✓ /mocap/pose_enu 801 帧 / 4 s ≈ 200 Hz`、`✓ /mavros/local_position/pose 121 帧 / 4 s ≈ 30 Hz`；负控两条：`/control/state`（**在图里但一帧都没来**）与 `/mavros/setpoint_raw/local`（同）、`/mavros/vision_pose/pose`（**话题都不在图里**）都被点名；首行标出"台架夹具域，不是真飞机" |
 | 5 | `run/README.md` | 菜单表、安全边界、核对判据的来源表、**排障表**（daemon 坑 / 半拉子环境 / 刚体名大小写 / 串口占用 / 「在图里但没帧」的两种成因）、两条测试的跑法 |
@@ -119,6 +126,62 @@ run/z0.py            # 交互菜单（不认识的直接敲数字）
 的接收端）⟹ 这两个话题**出现在图里**却一帧不发布。判读必须把
 「在图里但没有发布者」与「话题都不在图里」分开说 —— 前者是"节点没起"，
 后者是"这一段链路根本不存在"。初版把两者混成一句"没数据"，**是这条现场读数把它逼出来的**。
+
+## 七、★ 追加：一键起链（菜单第 10 项，2026-09-23）
+
+```
+run/z0.py up        # 或 run/up.sh（一行别名）
+```
+
+**为什么并进本票**（原先另开了一张 23，操作者 2026-09-23 拍定**并回来**）：它就是本票那张菜单的
+**第 10 项**，用同一张动作表、同一份核对表——另立一票只会让"哪个入口是权威"变得含糊。
+
+**它替现场做掉的**：5 个终端收成 1 个（[`bench-runbook.md`](../../../docs/control/bench-runbook.md)
+那一节标题就叫「起链（**顺序不能反**）」），并且每步**等判据成立**再走下一步：
+
+| 步 | 起什么 | 起之前 | ★ 起来的判据（**等**，不是"起了就算"） |
+|---|---|---|---|
+| 1 | `mavros`（+ **`gcs_url` 桥给 QGC**） | 串口被谁占着；**若已有 mavros 在跑（`connected=True`）就问"沿用还是照样再起"** | `/mavros/state` 的 **`connected=True`**（≤60 s）★ 有帧 ≠ 连上飞控 |
+| 2 | `vrpn_listener` | — | `/vrpn/<刚体>/pose` 有帧（≤30 s，刚体名 `Z0`/`z0` 都认） |
+| 3 | `mocap` | ★ **要人确认"飞机已摆好、静止、固定？"** | `/mocap/pose_enu` 有帧（≤30 s） |
+| 4 | `traj` | — | **不等**（没被 `select` 就一帧不发，等它=等到天荒地老） |
+| 5 | `control` | — | `/control/state` 有帧（≤30 s） |
+| 6 | — | — | 打印 §一 那张**核对表**，然后前台守着（**Ctrl-C 一起停**） |
+
+每步的输出进日志（`run/logs/<时间戳>/0N-<动作>.log`）—— 判读靠它们（`control` 的固定 token、
+mavros 的串口报错）；某步等超时或**半路自己退了**，就把那个日志的**最后几行**打出来。
+★ 子进程各自成组（`start_new_session`）⟹ 停的时候**整组一起**（先 SIGINT、超时才 SIGKILL）——
+**绝不能留下 mavros 占着串口**。
+
+**★ 不代做的两步**（三条拍板决策之一：**全留给人**）：选轨迹（`fly.py` 敲 1/2/3）与起飞
+（**遥控器开始键**）。理由与 §二 同：[`z0.launch.py`](../../../src/bringup/launch/z0.launch.py)
+的「本包**不给**"程序起飞"的入口，因为它会绕开"开始键之前不发控制指令"这条防线」。
+
+**三条决策**（2026-09-23 操作者三问三答）：①自动化边界 = **全留给人**；
+②"mavros 并广播" = **`gcs_url:=udp-b://0.0.0.0:14555@:14550`**（bench-runbook P0 与
+[`mocap-setup.md`](../reference/mocap-setup.md) §5.4 那条）；③形态 = **并进本脚本且顺序起** + `run/up.sh` 别名。
+
+**判据**（追加）：
+
+1. `run/z0.py up` 进菜单第 10 项、`run/up.sh` 可跑；`--dry-run up` 把**顺序、每步命令、判据、
+   要确认的话**全摊开，**一条都不起**。
+2. 顺序与判据是**数据**不是散落的 `if`：`UP_CHAIN` 每项都在 `ACTION_BY_KEY` 里，
+   且每项都有一条 `STEP_READY`（纯函数，喂一张 snapshot 就出答案）。
+3. ★ `up` 起的命令**全部取自 `ACTIONS`**（它只写 key）⟹ §二 那条不变式**天然盖住**它们，
+   不必为新代码另写一套守卫。
+4. 编排可测：换掉 `start_child` / `wait_for_step` / `watch_children` 之后，用例断言
+   **起哪几条、什么顺序、超时怎么办、Ctrl-C 只停自己起的那些**。
+
+**证据**（2026-09-23，agent）：`python3 -m pytest run/tests/test_z0_menu.py -q` → **40 passed**
+（其中一键起链 14 条：顺序与动作表一致 / 每步有判据或明说不等 / mavros 判据是 `connected` 不是有帧 /
+刚体名不做归一化 / `--dry-run up` 一条不起 / 按序起 5 条 / 已有 mavros 时沿用且收尾不停它 /
+某步超时打日志尾巴并停掉其余 / 子进程半路退了不当超时 / 守着的报错 / 串口被占先问一句 /
+日志尾巴取最后几行）。★ **现场那条**（真串口、真飞控）与 §五 同一条残留，agent 做不了。
+
+另跑了两条**只看不动的**（2026-09-23）：`python3 run/z0.py --dry-run up` 把 5 条命令、每步判据、
+要确认的话全列出来、**一条没起**（顺带印出 mavros 那条**确实带了 `gcs_url` 桥**）；
+`bash -n run/up.sh` 语法 OK；`python3 run/z0.py --list` 第 10 项就是它。
+`run/tests/test_z0_check_live.py -q`（夹具域 73）**复跑仍 5 passed**。
 
 ## Comments
 
@@ -168,3 +231,14 @@ run/z0.py            # 交互菜单（不认识的直接敲数字）
   - 「`sourced_command(setups=…)` 与 `render_snapshot(dict)` 的抽象是为测试而设」：**保留** ——
     `setups=` 是 §三.5"缺失的 setup 不能被写进命令"那条判据的**唯一**入口，
     去掉它就只能靠真的删掉机器上的 `/opt/ros`。
+- **2026-09-23（agent，追加 §七 一键起链）**：操作者要"一条命令把动捕 + mavros（并广播）+ 轨迹 +
+  控制都起来，起完能直接飞"。三问三答拍定 **①自动化边界 = 全留给人**、**②"并广播" = `gcs_url` 桥给
+  QGC**、**③形态 = 并进本脚本且顺序起**。★ 随后明示 **"不要另开 tickets，在 ticket 22 就解决"** ——
+  原先单开的 `23-one-key-startup.md` **已删除**，内容并入本票 **§七**（这就是"另立一票会让
+  '哪个入口是权威'变含糊"的原因：`up` 用的就是本票那张动作表与核对表）。
+  落地：`ACTIONS` 第 10 项 `up`（`cmd=None`，本进程编排）、`UP_CHAIN`/`STEP_READY`/`STEP_TIMEOUT_S`、
+  `Child`/`start_child`/`stop_children`/`wait_for_step`/`watch_children`/`cmd_up`、
+  `run/up.sh` 别名、`run/logs/` 进 `.gitignore`；`run/README.md` 与
+  [`bench-runbook.md`](../../../docs/control/bench-runbook.md) 的指针补上第 10 项。
+  ★ **`up` 只写 key、命令全取自 `ACTIONS`** ⟹ §二 那条不变式（动作表扫描 + AST 扫描）
+  **无需改动就盖住了新代码**——这也是把它并进本票而不是另开票的实质理由之一。

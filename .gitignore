@@ -14,6 +14,9 @@ c_generated_code/
 *.so
 acados_ocp.json
 
+# run/z0.py up（一键起链）每步的日志，现场产物不入库
+run/logs/
+
 # 设备树改动的中间产物（dtb_pio_fix.sh build 生成；可由脚本从 /boot 的 dtb 重新生成，不入库）
 tools/prereq-evidence/dtb-work/
 
