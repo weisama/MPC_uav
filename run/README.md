@@ -129,11 +129,18 @@ run/up.sh          # 等价于 run/z0.py up
 
 ```bash
 python3 -m pytest run/tests/test_z0_menu.py -q          # 纯函数 + 命令行拼装 + 安全不变式 + 一键起链编排（不需要 ROS，40 例）
+python3 -m pytest run/tests/test_flight_runbook.py -q   # ★ 现场那一页的守卫：菜单号/命令/话题/degrade token 都钉在代码上（不需要 ROS，5 例）
 
 # ★ 正控：对着台架夹具（假 mavros）跑一遍 check，读数必须真的读到东西（5 例）
 source /opt/ros/humble/setup.bash && source install/setup.bash
 python3 -m pytest run/tests/test_z0_check_live.py -q
 ```
 
-`run/` **不是 colcon 包** ⟹ 不进 `colcon test`；上面两条是它自己的入口。
+`run/` **不是 colcon 包** ⟹ 不进 `colcon test`；上面三条是它自己的入口。
 （★ 夹具的域号由 `bench/pytest_support.py` 定，默认 73 —— 那条纪律的理由见它的文件头。）
+
+⚠️ **要一次跑整个 `run/tests/`，必须先 source**（上面那两行）。没 source 时
+`test_z0_check_live.py` 会在**模块级** `importorskip` 上跳掉，而 pytest 6.2.5 在那种情形下
+**连这一整个目录的其余用例一起收集不到**（第一手：未 source 跑 `pytest run/tests -q` ⟹
+`1 skipped`、0 例；source 后同样一条命令 ⟹ **`50 passed`**）——
+★ 所以"跑整个目录是绿的"这句**只有在 source 过的环境里才成立**，未 source 时那是**空收集**，不是绿。
