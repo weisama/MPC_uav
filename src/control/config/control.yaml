@@ -67,8 +67,47 @@ control:
     control_state_topic: "/control/state"
     # ★ 起飞命令入口（`std_srvs/Trigger`）。用服务而不是话题：命令要**有应答** ——
     #   操作员按了键没反应时，第一个问题永远是"什么缺了"，而那个答案此刻就在手上。
-    #   ticket 09 会把遥控器 ch9 的上升沿接到这里（状态机本身**不读遥控器**）。
+    #   ticket 09 起遥控器 ch9 的上升沿真的接到这里了（状态机本身**不读遥控器**：
+    #   边沿由 `rc_switch.hpp` 判、由 `control_node.cpp` 投进 `Fsm::note_start_edge()`）。
     takeoff_service: "/control/takeoff"
+
+    # —— `traj` 的接口（ticket 09；**别的包**的话题，不属于 mavros）——
+    #   口径与契约见 `src/traj/README.md` 与 `src/control/include/control/px4_interface.hpp`
+    #   的 `Px4Topics`。★ 三件事必须记牢（ticket 07 的 Comments 逐条列过）：
+    #     ① `traj_reference_topic` 发的是**相对轨迹原点**的位置 ⟹ 目标 = 轨迹原点 + 它
+    #        （直接拿它当目标会让飞机当场俯冲 —— 它的 z 是 0 起步的）；
+    #     ② `traj_start_topic` 要**发一次**（进 TRACK 时），运行中重选了轨迹还要**再发一次**
+    #        （`select` 会静默停流并清零时钟）—— 重发由状态机按 `traj_stream_gap_s` 的闸门做；
+    #     ③ 完成度到 1.0 ⟹ 任务飞完（`TRACK → LAND`）。
+    traj_reference_topic: "/traj/reference"
+    traj_progress_topic: "/traj/progress"
+    traj_start_topic: "/traj/start"
+    # ★ 我们**对外提供**的完成度观测面（逐字转发 `/traj/progress`）。
+    #   ⚠️ 与 `/traj/progress` 同名不同域：那是 traj 的、这条是我们的。别名会让
+    #      "订阅谁"在现场变成一个猜谜（且同一条通道上两个发布者会让 QoS/频率对不上）。
+    control_traj_progress_topic: "/control/traj_progress"
+
+    # —— 遥控器**开始键**（ticket 09；§H.1 的裁定值，**别就地改**）——
+    # ★ 通道号与阈值的裁定过程（含 §H.4 的 EdgeTX 分配、§H.2 的"ch9 未被任何 `RC_MAP_*` 占用"、
+    #   §H.5 的两条边沿语义）都在 `docs/reference/params-changes.md` §H。
+    # ★ 这是一档**两位置开关**：第 1 次上升沿 = 解锁起飞、第 2 次 = 开始轨迹；
+    #   上电时它若已经停在上位，**不算边沿**（必须先见低位，H.5.2）。
+    # ⚠️ 通道号是 **1-based**（与 PX4 的 `RC_MAP_*` 同一约定）⟹ ch9 = `/mavros/rc/in` 的 `channels[8]`。
+    #    §H.3 / ticket 09 的验收项 6 仍**未在台架上验过**（EdgeTX 的 CH9 分配 + 遥控链路都不在位），
+    #    所以这几个数是"按裁定先落地"，第一次上电时要在 `/mavros/rc/in` 上核一遍。
+    start_channel: 9
+    # 判"高位"/"低位"的归一化阈值（0.75 ⟹ 1750 µs、0.25 ⟹ 1250 µs，按 1000/2000 折算）。
+    start_threshold: 0.75
+    release_threshold: 0.25
+    # 电平要**连续**保持多久才算数（毫秒）。★ 参数是毫秒、代码里是秒：§H.1 的裁定就是按毫秒说的。
+    #   200 ms ⟨ 10 Hz 的帧间隔是 100 ms ⟩ ⟹ 连喂 3 帧才算一次按键（`test_rc_switch.cpp` 钉住了这个）。
+    debounce_ms: 200.0
+    # 折算的两个端点（µs）。★ **方向由这两个数说了算**，不由名字里的 low/high 说了算：
+    #   换一个方向相反的接收机通道，把两个数**对调**即可（不改代码）。
+    #   ⚠️ 若哪天把 ch9 也映射进 PX4 用（`RC_MAP_*`），这两个数必须与那边的
+    #      `RC9_MIN/MAX/REV`（§H.1：`RC9_REV = 1`）对齐，否则同一条开关在两边含义相反。
+    start_low_us: 1000.0
+    start_high_us: 2000.0
 
     # —— 每条输入的超时判据 ——
     # ★★ `/mavros/state` 的默认值是 2.5 s，**不要照抄 px4ctrl 的 0.5 s**：
@@ -159,10 +198,30 @@ control:
     hover_pos_tol_m: 0.10
     hover_vel_tol_mps: 0.10
     hover_settle_s: 2.0
-    # 判稳之后在轨迹原点上**停多久**，够久就自动降落。
-    # ★ 自由飞（阶梯第 4 级）的验收项是"60 s 手不离杆" ⟹ 实飞前若改成 < 30 s，
+    # ★★ ticket 09 **取代**了 ticket 08 的 `hover_hold_s`（那条参数已不存在）：
+    #   降落不再由"在轨迹原点上停了多久"触发，而是由**开始键**（进 TRACK）或**轨迹跑完**触发。
+    #   但"操作员一直不按键"这条自己走不出去的态必须有个兜底 ⟹ 那个数现在叫这个。
+    #   ★ `<= 0` = **永不超时**（飞机一直停在轨迹原点上等按键）。
+    # ★ 取 300 s 的理由：它是"兜底"不是"功能" —— 正常流程是按键进 TRACK；
+    #   而这个值要长到"够操作员处理完任何现场状况"（看日志、找遥控器、确认空域），
+    #   又要短到"万一操作员已经走了，飞机不会一直悬着"。5 分钟两者都够。
+    # ⚠️ 自由飞（阶梯第 4 级）的验收项是"60 s 手不离杆" ⟹ 若改成 < 30 s，
     #   飞机会在验收时长走完之前自己下来（节点启动时会为此发一条 WARN）。
-    hover_hold_s: 60.0
+    wait_start_timeout_s: 300.0
+
+    # ★★ ticket 09：`TRACK` 的两条时限。**改之前先读 `fsm.hpp::TaskLimits` 上那两段说明** ——
+    #   这两个数与 `traj` 的发布行为强耦合（50 Hz 的流；`select` 会**静默**停流并清零时钟）。
+
+    # 参考流断了多久才**重发一次** `/traj/start`（s）。
+    #   取 0.5 s = 连丢 25 帧（50 Hz）⟹ 抖动不会触发它。
+    #   ⚠️ **不许调小**：重发会让 `traj` 把参考时钟归零，而它若其实还在跑，飞机就当场掉头飞回起点。
+    #      0.5 s 是"确实断了"，不是"好像慢了"。
+    traj_stream_gap_s: 0.5
+
+    # 参考流断了多久判 `degrade=traj_timeout`（s）⟹ 停发 + 请求降落（**已解锁时才算失效**）。
+    #   必须**大于**上面那个闸门（够重发一次并等它回来），见 `fsm.hpp::TaskLimits`。
+    traj_timeout_s: 3.0
+
     # 起飞命令的兜底超时：受理之后这么久还没解锁（前置不齐 / 被拒 / 没应答）⟹ 命令作废、
     # 退回 STANDBY。**不自动重试**是刻意的（用户 2026-09-22 裁定）——
     # 静默重试会把"解锁参数没配对"这种确定性拒绝变成一串没人看的日志。

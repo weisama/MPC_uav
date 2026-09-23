@@ -43,9 +43,12 @@
 #include "mavros_msgs/srv/set_mode.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include "sensor_msgs/msg/battery_state.hpp"
+#include "std_msgs/msg/empty.hpp"
+#include "std_msgs/msg/float32.hpp"
 
 #include "control/fsm.hpp"
 #include "control/rc_stick.hpp"
+#include "control/rc_switch.hpp"
 
 namespace control
 {
@@ -74,6 +77,17 @@ struct Px4Topics
   std::string estimator_status{"/mavros/estimator_status"};
   std::string mocap{"/mocap/pose_enu"};
   std::string setpoint{"/mavros/setpoint_raw/local"};
+  /// ★ ticket 09：**别的包**的话题（不属于 mavros）。放在同一个结构体里是因为
+  /// "本节点订阅/发布了哪些话题"必须只有一处 —— 诊断清单、QoS 表、README 都从它派生。
+  /// `traj` 的三条接口（ticket 07 定稿）：参考（50 Hz，**相对轨迹原点**）、完成度（0–1）、
+  /// 开始（`Empty`，收到就把参考时钟归零）。
+  std::string traj_reference{"/traj/reference"};
+  std::string traj_progress{"/traj/progress"};
+  std::string traj_start{"/traj/start"};
+  /// ★ ticket 09：**我们发**的完成度转发（`/control/traj_progress`）。
+  /// ⚠️ 与 `/traj/progress` 同名不同域：这条是**我们**对外提供的观测面，值逐字转发
+  ///   （见 `Px4Config::on_traj_progress`）。自己重算弧长等于把同一个数算两遍。
+  std::string control_traj_progress{"/control/traj_progress"};
   std::string set_mode_service{"/mavros/set_mode"};
   std::string arming_service{"/mavros/cmd/arming"};
 };
@@ -167,6 +181,29 @@ struct Limits
   }
 };
 
+/// 遥控器**开始键**（ticket 09）—— §H.1 定案的那一组数（用户 2026-09-21 裁定）。
+///
+/// ★ 单开一个结构体而不是塞进 `Limits`：`Limits` 是**失效判据的阈值**（"什么时候停"），
+///   这一组是**一个操作动作的判据**（"操作员按了没有"）。混在一起之后，调去抖会顺手改了低压阈值。
+/// ★ 值全部来自 §H.1，**不要就地改**：通道号与阈值的裁定过程（含 §H.4 的 EdgeTX 分配、
+///   §H.2 的"ch9 没有被任何 `RC_MAP_*` 占用"）都在 `docs/reference/params-changes.md`。
+struct RcStart
+{
+  /// 开始键的通道号（**1-based**，与 PX4 `RC_MAP_*` 同一约定；⟹ `/mavros/rc/in` 的 `channels[8]`）。
+  /// ⚠️ 通道数取决于接收机：不够时**跳过**（不判断、不抛异常）—— 与摇杆那条同样处理。
+  int channel{9};
+  /// 判"高位"的折算阈值（H.1：0.75 ⟹ 1750 µs）。
+  double start_threshold{0.75};
+  /// 判"低位"的折算阈值（H.1：0.25 ⟹ 1250 µs）。
+  double release_threshold{0.25};
+  /// 电平要**连续**保持多久才算数（H.1：200 ms）。
+  double debounce_s{0.2};
+  /// 折算到 0.0 / 1.0 的两个端点（µs）。★ 方向由这两个数说了算，不由名字里的 min/max
+  /// 说了算 —— 换一个方向相反的接收机通道只要改这两个数（见 `rc_switch.hpp`）。
+  double low_us{1000.0};
+  double high_us{2000.0};
+};
+
 /// `Px4Interface` 的**全部配置**。★ 打包成一个结构体而不是继续往构造函数上加参数：
 /// 这些字段总是一起来（节点把参数读齐了一次性交给边界层），而位置参数一旦超过三四个，
 /// "传错顺序"就变成编译期抓不到的静默 bug（字段全是 POD / 字符串）。
@@ -176,6 +213,15 @@ struct Px4Config
   Timeouts timeouts;
   Limits limits;
   ModeNames modes;
+  RcStart rc_start;
+  /// `/traj/progress` 每来一帧调一次（**逐字转发**，不做任何加工）。
+  /// ★ 为什么用回调而不是让节点自己再订阅一遍：**新鲜度台账只能有一个出处**
+  ///   （`inputs_` 里的 `traj_progress` 也是这份订阅在刷）。两处订阅会出现
+  ///   "状态机看的那个年龄"与"转发出去的那个值"来自两条不同队列的帧。
+  /// ★ 名字带 `on_` 前缀是**故意**的：同一个标识符 `traj_progress` 在 `Px4Topics` 里是
+  ///   **话题名**，在这里是**回调** —— 少了前缀，`config.traj_progress` 与
+  ///   `config.topics.traj_progress` 读起来是同一个东西的两种写法（复核时被点出来）。
+  std::function<void(float)> on_traj_progress;
   // ★ ticket 08 删掉了这里的 `own_arming` 参数：那条"缝"现在是**真的**
   //   （`request_arming()` 的应答 ⟹ `Guards::own_arming`），不再需要人工告知。
   //   ⚠️ 删参数不是洁癖：留着它，`own_arming: true` 会让**任何**人拨的解锁开关都被当成
@@ -210,6 +256,29 @@ public:
   /// ★ "哪一路能信"的翻译只在这里（`position_valid` / `velocity_valid`）——
   ///   与 `guards()` 同一条纪律：`fsm.hpp` 只看布尔量，不碰 `std::isfinite`。
   Odometry odometry() const;
+
+  /// 本帧的**轨迹参考**（ticket 09）：`/traj/reference` 的位置 + `/traj/progress` 的完成度，
+  /// 外加"上一帧参考是多久以前到的"。
+  /// ★ 口径：位置是**相对轨迹原点**的（ENU）⟹ `TRACK` 的目标 = 轨迹原点 + 它
+  ///   （见 `fsm.hpp` 的 `TrajReference`）。
+  /// ★ **只报年龄、不报"新鲜与否"**：多久算失效取决于"我们什么时候开始要流"，
+  ///   那是任务层的事（`Health::traj_stale`）—— 在这里折成布尔量就再也拆不开了。
+  TrajReference traj(double now_s) const;
+
+  /// 取走遥控器开始键的**一条上升沿**（§H.5.1 的"第 1 次 = 起飞 / 第 2 次 = 开始轨迹"）。
+  /// ★ 消费语义：一次按键只可能被取走一次（判据与理由见 `rc_switch.hpp`）。
+  bool take_start_edge() {return start_.take_edge();}
+
+  /// 诊断用：开始键的判据现在怎么看这档开关（`high` / `released` / 边沿总数）。
+  /// ★ 这三个是"按键没反应"这类现场问题的**唯一**分辨手段：是没收到帧、
+  ///   还是没确认过低电平（H.5.2）、还是通道号配错了（`sample_valid` 为假）。
+  const StartSwitchDetector & start_switch() const {return start_;}
+
+  /// 发布 `/traj/start`（`Empty`）—— 让 `traj` 把参考时钟归零（`running_ = true`）。
+  /// ★ 只有 `TRACK` 会用到它（`Decision::request_traj_start` 是脉冲）。
+  /// ⚠️ 在"参考其实还在跑"的时候发它是一次**真实的指令跳变**（参考时钟归零 ⟹ 掉头飞回起点），
+  ///   所以调用方必须守住闸门（见 `TaskLimits::traj_stream_gap_s`）。
+  void publish_traj_start();
 
   /// 最近一帧 `/mavros/state` 报的模式（**一帧都没收到过时是空串**）。
   /// ★ 节点**不**再自己拿它比字符串（`in_offboard` / `in_land` 在 `guards()` 里算完）；这里留着是给诊断用
@@ -276,12 +345,18 @@ private:
   void on_estimator_status(const mavros_msgs::msg::EstimatorStatus & msg);
   /// `/mavros/state` 一帧 —— 顺带在 `armed` 的**上升沿**上兑现"这次解锁是谁发起的"。
   void on_state(const mavros_msgs::msg::State & msg);
+  /// `/traj/reference` 一帧（ticket 09）—— 只记录，判据在 `fsm.hpp`。
+  void on_traj_reference(const mavros_msgs::msg::PositionTarget & msg);
+  /// `/traj/progress` 一帧（ticket 09）—— 记录 + **逐字转发**给配置里的回调。
+  void on_traj_progress(const std_msgs::msg::Float32 & msg);
 
   rclcpp::Node & node_;
   Px4Topics topics_;
   Timeouts timeouts_;
   Limits limits_;
   ModeNames modes_;
+  RcStart rc_start_;
+  std::function<void(float)> traj_progress_cb_;
 
   // ── ticket 08：解锁的**归属**追踪（进 `Guards::own_arming`）──
   /// 解锁请求已被飞控接受、但**还没在 `/mavros/state` 里看到 `armed` 的上升沿**。
@@ -327,6 +402,17 @@ private:
   ///   新鲜度门（话题静默时最后一帧的"真"会永远挂着，那是"我们不知道"，不是"我们知道它坏"）。
   bool ekf2_pos_lost_{false};
 
+  // ── ticket 09：开始键与轨迹参考 ──
+  /// 开始键的上升沿检测器（§H.1 的参数在 `RcStart`）。★ 在构造函数里用配置起，
+  /// 因为它是**有状态**的（电平、去抖窗、已确认过的边沿），不能每帧现算。
+  StartSwitchDetector start_;
+  /// 最近一帧 `/traj/reference`（**相对轨迹原点**的 ENU 目标）。判据不看它，只当"最后的值"。
+  mavros_msgs::msg::PositionTarget traj_reference_;
+  /// 最近一帧 `/traj/progress` 的值（0–1；`traj` 跑完之后会一直保持 1.0）。
+  /// ⚠️ 它**不会**因为流断了而自己归零 —— "跑完了"的判据必须配合闩锁，见 `fsm.hpp`。
+  double traj_progress_{0.0};
+  bool traj_progress_ever_{false};
+
   rclcpp::Subscription<mavros_msgs::msg::State>::SharedPtr state_sub_;
   rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr local_position_sub_;
   rclcpp::Subscription<geometry_msgs::msg::TwistStamped>::SharedPtr local_velocity_sub_;
@@ -334,8 +420,14 @@ private:
   rclcpp::Subscription<sensor_msgs::msg::BatteryState>::SharedPtr battery_sub_;
   rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr mocap_sub_;
   rclcpp::Subscription<mavros_msgs::msg::EstimatorStatus>::SharedPtr estimator_status_sub_;
+  rclcpp::Subscription<mavros_msgs::msg::PositionTarget>::SharedPtr traj_reference_sub_;
+  rclcpp::Subscription<std_msgs::msg::Float32>::SharedPtr traj_progress_sub_;
 
   rclcpp::Publisher<mavros_msgs::msg::PositionTarget>::SharedPtr setpoint_pub_;
+  /// `/traj/start`（`Empty`）—— 我们不"发布状态"，只是让 `traj` 归零它的时钟。
+  rclcpp::Publisher<std_msgs::msg::Empty>::SharedPtr traj_start_pub_;
+  /// `/control/traj_progress`（ticket 09 的观测面）：逐字转发 `/traj/progress`。
+  rclcpp::Publisher<std_msgs::msg::Float32>::SharedPtr control_traj_progress_pub_;
   rclcpp::Client<mavros_msgs::srv::SetMode>::SharedPtr set_mode_client_;
   /// 解锁服务（ticket 08 起真的建起来了；台架夹具 `fake_mavros` 早就提供了它）。
   rclcpp::Client<mavros_msgs::srv::CommandBool>::SharedPtr arming_client_;

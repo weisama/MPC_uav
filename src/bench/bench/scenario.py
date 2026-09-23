@@ -346,9 +346,23 @@ class Scenario:
             return False
 
     def wait_for_subscribers(self, topic_key: str, count: int = 1, timeout_s: float = 10.0) -> bool:
-        """等 DUT 在某条话题上**匹配**上（含 QoS 兼容性）。见 `FakeMavros.matched_subscribers`。"""
+        """等 DUT 在某条话题上**匹配**上（含 QoS 兼容性）。见 `FakeMavros.matched_subscribers`。
+
+        ★ 超时且 DUT **已经死了** ⟹ 当场抛出它的日志，而不是返回 `False`。
+          两者在断言里长得一模一样（"DUT 没有接上 /mavros/xxx"），但根因完全不同：
+          一个是接口不对，另一个是**节点根本没起来**（参数名/类型写错、启动即崩）。
+          不查活着与否，第二条会被读成第一条 —— 排查方向正好岔开，成本全在最后那一步。
+        """
         assert self.fake is not None
-        return self.fake.wait_for_subscribers(topic_key, count=count, timeout_s=timeout_s)
+        if self.fake.wait_for_subscribers(topic_key, count=count, timeout_s=timeout_s):
+            return True
+        if self.dut_proc is not None and not self.dut_alive():
+            raise AssertionError(
+                f"DUT 进程在接上 /mavros 的 {topic_key} 之前就退出了"
+                f"（returncode = {self.dut_returncode()}）—— 这不是「话题名不对」，是节点没起来；"
+                f"参数名/类型写错会让 rclcpp 在构造参数时直接退进程。\n\n"
+                f"---- DUT 输出（末尾）----\n{self.dut_log()[-2000:]}")
+        return False
 
     def wait_for_setpoints(self, count: int = 1, timeout_s: float = 10.0) -> bool:
         assert self.fake is not None

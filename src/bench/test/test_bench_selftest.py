@@ -17,7 +17,7 @@ from mavros_msgs.msg import PositionTarget, State
 from mavros_msgs.srv import SetMode
 from rclpy.qos import QoSProfile, ReliabilityPolicy
 
-from bench import Scenario
+from bench import FakeTraj, Plant, Scenario, fly
 from bench.fake_mavros import mavros_default_qos, mavros_sensor_qos, mavros_state_qos
 from bench.vrpn_source import mocap_qos
 
@@ -622,4 +622,254 @@ def test_estimator_status的QoS与真_mavros一致():
         assert not volatile, ("易失的晚订阅者不该拿到缓存帧。若这里失败，说明夹具把发布方"
                               "降成了易失 —— 那么「DUT 不会被历史回放喂饱」这条性质就测不出来了")
 
+
+# ─────────────── ticket 09（轨迹跟踪）第一次用到的两件夹具，各来一组自检 ───────────────
+#
+# ★ 它们假的是**两个不同的东西**，所以自检的问法也不同：
+#   · `Plant`     —— 假的是"飞机在动"。要证的是**它真的会动、且速度是真的**：
+#                    一个"位置恒为 0、速度恒为 0"的假飞机不会让任何测试变红，
+#                    只会让所有判据在一半前提（`|v| < 0.10`）恒真的情况下变绿。
+#   · `FakeTraj`  —— 假的是**另一个 ROS 节点**。要证的是它把真 `traj` 那几条
+#                    **会让 DUT 走错分支**的行为一条不差地复刻了（没收到 `/traj/start`
+#                    不发帧、重选会静默、没选中时忽略 start、跑完停在 1.0）。
+#                    这四条在话题层全都表现为"没数据"，错了不会报错 —— 只会静默地测错东西。
+
+def _traj_target(z: float = 1.0) -> PositionTarget:
+    """一帧 setpoint（形状同 control 发的：ENU 填位置，掩码只留位置+速度+yaw）。"""
+    msg = PositionTarget()
+    msg.type_mask = 2552
+    msg.coordinate_frame = PositionTarget.FRAME_LOCAL_NED
+    msg.position.z = z
+    return msg
+
+
+def test_假飞机跟着_setpoint_动且速度是真的():
+    """★★ 本组最重要的一条：**假飞机必须真的动，而且报到话题上的速度是真的**。
+
+    `FakeMavros` 刻意不含动力学（见 `src/bench/README.md`），于是 ticket 08 起
+    "爬到 1 m""`|v| < 0.10`"这类判据的**两个前提**（位置会变、速度非零）全落在 `Plant` 上。
+    它若只会"把位置直接设成目标"或"速度恒为 0"，那些判据在台架上就有一半没有反例。
+
+    ★ 同时钉住**限速**这个模型本身：爬升段的速度必须恰好等于 `rate_mps`。
+      随口改成"指数逼近"之类的模型，`rate_mps` 就不再是"飞机多快"，
+      而测试里凡是用它算时间的断言（"1 m 要 0.67 s"）会悄无声息地全错。
+    """
+    from geometry_msgs.msg import TwistStamped
+
+    with _fixture_only() as sc:
+        # ⚠️ 顺序要紧：`Plant.__init__` 记的是**当时**已有的 setpoint 条数，
+        #    它之后才到的帧才算"新指令"。先建 plant 再开定时器，别让定时器抢跑。
+        plant = Plant(sc, rate_mps=1.5)
+        target = _traj_target(1.0)
+        pub = sc.node.create_publisher(PositionTarget, sc.fake.topics["setpoint"], 10)
+        sc.node.create_timer(0.02, lambda: pub.publish(target))   # 50 Hz，同 DUT
+
+        pose, vel = [], []
+        _subscribe(sc, PoseStamped, sc.fake.topics["local_position"], pose.append,
+                   mavros_sensor_qos())
+        _subscribe(sc, TwistStamped, sc.fake.topics["local_velocity"], vel.append,
+                   mavros_sensor_qos())
+
+        fly(sc, plant, 2.0)   # 目标 1 m、限速 1.5 m/s ⟹ 0.67 s 到位
+
+        assert pose and vel, "假飞机没有把位置/速度送到话题上"
+        assert pose[-1].pose.position.z == pytest.approx(1.0, abs=1e-6), (
+            f"假飞机没有跟着 setpoint 升到 1 m，实测 {pose[-1].pose.position.z}")
+        assert max(v.twist.linear.z for v in vel) == pytest.approx(1.5, abs=1e-9), (
+            "爬升段的速度必须恰好是 rate_mps（速度是「实际位移 / dt」算出来的，"
+            "不是夹具另设的一个数）")
+        # ★ 到位之后速度必须归零：否则"位置对了但还在飘"会变成每个用例的默认场面。
+        assert vel[-1].twist.linear.z == pytest.approx(0.0, abs=1e-9), (
+            f"到位之后速度该是 0，实测 {vel[-1].twist.linear.z}")
+        assert pose[-1].pose.position.x == 0.0, "只该动被点名的那个轴"
+
+
+def test_假飞机只在有新_setpoint_时动一格():
+    """没有新指令就不许动 —— 这条防的是**夹具自己造出来的假故障**。
+
+    `Plant.step()` 用 `dt = 本次 step 与上次 step 的间隔` 算速度。若它每调一次就挪一格，
+    而调用方（`fly()` 的 0.02 s 轮询）比 DUT 的 50 Hz 快，两格之间**没有**新 setpoint，
+    位移为 0 ⟹ 报出来的速度会在 0 与 2× 之间跳 —— 真 mavros 不会这样，
+    这是夹具自己造的抖动，而它会污染每一条与速度有关的判据。
+    """
+    from geometry_msgs.msg import TwistStamped
+
+    with _fixture_only() as sc:
+        plant = Plant(sc, rate_mps=1.5)
+        pub = sc.node.create_publisher(PositionTarget, sc.fake.topics["setpoint"], 10)
+        vel = []
+        _subscribe(sc, TwistStamped, sc.fake.topics["local_velocity"], vel.append,
+                   mavros_sensor_qos())
+
+        pub.publish(_traj_target(1.0))
+        assert sc.poll(lambda: len(sc.fake.setpoints) >= 1, timeout_s=5.0), \
+            "自己发的 setpoint 没进夹具记录（发现没跟上？）"
+        sc.hold(0.05)
+        plant.step()
+        z_after_first = plant.z
+        n_after_first = len(vel)
+        assert z_after_first > 0.0, "有新 setpoint 时该动（否则下面那条断言证明不了什么）"
+
+        plant.step()          # 没有新 setpoint
+        plant.step()
+        sc.hold(0.1)
+        assert plant.z == z_after_first, "没有新指令却又挪了一格"
+        # ⚠️ 不能数"速度话题上多了几帧"：假 mavros 按自己的 30 Hz 定时器**持续重发同一个值**
+        #    （那是它作为"EKF 出向"的行为，不是 `Plant` 又算了一次）。要证的是**值没变** ——
+        #    变了就说明 `step()` 在没有新指令时又算了一次位移（速度会变成 0 或 2×）。
+        later = [v.twist.linear.z for v in vel[n_after_first:]]
+        assert later, "0.1 s 内一帧速度都没到（那这条断言证明不了什么）"
+        assert {round(z, 9) for z in later} == {1.5}, (
+            f"没有新指令却又重算了一次速度：{[round(z, 3) for z in later]}（应当一直是 1.5）")
+
+
+def _fake_traj_with_probes(sc, **kw):
+    """起一个 `FakeTraj` 并接好三件事的旁路：参考、完成度、以及**我们自己的** `/traj/start` 发布者。
+
+    ★ 两道**发现屏障**（`bench/README.md` 纪律 1）都是必需的：
+      · 夹具的发布者要匹配上旁路订阅者，否则"没收到帧"与"压根还没接上"长得一模一样；
+      · 夹具的订阅者要匹配上我们的 `/traj/start` 发布者，否则"发出去没反应"可能是根本没送到。
+    """
+    from std_msgs.msg import Empty, Float32
+
+    traj = FakeTraj(sc.node, sc, **kw)
+    refs, progs = [], []
+    _subscribe(sc, PositionTarget, "/traj/reference", refs.append, mavros_default_qos())
+    _subscribe(sc, Float32, "/traj/progress", progs.append, mavros_default_qos())
+    start_pub = sc.node.create_publisher(Empty, "/traj/start", 10)
+
+    assert sc.poll(lambda: traj.matched_subscribers() >= 1, timeout_s=5.0), \
+        "旁路订阅者没接上 /traj/reference（发现没跟上）"
+    assert sc.poll(lambda: start_pub.get_subscription_count() >= 1, timeout_s=5.0), \
+        "我们的 /traj/start 发布者没接上夹具的订阅 —— 下面「发了 start」这个前提不成立"
+    return traj, refs, progs, start_pub
+
+
+def test_假_traj_没收到_start_之前一帧都不发():
+    """★ 复刻 `traj_node.cpp::tick()` 的 `if (!running_) return;`（`:120-123` 的注释逐字说明了）。
+
+    ★★ 为什么这条最要紧：真 `traj` **只**在收到 `/traj/start` 之后才发参考。
+      夹具若一上来就 50 Hz 地发参考，DUT 在 `TRACK` 里"参考还没来"那条分支
+      （`traj_timeout` 降级的入口、也是"进 TRACK 第一帧就有目标"这种错误实现的反例）
+      就永远走不到 —— 而它是 ticket 09 最容易写错的一处。
+    """
+    with _fixture_only() as sc:
+        # 这条只验"不发"，用不到那个 start 发布者（屏障仍要建，否则"没接上"与"没发"分不开）。
+        traj, refs, progs, _ = _fake_traj_with_probes(sc, duration_s=2.0)
+        sc.hold(0.5)   # 50 Hz ⟹ 本该有 ~25 帧
+        assert refs == [], "没收到 /traj/start 却发了参考"
+        assert progs == [], "没收到 /traj/start 却发了完成度"
+        assert traj.starts == [], "夹具不该记到任何 start"
+        assert traj.reference_frames == 0
+        assert traj.running is False
+
+
+def test_假_traj_收到_start_后按_duration_推进完成度并停在_1_0():
+    """`/traj/start` 之后的完整生命史：从 0 涨到 1、然后**保持 1.0**（不归零、不停流）。
+
+    ★ 后半句是刻意的复刻：跑完之后 `running_` 仍为真、参考停在终点、完成度保持 1.0
+      ⟹ 同一个 `control` 进程飞第二个任务时，进 TRACK 的第一帧就会看到一个 1.0。
+      DUT 靠"必须先见过 < 1.0"的闩锁挡它（`fsm.hpp::track_started_`）——
+      夹具若不保持 1.0，那个闩锁就没有反例。
+    """
+    from std_msgs.msg import Empty
+
+    with _fixture_only() as sc:
+        traj, refs, progs, start_pub = _fake_traj_with_probes(sc, duration_s=1.0)
+        start_pub.publish(Empty())
+        sc.hold(0.4)
+
+        assert len(traj.starts) == 1, "夹具没收到我们的 /traj/start"
+        assert refs and progs, "收到 start 之后该开始发参考与完成度"
+        assert refs[-1].header.frame_id == "traj_origin", \
+            "参考的 frame_id 要照抄真 traj（`reference_frame_id` 默认值）"
+        assert refs[-1].coordinate_frame == PositionTarget.FRAME_LOCAL_NED
+        assert 0.0 < progs[-1].data < 1.0, f"0.4 s / 1.0 s 的完成度该在中间，实测 {progs[-1].data}"
+
+        sc.hold(0.8)   # 越过 duration
+        assert progs[-1].data == 1.0, f"跑完之后完成度该停在 1.0，实测 {progs[-1].data}"
+        n_refs = len(refs)
+        sc.hold(0.3)
+        assert len(refs) > n_refs, \
+            "跑完之后参考仍在发（真 traj 的定时器一直在跑）—— 停了的话「停在终点」就成了「断了」"
+        assert progs[-1].data == 1.0, "跑完之后完成度不许自己归零"
+
+
+def test_假_traj_运行中重选会让流静默且时钟归零():
+    """★ 复刻 `traj_node.cpp::select_kind()`：`running_ = false; elapsed_ = 0`，**一帧都不发**。
+
+    ★★ 也就是说"运行中重选轨迹"在话题层**只能表现为静默**（没有"我重选了"这条消息）
+      ⟹ DUT 只能靠"参考流断了"推断，并靠 `traj_stream_gap_s` 那道闸门重发 `/traj/start`
+      把 `traj` 重新拉起来。夹具若在重选时发一帧（哪怕是 `progress 0.0`），
+      那条推断链就不再是"从静默里推"了 —— 测的会是另一件事。
+    ⚠️ 与 `clear()` 是两种：`clear()` **会**发一帧 `progress 0.0`（真实现里只有它这么干）。
+    """
+    from std_msgs.msg import Empty
+
+    with _fixture_only() as sc:
+        traj, refs, progs, start_pub = _fake_traj_with_probes(sc, duration_s=5.0)
+        start_pub.publish(Empty())
+        sc.hold(0.4)
+        assert len(refs) > 0 and 0.0 < progs[-1].data < 1.0
+
+        traj.select()          # 运行中重选
+        assert traj.elapsed_s == 0.0, "重选要把参考时钟归零"
+        sc.hold(0.2)           # 让队列里剩的帧落地
+        n_refs, n_progs = len(refs), len(progs)
+        sc.hold(0.4)
+        assert len(refs) == n_refs, "重选之后参考流必须静默"
+        assert len(progs) == n_progs, "重选之后完成度也必须静默（select 什么都不发）"
+
+        start_pub.publish(Empty())   # DUT 的补救：重发 start
+        sc.hold(0.4)
+        assert len(refs) > n_refs, "重发 /traj/start 之后流该恢复"
+        assert progs[-1].data < 1.0, "恢复后完成度从 0 重新算（duration 是 5 s，不该立刻到 1）"
+        assert len(traj.starts) == 2, "两次 start 都该被记下来"
+
+
+def test_假_traj_没选中轨迹时收到_start_一帧都不发但记一笔():
+    """复刻 `traj_node.cpp::on_start`：没选中轨迹时只打一条 WARN 就**忽略**。
+
+    ★ 现场最像"按键没反应"的一种场面：`/traj/start` 发了、`control` 那边一切正常，
+      而参考一帧都不来（操作员忘了在 `traj` 那边选轨迹）。DUT 的 `diagnose()` 专门为
+      这一条写了提示 ⟹ 台架上必须能造出来。
+    """
+    from std_msgs.msg import Empty
+
+    with _fixture_only() as sc:
+        traj, refs, progs, start_pub = _fake_traj_with_probes(
+            sc, duration_s=2.0, selected=False)
+        start_pub.publish(Empty())
+        sc.hold(0.5)
+
+        assert len(traj.starts) == 1, "★ 收到就要**记一笔**（「发了但被忽略」与「根本没发」要能分开）"
+        assert refs == [] and progs == [], "没选中轨迹时不该发任何帧"
+        assert traj.reference_frames == 0 and traj.running is False
+
+
+def test_假_traj_上一轮跑完的_1_0_能被造出来也能被_start_抹掉():
+    """`replay_done()` —— "上一轮已经跑完"这个场面（DUT 那条闩锁唯一的反例来源）。
+
+    ★★ 它要能造出**一个正在发布的 1.0**：不是"发一帧就停"，而是"参考还在流、完成度一直是 1.0"。
+      少了这个前提，`TRACK` 里"看到 1.0 就降落"的判据在台架上没有反例，
+      而真实缺陷（同一个 `control` 进程飞第二个任务时当场判"飞完了"）就测不出来。
+    ★ 第二半同样重要：`replay_done` 不是单向门 —— 收到 `/traj/start` 之后必须回到从 0 计数，
+      否则"重发 start"这条补救在台架上永远看不到效果。
+    """
+    from std_msgs.msg import Empty
+
+    with _fixture_only() as sc:
+        traj, refs, progs, start_pub = _fake_traj_with_probes(sc, duration_s=2.0)
+        traj.replay_done()
+        sc.hold(0.3)
+
+        assert refs, "上一轮跑完时参考仍在发"
+        assert progs and progs[-1].data == 1.0, "上一轮跑完时完成度停在 1.0"
+        n_refs = len(refs)
+        sc.hold(0.2)
+        assert len(refs) > n_refs, "1.0 不是一次性的一帧：参考要持续在流"
+
+        start_pub.publish(Empty())
+        sc.hold(0.4)
+        assert progs[-1].data < 1.0, "收到新的 /traj/start 之后完成度该从 0 重新算"
 

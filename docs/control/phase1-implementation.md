@@ -57,22 +57,28 @@ src/
 │   ├── launch/traj.launch.py
 │   └── README.md                      ← 参数表 + 怎么用 1/2/3 选轨迹 + 它**不发** setpoint
 │
-├── control/                           ✅ 已实现（2026-09-22，ticket 05+06+08）—— 起飞→悬停→自动降落
+├── control/                           ✅ 已实现（2026-09-23，ticket 05+06+08+09）—— 起飞→悬停→等开始键→跟踪→自动降落
 │                                      （Phase 2 的 MPC（模型预测控制）节点也放这里）
-│   ├── src/control_node.cpp           ← 只做接线：参数、定时器、日志
+│   ├── src/control_node.cpp           ← 只做接线：参数、定时器、日志；★ 每帧把开始键边沿投给 `note_start_edge()`
 │   ├── src/px4_interface.cpp          ← mavros 服务/话题封装 + 每条输入的新鲜度
 │   ├── include/control/fsm.hpp        ← ★ 纯逻辑、零 ROS（seam 2）：两个正交维度 + 转移表
+│   ├── include/control/rc_switch.hpp  ← ★ 纯逻辑、零 ROS（seam 2）：开始键边沿检测器（迟滞 + 去抖 + 消费语义）
 │   ├── include/control/px4_interface.hpp
 │   ├── config/control.yaml
 │   ├── launch/control.launch.py
 │   ├── test/test_fsm.cpp              ← ★ 纯函数单测（seam 2，零 ROS）：守卫清单 + 前置流计时 + 起飞/悬停判据
-│   ├── test/test_control_takeoff.py   ← ★ 节点级（seam 1）：起飞整链（含文件末尾的"假飞机"）
+│   ├── test/test_rc_stick.cpp         ← ★ seam 2：打杆检测（ticket 06）
+│   ├── test/test_rc_switch.cpp        ← ★ seam 2：开始键三条坑（上电即高位 / 去抖 / 一次边沿被消费两次）
+│   ├── test/test_control_takeoff.py   ← ★ 节点级（seam 1）：起飞整链
+│   ├── test/test_control_track.py     ← ★ 节点级（seam 1）：开始键→TRACK 整链（ticket 09）
 │   ├── test/test_control_standby.py   ← ★ 节点级（seam 1）：DUT 是**子进程**，只断言话题边界
-│   └── README.md                      ← ★ 先读它：参数表 + 两个维度的语义 + 与 06/08 的边界
+│   └── README.md                      ← ★ 先读它：参数表 + 两个维度的语义 + 与 06/08/09 的边界
 │
 ├── bench/                             ✅ 已实现（2026-09-21，ticket 05）—— **测试基础设施，不是飞行代码**
 │   ├── bench/fake_mavros.py           ← ★ 假 mavros（QoS 逐条对着真 mavros 源码抄）
 │   ├── bench/vrpn_source.py           ← 脚本化动捕（喂 /vrpn/* 或直接喂 /mocap/pose_enu）
+│   ├── bench/fake_traj.py             ← ★ 假 traj（ticket 09）：复刻 traj_node 的接口与**两个真行为**
+│   ├── bench/plant.py                 ← ★ 假飞机 + 场景逻辑（ticket 09 从 control 的测试里提升进来）
 │   ├── bench/timeline.py              ← ★ 纯逻辑、零 ROS：故障注入时序 + 常用配方
 │   ├── bench/scenario.py              ← Scenario：拼装 + DUT 子进程 + 秒表 + 证据输出
 │   ├── bench/pytest_support.py        ← ★ ROS 域隔离（**拒绝 domain 0**）
@@ -80,11 +86,15 @@ src/
 │   ├── test/                          ← ★ 夹具自检（验它"假得像不像"）+ 时序纯逻辑单测
 │   └── README.md                      ← ★ 夹具说明书：它假的是什么、能注入什么、怎么写场景
 │
-├── bringup/                           🆕 新写
-│   ├── launch/z0.launch.py            ← 一键起 mocap+traj+control
-│   ├── launch/mavros.launch.py        ← 或直接用 mavros 自带
-│   ├── scripts/fly.py                 ← ★ 交互式脚本：输入 1/2/3 选轨迹
-│   └── config/mavros_z0.yaml          ← mavros 的 fcu_url 等
+├── bringup/                           ✅ 已实现（2026-09-23，ticket 09）
+│   ├── launch/z0.launch.py            ← 一键起 mocap+traj+control（`use_mavros:=true` 再带上 mavros）
+│   ├── launch/mavros.launch.py        ← 薄封装上游 `px4.launch`（不是自己重写）
+│   ├── scripts/fly.py                 ← ★ 操作台：输入 1/2/3 选轨迹，实时显示状态与完成度
+│   └── README.md                      ← ★ 运行手册：启动顺序的**唯一**一条硬约束 + 排障表
+│
+│   ⚠️ **当初图纸里的 `config/mavros_z0.yaml` 没有被采用** —— 上游 `px4.launch` 把 `config_yaml`
+│      写死了，放一个自己的 yaml 进去**没有任何东西会读它**。落地时推翻了这条，见
+│      [`../../src/bringup/README.md`](../../src/bringup/README.md)。
 │
 └── （可选）tools/
     └── scripts/thrust_calibrate.py    🔶 从 XI35 重写（ROS2 + (A) 级话题）
@@ -101,11 +111,11 @@ src/
 | `/mavros/state` | `mavros_msgs/State` | `connected` / `armed` / `mode` | ★ FSM 的主驱动 |
 | `/mavros/local_position/pose` | `geometry_msgs/PoseStamped` | EKF2 融合位置 | ★ **轨迹原点与稳定判据都用它**，见 §3.3 |
 | `/mavros/local_position/velocity_local` | `geometry_msgs/TwistStamped` | EKF2 融合速度 | ★ 稳定判据的 `|v|` 来源 |
-| `/mavros/rc/in` | `mavros_msgs/RCIn` | **开始按键** | ★ 通道号是参数，实飞时确认。⚠️ ticket 05 只订阅、不做判据 |
+| `/mavros/rc/in` | `mavros_msgs/RCIn` | **开始按键** | ★ 通道号是参数，实飞时确认。✅ **ticket 09 起做判据了**（`start_channel` 的第 1 次上升沿 = 解锁起飞、第 2 次 = 进 `TRACK`，§H.5）；ticket 05/06 只订阅 |
 | `/mavros/battery` | `sensor_msgs/BatteryState` | 低电压保护 | ⚠️ 见 §8.2。⚠️ ticket 05 只订阅、不做判据 |
 | `/mocap/pose_enu` | `geometry_msgs/PoseStamped` | 相对位姿（**ENU，原生**） | Phase 1 用于记录（Q23）**以及 ticket 05 的守卫**（它的新鲜度决定发不发 setpoint）；**Phase 2 的 MPC 拿它当状态源** |
-| `/traj/reference` | `mavros_msgs/PositionTarget` | ★ 参考轨迹（**相对轨迹原点**，不是绝对位置） | ticket 09 在 TRACK 里**加上轨迹原点**再发给 PX4。⚠️ **绝不能把这条直接 remap 到 `/mavros/setpoint_raw/local`** ：轨迹原点是 1 m 高度上的悬停点，直接转发 = 先掉到地面附近。原点的记录见 §3.3 |
-| `/traj/progress` | `std_msgs/Float32` | 轨迹完成度 0–1 | ★ 驱动 §4.2 的 `TRACK → LAND`（`≥ 1.0`）。🔶 **ticket 09 未实现**：按设计 `/control/traj_progress` 就是它的转发（这样 `fly.py` 那侧不用改） |
+| `/traj/reference` | `mavros_msgs/PositionTarget` | ★ 参考轨迹（**相对轨迹原点**，不是绝对位置） | ✅ ticket 09 已落地：`TRACK` 里**加上轨迹原点**再发给 PX4。⚠️ **绝不能把这条直接 remap 到 `/mavros/setpoint_raw/local`** ：轨迹原点是 1 m 高度上的悬停点，直接转发 = 先掉到地面附近。原点的记录见 §3.3 |
+| `/traj/progress` | `std_msgs/Float32` | 轨迹完成度 0–1 | ★ 驱动 §4.2 的 `TRACK → LAND`（`≥ 1.0`）。✅ ticket 09 已落地：`/control/traj_progress` 就是它的**逐字转发**（`Float32`），所以 `fly.py` 那侧只认 `/control/*` |
 
 ### 输出（`control` 发布 / 调用）
 
@@ -119,7 +129,7 @@ src/
 
 > ★ **两个维度显式分开（ticket 05 已实现）**：`/control/state` 发的是
 > **`"<控制权>/<任务态>"`**（如 `MANUAL/STANDBY`），**不是**一个扁平状态名。
-> 控制权 `MANUAL`/`AUTO` 的定义、任务态 `INIT`/`STANDBY`/`TAKEOFF`/`HOVER`/`TRACK`/`LAND`
+> 控制权 `MANUAL`/`AUTO` 的定义、任务态 `INIT`/`STANDBY`/`TAKEOFF`/`HOVER`/`WAIT_START`/`TRACK`/`LAND`/`RC_OVERRIDE`
 > 见 [`CONTEXT.md`](../../CONTEXT.md) §三。它用 **`transient_local`** 发布
 > （晚订阅者立刻拿到当前值，`fly.py`、测试、`ros2 topic echo` 都受益），且每 `diag_period_s` 心跳重发。
 > 实现与边界见 [`src/control/README.md`](../../src/control/README.md)。
@@ -151,8 +161,10 @@ src/
 > （新的时间轴从 0 起）——否则 `control` 还在 TRACK 时会按**旧轨迹的惯性**把飞机拽到新轨迹上。
 > 先例：Fast-Drone-XI35 的 `px4ctrl` 在 AUTO_HOVER 里发 `/traj_start_trigger`（`PX4CtrlFSM.cpp:202`、`:598-603`）。
 >
-> 🔶 **`/traj/start` 由谁在实飞中发，是 ticket 09 要定的事**（`control` 在进 `TRACK` 那一刻发是最自然的接线，
-> 也是 XI35 的做法）；现在只有 `fly.py` / 手打能用。
+> ✅ **这条已在 ticket 09 定了并由代码承担**：**`control` 在进 `TRACK` 那一刻自己发 `/traj/start`**（XI35 的做法）。
+> 操作台 `fly.py` **不发**它 —— 参考时钟的零点必须与"开始飞"同一时刻，操作台再发一次 = 把正在跑的时钟归零，
+> 飞机当场掉头飞回轨迹起点，且现场看不出是谁干的。运行中重选后由 `control` 按 `traj_stream_gap_s`（0.5 s）
+> 的闸门自动重发，操作员不用管。
 >
 > ⚠️ **`traj` 不发 setpoint、不碰 mavros、不判稳。** 它只回答"第 t 秒该在哪、以多快的速度经过"。
 
@@ -378,22 +390,23 @@ Phase 1 走的是 mavros，**不存在"微秒"这一层**：
 | `STANDBY` | 未解锁；**已开始以 50 Hz 持续发布 setpoint**（位置=当前，yaw=**当前机头**）。★ **收到起飞命令但还没解锁的期间也是它** —— 那时飞机仍未被我们驱动 | 流 setpoint，不解锁 |
 | `TAKEOFF` | 已解锁且在 OFFBOARD，爬升到 1.0 m | 目标 z 线性上升，≤0.5 m/s |
 | `HOVER` | 定点保持；同时**判定是否稳定** | 目标 = **悬停点**（= 起飞原点正上方 1 m。⚠️ 不是轨迹原点 —— 它此刻还不存在） |
-| `WAIT_START` | 已稳定、**轨迹原点已记录**，等遥控器按键 | 目标 = **轨迹原点**（停在原地） |
-| `TRACK` | 执行选定轨迹 | 目标 = 轨迹发生器输出 |
+| `WAIT_START` | 已稳定、**轨迹原点已记录**，等遥控器开始键的**第 2 次上升沿** | 目标 = **轨迹原点**（停在原地）；兜底 `wait_start_timeout_s`（默认 300 s，`<= 0` = 永不） ⟹ `end_reason=wait_start_timeout` |
+| `TRACK` | 执行选定轨迹 | 目标 = **轨迹原点 + `/traj/reference`**（相对量由 `control` 加原点，见 §3.3） |
 | `LAND` | 自动降落 | 交给 PX4 的 `AUTO.LAND` |
 | `RC_OVERRIDE` | 遥控器打杆接管 | **停止发 setpoint**，退出 OFFBOARD |
 
-> ★ **与已实现代码的对应关系（2026-09-22 更新，含 ticket 06）** —— 上表是**目标形态**，代码是它的子集：
+> ★ **与已实现代码的对应关系（2026-09-23 更新，含 ticket 06/08/09）** —— 上表**八个任务态已全部落地**：
 > - **已实现**：`INIT`、`STANDBY`（ticket 05）、`LAND`、`RC_OVERRIDE`（ticket 06）、
->   **`TAKEOFF`/`HOVER`/`WAIT_START`（ticket 08，2026-09-22）**。
+>   **`TAKEOFF`/`HOVER`/`WAIT_START`（ticket 08，2026-09-22）**、**`TRACK`（ticket 09，2026-09-23）**。
 >   见 [`src/control/include/control/fsm.hpp`](../../src/control/include/control/fsm.hpp) 的 `Phase`。
-> - **`TRACK` 仍只在枚举里占位**：任何输入组合都到不了，归 ticket 09。
 > - **`RC_OVERRIDE` 与「控制权」是**两个维度**，但夺权时**同时**置位：代码里"谁在控制"是独立的
 >   `Authority{MANUAL, AUTO}`，打杆/模式被切走 ⟹ `Authority = MANUAL` **且** `Phase = RC_OVERRIDE`
 >   （ticket 06 的用户决策 ④）。所以 `/control/state` 在夺权时是 **`MANUAL/RC_OVERRIDE`**。
-> - ★ **`WAIT_START` 已由 ticket 08 引入**（2026-09-22）：判稳 ⟹ 记轨迹原点 ⟹ 进 `WAIT_START`，
->   目标 = 轨迹原点本身；保持 `hover_hold_s`（默认 60 s）后**自动**走 `LAND`。
->   ⚠️ ticket 09 要重新审 `hover_hold_s`：操作员要在这一段里按"开始"键进 `TRACK`，60 s 可能不够他准备。
+> - ★ **`WAIT_START` 的语义已由 ticket 09 改掉**（2026-09-23）：判稳 ⟹ 记轨迹原点 ⟹ 进 `WAIT_START`，
+>   目标 = 轨迹原点本身；**不再是"保持 `hover_hold_s` 后自动降落"**（`hover_hold_s` 这条参数**已删除**），
+>   而是**等开始键的第 2 次上升沿**进 `TRACK`，兜底超时改名 `wait_start_timeout_s`（默认 300 s，`<= 0` = 永不超时）
+>   ⟹ 出口理由 `end_reason=wait_start_timeout`。理由：`WAIT_START` 的时长由**操作员的准备动作**决定，
+>   不是由"悬停得够久了"决定；把 60 s 硬背在状态机里等于替操作员掐表。
 > - ★ 早期图纸里出现的 `IDLE`（ticket 05 的状态机示意图）**与本文的 `INIT`、代码的 `kInit` 同义** ——
 >   同一件事的三个写法，见 [`CONTEXT.md`](../../CONTEXT.md) §三的「任务态」条。
 
@@ -417,9 +430,10 @@ Phase 1 走的是 mavros，**不存在"微秒"这一层**：
 | `STANDBY` | `TAKEOFF` | 解锁请求已发出 ∧ `state.armed` ⟹ **就在这一帧锁定起飞原点与机头**，斜坡从这里起算 |
 | `TAKEOFF` | `HOVER` | `\|z − (起飞原点+1.0)\| < 0.10 m` ∧ `\|v_z\| < 0.1 m/s` **持续** 1 s ⚠️ 基准是**原点+高度**，不是当帧的 `target_z`（见下） |
 | `HOVER` | `WAIT_START` | **稳定判据**成立（见 §5.1）；★ **此刻记录轨迹原点** |
-| `WAIT_START` | `TRACK` | **遥控器按键上升沿**（去抖 200 ms）—— 归 ticket 09 |
-| `WAIT_START` | `LAND` | 保持满 `hover_hold_s`（默认 60 s）⟹ **任务正常走完**（`mission_complete`） |
-| `TRACK` | `LAND` | 轨迹执行完毕（`traj_progress ≥ 1.0`） |
+| `WAIT_START` | `TRACK` | **遥控器开始键的第 2 次上升沿**（去抖 200 ms）—— 归 ticket 09 ✅；★ 边沿的归属由**任务态**决定，不是由边沿计数决定 |
+| `WAIT_START` | `LAND` | 超过 `wait_start_timeout_s`（默认 300 s）⟹ **任务正常走完**（`end_reason=wait_start_timeout`） |
+| `TRACK` | `LAND` | 轨迹执行完毕（`/traj/progress ≥ 1.0`，且**必须先见过 < 1.0**）⟹ `end_reason=traj_done` |
+| `TRACK` | `LAND` | 参考流断超过 `traj_timeout_s`（3.0 s）⟹ 降级 `degrade=traj_timeout` |
 | 任意 | `RC_OVERRIDE` | `COM_RC_OVERRIDE` 触发 / 检测到 `state.mode != "OFFBOARD"` |
 | 任意 | `LAND` | 电池低于阈值 / 输入超时 / `EKF2` 位置失效 |
 | `RC_OVERRIDE` | `STANDBY` | 遥控器交还控制且飞机已稳定 |
@@ -792,8 +806,9 @@ z0 的链路跑在 `MAVLINK_MODE_ONBOARD`，该模式配 `ESTIMATOR_STATUS` **1.
 - [ ] **全程不碰摇杆**
 - [ ] 能触发自动降落
 
-> ★ **2026-09-22（ticket 08）：这四条在代码里都有了执行者，但都还没在真机上跑过。**
-> · "持续 60 s" = `hover_hold_s`（默认 60.0）⟹ `WAIT_START` 保持满就自动降落；
+> ★★ **2026-09-23（ticket 09）：四条的执行者齐了，但**第四条只在代码与台架里验过**，真机未跑。**
+> · "持续 60 s" = **轨迹 1（原地悬停）本身跑 60 s** —— ticket 09 删掉了 `hover_hold_s`，
+>   悬停时长现在是**轨迹的属性**（`traj` 的配置），不再是状态机的一个等待窗口；
 > · "水平误差 ≤ 15 cm" 比 `hover_pos_tol_m`(0.10 m) 宽 —— **判稳的容差比验收标准更严**，这是刻意的
 >   （判稳是"我们认为稳了"，验收是"它真的稳了"）；
 > · "能触发自动降落" = 任务走完自动请求 `AUTO.LAND`（**不需要人插手**）；
@@ -848,7 +863,7 @@ z0 的链路跑在 `MAVLINK_MODE_ONBOARD`，该模式配 `ESTIMATOR_STATUS` **1.
 | **2** | **遥控器 Position 模式**悬停 | 稳、不漂 | `EKF2_EVP_NOISE` / `MPC_THR_HOVER` |
 | **3** | **无桨台架**：`INIT→STANDBY → 切 OFFBOARD →` **收 `/control/takeoff` ⟹ 解锁 ⟹ 到 `TAKEOFF` 为止**（★ 判据**不到 HOVER**，见下） | `INIT→STANDBY`、真 PX4 进 `OFFBOARD`、程序解锁被接受（`MAV_RESULT=0`）、电机按预期转、`takeoff_origin=` 与斜坡的目标 z 正确 | 别装桨！★ 清单见 [`bench-runbook.md`](bench-runbook.md) 的 **T3** |
 | **3d** | ★ **系绳 + 离地 20 cm**，只给悬停推力 ⟹ 再 **系绳闭环悬停 30 s** | 推力方向正确、无异常振荡；不发散、不持续漂移（= ticket 08 阶梯的第 2/3 级） | — |
-| ~~**3b**~~ | ⏸ **按遥控器按键 ⟹ 进 `TRACK`** —— **现在做不了**：`TRACK` 归 ticket 09。⚠️ 但 `WAIT_START` **已经能到**了（ticket 08），而且**保持 `hover_hold_s`（默认 60 s）就会自动降落** ⟹ 台架上想看 `WAIT_START`，要么把 `hover_hold_s` 调大，要么接受它自己下来 | — | — |
+| **3b** | ★ **按开始键 ⟹ 进 `TRACK` + `/traj/start`** —— ⚠️ **拆桨台架上做不了**：台上**没有遥控接收机**，"RC 在线"本身还是起飞的前置条件（§H.7.1）⟹ 台架上到不了 `WAIT_START`，也就按不了开始键。**通道核对（`/mavros/rc/in` 的 `channels[8]`，§H.8）必须在解锁之前做完**；`TRACK` 整链的验证靠 seam 1 的 `test_control_track.py`（7 例）。⚠️ 台架上想看 `WAIT_START` 而不想等：把 `wait_start_timeout_s` 调小，或接受超时后自己下来 | [`bench-runbook.md`](bench-runbook.md) 的 T4 前的警告框 | — |
 | **3c** | 台架上**打杆** | 立刻进 `RC_OVERRIDE` 并停发 setpoint；★ **PX4 侧**离开 `OFFBOARD` 回 `POSCTL`（`COM_OBL_RC_ACT = 0`） | `COM_RC_OVERRIDE`；runbook 的 **T6** |
 | **4** | **带桨 offboard 定点**：轨迹 1 | §5.3 的验收标准 | — |
 | **5** | 轨迹 2（正方形） | 画得出来、不超调 | `MPC_XY_VEL_MAX` |
@@ -865,14 +880,14 @@ z0 的链路跑在 `MAVLINK_MODE_ONBOARD`，该模式配 `ESTIMATOR_STATUS` **1.
 > 逐级清单（含每级的判据与"停下来看日志"的纪律）见
 > [`../../.scratch/phase1/issues/08-takeoff-hover-land.md`](../../.scratch/phase1/issues/08-takeoff-hover-land.md) 的验收阶梯。
 >
-> ⚠️ **本表是"整个 Phase 1 的验证顺序"（含尚未落地的 ticket 08/09），不是"今天能做的清单"** ——
-> 第 4–6 步（带桨飞三条轨迹）要等 ticket 08/09。**当下必须由人做的那一薄层**（前置条件、逐项步骤、
+> ⚠️ **本表是"整个 Phase 1 的验证顺序"，不是"今天能做的清单"** —— 代码侧 ticket 05/06/08/09 都已落地
+> （`colcon test` 全绿），**但第 2 步起的每一步都还没在真机上做过**。**当下必须由人做的那一薄层**（前置条件、逐项步骤、
 > 判据、要记录的读数、以及这些框各关哪张票）已整理成独立清单：
 > **[`bench-runbook.md`](bench-runbook.md)**。做台架时**照它走**，不要照本表走。
 
 ### 7.1 ★ 哪些已经进了自动化，哪些还必须上真台架（ticket 08 更新）
 
-**已经自动化**（`colcon test --packages-up-to control`，共 **131** 例，不需飞控、不需动捕、可离线跑）：
+**已经自动化**（`colcon test --packages-up-to control`，共 **171** 例，不需飞控、不需动捕、可离线跑）：
 
 - **seam 1**（`test/test_control_standby.py` 10 例 + `test/test_control_failsafe.py` 17 例，`src/bench/` 夹具）：
   守卫逐条生效 ⟹ 不发 setpoint；50 Hz 流的字段与频率；前置流时长；`/mavros/state` 静默后流在
@@ -890,9 +905,15 @@ z0 的链路跑在 `MAVLINK_MODE_ONBOARD`，该模式配 `ESTIMATOR_STATUS` **1.
   `WAIT_START` 的目标恰是轨迹原点 ⟹ `MANUAL/LAND` + 请求 `AUTO.LAND` + 停发 ⟹ 外部上锁 ⟹ 自动复位、能再起飞）、
   遥控不在线时**受理了但永不解锁**、解锁被拒 ⟹ 报 `MAV_RESULT` 且**不重试**、任务在跑时第二次起飞被拒、
   爬升速率两侧、判稳的两半各一条反例、进入 `TAKEOFF` 后机头锁定。
-  ⚠️ 这一份测试里有一个**"假飞机"**（`_Plant`）：它只在**收到新 setpoint 时**才走一步，
-  否则探针的轮询快过 DUT 的 50 Hz 时会观测到假的 0 / 2× 速度抖动（`src/bench/README.md` 的纪律 2）。
-- **seam 2**（`test/test_fsm.cpp` **59** 例 + `test/test_rc_stick.cpp` 13 例，零 ROS）：缺项清单是哪几条、
+  **ticket 09 的那一半**（`test/test_control_track.py` 7 例）：第一次上升沿 = 解锁起飞（与 `/control/takeoff`
+  同一条受理路径）、第二次 = 进 `TRACK` 且**由 control 自己发 `/traj/start`**（配正控：进 `TRACK` 之前
+  **一帧都没发过**）、参考流断了按 `traj_stream_gap_s` 重发、超 `traj_timeout_s` ⟹ `degrade=traj_timeout`、
+  完成度 `≥ 1.0` ⟹ `end_reason=traj_done` ⟹ `LAND`、以及**"从没低于 1.0 过"不算跑完**（防"一进 `TRACK`
+  就判完"）。★ 台架实测还捞出两条日志缺陷（见 ticket 09 的落地记录）。
+  ⚠️ 这一份测试里的**"假飞机"已提升为 `bench/plant.py`**（`Plant` + `fly`/`fly_until`）：它只在**收到新
+  setpoint 时**才走一步，否则探针的轮询快过 DUT 的 50 Hz 时会观测到假的 0 / 2× 速度抖动
+  （`src/bench/README.md` 的纪律 2）。ticket 09 起 `control` 的两个 seam 1 文件共用它。
+- **seam 2**（`test/test_fsm.cpp` **72** 例 + `test/test_rc_stick.cpp` 13 例 + `test/test_rc_switch.cpp` 12 例，零 ROS）：缺项清单是哪几条、
   什么顺序；断流后前置流重新计时；`STANDBY` 下控制权仍是 `MANUAL`。
   **ticket 06 的那一半**：两类降级的处置差异、闩锁种类与复位矩阵（含"夺权可升级已闩锁的输入失效"）、
   首因闩锁、`mode_lost` 按**丢的是哪个模式**区分（含"我们自己停发后 PX4 跟着退出不算夺权"的解锁/未解锁两条 ——
@@ -903,15 +924,23 @@ z0 的链路跑在 `MAVLINK_MODE_ONBOARD`，该模式配 `ESTIMATOR_STATUS` **1.
   **到高判据的基准是"原点 + 高度"而不是当帧 `target_z`**（★ 写成 `target_z` 时斜坡形同虚设，
   见 §4.2 的那条 ★）；**"持续"是连续不是累计**；`velocity_valid` 必须为真；
   判稳的两条判据各一条反例；**轨迹原点记的是判稳那一刻的位置而不是悬停点**；
-  保持满 `hover_hold_s` ⟹ 降落出口 + `mission_complete`；落地上锁后原点/轨迹原点全清且能重新起飞；
+  等不到开始键、超 `wait_start_timeout_s` ⟹ 降落出口 + `end_reason=kWaitStartTimeout`（措辞是 `end_reason`
+  而非一个 `mission_complete` 布尔：把"没等到开始键"说成"任务飞完了"是误导）；落地上锁后原点/轨迹原点全清且能重新起飞；
   起飞后机头锁定、而 `STANDBY` 跟随当前机头。
   **ticket 16 的那一半**：`ekf2_pos_lost` 的**解锁门**（未解锁不算失效）、它与 `mocap_stamp_stalled`
   的**优先级**（同一帧两个都成立时报戳冻住 —— 原因是戳冻住、结果是 EKF2 拒用），以及
   `DegradeNames` 的**逐字符守卫**（任何 `degrade=` token 跑出 `[a-z0-9_]` 即变红）。
+  ⚠️ **`end_reason` 没有对应的逐字符守卫**（只有 `DegradeNames` 有）—— `to_string(EndReason)` 的取值只在
+  测试里按**值**断言。若要像 `degrade=` 那样发布一份 `end_reason=` 的 grep 配方，得先补这条守卫。
+  **ticket 09 的轨迹链那一半**（13 例）：**边沿按任务态归属**（`kIdle` ⟹ 起飞、`kWaitStart` ⟹ `TRACK`、
+  其余一律丢弃）、`TRACK` 的目标 = 轨迹原点 + 相对参考、参考流断 `traj_stream_gap_s` 后重发 `/traj/start`、
+  `traj_timeout_s` ⟹ `degrade=traj_timeout`、完成度 `≥ 1.0` 且**必须先见过 < 1.0** ⟹ `end_reason=traj_done`。
 
-★ 上面说的 131 例 = `control` 自己的 107（59 gtest + 13 gtest + 10 standby + 17 failsafe + 8 起飞）
-+ `bench` 夹具自检 24（`test_bench_selftest.py` **18** + `test_timeline.py` 6，
-**它自己的测试**，不是 `control` 的验收项）。
+★ 上面说的 171 例 = `control` 自己的 **139**（`test_fsm.cpp` 72 + `test_rc_stick.cpp` 13 +
+`test_rc_switch.cpp` 12 + `test_control_standby.py` 10 + `test_control_failsafe.py` 17 +
+`test_control_takeoff.py` 8 + `test_control_track.py` 7）+ `bench` 夹具自检 **32**
+（`test_bench_selftest.py` **26** + `test_timeline.py` 6，**它自己的测试**，不是 `control` 的验收项）。
+★ 逐文件数用 `grep -c '^TEST'`/`grep -cE '^(def test_|TEST)'` 现数，**别照抄本文** —— 它会漂。
 
 **`traj`（ticket 07）同样是两层**，`colcon test --packages-up-to traj` = **31 例**全绿
 （seam 2 的 20 + seam 1 的 11；★ 它的 seam 1 也用 `bench` 夹具，所以同样要 `--packages-up-to`）：

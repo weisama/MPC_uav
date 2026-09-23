@@ -1,6 +1,7 @@
 #include "control/px4_interface.hpp"
 
 #include <cmath>
+#include <limits>
 #include <utility>
 
 #include "mavros_msgs/msg/position_target.hpp"
@@ -47,7 +48,10 @@ bool vector_is_finite(const geometry_msgs::msg::Vector3 & v)
 
 Px4Interface::Px4Interface(rclcpp::Node & node, const Px4Config & config)
 : node_(node), topics_(config.topics), timeouts_(config.timeouts), limits_(config.limits),
-  modes_(config.modes)
+  modes_(config.modes), rc_start_(config.rc_start), traj_progress_cb_(config.on_traj_progress),
+  // ★ 开始键的判据（§H.1 的那一组数）—— 有状态，所以在这里构造而不是每帧现算。
+  start_(rc_start_.start_threshold, rc_start_.release_threshold, rc_start_.debounce_s,
+    rc_start_.low_us, rc_start_.high_us)
 {
   // 摇杆阈值来自参数（`COM_RC_STICK_OV` 的 µs 等价物）⟹ 检测器在这里才构造。
   for (StickMoveDetector & det : stick_) {
@@ -78,6 +82,13 @@ Px4Interface::Px4Interface(rclcpp::Node & node, const Px4Config & config)
   // ★ ticket 16：登记进来才有"多久没到"可看（诊断），但它**不进任何判据**（见 `Timeouts::estimator_s`）。
   inputs_[topics_.estimator_status] = {rclcpp::Time(0, 0, RCL_ROS_TIME), false,
     timeouts_.estimator_s};
+  // ★★ ticket 09：`traj` 的两条输入。⚠️ 这里的**超时字段刻意留 0.0，它没有含义** ——
+  //   "参考多久没来算失效"是**任务层**的事（`TaskLimits::traj_stream_gap_s` / `traj_timeout_s`）：
+  //   那个时限必须与"我们什么时候开始要这个流"一起看（进 `TRACK` 才生效），而边界层不知道
+  //   任务在做什么。登记进来只为一件既有的事：诊断面能报"这条输入静默多久"（`describe_inputs`）。
+  //   ★ 所以别在这里调 `fresh()`（恒为假）——要年龄就调 `age_seconds()` / `traj()`。
+  inputs_[topics_.traj_reference] = {rclcpp::Time(0, 0, RCL_ROS_TIME), false, 0.0};
+  inputs_[topics_.traj_progress] = {rclcpp::Time(0, 0, RCL_ROS_TIME), false, 0.0};
 
   state_sub_ = node_.create_subscription<mavros_msgs::msg::State>(
     topics_.state, rclcpp::QoS(10).transient_local(),
@@ -135,9 +146,33 @@ Px4Interface::Px4Interface(rclcpp::Node & node, const Px4Config & config)
     topics_.estimator_status, rclcpp::QoS(10),
     [this](mavros_msgs::msg::EstimatorStatus::ConstSharedPtr msg) {on_estimator_status(*msg);});
 
+  // ★★ ticket 09：`traj` 的两条输入。QoS 用默认（`QoS(10)` = 可靠 + 易失），与**发布方逐字一致**：
+  //   已读源码确认 `traj_node.cpp` 的 `reference_pub_` / `progress_pub_` 都是 `rclcpp::QoS(10)`
+  //   （没有 transient_local、没有 best_effort）⟹ 这里的 durability/reliability 对得上。
+  //   ⚠️ 这一层错了不会报错，只会"永远收不到"（同下面那段 QoS 说明）。
+  //   ★ **易失是对的**，不只是"够用"：`traj` 在 `/traj/start` 之前**根本不发**参考
+  //   （`tick()` 开头 `if (!running_) return;`）⟹ 节点启动时本来就该"没有参考"，
+  //   回放上一会话的最后一条参考会让"进 TRACK 第一帧就有一个陈旧目标"。
+  traj_reference_sub_ = node_.create_subscription<mavros_msgs::msg::PositionTarget>(
+    topics_.traj_reference, rclcpp::QoS(10),
+    [this](mavros_msgs::msg::PositionTarget::ConstSharedPtr msg) {on_traj_reference(*msg);});
+
+  traj_progress_sub_ = node_.create_subscription<std_msgs::msg::Float32>(
+    topics_.traj_progress, rclcpp::QoS(10),
+    [this](std_msgs::msg::Float32::ConstSharedPtr msg) {on_traj_progress(*msg);});
+
   // 唯一的控制输出。发布方用默认（可靠）QoS：mavros 以 best_effort 订阅，可靠发布方可兼容；
   // 反过来（best_effort 发布）会让 mavros 收不到。
   setpoint_pub_ = node_.create_publisher<mavros_msgs::msg::PositionTarget>(topics_.setpoint, 10);
+
+  // ★ ticket 09：两条**我们对外提供**的话题。用默认 QoS（可靠 + 易失）：
+  //   · `/traj/start` —— `traj_node.cpp` 的订阅者也是 `rclcpp::QoS(10)`；
+  //   · `/control/traj_progress` —— 观测面，订阅方是操作员/工具（`ros2 topic echo` 默认可靠）。
+  //   ⚠️ 它**不是**状态话题：`traj` 没在跑的时候我们什么都不发（"没有进度"≠"进度是 0"，
+  //     与 `/control/state` 那种 transient_local 的心跳不同）。
+  traj_start_pub_ = node_.create_publisher<std_msgs::msg::Empty>(topics_.traj_start, 10);
+  control_traj_progress_pub_ = node_.create_publisher<std_msgs::msg::Float32>(
+    topics_.control_traj_progress, 10);
   set_mode_client_ = node_.create_client<mavros_msgs::srv::SetMode>(topics_.set_mode_service);
   arming_client_ = node_.create_client<mavros_msgs::srv::CommandBool>(topics_.arming_service);
 }
@@ -186,6 +221,11 @@ void Px4Interface::on_rc(const mavros_msgs::msg::RCIn & msg)
     for (StickMoveDetector & det : stick_) {
       det.reset();
     }
+    // ★★ ticket 09：开始键也在这一份复位里。理由与摇杆**不同但同源**：断链期间这档开关
+    //   动没动过我们不知道，而"已确认过低电平"（§H.5.2 判据的那一位）在那之前是真的 ⟹
+    //   "链路断了、开关恰好停在上位"会在链路恢复的第一帧凭空造出一条边沿，而那条边沿
+    //   会被当成"起飞"或"开始轨迹"。见 `StartSwitchDetector::reset()`。
+    start_.reset();
   }
   const double dt_use = (dt > 1e-3) ? dt : kNominalRcDtS;
 
@@ -204,6 +244,18 @@ void Px4Interface::on_rc(const mavros_msgs::msg::RCIn & msg)
     }
   }
   sticks_moving_ = moving;
+
+  // ★ ticket 09：同一帧还要喂**开始键**（1-based 通道号 → 0-based 下标）。
+  //   ⚠️ 越界时**跳过而不是抛异常**（通道数取决于接收机，同上面那个循环）；
+  //     更要紧的是：跳过之后检测器**一个样本都没收到** ⟹ `sample_valid()` 为假 ⟹
+  //     `take_start_edge()` 永远返回 false。这正是"通道号配错了"在现场的表现
+  //     （按了没反应），诊断里靠 `sample_valid()` 认出来。
+  {
+    const int idx = rc_start_.channel - 1;
+    if (idx >= 0 && static_cast<size_t>(idx) < count) {
+      start_.update(static_cast<double>(msg.channels[static_cast<size_t>(idx)]), now.seconds());
+    }
+  }
 
   last_rc_time_ = now;
   rc_timed_ = true;
@@ -283,6 +335,38 @@ void Px4Interface::on_estimator_status(const mavros_msgs::msg::EstimatorStatus &
   ekf2_pos_lost_ = (pos_lost_streak_ >= limits_.ekf2_pos_lost_samples);
 
   slot(topics_.estimator_status) = {node_.now(), true, timeouts_.estimator_s};
+}
+
+/// `/traj/reference` 一帧（ticket 09）—— **只记录，不做任何判断**。
+///
+/// ★ 这一层刻意不回答"这个参考还算不算新鲜"：那取决于"我们什么时候开始要这个流"（进 `TRACK`
+///   才要），而边界层不知道任务在做什么（见 `traj()` 与 `inputs_` 里那两条的说明）。
+/// ★ 位置**不在这里加轨迹原点**：`traj` 发出来的是**相对轨迹原点**的参考，
+///   相加是 `fsm.hpp` 的 `TRACK` 分支做的事（`setpoint = traj_origin + reference`）。
+///   在这里加会让"原点"这个概念出现在两个文件里，而原点只有状态机知道。
+void Px4Interface::on_traj_reference(const mavros_msgs::msg::PositionTarget & msg)
+{
+  traj_reference_ = msg;
+  slot(topics_.traj_reference) = {node_.now(), true, 0.0};
+}
+
+/// `/traj/progress` 一帧（ticket 09）—— 记录 + **逐字转发**给配置里的回调。
+///
+/// ★ 转发**逐字**（不重算、不钳位、不滤波）是本条接口的全部内容：它是给操作员看的那个数，
+///   与 `fsm.hpp` 判"跑完了"用的是**同一帧**（转出去的值与判据不同源是台架上最难查的一类不一致）。
+/// ★ 非有限值**不特殊处理**：`progress` 来自 `elapsed_ / duration_`，NaN 在两处比较里都为假
+///   ⟹ 既不会被判成"跑完了"、也不会污染别的判据（安全侧），而在这里加一条分支反而会制造
+///   "判据看到 NaN、转发出去的不是"这种两份事实。
+void Px4Interface::on_traj_progress(const std_msgs::msg::Float32 & msg)
+{
+  traj_progress_ = static_cast<double>(msg.data);
+  traj_progress_ever_ = true;
+  if (traj_progress_cb_) {
+    // ⚠️ 必须先判空：空 `std::function` 直接调用会抛 `std::bad_function_call`，
+    //   而在订阅回调里抛异常会让节点崩 —— 那是本张"任何失效下节点不崩"的直接落地。
+    traj_progress_cb_(msg.data);
+  }
+  slot(topics_.traj_progress) = {node_.now(), true, 0.0};
 }
 
 const Px4Interface::Input & Px4Interface::slot(const std::string & topic) const
@@ -393,6 +477,34 @@ Odometry Px4Interface::odometry() const
     }
   }
   return o;
+}
+
+TrajReference Px4Interface::traj(double now_s) const
+{
+  TrajReference t;
+  const double age = age_seconds(topics_.traj_reference, now_s);
+  // ★★ 从未收到过 ⟹ **`inf`**，而不是 `age_seconds()` 那个 −1：`TrajReference::age_s` 的语义是
+  //   "距上一次参考多久了"，任何 `<=` 的比较都该判它"不新鲜"。−1 会让 `alive(gap)` 恒真 ⟹
+  //   任务在**一个参考都没收到**的时候以为流是好的（那是最贵的一类错：目标冻在原点还继续飞）。
+  t.age_s = (age < 0.0) ? std::numeric_limits<double>::infinity() : age;
+  // ★ 值只在**这一帧有没有参考**上取用：调用方先看 `age_s`（`alive()`），不新鲜时**不该**用这三个数
+  //   —— 它们那时是"最后一帧参考"，而 `fsm.hpp` 的 `TRACK` 分支在断流时保持**上一个目标**、
+  //   不回退到这些残留值（见那里的注释）。放在这里只是让"最后一帧"可读，不是让它可用。
+  t.x = traj_reference_.position.x;
+  t.y = traj_reference_.position.y;
+  t.z = traj_reference_.position.z;
+  t.progress = traj_progress_;
+  t.progress_seen = traj_progress_ever_;
+  return t;
+}
+
+void Px4Interface::publish_traj_start()
+{
+  // ★ `Empty`：这条消息没有载荷 —— `traj` 收到就把参考时钟归零（`traj_node.cpp::on_start`）。
+  // ★ **不做重试、不做去抖、不看应答**：什么时候该发是任务层算好的（`Decision::request_traj_start`
+  //   是**脉冲**），"发几次、隔多久"的策略在 `fsm.hpp`（`track_started_` / `traj_stream_gap_s`）。
+  //   这里多发一次就是一次真实的指令跳变（参考时钟归零 ⟹ 掉头飞回起点）。
+  traj_start_pub_->publish(std_msgs::msg::Empty());
 }
 
 void Px4Interface::publish_setpoint(double x, double y, double z, float yaw)

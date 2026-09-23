@@ -41,6 +41,13 @@ if(BUILD_TESTING)
   ament_add_gtest(test_rc_stick test/test_rc_stick.cpp)
   target_include_directories(test_rc_stick PRIVATE include)
 
+  # ★ seam 2（纯函数，零 ROS）：**开始键的上升沿判据**（ticket 09）。
+  #   单独一份的理由同上一份：它守着三个"在话题上完全同形"的坑
+  #   （上电即高位被当成一次边沿 / 抖动没去抖 / 一条边沿被消费两次），
+  #   见 test/test_rc_switch.cpp 头注释。
+  ament_add_gtest(test_rc_switch test/test_rc_switch.cpp)
+  target_include_directories(test_rc_switch PRIVATE include)
+
   # ★ seam 1（话题边界）：喂假 mavros + 脚本化动捕输入，**只断言外部可观测的话题**。
   #   与上面那份的分工见 test/test_fsm.cpp 的头注释：这里回答"飞机发了什么"，
   #   上面回答"是哪条守卫放行的"（四条守卫失效在话题上症状一样，分辨率到顶）。
@@ -59,6 +66,14 @@ if(BUILD_TESTING)
   #   解锁请求、`/control/state`）。单独一份的理由：它比前两份都长（要真爬完 1 m 的斜坡），
   #   夹具开销与超时都该自己算。
   ament_add_pytest_test(test_control_takeoff test/test_control_takeoff.py
+    TIMEOUT 480)
+
+  # ★ seam 1（话题边界）：**开始键 → TRACK → 任务收口**（ticket 09）—— 与上一份的分工：
+  #   上一份的入口是 `/control/takeoff` 服务，这一份的入口是**遥控器 ch9 的上升沿**
+  #   （第 1 次 = 解锁起飞、第 2 次 = 进 TRACK），而且多一个同伴节点（假 `traj`）在说话。
+  #   ⟹ 单独一份：它要把"按键"真的推两下，夹具开销与超时都该自己算。
+  #   ⚠️ 它比前三份都长（每条用例都要先真爬完 1 m 再飞一段轨迹），480 s 是实测的 3 倍余量。
+  ament_add_pytest_test(test_control_track test/test_control_track.py
     TIMEOUT 480)
 endif()
 

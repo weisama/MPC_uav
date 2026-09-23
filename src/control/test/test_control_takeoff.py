@@ -3,11 +3,12 @@
 ★★ 本文件与 `test_control_standby.py` 的**唯一**差别是：**飞机开始动了**。
    ticket 05 验的是"发出去的帧对不对"，位置目标就是当前位姿，所以夹具**不许**动飞机；
    ticket 08 的判据（爬到 1 m、位置误差 < 10 cm、速率 < 0.1 m/s）**全是关于飞机状态的**
-   ⟹ 必须在夹具上再补一层"假飞机"（见本文件末尾的 `_Plant`）。没有它：位置恒为 0
+   ⟹ 必须在夹具上再补一层"假飞机"（`bench.plant.Plant`）。没有它：位置恒为 0
    ⟹ "爬到 1 m"永远不会发生；速度恒为 0 ⟹ `|v| < 0.10` **恒真** ⟹ 测试会全绿而毫无意义。
-   ⚠️ 这一层刻意留在**本文件**里，没有塞进 `bench`：它不是"某个接口假得像不像"，
-     而是"这一轮想让飞机怎么飞"的场景逻辑（与 `Timeline` 的时机编排同类）。
-     ticket 09/10 真复用时再提升进 `bench` —— 那时它才够格有自己的自检。
+   ⚠️ 这一层原先住在**本文件末尾**，注释写着"ticket 09/10 真复用时再提升进 `bench`"。
+     **ticket 09 就是那次复用**（`test_control_track.py` 同样要"飞机真的在动"）⟹ 已搬进
+     `bench`（`plant.py`），这里改成 import。两个测试文件各留一份假飞机必然走散，
+     而两者断言的物理是同一套。
 
 验收项 → 用例（工单 `.scratch/phase1/issues/08-takeoff-hover-land.md`）：
   · 解锁（守卫放行后、**一次**、被拒不重试）  → 冒烟 / 遥控不在线 / 解锁被拒 / 任务在跑
@@ -26,7 +27,7 @@ import re
 import pytest
 from std_srvs.srv import Trigger
 
-from bench import Scenario
+from bench import Plant, Scenario, fly, fly_until
 
 #: DUT =（包名，可执行名）—— 由 `ament_index_python` 解析成 <prefix>/lib/control/control_node
 DUT = ("control", "control_node")
@@ -51,9 +52,13 @@ BASE_PARAMS = {
     "hover_pos_tol_m": 0.10,
     "hover_vel_tol_mps": 0.10,
     "hover_settle_s": 2.0,
-    # ★ 工单的自由飞（阶梯第 4 级）要求保持 60 s；台架只验"保持满 ⟹ 自动降落"这条**逻辑**，
-    #   60 s 那一条是人的物理步骤（见工单的 Comments）。
-    "hover_hold_s": 3.0,
+    # ★★ ticket 09 **换掉了** ticket 08 的 `hover_hold_s`：降落不再由"停在轨迹原点上多久"触发，
+    #   而是由**开始键**（进 TRACK）或**轨迹跑完**触发。`WAIT_START` 里剩下的那个数是**兜底超时**
+    #   —— "操作员一直不按键"这条自己走不出去的态必须有人收拾。
+    #   本文件只验到 WAIT_START 为止（TRACK 是 ticket 09，见 `test_control_track.py`），
+    #   所以这里就靠这条兜底把 ⑤ 那一段（保持满 ⟹ 自动降落）跑出来，取值压小到 3 s。
+    #   ⚠️ 节点会为此发一条 `wait_start_timeout_s 偏短` 的 WARN —— 那是**预期内的**。
+    "wait_start_timeout_s": 3.0,
     "takeoff_timeout_s": 5.0,
 }
 
@@ -94,30 +99,6 @@ def _takeoff(sc, timeout_s=6.0):
     resp = future.result()
     sc.node.destroy_client(client)
     return resp
-
-
-def _fly(sc, plant, seconds: float, dt: float = 0.02) -> None:
-    """推进 `seconds` 秒，途中让假飞机跟着 setpoint 动。★ 别用 `sc.hold` —— 那个不动飞机。"""
-    end = sc.t() + seconds
-    while sc.t() < end:
-        plant.step()
-        sc.advance_to(min(sc.t() + dt, end))
-
-
-def _fly_until(sc, plant, predicate, timeout_s: float = 15.0, message: str = "") -> None:
-    """一边让假飞机飞、一边等判据成立（等价于 `Scenario.wait_for`，但飞机在动）。
-
-    超时与 `BenchTimeout` 一样带上 `evidence()`：台架上"为什么没到"的答案几乎总在记录里。
-    """
-    deadline = sc.t() + timeout_s
-    while True:
-        if predicate():
-            return
-        if sc.t() >= deadline:
-            raise AssertionError(
-                (message or "等待判据超时") + f"（等了 {timeout_s:g} s）\n\n" + sc.evidence())
-        plant.step()
-        sc.advance_to(min(sc.t() + 0.02, deadline))
 
 
 _ORIGIN_RE = re.compile(r"(takeoff_origin|traj_origin)=\(([-0-9.]+), ([-0-9.]+), ([-0-9.]+)\)")
@@ -187,7 +168,7 @@ def test_冒烟_解锁_爬升_悬停_判稳记轨迹原点_保持后自动降落
     """
     with Scenario(dut=DUT, params=BASE_PARAMS) as sc:
         _reach_offboard(sc)
-        plant = _Plant(sc)
+        plant = Plant(sc)
         assert sc.control_state() == "MANUAL/STANDBY"
 
         # —— ① 受理 ≠ 起飞 ——
@@ -204,8 +185,8 @@ def test_冒烟_解锁_爬升_悬停_判稳记轨迹原点_保持后自动降落
             "受理之后、解锁之前，setpoint 的目标必须仍是当前位置（原地保持）")
 
         # —— ② 解锁 ⟹ TAKEOFF（起飞机头 / 原点在那一刻锁定）——
-        _fly_until(sc, plant, lambda: sc.control_state() == "AUTO/TAKEOFF", timeout_s=10.0,
-                   message="解锁之后没有进 TAKEOFF")
+        fly_until(sc, plant, lambda: sc.control_state() == "AUTO/TAKEOFF", timeout_s=10.0,
+                  message="解锁之后没有进 TAKEOFF")
         origins = _origins_in_log(sc)
         assert "takeoff_origin" in origins, (
             "TAKEOFF 的日志里没有 `takeoff_origin=(x, y, z)` ⟹ 起飞原点不可复核"
@@ -215,8 +196,8 @@ def test_冒烟_解锁_爬升_悬停_判稳记轨迹原点_保持后自动降落
             f"起飞原点应当 ≈ 假 EKF 此刻的位置 (0, 0, 0)，实际 {origins['takeoff_origin'][-1]}")
 
         # —— ③ 爬升：≤0.5 m/s，水平两轴钉在原点 ——
-        _fly_until(sc, plant, lambda: sc.control_state() == "AUTO/HOVER", timeout_s=10.0,
-                   message="没有进 HOVER（爬到 1 m 并稳住 1 s 之后应当进）")
+        fly_until(sc, plant, lambda: sc.control_state() == "AUTO/HOVER", timeout_s=10.0,
+                  message="没有进 HOVER（爬到 1 m 并稳住 1 s 之后应当进）")
         first, zmax = _climb_span(sc)
         assert zmax - first.msg.position.z >= 0.95, (
             f"爬升只走了 {zmax - first.msg.position.z:.2f} m，要求 ≥0.95 m（≈ takeoff_altitude_m）")
@@ -229,8 +210,8 @@ def test_冒烟_解锁_爬升_悬停_判稳记轨迹原点_保持后自动降落
             f"y 有 {len(ys)} 个值")
 
         # —— ④ 悬停 ⟹ 判稳 ⟹ 记录**轨迹原点** ——
-        _fly_until(sc, plant, lambda: sc.control_state() == "AUTO/WAIT_START", timeout_s=10.0,
-                   message="稳定判据始终没有成立（位置误差 <10 cm ∧ 速率 <0.1 m/s 持续 2 s）")
+        fly_until(sc, plant, lambda: sc.control_state() == "AUTO/WAIT_START", timeout_s=10.0,
+                  message="稳定判据始终没有成立（位置误差 <10 cm ∧ 速率 <0.1 m/s 持续 2 s）")
         origins = _origins_in_log(sc)
         assert "traj_origin" in origins, (
             "判稳的日志里没有 `traj_origin=(x, y, z)` ⟹ 工单那条"
@@ -250,9 +231,10 @@ def test_冒烟_解锁_爬升_悬停_判稳记轨迹原点_保持后自动降落
             "WAIT_START 的目标必须**就是**轨迹原点（停在原地）。"
             "若沿用悬停点，飞机就会慢慢挪回去，而那个「轨迹原点」成了它没去过的点")
 
-        # —— ⑤ 保持满 hover_hold_s ⟹ 自动 AUTO.LAND ——
-        _fly_until(sc, plant, lambda: sc.control_state() == "MANUAL/LAND", timeout_s=10.0,
-                   message="保持满 hover_hold_s 之后没有自动请求降落")
+        # —— ⑤ 等开始键超时（`wait_start_timeout_s`）⟹ 自动 AUTO.LAND ——
+        # ★ ticket 09 起这是 WAIT_START 的**兜底出口**（正常出口是开始键 ⟹ TRACK，本文件不覆盖）。
+        fly_until(sc, plant, lambda: sc.control_state() == "MANUAL/LAND", timeout_s=10.0,
+                  message="等满 wait_start_timeout_s 之后没有自动请求降落（兜底出口没生效）")
         sc.wait_for(lambda: any(r.custom_mode == "AUTO.LAND" for r in sc.fake.mode_requests),
                     timeout_s=6.0,
                     message="任务走完却没有请求 AUTO.LAND（上锁交给 PX4，但降落必须是我们请求的）")
@@ -331,7 +313,7 @@ def test_解锁被拒_报原因且不自动重试():
     params = dict(BASE_PARAMS, takeoff_timeout_s=3.0)
     with Scenario(dut=DUT, params=params) as sc:
         _reach_offboard(sc)
-        plant = _Plant(sc)
+        plant = Plant(sc)
         sc.fake.set_arming_policy("fail")
 
         assert _takeoff(sc).success
@@ -354,8 +336,8 @@ def test_解锁被拒_报原因且不自动重试():
         sc.fake.set_arming_policy("ok")
         assert _takeoff(sc).success, (
             "解锁被拒之后命令应当**当场**可以重来（退回 STANDBY 就是复位，不需要等超时）")
-        _fly_until(sc, plant, lambda: sc.control_state() == "AUTO/TAKEOFF", timeout_s=10.0,
-                   message="第二次起飞没有进 TAKEOFF")
+        fly_until(sc, plant, lambda: sc.control_state() == "AUTO/TAKEOFF", timeout_s=10.0,
+                  message="第二次起飞没有进 TAKEOFF")
         assert sc.fake.armed
         assert len(sc.fake.arming_requests) == 2, (
             "第二次起飞应当**新发一次**解锁请求（是新一轮任务，不是重试）")
@@ -365,10 +347,10 @@ def test_任务在跑时第二次起飞被拒():
     """`kAlreadyFlying` —— 命令的生命周期绑在任务态上（见 `Fsm::Task` 的说明）。"""
     with Scenario(dut=DUT, params=BASE_PARAMS) as sc:
         _reach_offboard(sc)
-        plant = _Plant(sc)
+        plant = Plant(sc)
         assert _takeoff(sc).success
-        _fly_until(sc, plant, lambda: sc.control_state() == "AUTO/TAKEOFF", timeout_s=10.0,
-                   message="第一次起飞没有进 TAKEOFF")
+        fly_until(sc, plant, lambda: sc.control_state() == "AUTO/TAKEOFF", timeout_s=10.0,
+                  message="第一次起飞没有进 TAKEOFF")
 
         resp = _takeoff(sc)
         assert not resp.success, "任务在跑的时候第二次起飞必须被拒"
@@ -388,10 +370,10 @@ def test_爬升速率不超过_climb_speed_mps():
     """
     with Scenario(dut=DUT, params=BASE_PARAMS) as sc:
         _reach_offboard(sc)
-        plant = _Plant(sc)
+        plant = Plant(sc)
         assert _takeoff(sc).success
-        _fly_until(sc, plant, lambda: sc.fake.position[2] > 0.95, timeout_s=10.0,
-                   message="假飞机没有爬到 0.95 m")
+        fly_until(sc, plant, lambda: sc.fake.position[2] > 0.95, timeout_s=10.0,
+                  message="假飞机没有爬到 0.95 m")
 
         first, zmax = _climb_span(sc)
         climbed = zmax - first.msg.position.z
@@ -422,10 +404,10 @@ def test_稳定判据的速率那一半_不成立就不记轨迹原点():
     params = dict(BASE_PARAMS, hover_settle_s=1.0)
     with Scenario(dut=DUT, params=params) as sc:
         _reach_offboard(sc)
-        plant = _Plant(sc)
+        plant = Plant(sc)
         assert _takeoff(sc).success
-        _fly_until(sc, plant, lambda: sc.control_state() == "AUTO/HOVER", timeout_s=12.0,
-                   message="没有进 HOVER（爬不上去？）")
+        fly_until(sc, plant, lambda: sc.control_state() == "AUTO/HOVER", timeout_s=12.0,
+                  message="没有进 HOVER（爬不上去？）")
 
         # ★ 先证明"位置那一半此刻是妥妥成立的"，否则下面测的就不是速率那一半：
         #   假飞机稳态跟踪（plant 的限速 1.5 > 爬升 0.5）⟹ 它就在悬停点上，
@@ -463,10 +445,10 @@ def test_稳定判据的位置那一半_不成立就不记轨迹原点():
     params = dict(BASE_PARAMS, hover_settle_s=1.0)
     with Scenario(dut=DUT, params=params) as sc:
         _reach_offboard(sc)
-        plant = _Plant(sc)
+        plant = Plant(sc)
         assert _takeoff(sc).success
-        _fly_until(sc, plant, lambda: sc.control_state() == "AUTO/HOVER", timeout_s=12.0,
-                   message="没有进 HOVER（爬不上去？）")
+        fly_until(sc, plant, lambda: sc.control_state() == "AUTO/HOVER", timeout_s=12.0,
+                  message="没有进 HOVER（爬不上去？）")
 
         plant.freeze()
         hover = sc.fake.position
@@ -496,7 +478,7 @@ def test_进入_TAKEOFF_后机头锁定_不跟随():
     """
     with Scenario(dut=DUT, params=BASE_PARAMS) as sc:
         _reach_offboard(sc)
-        plant = _Plant(sc)
+        plant = Plant(sc)
 
         # STANDBY：yaw = **当前机头**（这样飞机原地不动、不转向）。
         sc.fake.set_yaw(0.6)
@@ -505,76 +487,15 @@ def test_进入_TAKEOFF_后机头锁定_不跟随():
             "STANDBY 段 setpoint 的 yaw 必须 = 当前机头")
 
         assert _takeoff(sc).success
-        _fly_until(sc, plant, lambda: sc.control_state() == "AUTO/TAKEOFF", timeout_s=10.0,
-                   message="没有进 TAKEOFF")
+        fly_until(sc, plant, lambda: sc.control_state() == "AUTO/TAKEOFF", timeout_s=10.0,
+                  message="没有进 TAKEOFF")
         locked = sc.setpoints()[-1].msg.yaw
         assert locked == pytest.approx(0.6, abs=1e-6), (
             f"起飞机头应当=解锁那一刻的机头（0.6 rad），实际 {locked}")
 
         # ★ 反例：把机头转到别处 —— setpoint 的 yaw 不许跟着动。
         sc.fake.set_yaw(-1.1)
-        _fly(sc, plant, 1.5)
+        fly(sc, plant, 1.5)
         assert sc.setpoints()[-1].msg.yaw == pytest.approx(0.6, abs=1e-6), (
             "进入 TAKEOFF 之后机头被锁死，不该跟随假 EKF 报的机头（起飞不转向）"
             "—— 实际跟着动了 ⟹ 飞机在起飞过程中会自己扭一圈")
-
-
-# ───────────────────────────── 假飞机（场景侧） ─────────────────────────────
-
-class _Plant:
-    """台架上的"假飞机"：把 DUT 发的 setpoint 变成**假 EKF 报出来的位置与速度**。
-
-    ★★ 为什么必须有这一层：`FakeMavros` 刻意**不含任何动力学**（见 `src/bench/README.md`
-      §「它假的是什么、不假什么」）—— "你发你的 setpoint，它报它的位置"是它的全部行为。
-      那个选择在 ticket 05 是对的（当时验的是"帧对不对"），但 ticket 08 的判据全是关于
-      飞机状态的：没有这一层，位置恒为 0 ⟹ "爬到 1 m"永远不会发生；速度恒为 0
-      ⟹ `|v| < 0.10` **恒真**（判据的一半没有反例，测试会在此前提下变绿）。
-
-    ★ 模型 = **限速逼近**（`rate_mps` > 爬升的 0.5 ⟹ 稳态跟踪误差为 0，
-      不会用"假的跟踪偏差"污染"位置误差 < 10 cm"那一条）+ **速度 = 实际位移 / dt**。
-      速度是**真的**：爬升段 0.5 m/s、到位后 0，所以判据的速率那一半有反例可造。
-    ★ 只在**有新 setpoint 到达**时才动一格：否则夹具的轮询比 DUT 的 50 Hz 快时，
-      两格之间没有新指令 ⟹ 位移为 0 ⟹ 报出来的速度会在 0 与 2× 之间跳
-      （真 mavros 不会这样，那是夹具自己造出来的假故障）。
-    ⚠️ 它**不碰机头**：yaw 一律由用例自己 `set_yaw`。"锁定不跟随"那条判据恰恰要求
-      机头能被人为改掉而 setpoint 的 yaw 不动 —— 让 plant 跟着 setpoint 转 yaw 会把那条判据测没。
-    """
-
-    def __init__(self, sc, rate_mps: float = 1.5):
-        self.sc = sc
-        self.rate_mps = rate_mps
-        self.x, self.y, self.z = (float(v) for v in sc.fake.position)
-        self._last_t = sc.t()
-        self._last_n = len(sc.fake.setpoints)
-        self.frozen = False
-
-    def freeze(self) -> None:
-        """停手：之后 `step()` 什么都不做（用来造"飞机没跟着目标走"的场面）。"""
-        self.frozen = True
-
-    def step(self) -> None:
-        now = self.sc.t()
-        sps = self.sc.fake.setpoints
-        if self.frozen or not sps or len(sps) == self._last_n:
-            return
-        dt = now - self._last_t
-        if dt <= 0.0:
-            return
-        self._last_n = len(sps)
-        self._last_t = now
-
-        sp = sps[-1].msg
-        limit = self.rate_mps * dt
-        dx = _clamp(sp.position.x - self.x, limit)
-        dy = _clamp(sp.position.y - self.y, limit)
-        dz = _clamp(sp.position.z - self.z, limit)
-        self.x += dx
-        self.y += dy
-        self.z += dz
-        # 位置与速度是两条**独立**话题 ⟹ 写回顺序无关（见 `FakeMavros.set_velocity` 的 ⚠️）。
-        self.sc.fake.set_velocity(dx / dt, dy / dt, dz / dt)
-        self.sc.fake.set_position(self.x, self.y, self.z)
-
-
-def _clamp(delta: float, limit: float) -> float:
-    return max(-limit, min(limit, delta))

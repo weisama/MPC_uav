@@ -12,6 +12,7 @@
 //   其中"复位"这一类断言是本张的重点 —— XI35 的三处死代码里有两处就是**单向 latch**
 //   （见 `docs/reference/xi35-fsm.md` §4），所以每条闩锁都必须配一条"怎么退出去"的用例。
 
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -1001,6 +1002,11 @@ double dt_of(int frames) {return 0.02 * frames;}
 ///   （ticket 05 的 `yaw` 参数就是这么错的）。
 struct Climbing
 {
+  Climbing() = default;
+  /// 用**非默认**的任务判据起。★ ticket 09 加：`WAIT_START` 的兜底超时默认 300 s，
+  /// 而"超时会发生什么"必须能用一条 1 s 的用例钉住（真等 300 s 的用例没人会跑）。
+  explicit Climbing(const control::TaskLimits & l) : fsm(0.0, l), limits(l) {}
+
   control::Fsm fsm{0.0, control::TaskLimits{}};
   control::TaskLimits limits{};
   /// 当前时刻。★ 逐帧 `+= 0.02` 累加，**不用 `起点 + 帧数×0.02`** —— 判据里全是
@@ -1010,9 +1016,9 @@ struct Climbing
   double yaw{0.70};                    ///< 起飞机头（非零 ⟹ "锁没锁"看得出来）
 };
 
-Climbing reach_climb()
+Climbing reach_climb(const control::TaskLimits & l = control::TaskLimits{})
 {
-  Climbing c;
+  Climbing c{l};
   c.fsm.update(all_ok(),  health_ok(), odom_ok(),  100.0);
   EXPECT_EQ(c.fsm.request_takeoff(100.0), control::TakeoffReply::kAccepted);
 
@@ -1042,6 +1048,26 @@ control::Decision advance(Climbing & c, int frames, const control::Odometry & od
 control::Decision stand_at(Climbing & c, int frames, double z)
 {
   return advance(c, frames, odom_at(c.x, c.y, z, c.yaw));
+}
+
+/// 一路喂到 `WAIT_START` **那一帧**就停（**不多喂一帧**）。
+/// ★ ticket 09 必须这么写：`WAIT_START` 的两条出口（开始键 / 兜底超时）**都带时长**，
+///   "多喂 5 s 再断言"会把"刚进去"这件事直接吃掉 —— 于是测的东西悄悄变成了别的东西。
+/// ★ 判稳时飞机恰好停在悬停点上，所以 `traj_origin` == `(c.x, c.y, c.z + 高度)`，
+///   后续用例的期望值可以直接算出来。
+control::Decision stop_at_wait_start(Climbing & c)
+{
+  const double hover_z = c.z + c.limits.takeoff_altitude_m;
+  control::Decision d;
+  for (int i = 0; i < frames_of(20.0); ++i) {
+    c.now += 0.02;
+    d = c.fsm.update(armed_offboard(),  health_ok(), odom_at(c.x, c.y, hover_z, c.yaw),  c.now);
+    if (std::string(c.fsm.task_name()) == "wait_start") {
+      return d;
+    }
+  }
+  ADD_FAILURE() << "20 s 都没走到 WAIT_START（起飞/判稳那一段坏了）";
+  return d;
 }
 
 }  // namespace
@@ -1307,29 +1333,66 @@ TEST(Takeoff, 判稳成立时轨迹原点记的是判稳那一刻的位置而不
   EXPECT_DOUBLE_EQ(d.target_yaw, c.yaw);
 }
 
-TEST(Takeoff, 保持满时长后任务走完并请求降落)
+/// ★★ ticket 09 把这一条**改掉了**：ticket 08 时 `WAIT_START` 的出口是"保持满
+/// `hover_hold_s`"（一个固定时长），ticket 09 之后它的**正常出口是开始键**，
+/// 而"没人按键"变成兜底超时 `wait_start_timeout_s`。语义上的差别是本质的：
+/// 前者是"停 60 s 就该走"，后者是"等操作员，但不许无限等"。
+TEST(Takeoff, 等不到开始键时兜底超时到点任务结束并请求降落)
 {
-  Climbing c = reach_climb();
-  const double top = c.limits.takeoff_altitude_m;
-
-  // 判稳 ⟹ WAIT_START（判稳前后各判据的时长加起来 1.0 + 2.0 s，给 5 s 足够）。
-  control::Decision d = stand_at(c, frames_of(5.0), top);
+  // 兜底调成 1.0 s：真等 300 s 的用例没人会跑。
+  // ⚠️ 到 `WAIT_START` **那一帧就停**（不多喂）—— 出口的两条路都带时长，多喂的帧会把
+  //   "刚进去"这件事吃掉，后面的计时断言就全是错的。
+  control::TaskLimits lim;
+  lim.wait_start_timeout_s = 1.0;
+  Climbing c = reach_climb(lim);
+  control::Decision d = stop_at_wait_start(c);
   ASSERT_STREQ(c.fsm.task_name(), "wait_start");
-  EXPECT_TRUE(d.stream_setpoint) << "保持期间照流（目标 = 轨迹原点）";
-  EXPECT_FALSE(d.request_land) << "还没到保持时长，不该请求降落";
+  EXPECT_TRUE(d.stream_setpoint) << "等待期间照流（目标 = 轨迹原点）";
+  EXPECT_FALSE(d.request_land) << "兜底时限还没到，不该请求降落";
+  const double entered_at = c.now;
 
-  // 保持满 ⟹ 任务走完。★ 动作与**降级**完全一样（停发 + 降落出口），差别只在措辞
-  //   ⟹ 用 `mission_complete` 传出去，由边界层决定日志怎么说。
-  d = stand_at(c, frames_of(c.limits.hover_hold_s + 1.0), top);
-  EXPECT_EQ(d.phase, control::Phase::kLand);
-  EXPECT_TRUE(d.mission_complete) << "任务走完 ≠ 降级：动作一样，措辞不同";
-  EXPECT_EQ(d.degrade, control::Degrade::kNone) << "正常走完不该有降级原因";
+  // 一路喂到降落，并**断言它是在 1.0 s 之后才发生**（不是"反正最后会降落"）。
+  const double top = c.z + c.limits.takeoff_altitude_m;
+  bool landed = false;
+  for (int i = 0; i < frames_of(3.0); ++i) {
+    d = stand_at(c, 1, top);
+    if (d.phase == control::Phase::kLand) {
+      landed = true;
+      break;
+    }
+  }
+  ASSERT_TRUE(landed) << "兜底超时到点之后没有走降落出口 —— 程序卡在 WAIT_START 里了";
+  EXPECT_GE(c.now - entered_at, lim.wait_start_timeout_s) << "还没到兜底时限就自己降落了";
+  EXPECT_LE(c.now - entered_at, lim.wait_start_timeout_s + 0.1) << "超时判据晚了（不是按秒算的？）";
+
+  // ★ 与降级出口**动作逐字相同**（停发 + 请求 `AUTO.LAND`），差别只在措辞 ——
+  //   而措辞靠 `end_reason` 传出去：把"没等到开始键"说成"任务飞完了"是误导。
+  EXPECT_EQ(d.end_reason, control::EndReason::kWaitStartTimeout);
+  EXPECT_EQ(d.degrade, control::Degrade::kNone) << "正常结束不该有降级原因";
   EXPECT_TRUE(d.request_land) << "降落必须是我们请求的（上锁才是 PX4 的事）";
   EXPECT_FALSE(d.stream_setpoint) << "请求降落之后必须停发 setpoint";
   // ★ 控制权这时候是 MANUAL：`AUTO` 的定义是"**我们正在发会驱动飞机的指令**"，
   //   而请求 `AUTO.LAND` 之后我们停发、由 PX4 自己落 ⟹ 与 ticket 06 的降级出口逐字一致
   //   （`halt()` 是两处共用的那一段）。`/control/state` 于是打出 `MANUAL/LAND`。
   EXPECT_EQ(d.authority, control::Authority::kManual);
+}
+
+/// ★ 兜底可以**关掉**（`<= 0`）：这样 `WAIT_START` 就真的是"一直等操作员"。
+/// ★ 为什么必须有这一档：台架的 pytest 用例要走完整条链路，若兜底是 300 s 就永远等不到，
+///   若兜底是个小值则"起飞 → 判稳"的用例会在半路被它抢走。
+TEST(Takeoff, 兜底时限配成非正数时不超时)
+{
+  control::TaskLimits lim;
+  lim.wait_start_timeout_s = 0.0;
+  Climbing c = reach_climb(lim);
+  stop_at_wait_start(c);
+
+  const double top = c.z + c.limits.takeoff_altitude_m;
+  const control::Decision d = stand_at(c, frames_of(c.limits.takeoff_settle_s +
+    c.limits.hover_settle_s + 10.0), top);
+  EXPECT_EQ(d.phase, control::Phase::kWaitStart) << "配成 0 就该一直等，不该自己走";
+  EXPECT_STREQ(c.fsm.task_name(), "wait_start");
+  EXPECT_FALSE(d.request_land);
 }
 
 TEST(Takeoff, 落地上锁之后原点被清掉_不会锚在上一轮的原点上)
@@ -1377,4 +1440,314 @@ TEST(Takeoff, 起飞后机头锁定不跟随当前机头)
     fsm.update(all_ok(),  health_ok(), odom_at(0.0, 0.0, 0.0, -1.1),  100.0);
   EXPECT_EQ(standby.phase, control::Phase::kStandby);
   EXPECT_DOUBLE_EQ(standby.target_yaw, -1.1);
+}
+
+// ─────────────────────── ticket 09：开始键那条边沿与 `TRACK` ───────────────────────
+//
+// ★ 为什么这些要在零依赖层测：它们**在话题上完全同形** ——
+//   · 一条边沿被当成"起飞"还是"开始轨迹"：都表现为"飞机开始动"；
+//   · `TRACK` 的目标里**有没有加轨迹原点**：差一个常值偏移，飞行中看不出来；
+//   · 参考断了是"停住不动"还是"回落到原点"：两条都是合法的 setpoint；
+//   · 上一轮留下的 `progress = 1.0`：都表现为"任务结束了"。
+//   而这几条各自的代价都是"实飞一次才发现"。
+
+namespace
+{
+
+/// 一条**活着**的参考（相对轨迹原点，`traj` 正以 50 Hz 发着）。
+control::TrajReference ref_at(double x, double y, double z, double progress = 0.0)
+{
+  control::TrajReference t;
+  t.age_s = 0.0;
+  t.x = x;
+  t.y = y;
+  t.z = z;
+  t.progress = progress;
+  t.progress_seen = true;
+  return t;
+}
+
+/// 参考**断了**的读法：位置与完成度是**手上残留的值**（`traj` 停流之后我们只剩这些），
+/// 只有 `age_s` 是无穷。
+/// ★ 刻意保留残留值而不是写成 `(0,0,0)`：把断流写成"参考回到原点"是另一种场面
+///   （那是参考**还在发**、内容为零），两者的处置不同（一个停住、一个跟着走）。
+control::TrajReference ref_stale(double x = 0.0, double y = 0.0, double z = 0.0,
+  double progress = 0.0)
+{
+  control::TrajReference t = ref_at(x, y, z, progress);
+  t.age_s = std::numeric_limits<double>::infinity();
+  return t;
+}
+
+/// 以 0.02 s 的步长喂 `frames` 帧，每帧的读数与参考都由调用方给。
+control::Decision advance_traj(Climbing & c, int frames, const control::Odometry & odom,
+  const control::TrajReference & traj)
+{
+  control::Decision d;
+  for (int i = 0; i < frames; ++i) {
+    c.now += 0.02;
+    d = c.fsm.update(armed_offboard(),  health_ok(), odom,  c.now, traj);
+  }
+  return d;
+}
+
+}  // namespace
+
+/// ★★ §H.5.1 的"第 1 次上升沿 = 解锁 + 起飞"（D3 = 程序解锁）。
+TEST(StartEdge, 未起飞时第一条边沿受理起飞)
+{
+  control::Fsm fsm(0.0, control::TaskLimits{});
+  fsm.update(all_ok(),  health_ok(), odom_ok(),  100.0);
+
+  EXPECT_EQ(fsm.note_start_edge(100.02), control::StartEdgeReply::kTakeoff);
+  EXPECT_TRUE(fsm.awaiting_arming()) << "§H.5.1 的第一次 = 受理起飞";
+  EXPECT_FALSE(fsm.arming_requested()) << (
+    "受理 ≠ 已解锁：解锁请求要等前置（OFFBOARD + 已在流 + 遥控在线）齐了才发");
+}
+
+/// ★★ 判据是**当前任务态**，不是"这是第几次按键"。
+/// 这一条钉的是"丢掉"的两个具体形态：**连按**（手快）与**起飞途中按**（开关抖了）。
+/// 少了它，一个"数次数"的实现会在 `kRequested` 里把第二下当成"第 2 次 = 开始轨迹"
+/// —— 于是飞机**刚受理起飞就打算开跑轨迹**，而操作员只是在确认"按键有没有反应"。
+TEST(StartEdge, 起飞过程中按下的边沿被丢掉且不会排队)
+{
+  // ① 受理之后、解锁之前（`kRequested`）：最容易发生的"连按两下"。
+  control::Fsm fsm(0.0, control::TaskLimits{});
+  fsm.update(all_ok(),  health_ok(), odom_ok(),  100.0);
+  ASSERT_EQ(fsm.note_start_edge(100.0), control::StartEdgeReply::kTakeoff);
+  EXPECT_EQ(fsm.note_start_edge(100.02), control::StartEdgeReply::kIgnored)
+    << "解锁还没发生就再按一下，不该被当成「第 2 次 = 开始轨迹」";
+  EXPECT_STREQ(fsm.task_name(), "requested");
+
+  // ② 爬升途中。
+  Climbing c = reach_climb();
+  ASSERT_STREQ(c.fsm.task_name(), "climb");
+  EXPECT_EQ(c.fsm.note_start_edge(c.now + 0.02), control::StartEdgeReply::kIgnored);
+  EXPECT_STREQ(c.fsm.task_name(), "climb") << "丢掉就是丢掉";
+
+  // ★ 而"丢掉"必须是**真的丢掉**：不许替操作员记着，等判稳之后自己开跑。
+  stop_at_wait_start(c);
+  EXPECT_STREQ(c.fsm.task_name(), "wait_start") << (
+    "那一条边沿被排队了 —— 飞机会在操作员没再看它的时候自己开跑轨迹");
+}
+
+/// ★★ 计数器写法（"第 1 次 / 第 2 次"）的反例：**任务态回到 `kIdle` 之后，
+/// 这一条边沿与整场任务的第一次没有任何区别**。
+/// 用计数器去数的实现会在这里出错，而且错得很具体：计数器不会自己归零
+/// （除非每条退出路径都记得减一），于是**第二轮任务的第一次按键**会被当成
+/// "第 3 次"（或直接按"第 2 次 = 开始轨迹"处理）—— 操作员只想起飞，飞机却开跑了轨迹。
+TEST(StartEdge, 落地重新起飞后第一条边沿仍然是受理起飞)
+{
+  control::TaskLimits lim;
+  lim.wait_start_timeout_s = 0.0;   // 本用例只关心按键，不关心兜底
+
+  Climbing c = reach_climb(lim);
+  stop_at_wait_start(c);
+  double ox = 0.0, oy = 0.0, oz = 0.0;
+  ASSERT_TRUE(c.fsm.traj_origin(&ox, &oy, &oz));
+  const control::Odometry odom = odom_at(ox, oy, oz, c.yaw);
+
+  // 第 2 次按键 ⟹ 开始轨迹；跑到 100% ⟹ 任务飞完 ⟹ 降落。
+  ASSERT_EQ(c.fsm.note_start_edge(c.now + 0.02), control::StartEdgeReply::kTrack);
+  advance_traj(c, 1, odom, ref_at(0.0, 0.0, 0.0, 0.0));
+  advance_traj(c, 1, odom, ref_at(1.0, 0.0, 0.0, 1.0));
+  EXPECT_EQ(advance_traj(c, 1, odom, ref_at(1.0, 0.0, 0.0, 1.0)).phase, control::Phase::kLand);
+
+  // 落地上锁（PX4 自己会做，我们只等 `armed` 的降沿）⟹ 任务层归零。
+  control::Guards down = armed_offboard();
+  down.armed = false;
+  c.now += 0.02;
+  c.fsm.update(down,  health_ok(), odom_at(ox, oy, 0.0, c.yaw),  c.now);
+  ASSERT_STREQ(c.fsm.task_name(), "idle");
+
+  // ★★ 第 3 次按键：与第 1 次**逐字相同**。
+  EXPECT_EQ(c.fsm.note_start_edge(c.now + 0.02), control::StartEdgeReply::kTakeoff)
+    << "任务态回到 kIdle ⟹ 这一条边沿就是「第 1 次」，不该按次数去判";
+  EXPECT_TRUE(c.fsm.awaiting_arming());
+}
+
+/// 进 `TRACK` 的第一帧：**目标 = 轨迹原点本身**（参考还没到，与 `WAIT_START` 逐字连续），
+/// 并且**发出一次** `/traj/start`。
+/// ★ 为什么第一帧必发 start：参考时钟的零点必须与"开始飞"同一时刻 ——
+///   否则参考已经在跑而飞机还停在起点，进 `TRACK` 的瞬间会吃到一次跳变
+///   （ticket 09 的 Comments 第 2 条）。
+TEST(Track, 进TRACK第一帧就发一次start且目标等于轨迹原点)
+{
+  Climbing c = reach_climb();
+  stop_at_wait_start(c);
+  double ox = 0.0, oy = 0.0, oz = 0.0;
+  ASSERT_TRUE(c.fsm.traj_origin(&ox, &oy, &oz));
+  EXPECT_DOUBLE_EQ(ox, c.x);
+  EXPECT_DOUBLE_EQ(oy, c.y);
+  EXPECT_DOUBLE_EQ(oz, c.z + c.limits.takeoff_altitude_m) << "判稳时飞机就停在悬停点上";
+
+  ASSERT_EQ(c.fsm.note_start_edge(c.now + 0.02), control::StartEdgeReply::kTrack);
+  const control::Odometry odom = odom_at(ox, oy, oz, c.yaw);
+
+  // 还没收到任何参考的读法（`traj` 要等我们的 `/traj/start` 才发第一帧）。
+  const control::Decision d = advance_traj(c, 1, odom, ref_stale());
+  EXPECT_EQ(d.phase, control::Phase::kTrack);
+  EXPECT_TRUE(d.stream_setpoint);
+  EXPECT_TRUE(d.request_traj_start) << "参考时钟的零点必须与「开始飞」同一时刻";
+  EXPECT_DOUBLE_EQ(d.target_x, ox) << "第一帧参考还没到 ⟹ 原地悬停";
+  EXPECT_DOUBLE_EQ(d.target_y, oy);
+  EXPECT_DOUBLE_EQ(d.target_z, oz);
+  EXPECT_DOUBLE_EQ(d.target_yaw, c.yaw) << "TRACK 的 yaw 仍是**起飞机头**";
+
+  // 一次性脉冲。
+  EXPECT_FALSE(advance_traj(c, 1, odom, ref_stale()).request_traj_start)
+    << "/traj/start 是脉冲，不是每帧都发";
+}
+
+/// ★★ ticket 09 Comments 第 1 条的**唯一**执行处：**目标 = 轨迹原点 + 参考**。
+/// 漏掉原点（直接把参考当 setpoint 发）的后果在这里看得最清楚：参考是**相对轨迹原点**的，
+/// 悬停轨迹的参考恒为 `(0,0,0)` ⟹ 直接转发就是让飞机飞向 **EKF2 局部原点**
+/// （在动捕场里那通常意味着"往地面附近扎"，Comments 原话）。
+TEST(Track, 收到参考后目标等于轨迹原点加参考)
+{
+  Climbing c = reach_climb();
+  stop_at_wait_start(c);
+  double ox = 0.0, oy = 0.0, oz = 0.0;
+  ASSERT_TRUE(c.fsm.traj_origin(&ox, &oy, &oz));
+  ASSERT_EQ(c.fsm.note_start_edge(c.now + 0.02), control::StartEdgeReply::kTrack);
+  const control::Odometry odom = odom_at(ox, oy, oz, c.yaw);
+  advance_traj(c, 1, odom, ref_stale());
+
+  const control::Decision d = advance_traj(c, 1, odom, ref_at(0.5, -0.25, 0.10, 0.3));
+  EXPECT_EQ(d.phase, control::Phase::kTrack);
+  EXPECT_DOUBLE_EQ(d.target_x, ox + 0.5) << "参考里没有轨迹原点，加法必须由我们做";
+  EXPECT_DOUBLE_EQ(d.target_y, oy - 0.25);
+  EXPECT_DOUBLE_EQ(d.target_z, oz + 0.10);
+  // ★ 参考的 yaw **不转发**：`traj` 的 `yaw_rad` 恒 0，而 0 在 ENU 口径下是"机头朝东"
+  //   ⟹ 转发它会让飞机在半空中自己转 90°（与 ticket 05 的 `yaw` 参数同一个坑）。
+  //   ★ 这一条是**结构性**保证的（`TrajReference` 里根本没有 yaw 字段）；断言放在这里
+  //     是为了让"以后有人想把它加回来"必须先删掉这条用例。
+  EXPECT_DOUBLE_EQ(d.target_yaw, c.yaw) << "参考的 yaw 被转发了 ⟹ 飞机会自己转 90°";
+}
+
+/// 参考**断流**时的两条处置：目标**保持不动**，以及过了闸门之后**重发一次** `/traj/start`。
+/// ★ 前者：断流的那一刻正是最不该主动加一次机动的时候 —— 回落到轨迹原点是一次
+///   "看不见的位移指令"（原点与当前点可能差着半条轨迹）。
+/// ★ 后者：`traj` 在**运行中被重新选轨迹**时会自己停流（`traj_node.cpp:223`），
+///   没有人再发一次 `/traj/start`，参考就永远不会回来 —— 而 `TRACK` 里的"没有参考"
+///   很快会被判成失效并降落 ⟹ 现场表现是"换了条轨迹，飞机自己降落了"。
+TEST(Track, 参考断流时保持最后一个目标并在闸门到点后重发start)
+{
+  Climbing c = reach_climb();
+  stop_at_wait_start(c);
+  double ox = 0.0, oy = 0.0, oz = 0.0;
+  ASSERT_TRUE(c.fsm.traj_origin(&ox, &oy, &oz));
+  ASSERT_EQ(c.fsm.note_start_edge(c.now + 0.02), control::StartEdgeReply::kTrack);
+  const control::Odometry odom = odom_at(ox, oy, oz, c.yaw);
+  const double entered_at = c.now;
+  advance_traj(c, 1, odom, ref_stale());              // 进 TRACK 的第一帧（发 start）
+  advance_traj(c, 1, odom, ref_at(0.5, -0.25, 0.10, 0.3));   // 参考来了
+
+  const control::TrajReference gone = ref_stale(0.5, -0.25, 0.10, 0.3);
+  // 闸门之内：目标**保持**在最后那一个上（不回落到轨迹原点）。
+  const control::Decision held = advance_traj(c, frames_of(0.40), odom, gone);
+  EXPECT_EQ(held.phase, control::Phase::kTrack) << "3 s 还没到，不该判失效";
+  EXPECT_DOUBLE_EQ(held.target_x, ox + 0.5) << (
+    "参考断掉的那一刻主动加了一次机动 —— 回落到轨迹原点是一次看不见的位移指令");
+  EXPECT_DOUBLE_EQ(held.target_y, oy - 0.25);
+  EXPECT_DOUBLE_EQ(held.target_z, oz + 0.10);
+
+  // 过闸门 ⟹ 恰好重发一次 start。
+  int pulses = 0;
+  double pulse_at = 0.0;
+  for (int i = 0; i < frames_of(0.30); ++i) {
+    const control::Decision dd = advance_traj(c, 1, odom, gone);
+    if (dd.request_traj_start) {
+      ++pulses;
+      pulse_at = c.now;
+    }
+  }
+  EXPECT_EQ(pulses, 1) << "参考断流超过闸门之后应当**恰好**重发一次 start（多发的代价见下）";
+  EXPECT_GE(pulse_at - entered_at, c.limits.traj_stream_gap_s) << (
+    "闸门还没过就重发 —— 万一参考其实还在跑，`traj` 的时钟会被归零，飞机会掉头飞回起点");
+}
+
+/// ★★ `TRACK → LAND` 的判据是 `progress ≥ 1.0`（§4.2）。
+TEST(Track, 完成度到1时任务飞完并请求降落)
+{
+  control::TaskLimits lim;
+  lim.wait_start_timeout_s = 0.0;
+  Climbing c = reach_climb(lim);
+  stop_at_wait_start(c);
+  double ox = 0.0, oy = 0.0, oz = 0.0;
+  ASSERT_TRUE(c.fsm.traj_origin(&ox, &oy, &oz));
+  ASSERT_EQ(c.fsm.note_start_edge(c.now + 0.02), control::StartEdgeReply::kTrack);
+  const control::Odometry odom = odom_at(ox, oy, oz, c.yaw);
+
+  // 参考从 0 起 ⟹ 这条轨迹真的在跑（见下一条用例：这一步不能少）。
+  EXPECT_EQ(advance_traj(c, 1, odom, ref_at(0.0, 0.0, 0.0, 0.0)).phase, control::Phase::kTrack);
+  EXPECT_EQ(advance_traj(c, 1, odom, ref_at(1.0, 0.0, 0.0, 0.5)).phase, control::Phase::kTrack);
+
+  // 完成度到 1 ⟹ 这一帧转 `kDone`（对外仍是 `TRACK`），下一帧走降落出口。
+  // ★ 不在同一帧直接请求降落：保持"降落只有一个出口"这条纪律。
+  EXPECT_EQ(advance_traj(c, 1, odom, ref_at(2.0, 0.0, 0.0, 1.0)).phase, control::Phase::kTrack);
+  const control::Decision d = advance_traj(c, 1, odom, ref_at(2.0, 0.0, 0.0, 1.0));
+
+  EXPECT_EQ(d.phase, control::Phase::kLand);
+  EXPECT_EQ(d.end_reason, control::EndReason::kTrajDone) << "任务飞完 ≠ 降级：动作一样，措辞不同";
+  EXPECT_EQ(d.degrade, control::Degrade::kNone) << "正常走完不该有降级原因";
+  EXPECT_TRUE(d.request_land) << "降落必须是我们请求的（上锁才是 PX4 的事）";
+  EXPECT_FALSE(d.stream_setpoint) << "请求降落之后必须停发 setpoint";
+  EXPECT_EQ(d.authority, control::Authority::kManual);
+}
+
+/// ★★ 一个**只在同一个节点进程里的第二轮任务**才会撞到的坑：
+/// `traj` 跑完之后**会一直保持 `progress = 1.0` 并按 50 Hz 继续发参考**
+/// （`traj_node.cpp:302`）。于是第二轮进 `TRACK` 时手上那个 1.0 是**新鲜的**
+/// （不是陈旧数据，"等新数据到了再看"救不了）—— 只看"参考新鲜 ∧ progress ≥ 1.0"
+/// 会让飞机**一进 `TRACK` 就判成飞完、当场降落**。
+/// ⟹ 判据要求"亲眼见过它从 1.0 以下跑起来"（`track_started_`）。
+TEST(Track, 上一轮留下的完成度1不会让这一轮当场判飞完)
+{
+  Climbing c = reach_climb();
+  stop_at_wait_start(c);
+  double ox = 0.0, oy = 0.0, oz = 0.0;
+  ASSERT_TRUE(c.fsm.traj_origin(&ox, &oy, &oz));
+  ASSERT_EQ(c.fsm.note_start_edge(c.now + 0.02), control::StartEdgeReply::kTrack);
+  const control::Odometry odom = odom_at(ox, oy, oz, c.yaw);
+
+  const control::Decision d = advance_traj(c, frames_of(0.40), odom, ref_at(0.0, 0.0, 0.0, 1.0));
+  EXPECT_EQ(d.phase, control::Phase::kTrack) << "上一轮留下的 1.0 让这一轮当场判飞完了";
+  EXPECT_FALSE(d.request_land) << "还没飞就先降落了";
+
+  // 见到它真的从 1.0 以下跑起来之后，同一个 1.0 才算数。
+  advance_traj(c, 1, odom, ref_at(0.1, 0.0, 0.0, 0.2));
+  advance_traj(c, 1, odom, ref_at(1.0, 0.0, 0.0, 1.0));
+  EXPECT_EQ(advance_traj(c, 1, odom, ref_at(1.0, 0.0, 0.0, 1.0)).end_reason,
+    control::EndReason::kTrajDone);
+}
+
+/// ★★ 参考**一直不来**（`/traj/start` 发出去了，但 `traj` 那边没有选中任何轨迹 ——
+/// 它只打一条 WARN、一帧都不发）⟹ `kTrajTimeout`：停发 + 请求降落。
+/// 少了这条判据，程序会**卡在 `TRACK` 里没有出口**：飞机一直悬着，而它仍然在我们手上
+/// （打杆接管还在），但"程序自己发现出了问题"这件事就不成立了。
+TEST(Track, 参考一直不来时判traj_timeout并请求降落)
+{
+  control::TaskLimits lim;
+  lim.wait_start_timeout_s = 0.0;
+  Climbing c = reach_climb(lim);
+  stop_at_wait_start(c);
+  double ox = 0.0, oy = 0.0, oz = 0.0;
+  ASSERT_TRUE(c.fsm.traj_origin(&ox, &oy, &oz));
+  ASSERT_EQ(c.fsm.note_start_edge(c.now + 0.02), control::StartEdgeReply::kTrack);
+  const control::Odometry odom = odom_at(ox, oy, oz, c.yaw);
+
+  // 计时起点是"进 TRACK"，不是"话题静默了多久" —— 刚进 TRACK 时参考本来就还没开始发。
+  control::Decision d = advance_traj(c, frames_of(2.8), odom, ref_stale());
+  EXPECT_EQ(d.phase, control::Phase::kTrack) << "3 s 还没到，不该判失效";
+  EXPECT_EQ(d.degrade, control::Degrade::kNone);
+
+  d = advance_traj(c, frames_of(0.4), odom, ref_stale());
+  EXPECT_EQ(d.degrade, control::Degrade::kTrajTimeout);
+  EXPECT_EQ(d.phase, control::Phase::kLand);
+  EXPECT_TRUE(d.request_land) << "参考没了 ⟹ 停发 + 请求降落";
+  EXPECT_FALSE(d.stream_setpoint);
+  EXPECT_EQ(d.end_reason, control::EndReason::kNone) << (
+    "这是**失效降级**结束的任务：不许报成「正常走完」——两条信息必须分开");
+  EXPECT_EQ(d.authority, control::Authority::kManual);
 }

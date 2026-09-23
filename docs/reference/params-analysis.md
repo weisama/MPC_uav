@@ -495,7 +495,8 @@ PARAM_DEFINE_INT32(COM_RC_IN_MODE, 3);
 > **开始 = ch9 的上升沿；急停 = ch8 高值（沿用现有硬件杀车，不新增软急停通道）；
 > 解锁 = 程序解锁（触发 = ch9 第 1 次上升沿，第 2 次上升沿才开始轨迹）；`RC_MAP_ARM_SW = 5` 保留。**
 > 完整结论、依据与连带要求见 [`params-changes.md`](params-changes.md) **§H**（本节不再复述）。
-> 台架复核（用 `/mavros/rc/in` 核对 `channels[8]`）归 ticket 09，
+> 台架复核（用 `/mavros/rc/in` 核对 `channels[8]`）**至今未做** —— 它现在是
+> [`params-changes.md`](params-changes.md) **§H.8 / §H.10** 的未决项（ticket 09 的验收项 6 因此**留空**），
 > 见 [`../../.scratch/phase1/spec.md`](../../.scratch/phase1/spec.md) 的阻塞项第 4 条。
 
 #### (b) ★ 飞行模式开关的实际分配（枚举值第一手来自固件 `COM_FLTMODE${i}`）

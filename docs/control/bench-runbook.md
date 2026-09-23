@@ -1,7 +1,8 @@
 # 拆桨台架清单（Phase 1，**必须由人做**的部分）
 
-> **这张表是什么**：`control` + `bench` 的 131 例自动化（`colcon test --packages-up-to control`）覆盖的是**本节点**
-> 的行为；留在下面的每一项，**判据都在 PX4 一侧**（或需要真实的遥控器/动捕现场），夹具**不模拟 PX4**
+> **这张表是什么**：`control` + `bench` 的 **171** 例自动化（`colcon test --packages-up-to control`）覆盖的是**本节点**
+> 的行为（★ 逐文件计数与"为什么是这个数"见 [`phase1-implementation.md`](phase1-implementation.md) §7.1；
+> 数目会随票漂，**别照抄这句**，要现数就 `grep -c '^TEST'` / `grep -cE '^(def test_|TEST)'`）；留在下面的每一项，**判据都在 PX4 一侧**（或需要真实的遥控器/动捕现场），夹具**不模拟 PX4**
 > ⟹ 机器验不了。做一遍、把读数填进下面的表、回去勾掉对应 ticket 的框即可。
 > ⚠️ **T4 是唯一的例外**：它的判据一半在我们这一侧（服务应答、`takeoff_origin=`、斜坡、`/control/state`），
 > 自动化**已经**把这些验过了 —— 但它仍留在这里，因为"真 PX4 会不会按我们的解锁请求起飞""prearm 被拒时
@@ -16,11 +17,20 @@
 
 ★ **一次会话尽量全做完**：起链、搬飞机、解锁这些准备工作占大头，下面 7 项共用同一次准备。
 （步骤顺序是刻意的：T1/T2/T3 必须在**解锁之前**做，T5/T6/T7 必须在**解锁之后**做。
-**T4 是全程唯一的解锁动作**（ticket 08 起解锁只能由 `/control/takeoff` 发起，见 T4）。）
+**T4 是全程唯一的解锁动作**（ticket 08 起解锁只能由**程序**发起 —— 现场按开始键（CH9 第 1 次
+上升沿），**拆桨台架上走 `/control/takeoff` 服务**，见 T4）。）
 
 > ⚠️ **本清单只覆盖 ticket 08 验收阶梯的第 1 级**（拆桨台架：解锁 + 进 `OFFBOARD` + 爬升斜坡正确）。
 > 阶梯的第 **2/3/4** 级（系绳离地 20 cm / 系绳闭环悬停 30 s / 自由飞轨迹 1）**要装桨**，
 > 不属于"拆桨台架"这张表，判据见 [ticket 08](../../.scratch/phase1/issues/08-takeoff-hover-land.md) 的验收阶梯。
+>
+> ⚠️ **ticket 09 的 `TRACK` 也不在这张表里**（它接在 `HOVER` 之后，而拆桨态连 `HOVER` 都到不了 ⟹
+> 台架上**没有**"进 `TRACK`、飞轨迹、收口"可看）。`TRACK` 的判据全在两层自动化测试里
+> （`control` 的 `test_control_track.py` + `test_fsm.cpp` 的 `Track` / `StartEdge` 两组），
+> 实飞判读靠固定形状的日志 token（`遥控器开始键：` / `TRACK 进行中：` / `end_reason=`），
+> 见 `src/control/README.md` 的「日志里怎么复核」。
+> ★ 但**开始键的通道核对（H.8）要在解锁之前先做** —— 它只需要遥控链路和 `/mavros/rc/in`，
+> 不需要离地：通道错了的话，第 1 次上升沿会直接去解锁起飞。
 
 ---
 
@@ -73,7 +83,9 @@ ticket 06 时期本张还没有解锁路径，于是有个参数 `own_arming` �
 
 **这对台架操作的三个后果，别按旧笔记做**：
 
-1. **没有命令行开关可选了** —— 解锁只有一条路：`ros2 service call /control/takeoff`（T4）。
+1. **没有命令行开关可选了** —— 解锁只有**程序**这一条路：现场按开始键（CH9 第 1 次上升沿），
+   而**拆桨台架上用** `ros2 service call /control/takeoff`（T4）—— 台上没有遥控接收机时
+   开始键那条路**走不通**（起飞前置里有一条"遥控在线"，§H.7.1，刻意如此）。
 2. **`AUTO` 由应答决定，不由参数决定**：QGC 里手动解锁 ⟹ `armed` 为真而归属不是我们的
    ⟹ `guard_holds()` 的 `kArmingByUs = !armed || own_arming` **不成立** ⟹ 节点**停发并退回 `INIT`**
    （§H.6 的外部解锁语义，**刻意如此**）。想在台上拿到 `AUTO/STANDBY` 就必须走 T4 的服务。
@@ -141,11 +153,14 @@ ros2 topic hz /mocap/pose_enu                                #    有数
 
 ★ 此时期望 `/control/state` = **`MANUAL/STANDBY`**（未解锁 ⟹ 控制权 `MANUAL`，`fsm.hpp:475`）。
 
-## T4. `/control/takeoff` 程序解锁 ⟹ 锁原点 + 进 `TAKEOFF`
+## T4. `/control/takeoff` 程序解锁 ⟹ 锁原点 + 进 `TAKEOFF`（现场按开始键等价）
 （**ticket 08 阶梯第 1 级**；[ticket 13](../../.scratch/phase1/issues/13-mavros-bench-vision-pose.md) 已于 2026-09-22 `done`
 —— 本项若这次的**跳变量**没记，回填 [ticket 13](../../.scratch/phase1/issues/13-mavros-bench-vision-pose.md) 的 **§残留读数** 第 3 行）
 
 ★ **这是全程唯一的解锁动作**（ticket 08 起 QGC 手动解锁会被判成"外部解锁 ⟹ 停发"）。
+★ 现场走的不是服务而是**开始键**（CH9 第 1 次上升沿，§H.5）；台架这一项之所以用服务，
+是因为**台上没接遥控接收机**（起飞前置要"遥控在线"）⟹ 两条入口在 `Fsm` 里走的是**同一个
+`request_takeoff`**，判据逐条相同。
 
 ★ **在 T3 起链之前，把 `mocap` 节点重起一次**（`Ctrl-C` 掉 `ros2 launch mocap mocap.launch.py`，
 确认飞机**已摆好、静止**，再起；等日志打出「★ 阶段 A：启动原点已锁定」且 `/mocap/pose_enu` 有数 ⟹ 之后**别再碰飞机**）。

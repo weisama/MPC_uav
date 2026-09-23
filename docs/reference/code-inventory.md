@@ -243,12 +243,18 @@ low_voltage: 18.0     # ← 6S 电池
 ```
 ros_ws/  = weisama/MPC_uav   （private）
 ├── docs/     资料（已有，本文档所在）
-└── src/      ROS2 代码（待建）
+└── src/      ROS2 代码 —— ★ **六个包都已落地**（本节的"待建/新写"是当初的取舍结论，不是现状）
     ├── vrpn_listener/   ← vendored：定制版原样放进，★ 写明"勿替换为公开版"
     ├── mocap/           ← 重写：相对位姿（解锁边沿锁原点 + 仅 yaw 归零）
     ├── traj/            ← 新写：悬停 / 正方形 / 八字
+    ├── bench/           ← 新写（当初没列入）：台架夹具，**测试基础设施、不是飞行代码**
     ├── control/         ← 新写：FSM + offboard setpoint（Phase 1）→ MPC（Phase 2）
     └── bringup/         ← 新写：launch + 参数
+
+★ `bench` 是后加的：`control` 的验收要"假 mavros + 脚本化动捕 + 故障注入 + DUT 真子进程"，
+  这件事本身够一个包，塞进 `control/test/` 会逼每个测试自己造一遍世界。
+★ `bringup` 落地时**推翻了本文档给它的蓝本**：`config/mavros_z0.yaml` 没有被任何 launch 读取 ——
+  上游 `px4.launch` 把 `config_yaml` 写死了，见 [`../../src/bringup/README.md`](../../src/bringup/README.md)。
 ```
 
 ## B.2 每个包的取舍链条（"为什么是它"）

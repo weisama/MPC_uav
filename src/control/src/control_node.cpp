@@ -1,5 +1,6 @@
 // control 节点：本项目的**第一个自主飞行节点**。ticket 05 走到 `STANDBY`，ticket 06 加**失效路径**，
-// ticket 08 加**起飞 / 悬停 / 自动降落**（`TAKEOFF → HOVER → WAIT_START → LAND`）。
+// ticket 08 加**起飞 / 悬停 / 自动降落**（`TAKEOFF → HOVER → WAIT_START → LAND`），
+// ticket 09 把 `WAIT_START → TRACK → LAND` 这一段接上（**开始键** + 轨迹跟踪）。
 //
 // 数据流：
 //   /mavros/state ─┐
@@ -7,9 +8,14 @@
 //   /mavros/local_position/velocity_local ─┤
 //   /mocap/pose_enu ─────────────┼─▶ 守卫 + 失效判据 + 导航读数 ─▶ 状态机 ─▶ /mavros/setpoint_raw/local
 //   /mavros/rc/in、/mavros/battery ┘                                    ├─▶ /control/state
+//   /traj/reference、/traj/progress ────────────────────────────────────┤  （ticket 09：参考 + 完成度）
 //                                                                       ├─▶ /control/takeoff（服务：受理起飞命令）
+//                                                                       ├─▶ /control/traj_progress（转发完成度）
+//                                                                       ├─▶ /traj/start（让 traj 归零参考时钟）
 //                                                                       ├─▶ /mavros/set_mode（OFFBOARD / AUTO.LAND）
 //                                                                       └─▶ /mavros/cmd/arming（解锁，仅一次）
+//   ⚠️ **本节点是 `/traj/*` 的唯一消费者**：`traj` 只管发，什么时候要它、要不要重发开始，
+//      全部由这里（`fsm.hpp`）决定 —— 所以 `traj` 侧本张一行代码都没改。
 //
 // ★ 本节点的职责分工（改代码前先读这条）：
 //   · **判断**（该不该发 setpoint、该不该切模式、该不该解锁、飞到哪一步）只在 `fsm.hpp`，那里零 ROS 依赖。
@@ -20,12 +26,23 @@
 //     改动时请连同 `src/control/README.md` 的覆盖清单一起看。
 //
 // ★ 本张（ticket 08）**新增的三条对外接口/动作**：
-//   · `/control/takeoff`（`std_srvs/Trigger`）—— **唯一**的起飞入口。ticket 09 会让遥控器
-//     ch9 的上升沿来调它（A1 项），本张先用服务把它跑通、测到。
+//   · `/control/takeoff`（`std_srvs/Trigger`）—— 本张里它是**唯一**的起飞入口。
+//     ★ ticket 09 起**不再是唯一入口**：现场走的是遥控器开始键（ch9）的第 1 次上升沿，
+//     两条路径走**同一个** `Fsm::request_takeoff`，判据逐条相同；服务那条留给调试与**拆桨台架**
+//     （台上没有遥控接收机 ⟹ "RC 在线"这个起飞前置条件本身就过不了）。
 //     ★ 受理 ≠ 起飞：真正的判据是随后 `/mavros/state.armed`（1 Hz）。
 //   · `/mavros/cmd/arming` —— **只用来解锁、只发一次、被拒不重试**（用户 2026-09-22 裁定）。
-//   · 自动降落：`WAIT_START` 保持 `hover_hold_s` 后状态机自己请求 `AUTO.LAND`；
+//   · 自动降落：状态机在任务走完时自己请求 `AUTO.LAND`
+//     （⚠️ ticket 09 起出口**不是**"`WAIT_START` 停够 `hover_hold_s`"——那条参数已删除，
+//     见下方 ticket 09 一段与 `fsm.hpp` 的 `EndReason`）；
 //     **上锁不由我们发**，交给 PX4 的 `COM_DISARM_LAND = 2.0`（z0 实测值），我们只等 `armed` 降沿。
+// ★ 本张（ticket 09）**新增的两条对外接口/动作**：
+//   · `/traj/start`（`Empty`，**我们发**）—— 让 `traj` 把参考时钟归零。发的时机由 `fsm.hpp` 算
+//     （`Decision::request_traj_start` 是脉冲）：进 `TRACK` 的那一帧发一次，之后**只在参考流断了**
+//     才重发（那是"运行中重选轨迹"的补救，见 `TaskLimits::traj_stream_gap_s`）。
+//   · `/control/traj_progress`（`Float32`，**我们发**）—— 逐字转发 `/traj/progress`，给操作员看进度。
+//   ⚠️ 遥控器开始键（ch9 上升沿）**不在这里判**：`rc_switch.hpp` 判边沿，`fsm.hpp::note_start_edge`
+//     判"这条边沿该干什么"（按任务态，不按计数器）。节点只把取到的边沿投进去、把结论写进日志。
 //   ⚠️ 本张**删掉了 `yaw` 参数**：setpoint 的 yaw 现在由状态机给（起飞前 = 当前机头，
 //     起飞后 = 锁定的起飞机头）。旧参数默认 0 在 ENU 口径下是"机头朝东"，
 //     一在 OFFBOARD 里解锁 PX4 就会真的去转机头 —— 见 `fsm.hpp` 文件头 ★。
@@ -42,6 +59,7 @@
 #include "control/fsm.hpp"
 #include "control/px4_interface.hpp"
 #include "rclcpp/rclcpp.hpp"
+#include "std_msgs/msg/float32.hpp"
 #include "std_msgs/msg/string.hpp"
 #include "std_srvs/srv/trigger.hpp"
 
@@ -52,6 +70,11 @@ namespace
 /// 取 10 s 的理由与 INIT 的诊断日志一致：太密会刷屏（失效可能持续几分钟），
 /// 太疏则"最后一条日志是十分钟前的"，现场翻日志时判断不出"还在不在降级"。
 constexpr double kDegradeRepeatS = 10.0;
+
+/// `TRACK` 进行中"进度心跳"的间隔（s）。★ 与 `diag_period_s` 分开是因为它的**用途不同**：
+/// 那一份是"判据可查"（缺什么、谁断了），这一份是给操作员一个"轨迹还在走、走到几成"的读数。
+/// 取 5 s：三条轨迹分别是 60 s（悬停）、几十秒（方形/8 字）的量级 ⟹ 一次飞行十来条，不刷屏。
+constexpr double kTrajProgressLogS = 5.0;
 
 /// 把 QoS 剖面的两个关键位翻成人话 —— 判"永远收不到"这类静默故障时，这两个位就是全部信息。
 std::string qos_summary(const rclcpp::QoS & q)
@@ -115,6 +138,15 @@ public:
       "estimator_status_topic", topics_.estimator_status);
     topics_.mocap = declare_parameter<std::string>("mocap_topic", topics_.mocap);
     topics_.setpoint = declare_parameter<std::string>("setpoint_topic", topics_.setpoint);
+    // ★ ticket 09：`traj` 的三条接口 + 我们自己的完成度观测面。全部走参数的理由同上面那几条
+    //   （台架夹具要用私有话题名；多机时每条前缀不同）。
+    topics_.traj_reference = declare_parameter<std::string>(
+      "traj_reference_topic", topics_.traj_reference);
+    topics_.traj_progress = declare_parameter<std::string>(
+      "traj_progress_topic", topics_.traj_progress);
+    topics_.traj_start = declare_parameter<std::string>("traj_start_topic", topics_.traj_start);
+    topics_.control_traj_progress = declare_parameter<std::string>(
+      "control_traj_progress_topic", topics_.control_traj_progress);
     topics_.set_mode_service = declare_parameter<std::string>(
       "set_mode_service", topics_.set_mode_service);
     topics_.arming_service = declare_parameter<std::string>(
@@ -152,6 +184,24 @@ public:
     limits.rc_map_yaw = declare_parameter<int>("rc_map_yaw", limits.rc_map_yaw);
     limits_ = limits;
 
+    // —— 遥控器**开始键**的判据（ticket 09；§H.1 的那一组数，值本身不要就地改）——
+    // ★ 与 `Limits`（失效判据）分开：这一组管的是"操作员做了一个动作没有"，
+    //   与"什么时候停"混在一起之后，调去抖会顺手改了低压阈值。
+    // ★ 通道号与阈值的裁定过程（含 §H.4 的 EdgeTX 分配、§H.2 的"ch9 未被任何 `RC_MAP_*` 占用"）
+    //   都在 `docs/reference/params-changes.md` §H。
+    control::RcStart rc_start;
+    rc_start.channel = declare_parameter<int>("start_channel", rc_start.channel);
+    rc_start.start_threshold = declare_parameter<double>(
+      "start_threshold", rc_start.start_threshold);
+    rc_start.release_threshold = declare_parameter<double>(
+      "release_threshold", rc_start.release_threshold);
+    // ★ 参数用**毫秒**、内部用秒：§H.1 的裁定就是按毫秒说的（200 ms），
+    //   让人在 `control.yaml` 里写 `200` 比写 `0.2` 少一层折算错误。
+    rc_start.debounce_s = declare_parameter<double>("debounce_ms", rc_start.debounce_s * 1e3) * 1e-3;
+    rc_start.low_us = declare_parameter<double>("start_low_us", rc_start.low_us);
+    rc_start.high_us = declare_parameter<double>("start_high_us", rc_start.high_us);
+    rc_start_ = rc_start;
+
     // ★★ **ticket 06 / 08 之间的那条缝已经被真实实现取代**（ticket 08）：`own_arming` 参数
     //    删掉了，`Guard::kArmingByUs` 现在由 `/mavros/cmd/arming` 的应答 + `armed` 的上升沿
     //    决定（见 `px4_interface.cpp::on_state`）。
@@ -177,7 +227,18 @@ public:
     task.hover_vel_tol_mps = declare_parameter<double>(
       "hover_vel_tol_mps", task.hover_vel_tol_mps);
     task.hover_settle_s = declare_parameter<double>("hover_settle_s", task.hover_settle_s);
-    task.hover_hold_s = declare_parameter<double>("hover_hold_s", task.hover_hold_s);
+    // ★★ ticket 09 **换掉**了 `hover_hold_s`（ticket 08 的"悬停保持 N s 后自动降落"）：
+    //   降落不再由"时间到了"触发，而是由**开始键**（进 `TRACK`）或**轨迹跑完**触发。
+    //   但"操作员一直不按键"这条自己走不出去的态必须有个兜底 ⟹ 那个数现在叫
+    //   `wait_start_timeout_s`（`<= 0` = 永不超时）。见 `fsm.hpp::TaskLimits`。
+    task.wait_start_timeout_s = declare_parameter<double>(
+      "wait_start_timeout_s", task.wait_start_timeout_s);
+    // ★ ticket 09：`TRACK` 的两条时限（重发 `/traj/start` 的闸门 / 判"轨迹超时"降级）。
+    //   ⚠️ 这两个都是**与 `traj` 的发布行为强耦合**的数（50 Hz 的流、`select` 会静默重置时钟），
+    //   改之前先读 `TaskLimits` 上那两段说明。
+    task.traj_stream_gap_s = declare_parameter<double>(
+      "traj_stream_gap_s", task.traj_stream_gap_s);
+    task.traj_timeout_s = declare_parameter<double>("traj_timeout_s", task.traj_timeout_s);
     task.takeoff_timeout_s = declare_parameter<double>(
       "takeoff_timeout_s", task.takeoff_timeout_s);
     task_limits_ = task;
@@ -188,11 +249,25 @@ public:
     //   `modes.offboard` 保持默认（"OFFBOARD" 是本栈固定的口径，本张刻意不为它开参数）；
     //   `land_mode` 走参数是 ticket 06 自己的选择（多机/换固件时不用改代码）—— ticket 06
     //   点名的是"已解锁的失效要**请求 `AUTO.LAND`**"这个动作，没有要求它可配。
+    // ★ ticket 09：完成度观测面。**在边界层之前建**，因为它的转发回调要捕获这个发布者
+    //   （回调只会在订阅收到帧时才跑，那时构造函数早就结束了 —— 但先建能让"谁依赖谁"一眼看清）。
+    traj_progress_pub_ = create_publisher<std_msgs::msg::Float32>(
+      topics_.control_traj_progress, 10);
+
     control::Px4Config px4_config;
     px4_config.topics = topics_;
     px4_config.timeouts = timeouts_;
     px4_config.limits = limits_;
     px4_config.modes.land = land_mode_;
+    px4_config.rc_start = rc_start_;
+    // ★ ticket 09：完成度的**观测面**（`/control/traj_progress`）挂在边界层那条订阅上（回调），
+    //   而不是让节点自己再订阅一遍 —— 理由见 `Px4Config::on_traj_progress`：
+    //   两处订阅会让"状态机用的那个数"与"转发出去的那个数"来自两条不同的队列。
+    px4_config.on_traj_progress = [this](float p) {
+      std_msgs::msg::Float32 msg;
+      msg.data = p;
+      traj_progress_pub_->publish(msg);
+    };
     px4_ = std::make_unique<control::Px4Interface>(*this, px4_config);
 
     // 状态串用 transient_local：晚订阅的 `ros2 topic echo`、晚起的测试都能立刻拿到当前值，
@@ -223,7 +298,11 @@ public:
       "  ★ 任何失效 ⟹ 立即停发 setpoint；**已解锁**时并请求 %s；打杆/模式被夺走 ⟹ 停发且不抢回 OFFBOARD\n"
       "  ★ 「EKF2 位置失效」的载体 = %s（%.1f s 内的帧才算数；该话题实测 1 Hz，**不作超时判据**）\n"
       "  ★ 任务判据：起飞高度 %.2f m（≤ %.2f m/s）、到高容差 ±%.2f m / ±%.2f m/s 持续 %.1f s、"
-      "稳定 < %.2f m ∧ < %.2f m/s 持续 %.1f s、保持 %.1f s 后自动降落\n"
+      "稳定 < %.2f m ∧ < %.2f m/s 持续 %.1f s\n"
+      "  ★ 开始键（ch%d 上升沿）：归一化 > %.2f 起算、< %.2f 复位、去抖 %.0f ms"
+      "（越界读数按 %.0f→0.0 / %.0f→1.0 折算）⟹ 第 1 次解锁起飞、第 2 次开始轨迹\n"
+      "  ★ WAIT_START 兜底超时 %.1f s（%s）；轨迹参考 %s、完成度 %s → 转发到 %s；重发 /traj/start 的闸门 %.1f s、"
+      "参考断流 %.1f s 判 traj_timeout\n"
       "  ★ 解锁：调用 %s **一次**，被拒不重试（登记 %s；上锁交给 PX4 自己的 COM_DISARM_LAND）",
       setpoint_rate_hz_, topics_.setpoint.c_str(), state_pub_topic.c_str(),
       takeoff_service_name_.c_str(),
@@ -239,7 +318,13 @@ public:
       task_limits_.takeoff_alt_tol_m, task_limits_.takeoff_vel_tol_mps,
       task_limits_.takeoff_settle_s,
       task_limits_.hover_pos_tol_m, task_limits_.hover_vel_tol_mps, task_limits_.hover_settle_s,
-      task_limits_.hover_hold_s,
+      rc_start_.channel, rc_start_.start_threshold, rc_start_.release_threshold,
+      rc_start_.debounce_s * 1e3, rc_start_.low_us, rc_start_.high_us,
+      task_limits_.wait_start_timeout_s,
+      task_limits_.wait_start_timeout_s > 0.0 ? "≤0 表示永不超时" : "**已关闭**：不按键就永远停在 WAIT_START",
+      topics_.traj_reference.c_str(), topics_.traj_progress.c_str(),
+      topics_.control_traj_progress.c_str(),
+      task_limits_.traj_stream_gap_s, task_limits_.traj_timeout_s,
       topics_.arming_service.c_str(), takeoff_service_name_.c_str());
 
     if (!enter_offboard_) {
@@ -249,12 +334,23 @@ public:
         "此时真 PX4 永远不会接受这些 setpoint（它只在 OFFBOARD 模式下读 setpoint_raw），"
         "起飞也不会解锁（解锁前置之一就是 OFFBOARD）。");
     }
-    if (task_limits_.hover_hold_s > 0.0 && task_limits_.hover_hold_s < 30.0) {
+    // ★★ ticket 09：这条告警的**理由整个换了**，别照 ticket 08 的说法理解它。
+    //   ticket 08 时 `WAIT_START` 保持 `hover_hold_s`（60 s）后自动降落 ⟹ 那个 60 s **就是**
+    //   §5.3 的"持续 60 s"，所以"配短了 = 验收时长飞不够"成立。
+    //   ticket 09 起不是了：§5.3 的那 60 s 现在来自**轨迹 1 自己的时长**
+    //   （`traj` 的 `hover_duration_s: 60.0`，在 `TRACK` 里跑），与 `WAIT_START` 停多久无关。
+    //   ⟹ 这个数配短了**不会**让验收飞不够，它只会让"操作员还没准备好、飞机就自己落了"。
+    //   所以阈值是**人的准备时间**的量级，取 60 s（一个月以内的等待都算"手感正常"），
+    //   不是从 §5.3 推出来的硬约束。
+    if (task_limits_.wait_start_timeout_s > 0.0 && task_limits_.wait_start_timeout_s < 60.0) {
       RCLCPP_WARN(
         get_logger(),
-        "hover_hold_s = %.1f s 偏短：判稳后最多这么久就会自动降落。"
-        "自由飞（阶梯第 4 级）要求持续 60 s，取 < 30 s 会飞不到验收时长就下来了。",
-        task_limits_.hover_hold_s);
+        "wait_start_timeout_s = %.1f s 偏短：判稳进 WAIT_START 后最多这么久**就会自己降落**"
+        "（与操作员按不按开始键无关）。它**不是** §5.3 的时长约束（那 60 s 归轨迹 1 的"
+        "`hover_duration_s`），而是「操作员从看到稳了到按下开始键的准备时间」—— 取 < 60 s "
+        "等于替操作员掐表，现场大概率会撞上「还没准备好飞机就自己落了」。"
+        "要「一直等」就把它配成 0 或负数（= 永不超时）。",
+        task_limits_.wait_start_timeout_s);
     }
 
     const double period_s = 1.0 / std::max(1.0, setpoint_rate_hz_);
@@ -271,17 +367,42 @@ private:
   {
     const double now_s = now().seconds();
     mode_before_ = px4_->mode();   // 只在日志里用：说清"模式从哪儿变到哪儿"
+
+    // ★★ ticket 09：先**取走**开始键的上升沿（消费语义 —— 一次按键只会被取走一次），
+    //   再把它投给状态机。顺序不能反：`note_start_edge()` 会改任务态（第 1 次受理起飞 /
+    //   第 2 次进 TRACK），而下面那一帧的决策要反映**改完之后**的任务态。
+    //   ⚠️ 边沿与"这一帧的守卫/读数"一起用，而不是"按下那一刻的" —— 50 Hz ⟹ 最多差 20 ms，
+    //     而这样"受理时的世界"与"执行时的世界"永远是同一帧（与 `/control/takeoff` 服务同一条纪律）。
+    if (px4_->take_start_edge()) {
+      const control::StartEdgeReply reply = fsm_->note_start_edge(now_s);
+      log_start_edge(reply);
+    }
+
     const control::Guards guards = px4_->guards(now_s);
     const control::Health health = px4_->health(now_s);
     const control::Odometry odom = px4_->odometry();
-    const control::Decision d = fsm_->update(guards, health, odom, now_s);
+    const control::TrajReference traj = px4_->traj(now_s);
+    const control::Decision d = fsm_->update(guards, health, odom, now_s, traj);
 
     detect_external_arming(guards);
+    detect_traj_stream(d, traj, now_s);
 
     if (d.stream_setpoint) {
       // ★ ticket 08：目标来自状态机（`d.target_*`），**不再**拿"当前位姿"顶替 ——
       //   爬升斜坡 / 悬停点 / 轨迹原点都是它算的。边界层只管发。
       px4_->publish_setpoint(d.target_x, d.target_y, d.target_z, static_cast<float>(d.target_yaw));
+    }
+
+    // ★ 进 `TRACK` 的那一帧先把两个"诊断计数"清零（顺序在下面那条脉冲之前：那一帧发出去的
+    //   就是第 1 次，> 1 才是"断流后重发"）。只给日志用，不影响任何判据。
+    if (d.phase == control::Phase::kTrack && last_phase_ != control::Phase::kTrack) {
+      track_entered_s_ = now_s;
+      traj_start_sent_count_ = 0;
+    }
+    if (d.request_traj_start) {
+      // ★ 脉冲（只在 `TRACK` 里给）：进 TRACK 的第一帧发一次，之后只在参考流断了才重发。
+      px4_->publish_traj_start();
+      ++traj_start_sent_count_;
     }
 
     if (d.request_arming) {
@@ -291,14 +412,127 @@ private:
       request_mode("OFFBOARD", "前置流已满足", now_s);
     }
     if (d.request_land) {
-      // 主动中止任务。两个来源：失效降级（ticket 06）与任务正常走完（ticket 08）——
-      // 处置逐字相同，这里只说清是哪一个（`d.mission_complete`）。
-      request_mode(land_mode_, d.mission_complete ? "任务走完" : "失效降级", now_s);
+      // 主动中止任务。两个来源：失效降级（ticket 06）与任务正常走完（ticket 08/09）——
+      // 处置逐字相同，这里只说清是哪一个（`d.end_reason`）。
+      // ★ token 用 `to_string(EndReason)`（与 `fsm.hpp` 的判据同源，同 `TakeoffReply` 那条纪律），
+      //   人话用 `land_why()` —— 两者都进日志，可 grep 也可读。
+      request_mode(land_mode_, land_why(d.end_reason), now_s);
     }
 
     publish_state(d, now_s);
     maybe_log_degrade(d);
     last_phase_ = d.phase;
+  }
+
+  /// `request_mode()` 的 `why` 文案 —— ★ 必须返回**静态生存期**的字面量：这个字符串会被
+  /// **异步**的服务回调捕获（`request_mode` 里的 lambda），传 `std::string::c_str()` 会悬空。
+  /// ⚠️ 故意不写 `default:`：新增一条 `EndReason` 而漏掉文案时 `-Wswitch` 直接编译失败。
+  static const char * land_why(control::EndReason r)
+  {
+    switch (r) {
+      case control::EndReason::kTrajDone:
+        return "任务走完：轨迹完成度到 1";
+      case control::EndReason::kWaitStartTimeout:
+        return "任务走完：等开始键超时";
+      case control::EndReason::kNone:
+        break;
+    }
+    // `kNone` = 不是"任务自己走完"那一类出口 ⟹ 就是失效降级（完整原因见同一拍的 `degrade=`）。
+    return "失效降级";
+  }
+
+  /// `TRACK` 里**参考流的进出**都留一条日志（ticket 09）。
+  /// ★ 为什么值得单独一条：`/traj/reference` 只在 `traj` 的 `running_` 为真时才发
+  ///   （`tick()` 开头 `if (!running_) return;`）⟹ **"参考静默"与"traj 没在跑"是同一件事**。
+  ///   现场看到飞机停在原地不动时，这一条能立刻分开两种原因：
+  ///   "我们从没要过这个流"（本节点只发了一次 start，而 traj 因为没选轨迹忽略了它）
+  ///   与"跑到一半流断了"（那时 `traj` 正在跑 ⟹ 只可能是它被重选/挂了）。
+  /// ⚠️ 用 `d.phase` 而不是内部任务态：`TRACK` 是本张唯一会要这个流的态。
+  void detect_traj_stream(const control::Decision & d, const control::TrajReference & traj,
+    double now_s)
+  {
+    const bool in_track = (d.phase == control::Phase::kTrack);
+    if (!in_track) {
+      // ★★ 离开 TRACK **不是**"参考断了"（ticket 09 的台架实测抓到的第一条日志缺陷）：
+      //   离开之后我们**不再需要**这个流（进 LAND 时目标已经不再跟着它走），
+      //   而 `alive` 里含着 `in_track` ⟹ 照原先的写法，TRACK → LAND 那一拍必然出现
+      //   alive 由真变假，于是**每一次正常收口**都会打出一条"**轨迹参考断了**"，
+      //   同一行里的年龄还是 0.016 s（流好得很）。实测证据（`test_control_track.py`
+      //   的「完成度到 1.0」那条）：它紧挨着「任务正常走完（end_reason=traj_done）」，
+      //   现场翻日志只会读成"飞完的那一刻参考流挂了"。
+      //   ⟹ 只在 TRACK 里判进出；离开时把闩锁复位，好让**下一个任务**重新播报"参考已经来了"。
+      traj_stream_seen_ = false;
+      return;
+    }
+    const bool alive = traj.alive(task_limits_.traj_stream_gap_s);
+    if (alive == traj_stream_seen_) {
+      // 仍在同一状态：只在"流还在"时按 diag 周期说一次进度（给现场一个"它还在动"的读数）。
+      if (alive && (now_s - last_traj_progress_log_s_) >= kTrajProgressLogS) {
+        last_traj_progress_log_s_ = now_s;
+        RCLCPP_INFO(
+          get_logger(),
+          "TRACK 进行中：/traj/reference 的年龄 %.3f s，完成度 %.3f（%s 上转发的是同一个数）",
+          traj.age_s, traj.progress, topics_.control_traj_progress.c_str());
+      }
+      return;
+    }
+    traj_stream_seen_ = alive;
+    if (alive) {
+      RCLCPP_WARN(
+        get_logger(),
+        "TRACK：**轨迹参考已经来了**（%s 上有帧，年龄 %.3f s）⟹ 目标开始跟着它走。",
+        topics_.traj_reference.c_str(), traj.age_s);
+      return;
+    }
+    // 流断了。★ 两种处置都由状态机定（重发 `/traj/start` 的闸门是 `traj_stream_gap_s`，
+    //   到点还没回来就是 `traj_timeout` 降级）—— 这里只说清"什么时候断的"，不改任何行为。
+    RCLCPP_WARN(
+      get_logger(),
+      "TRACK：**轨迹参考断了**（%s 上的最后一帧距今 %.3f s，判据 = 流的闸门 %.1f s；"
+      "再撑 %.1f s 没回来就是 degrade=traj_timeout）。\n"
+      "  ★ 最可能的原因：有人在运行中重选了轨迹（`traj` 的 select 会停掉流并**静默**把时钟归零，"
+      "它不发任何进度）⟹ 状态机会在闸门（%.1f s）到点后重发一次 %s。\n"
+      "  ⚠️ 这一条也说明飞机在**原地保持**（目标停在最后一个参考上，**不会**掉头回轨迹原点）。",
+      topics_.traj_reference.c_str(), traj.age_s, task_limits_.traj_stream_gap_s,
+      task_limits_.traj_timeout_s,
+      task_limits_.traj_stream_gap_s, topics_.traj_start.c_str());
+  }
+
+  /// 开始键判定的**反应**（ticket 09 的核心可观测面）：每一次确认的上升沿都要留下一条日志，
+  /// 包括**被丢掉的那一次** —— "按了没反应"是现场最难查的一类问题，而它只有两种可能：
+  /// 边沿没产生（去抖/通道号/断链 ⟹ 见 `rc_switch.hpp` 的三个观测口），
+  /// 或者产生了但**任务态不接受**（比如已经在飞了）。
+  /// ★ 后者的证据就在这里：`ignored` 那一条会把当前任务态写出来。
+  void log_start_edge(control::StartEdgeReply reply)
+  {
+    const auto & sw = px4_->start_switch();
+    const std::string tail = "（按键计数 " + std::to_string(sw.edge_count()) +
+      "，折算值 " + std::to_string(sw.normalized()) + "，已确认过低电平 = " +
+      (sw.released() ? "是" : "否") + "）";
+    // ⚠️ 故意不写 `default:`：新增一条 `StartEdgeReply` 而漏掉文案时 `-Wswitch` 直接编译失败。
+    switch (reply) {
+      case control::StartEdgeReply::kTakeoff:
+        RCLCPP_WARN(
+          get_logger(),
+          "遥控器开始键：**第 1 次上升沿** ⟹ 已受理起飞（★ 受理 ≠ 起飞：真正起飞要等解锁）。%s",
+          tail.c_str());
+        return;
+      case control::StartEdgeReply::kTrack:
+        RCLCPP_WARN(
+          get_logger(),
+          "遥控器开始键：**第 2 次上升沿** ⟹ 进入 TRACK（目标 = 轨迹原点 + /traj/reference），"
+          "下一帧发 %s 让 traj 把参考时钟归零。%s",
+          topics_.traj_start.c_str(), tail.c_str());
+        return;
+      case control::StartEdgeReply::kIgnored:
+        RCLCPP_WARN(
+          get_logger(),
+          "遥控器开始键：上升沿**被丢掉**了 —— 当前任务态是 %s，这一步不接受开始键。%s\n"
+          "  ★ 任务态的推进与**按键次数无关**（不数第几次），只看当前在哪一步："
+          "只有 IDLE 与 WAIT_START 接受这条边沿（见 `Fsm::note_start_edge`）。",
+          fsm_->task_name(), tail.c_str());
+        return;
+    }
   }
 
   /// `/control/takeoff` 的回调 —— **只投递命令**，推进留给下一帧 `tick()`。
@@ -560,6 +794,11 @@ private:
       case control::Phase::kWaitStart: {
         double tx = 0.0, ty = 0.0, tz = 0.0;
         const bool has_traj = fsm_->traj_origin(&tx, &ty, &tz);
+        // ★ 兜底时限的两种配法要**分开写**（而不是把 0 打成一个时间）：`<= 0` 在这个栈里
+        //   意思是"永不超时"，打成 "0.0 s" 会让现场以为"马上就要自己降落了"。
+        const std::string deadline = (task_limits_.wait_start_timeout_s > 0.0)
+          ? std::to_string(task_limits_.wait_start_timeout_s) + " s 后自动降落"
+          : std::string("**永不超时**（wait_start_timeout_s <= 0）");
         // ★★ 「轨迹原点在日志里可复核」是本张的验收项之一 ⟹ 用固定的
         //    `traj_origin=(x, y, z)` 形状打出来，可 grep、可与动捕原点对账。
         RCLCPP_WARN(
@@ -567,24 +806,48 @@ private:
           "→ %s：**稳定判据成立**。traj_origin=%s（= 判稳那一刻 EKF2 报的位置，ENU）。\n"
           "  ★ 这条设计让 Phase 1 与 Phase 2 的原点问题解耦：之后一切目标都以它为 0，"
           "EKF2 局部原点与动捕原点之间的常值偏移被自动吸收。\n"
-          "  ★ 目标已切到轨迹原点本身（停在原地）；保持 %.1f s 后**自动请求 %s 降落**，"
-          "上锁由 PX4 的 COM_DISARM_LAND = 2.0 完成。\n"
-          "  ★ ticket 09 会在这里插入“遥控器开始键 ⟹ TRACK”。",
+          "  ★ 目标已切到轨迹原点本身（**停在原地等**）——从这里开始飞机只认遥控器的开始键：\n"
+          "      第 2 次上升沿 ⟹ 进 TRACK（开始飞轨迹）；一直不按 ⟹ 最多等 %s\n"
+          "  ⚠️ **轨迹还没被 `traj` 播出来**：%s 只在收到 %s 之后才有帧，"
+          "而那条消息要等进 TRACK 才由本节点发出。\n"
+          "  ★ 上锁由 PX4 的 COM_DISARM_LAND = 2.0 完成，我们不发上锁。",
           s.c_str(), has_traj ? format_vec3(tx, ty, tz).c_str() : "（异常：未记录）",
-          task_limits_.hover_hold_s, land_mode_.c_str());
+          deadline.c_str(), topics_.traj_reference.c_str(), topics_.traj_start.c_str());
+        return;
+      }
+      case control::Phase::kTrack: {
+        double tx = 0.0, ty = 0.0, tz = 0.0;
+        const bool has_traj = fsm_->traj_origin(&tx, &ty, &tz);
+        RCLCPP_WARN(
+          get_logger(),
+          "→ %s：**开始轨迹**（遥控器开始键的第 2 次上升沿；★ 受理 ≠ 已动 —— 第一帧的参考"
+          "还没到，见紧接着的那一条「轨迹参考已经来了」）。\n"
+          "  ★ 目标 = traj_origin %s **+** %s 上的位置 —— traj 发出来的是**相对轨迹原点**的参考，"
+          "把原点丢掉（直接拿参考当目标）会让飞机当场俯冲扎向地面（它的高度是 0 起步的）。\n"
+          "  ★ 完成度：%s 逐字转发到 %s；到 1.0 ⟹ 任务飞完 ⟹ 请求 %s。\n"
+          "  ★ 参考的年龄超过 %.1f s 就先保持上一个目标并重发 %s"
+          "（那是「运行中重选轨迹」的补救）；超过 %.1f s 仍然没有 ⟹ degrade=traj_timeout。",
+          s.c_str(), has_traj ? format_vec3(tx, ty, tz).c_str() : "（异常：未记录）",
+          topics_.traj_reference.c_str(),
+          topics_.traj_progress.c_str(), topics_.control_traj_progress.c_str(),
+          land_mode_.c_str(),
+          task_limits_.traj_stream_gap_s, topics_.traj_start.c_str(),
+          task_limits_.traj_timeout_s);
         return;
       }
       case control::Phase::kLand:
-        // 两种情况（失效降级 / 任务走完）在这里分开说 —— 动作逐字相同，只有原因不同。
+        // 两种情况（失效降级 / 任务正常走完）在这里分开说 —— 动作逐字相同，只有原因不同。
         // 降级那条的完整说明（含证据与复位条件）由上一条 `degrade=` 日志给出。
-        if (d.mission_complete) {
+        // ★★ ticket 09：判据从「`mission_complete` 布尔」换成「`end_reason` 枚举」——
+        //   本张有了**两条**正常出口（轨迹跑完 / 等开始键超时），一个布尔量装不下了。
+        if (d.end_reason != control::EndReason::kNone) {
           RCLCPP_WARN(
             get_logger(),
-            "→ %s：**任务正常走完**（WAIT_START 保持满 %.1f s）⟹ 已停止发布 setpoint，并请求 %s。\n"
+            "→ %s：**任务正常走完**（end_reason=%s）⟹ 已停止发布 setpoint，并请求 %s。\n"
             "  ★ 上锁不由我们发：PX4 的 COM_DISARM_LAND = 2.0（z0 实测值）在它自己的着陆检测"
             "判定落地 2 s 后上锁，我们只等 armed 的降沿。\n"
             "  ★ 复位条件：**落地上锁**（armed → false）后自动复位，不需要重启节点。",
-            s.c_str(), task_limits_.hover_hold_s, land_mode_.c_str());
+            s.c_str(), control::to_string(d.end_reason), land_mode_.c_str());
           return;
         }
         RCLCPP_ERROR(
@@ -608,10 +871,6 @@ private:
           "→ %s：**已停止发布 setpoint**（缺：%s）\n"
           "  交给 PX4 自己的失效保护兜底：断流超过 COM_OF_LOSS_T（z0 现值 1.0 s）后它自行退出 OFFBOARD。",
           s.c_str(), describe_missing(now().seconds()).c_str());
-        return;
-      case control::Phase::kTrack:
-        // 本张（ticket 08）到不了这里：跟踪 = ticket 09（入口是"遥控器开始键"，本张没有）。
-        RCLCPP_WARN(get_logger(), "→ %s：该任务态本张（ticket 08）还未实现", s.c_str());
         return;
     }
   }
@@ -714,6 +973,18 @@ private:
                std::to_string(limits_.ekf2_pos_lost_samples) + " 帧（1 Hz ⟹ 约 " +
                std::to_string(limits_.ekf2_pos_lost_samples) + " s；该话题静默 " +
                age_str(topics_.estimator_status, now_s) + "）⟹ EKF2 自报水平位置没有绝对参考";
+      case control::Degrade::kTrajTimeout:
+        // ★ 证据要把**两种断流原因**都摆在台面上（读数本身分不开它们）：一是"我们从来没要过
+        //   这个流"（`/traj/start` 发了但 traj 没选轨迹 ⟹ 它只打一条 WARN 就忽略），
+        //   二是"要过，但运行中被重选了"。前者看 `起点至今`，后者看"这条话题曾经有过帧"。
+        return topics_.traj_reference + " 静默 " + age_str(topics_.traj_reference, now_s) +
+               "（判据 " + std::to_string(task_limits_.traj_timeout_s) + " s；进 TRACK 至今 " +
+               std::to_string(now_s - track_entered_s_) + " s，期间发出过 " +
+               std::to_string(traj_start_sent_count_) + " 次 " + topics_.traj_start +
+               "（第 1 次是进场那次；> 1 就是断流后重发过））" +
+               "；发布者：" + publisher_summary(topics_.traj_reference) +
+               "；★ 最常见的原因：traj 侧**没有选中任何轨迹**（`/traj/start` 被它忽略并打了 "
+               "WARN），或运行中有人重选了轨迹";
       case control::Degrade::kNone:
         break;
     }
@@ -762,6 +1033,13 @@ private:
                " 的 pos_horiz_abs 连续为假，**只在已解锁时**算失效）⟹ 已停发；已解锁时请求 " +
                land_mode_ + "（它自己也要求位置，很可能被拒 —— 那时靠 PX4 的失效保护）；"
                "复位：**落地上锁**（状态位恢复**不会**在空中把它解掉）";
+      case control::Degrade::kTrajTimeout:
+        // ★ 与上面那条 `kEkf2PosLost` 同一个形状：判据只在 `TRACK` 里成立，
+        //   而 `TRACK` 只在已解锁时进得去 ⟹ 它一旦成立就必然是 `kArmedDegrade` 闩锁，
+        //   复位**只有**落地上锁一条路（在空中把闩锁解开 = 未经确认就恢复发 setpoint）。
+        return "轨迹参考断流 ⟹ 已停发；已解锁时请求 " + land_mode_ +
+               "（这一条**不是**\"轨迹跑完了\"—— 跑完走的是正常出口，见 end_reason）；"
+               "复位：**落地上锁**（参考恢复**不会**在空中把它解掉）";
       case control::Degrade::kNone:
         break;
     }
@@ -800,6 +1078,28 @@ private:
         describe_missing(now_s).c_str(), task_limits_.takeoff_timeout_s);
     }
 
+    // ★★ ticket 09：「在 `TRACK` 里、但参考还没来」——这是本张唯一的"按键有效果但飞机不动"路径。
+    //   受理（进 TRACK）≠ 飞机开始动：目标要等 `/traj/reference` 的第一帧才有变化，而那一帧
+    //   要等 `traj` 收到 `/traj/start` 之后才发。所以必须有一处持续把"在等什么"说出来，
+    //   否则操作员只看到 `/control/state` 变成 AUTO/TRACK 然后飞机稳稳停着。
+    //   ⚠️ 与 `degrade=traj_timeout` 是**先后**关系（那个到点就停发了），这里说的是"还没到点"。
+    if (last_phase_ == control::Phase::kTrack) {
+      const control::TrajReference traj = px4_->traj(now_s);
+      if (!traj.alive(task_limits_.traj_stream_gap_s)) {
+        RCLCPP_WARN_THROTTLE(
+          get_logger(), *get_clock(), 2000,
+          "已在 TRACK，但 %s 上还没有参考（最后一次 %.3f s 前；判 traj_timeout 的门槛 %.1f s）"
+          "⟹ 飞机**原地保持**（目标 = 轨迹原点），不会自己开始飞。\n"
+          "  已发出 %d 次 %s（第 1 次是进场那次；> 1 就是断流后重发过）。\n"
+          "  ★ 若一直不来，先看 `traj` 那边有没有**选中轨迹** —— 没选的话 /traj/start 会被它"
+          "忽略（它只打一条 WARN），于是本节点永远收不到参考。\n"
+          "  ★ 发布者：%s",
+          topics_.traj_reference.c_str(), traj.age_s, task_limits_.traj_timeout_s,
+          traj_start_sent_count_, topics_.traj_start.c_str(),
+          publisher_summary(topics_.traj_reference).c_str());
+      }
+    }
+
     // 运行中"某条输入静默"由 tick 的状态回退 + `degrade=` 日志负责，这里不重复。
     // ★ 但**闩锁**要在这里说一声：闩锁期间状态机不会自己恢复，操作员需要知道"怎么退出去"
     //   （否则会以为是节点卡住了，去重启它 —— 而那正好是 §4.4 想避免的）。
@@ -829,9 +1129,11 @@ private:
       case control::Degrade::kPositionInvalid:
       case control::Degrade::kMocapStampStalled:
       case control::Degrade::kEkf2PosLost:
+      case control::Degrade::kTrajTimeout:
         // 输入类：落地上锁才复位（未解锁时则是"判据恢复即自动复位"，不会闩锁）。
         // ★ `kEkf2PosLost` 走这条是因为它**本来就在已解锁时才成立**（`first_degrade` 的解锁门）
         //   ⟹ 它一旦成立就必然是 `kArmedDegrade` 闩锁，只能等落地上锁。
+        //   `kTrajTimeout` 同理：它只在 `TRACK` 里可能为真，而 `TRACK` 只在已解锁时进得去。
         return "落地上锁（armed → false）；未解锁时的降级不闩锁，判据恢复即自动复位";
       case control::Degrade::kNone:
         break;
@@ -896,6 +1198,13 @@ private:
       // ★ ticket 16：它**不进任何超时判据**（见 `Timeouts::estimator_s`），但每一条
       //   "EKF2 位置失效"的日志都要靠这一行的"静默多久"来判断"我们到底知不知道现在的情况"。
       {"estimator_status", &topics_.estimator_status},
+      // ★ ticket 09：`traj` 的参考。⚠️ "静默"这一列在这里**要按任务态读**：`traj` 在收到
+      //   `/traj/start` 之前**根本不发**参考（`tick()` 开头 `if (!running_) return;`）
+      //   ⟹ 没进 TRACK 时"从未收到过"是**正常**的，不是故障。判据侧只看一个数：
+      //   `TaskLimits::traj_timeout_s`，而它的计时起点是**进 TRACK 的那一刻**。
+      //   （完成度那一行同理：它连"跑完保持 1.0"都只在跑过之后才发生。）
+      {"traj_reference", &topics_.traj_reference},
+      {"traj_progress", &topics_.traj_progress},
     };
     std::string s;
     for (const auto & row : rows) {
@@ -949,6 +1258,10 @@ private:
   control::Px4Topics topics_;
   control::Timeouts timeouts_;
   control::Limits limits_;
+  /// 遥控器开始键的判据（`px4_interface.hpp::RcStart`，§H.1）—— 日志里要引用，所以节点留一份。
+  /// ★ 边界层自己也算了一份（`Px4Config::rc_start` 交过去的正是它）⟹ 两处**同源**，
+  ///   这里只看不改。
+  control::RcStart rc_start_;
   /// 任务判据（`fsm.hpp::TaskLimits`）—— 日志里要引用，所以节点留一份。
   control::TaskLimits task_limits_;
 
@@ -956,6 +1269,9 @@ private:
   std::unique_ptr<control::Px4Interface> px4_;
 
   rclcpp::Publisher<std_msgs::msg::String>::SharedPtr state_pub_;
+  /// ★ ticket 09：`/control/traj_progress` —— 逐字转发 `/traj/progress`（转发在边界层那条
+  /// 订阅的回调里，见 `px4_config.on_traj_progress`）。
+  rclcpp::Publisher<std_msgs::msg::Float32>::SharedPtr traj_progress_pub_;
   rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr takeoff_srv_;
   rclcpp::TimerBase::SharedPtr tick_timer_;
   rclcpp::TimerBase::SharedPtr diag_timer_;
@@ -989,6 +1305,16 @@ private:
   std::string last_degrade_token_{control::to_string(control::Degrade::kNone)};
   double last_degrade_log_s_{0.0};
   double degrade_started_s_{0.0};
+
+  // —— 轨迹流（ticket 09 的诊断；**不进任何判据**，判据全在 `fsm.hpp`）——
+  /// 上一拍"参考流是否可用"（`detect_traj_stream()` 用它做进出边沿）。
+  bool traj_stream_seen_{false};
+  double last_traj_progress_log_s_{0.0};
+  /// 进 `TRACK` 的时刻与"进 TRACK 之后发出过几次 `/traj/start`"。
+  /// ★ 只在 `degrade=traj_timeout` 的证据里用：那一条必须能分开
+  ///   "我们从来没要过这个流"（计数恒为 1）与"要过，但运行中被打断了"（计数 > 1）。
+  double track_entered_s_{0.0};
+  int traj_start_sent_count_{0};
 };
 
 int main(int argc, char ** argv)

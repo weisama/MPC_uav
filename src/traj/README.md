@@ -12,7 +12,8 @@
 ## ★ 运行纪律（比代码重要）
 
 1. **它不发 setpoint、不碰 mavros、不判稳。** 参考要变成 setpoint、并且**把轨迹原点加回去**，
-   是 `control` 的事（ticket 09）。⚠️ **绝不能把 `/traj/reference` 直接 remap 到
+   是 `control` 的事（ticket 09 已落地：`control/README.md` 的「轨迹跟踪」一节）。
+   ⚠️ **绝不能把 `/traj/reference` 直接 remap 到
    `/mavros/setpoint_raw/local`**：轨迹原点是 1 m 高度上的悬停点，直接转发 = 先往地面附近扎。
 2. **参考是"相对轨迹原点"的，`traj` 不知道飞机在哪。** 这正是它能在**没有飞控、没有动捕、没起飞**
    的情况下把三条几何跑一遍核对的原因（seam 1 测试就是这么做的）。
@@ -68,7 +69,8 @@ Bernoulli 双纽线。测试里有一条不变式 `max(x)/max(y) ≈ 2` 直接�
 ```bash
 # 只起 traj：看参考与折线，不需要飞控、不需要动捕、不需要 control
 ros2 launch traj traj.launch.py
-# ⚠️ 没有"一键起 mocap+traj+control"的 bringup 包 —— 那是 **ticket 09 的交付物**，尚未存在
+# 一键起 mocap+traj+control（+ 可选 mavros）—— ticket 09 落地，用法见 src/bringup/README.md
+ros2 launch bringup z0.launch.py
 
 # 选轨迹：1=悬停 2=正方形 3=8 字 0=清空（**不需要重新 launch**）
 ros2 topic pub --once /traj/select std_msgs/msg/UInt8 "{data: 2}"

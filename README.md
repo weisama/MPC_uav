@@ -11,7 +11,7 @@
 
 | 阶段 | 做什么 | 控制接口 | 状态 |
 |---|---|---|---|
-| **Phase 1** | **offboard 位置定点飞行** —— 用动捕让 z0 稳定悬停并跟踪简单轨迹，**PX4 跑全部内环 PID** | **(A) 级**：`/mavros/setpoint_raw/local`（位置 + yaw） | ⬜ 未开始 · [`spec`](.scratch/phase1/spec.md) `ready-for-agent` |
+| **Phase 1** | **offboard 位置定点飞行** —— 用动捕让 z0 稳定悬停并跟踪简单轨迹，**PX4 跑全部内环 PID** | **(A) 级**：`/mavros/setpoint_raw/local`（位置 + yaw） | 🟨 **代码与台架测试已就绪**（六个包可 build、`colcon test` 通过；台架跑通"起飞→悬停→等开始键→跟踪→自动降落"）· **真机阶梯（拆桨 → 系绳 → 自由飞）未开始** · [`spec`](.scratch/phase1/spec.md) `ready-for-agent` |
 | **Phase 2** | **MPC 接管 PID —— SITL 验证**：MPC 输出角速率 + 推力，PX4 只跑角速率环；被控对象**从 fork 构建的 z0 同构机**（**不是 `gz_x500`**） | **(C) 级**：`/fmu/in/vehicle_rates_setpoint` | ⬜ 未开始 · [`spec`](.scratch/phase2/spec.md) `ready-for-agent` |
 | **Phase 3** | **MPC 上实机**：四项前置测量 + 一次固件修复（ADC 一行），然后拆桨 → 系绳 → 自由飞四级阶梯 | 同 Phase 2（**(C) 级**） | ⬜ 未开始 · [`spec`](.scratch/phase3/spec.md) `ready-for-human` |
 
@@ -54,8 +54,9 @@
     ├── vrpn_listener/                ✅ 动捕链路，vendored 原样 —— 读它的 VENDORED.md，**别读它的 README.md**
     ├── mocap/                        ✅ 相对位姿（两阶段原点 + 仅归零 yaw）→ `/mavros/vision_pose/pose` → EKF2
     ├── traj/                         ✅ 参考轨迹（三条解析轨迹，50 Hz，**相对轨迹原点**；不发 setpoint）
-    ├── bench/                        ✅ 台架夹具（**测试基础设施，不是飞行代码**）：假 mavros + 脚本化动捕 + 故障注入
-    └── control/                      ✅ 自主飞行控制节点（ticket 05/06/08：起飞 → 悬停判稳 → 自动降落；**阶梯第 1–4 级待上真台架**）
+    ├── bench/                        ✅ 台架夹具（**测试基础设施，不是飞行代码**）：假 mavros + 脚本化动捕 + 假 traj + 故障注入
+    ├── control/                      ✅ 自主飞行控制节点（ticket 05/06/08/09：起飞 → 悬停判稳 → **等开始键** → 跟踪轨迹 → 自动降落；**阶梯第 1–4 级待上真台架**）
+    └── bringup/                      ✅ launch + 操作台（ticket 09）：`z0.launch.py` 一键起 mocap+traj+control(+mavros)、`fly.py` 选轨迹看状态
 ```
 
 > **构建**（`colcon build` 在**仓库根**跑，不是 `src/`）：
@@ -65,11 +66,12 @@
 > 依赖与运行方式见 [`src/vrpn_listener/VENDORED.md`](src/vrpn_listener/VENDORED.md) §5；
 > `mocap` 与它的测试见 [`src/mocap/README.md`](src/mocap/README.md)（`colcon test --packages-select mocap`）；
 > `traj` 见 [`src/traj/README.md`](src/traj/README.md)（`--packages-up-to traj`，**它的 seam 1 也依赖 `bench`**）；
-> `control` 见 [`src/control/README.md`](src/control/README.md)、夹具见 [`src/bench/README.md`](src/bench/README.md)。
+> `control` 见 [`src/control/README.md`](src/control/README.md)、夹具见 [`src/bench/README.md`](src/bench/README.md)；
+> **一键启动与操作台**见 [`src/bringup/README.md`](src/bringup/README.md)（`ros2 launch bringup z0.launch.py` + `ros2 run bringup fly.py`）。
 > ⚠️ `control` 的测试依赖 `bench` ⟹ 用 **`colcon build --packages-up-to control`**，
 > `--packages-select control` 会因缺 `test_depend` 失败。
-> ★ 全仓库既有 **172 条 lint 失败**全部来自 vendored 的 `vrpn_listener`（`control`/`bench`/`mocap` 刻意不含
-> `ament_lint_auto`）；新增任何包**不得**增加这个数字。
+> ★ 全仓库既有 **172 条 lint 失败**全部来自 vendored 的 `vrpn_listener`（`mocap`/`traj`/`bench`/`control`/`bringup`
+> 刻意不含 `ament_lint_auto`）；新增任何包**不得**增加这个数字。
 
 **先读哪个**：`docs/PROJECT.md` → `docs/reference/code-inventory.md`（代码取舍）→ `docs/control/phase1-implementation.md`（动手写代码前必读）→ `CONTEXT.md`（查术语）。
 **要动手做哪一阶段**：先读对应的 `.scratch/phase{1,2,3}/spec.md` —— 它定义该阶段的范围与验收判据。

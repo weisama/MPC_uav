@@ -43,7 +43,8 @@ Single-context repo（本仓库）:
 │   ├── adr/                           ← 尚未创建，按需惰性生成
 │   ├── control/                       ← 实施清单（怎么落地）
 │   └── reference/                     ← 事实调查（查证据）
-└── src/                               ← ROS 2 代码，Phase 1 待建
+└── src/                               ← ROS 2 代码（Phase 1 的六个包都在了：vrpn_listener / mocap /
+                                         traj / bench / control / bringup）
 ```
 
 ## Use the glossary's vocabulary

@@ -8,6 +8,7 @@
         │              ── 收 /mavros/setpoint_raw/local 并逐帧记录（含到达时刻）
         │              ── 服务 /mavros/set_mode、/mavros/cmd/arming
         │  VrpnSource  ── 脚本化发 /mocap/pose_enu（或上游 /vrpn/<刚体>/pose）
+        │  FakeTraj   ── 假 traj：收 /traj/select + /traj/start，发 /traj/reference + /traj/progress
         │  Timeline    ── "第几秒掐掉哪条话题 / 改哪个状态"
         └───────────────────────────────┬───────────────────────────────────┘
                                         │ DDS（独立 domain）
@@ -29,6 +30,7 @@
 | EKF2 的**速度输出**（`local_position/velocity_local`，可被 `set_velocity` 搬动；与位置**解耦**，两条独立话题） | 速度**怎么融合**出来的（TRIAD/差动，与它的噪声） |
 | PX4 **接受 SET_MODE 之后 mode 会变**（`follow_set_mode`，默认开） | PX4 **为什么可能拒绝**某个模式 |
 | PX4 **解锁服务的应答**（`set_arming_policy`）与**解锁之后 `armed` 才上升沿**（`follow_arming`） | PX4 的 **prearm 检查**（哪种检查不合格对应哪个 `MAV_RESULT` 码） |
+| **`traj` 的接口与时钟**（`FakeTraj`，ticket 09）：没 `select`+`start` 不发、跑完停在 1.0、`select` 静默停流并归零 | **轨迹的几何与运动学**（三条轨迹长什么样、弧长匀速）—— 那是 `traj` 自己的 seam 1 测试 |
 
 ⟹ **依赖 PX4 侧行为的验收项不能在夹具里做**（例如"杀节点 → PX4 自行退出 OFFBOARD"），
 那是 SITL / 拆桨台架的职责。夹具只能证到"节点确实停止发 setpoint 了"。
@@ -219,21 +221,39 @@ sc.timeline.add(sc.t() + 0.5, sc.stop_dut, "杀掉 DUT")
 
 | 能力 | 谁会用 |
 |---|---|
-| `VrpnSource.set_trajectory` | ticket 07/09（参考轨迹跟随） |
+| `VrpnSource.set_trajectory` | 仍然没人用（原以为会给 ticket 07/09，实际 ticket 09 用的是新加的 `FakeTraj`：轨迹跟踪要的是**参考位姿的流**，而不是"动捕跟着飞机动"） |
 | `FakeMavros.set_arming_service_available()` | 暂时没人用（`set_arming_policy('absent')` 已覆盖"服务不存在"）；留着是为了与 `set_mode_service_available` 对称 |
 | `Scenario(start_dut=False)`（只起夹具，手动起节点） | 台架排障时好用，自动化里没用过 |
 
-★ 反过来，`mute` / `pause` / `set_position` / `set_state` / `wait_for_control_state` /
+★ 反过来，`FakeTraj`（全部能力）/ `Plant` / `Scenario.wait_for_subscribers` 的"**DUT 已死**"分支
+（它现在会把 DUT 的日志尾巴一起抛出来 —— 参数名/类型写错会让 `rclcpp` 构造参数时直接退进程，
+而原来的报错长得像"话题名不对"）/ `mute` / `pause` / `set_position` / `set_state` / `wait_for_control_state` /
 `setpoint_rate_hz` / `evidence` / `set_voltage` / `voltage_drop` / `set_rc` / `set_rc_channel` /
 `rc_change` / `rewind` / `hold_stamp` / `set_mode_policy('absent')` / `synth_disconnect` /
 `reconnect_state` 这些
-**已被 `control` 的测试真实调用过**（ticket 05/06/18），可以照着抄。
+**已被 `control` 的测试真实调用过**（ticket 05/06/09/18），可以照着抄。
 
 ★ ticket 08 新引入的三个注入面（`set_velocity` / `set_yaw` / `set_arming_policy`）**都已各有一条自检**，
 并且**都已被 `control` 的测试真实调用**（`set_velocity` 与 `set_arming_policy` 在
 `test_control_takeoff.py`、`set_yaw` 在 `test_control_standby.py`）⟹ 可以从 ② 那份清单里抄。
 其中 `set_arming_policy('fail')` 与 `follow_arming=False` 是**两种不同的失效**（见 `FakeMavros` 表），
 第一次用的时候别把它们当成同一件事。
+
+★ **ticket 09 新加了两件"假体"，都按上面的纪律配了自检**：
+
+| 假体 | 是什么 | 自检 |
+|---|---|---|
+| `Plant`（`bench/plant.py`，+ `fly()` / `fly_until()`） | ★ **不是夹具**，是**场景**逻辑（同 `Timeline`）：一架"速率受限地逼近 setpoint"的假飞机，速度 = 实际位移 / dt | 两条：**跟着 setpoint 动且速度是真的**、**只在有新 setpoint 时才动一格**（否则探针轮询比 DUT 的 50 Hz 快时会看到 0 与 2× 交替的假速度抖动） |
+| `FakeTraj`（`bench/fake_traj.py`） | 假 `traj` 节点：收 `/traj/select` + `/traj/start`，发 `/traj/reference`（50 Hz）+ `/traj/progress` | 五条，逐条对着 `traj_node.cpp` 的**真实行为**：没 `start` 前一帧都不发、收到 `start` 后按 `duration` 推进完成度并**停在 1.0**、运行中重选**静默停流且时钟归零**、没选中轨迹时收到 `start` 不发但记一笔、**上一轮跑完留下的 1.0 能被造出来也能被 `start` 抹掉** |
+
+⚠️ `Plant` 原本是 `control` 的 `test_control_takeoff.py` 文件末尾的私有 `_Plant`，**ticket 09 要复用它**，
+于是按本文件的纪律**提升进了 `bench` 并补上自检**（原处那份当时还写着"ticket 09/10 若要复用，再提升" ——
+那张纸条现在兑现了）。
+★ 它住在 `bench` 但**不是夹具的一部分**这个区分很重要：夹具假的是"外部世界"，`Plant` 假的是
+**这一轮的飞机**（同一个 DUT 在不同场景里配不同的飞机）。
+
+⚠️ `FakeTraj` 的参考运动学是**假**的（它不做几何），它假的只是 `traj` 的**接口与时钟**；
+"三条轨迹的几何对不对"归 `traj` 自己的 seam 1 测试，别在这里重复。
 
 ## 三条写测试的纪律
 
@@ -282,6 +302,10 @@ colcon test  --packages-up-to bench
 （其余位保持假，因为 DUT 只读那一位）、以及这条话题的**发布方 QoS 与真 mavros 一致**
 （`mavros::StateQoS()` = 可靠 + **瞬态本地**；DUT 侧**故意用易失订阅** ⟹ 这条自检钉的是
 "易失订阅者接得上、但不会拿到启动前的历史回放"这个性质 —— 见 `px4_interface.cpp` 那段 ★★）。
+**ticket 09 的七条**：`Plant` 两条 + `FakeTraj` 五条（上面那张表逐条列了；`FakeTraj` 那五条的问法
+是**对着 `traj_node.cpp` 的行为逐条抄的**，不是"它大概能发数据"）。
+★ 这套自检里也补上了 `Scenario.wait_for_subscribers` 的**"DUT 已死"分支**（ticket 09 踩到：
+传参类型不对 ⟹ 节点启动即退 ⟹ 报错长得像话题名不对）。
 **ticket 18 的一条**（`synth_disconnect`）：复刻的"合成断连帧"**只发一帧**（发完把 `state` 静默，
 因为真 mavros 只在收到 HEARTBEAT 时发这个话题），且那帧的六个字段是**常量**
 `connected=armed=guided=manual_input=False, mode=""` —— 与夹具自己 `set_state` 写过的字段**无关**
@@ -304,10 +328,12 @@ colcon test  --packages-up-to bench
 ```
 bench/fake_mavros.py    ★ 假 mavros（QoS 对照表在文件头；记录 DUT 发来的每一帧）
 bench/vrpn_source.py    脚本化动捕（两种喂法 + 输入故障注入）
+bench/plant.py          ★ 场景：假飞机（速率受限地逼近 setpoint）+ fly() / fly_until()
+bench/fake_traj.py      假 traj：把 /traj/select + /traj/start 变成 50 Hz 的参考与完成度
 bench/timeline.py       ★ 纯逻辑、零 ROS：事件时序 + 常用故障配方
 bench/scenario.py       Scenario：拼装 + DUT 子进程 + 秒表 + 证据输出
 bench/config.py         DEFAULTS 与 yaml 深合并
 bench/pytest_support.py ★ 会话级 ROS 上下文与 domain 安全边界
 config/bench.yaml       默认频率/话题/初始状态
-test/                   夹具自检（19 条）+ 时序纯逻辑单测（6 条）
+test/                   夹具自检（26 条）+ 时序纯逻辑单测（6 条）
 ```

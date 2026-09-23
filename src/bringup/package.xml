@@ -1,0 +1,46 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>bringup</name>
+  <version>0.1.0</version>
+  <description>
+    z0 的**启动层**（ticket 09）：一条命令起 mocap + traj + control（+ 可选 mavros），
+    以及操作员用的交互脚本 `fly.py`（输入 1/2/3 选轨迹，实时显示状态与完成度）。
+    ★ 本包**不含任何飞行逻辑** —— 判据在 control、轨迹在 traj、相对位姿在 mocap，
+      这里只回答"按什么顺序、用什么参数把这几个进程摆到台上"。
+  </description>
+  <maintainer email="127371350+weisama@users.noreply.github.com">weisama</maintainer>
+  <license>TODO: License declaration</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <!-- fly.py 是 rclpy 脚本：交互式选轨迹 + 读 /control/state 与 /control/traj_progress
+       ★ `mavros_msgs` **必须**写在这里：脚本还要订阅 `/mavros/state` 显示解锁/模式，
+         而 import 是顶层写的 ⟹ 缺这一条时不 source 别的空间就 `ros2 run bringup fly.py` 直接
+         ImportError（不是"少显示一栏"，是脚本起不来）。
+       ⚠️ 它和下面那段说的 **mavros 节点本身不是一回事**：`mavros_msgs` 是**消息包**，
+         在 /opt/ros/humble 里（`control`/`traj` 早已 `<depend>mavros_msgs</depend>`）；
+         **节点**装在独立的 ~/mavros_ws ⟹ 那一个仍然刻意不写依赖。 -->
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>std_msgs</exec_depend>
+  <exec_depend>mavros_msgs</exec_depend>
+
+  <!-- 本包 include 的是这几个包**自己的** launch（不重复它们的参数表） -->
+  <exec_depend>vrpn_listener</exec_depend>
+  <exec_depend>mocap</exec_depend>
+  <exec_depend>traj</exec_depend>
+  <exec_depend>control</exec_depend>
+
+  <!-- ★★ **刻意不写 `<exec_depend>mavros</exec_depend>`**：
+       mavros 装在一个**独立的工作空间**（~/mavros_ws，源码构建，不在 /opt/ros/humble 里），
+       把它写成依赖会让本包在没 source 那个空间时**装都装不了**（或让 colcon 去构建它）。
+       而它在我们这边的用途只有一条：把飞控的 MAVLink 转成 /mavros/* 话题。
+       ⚠️ 因此 `z0.launch.py` 的 `use_mavros:=true` **不保证**起得来 —— 见那个文件里
+          `use_mavros` 默认值的三个理由，以及找不到包时它打印的那段话。 -->
+  <exec_depend>launch</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

@@ -1,8 +1,8 @@
 // control 的状态机 —— ★ 两个正交维度显式分开，不压成扁平枚举。
 //
 //   控制权：  MANUAL ──(本项目开始发会驱动飞机的指令)──▶ AUTO ──(RC 打杆 / 超时 / 异常)──▶ MANUAL
-//   任务态：  INIT ─▶ STANDBY ─▶ TAKEOFF ─▶ HOVER ─▶ TRACK ─▶ LAND
-//                                                        └──▶ RC_OVERRIDE（控制权被外部夺走）
+//   任务态：  INIT ─▶ STANDBY ─▶ TAKEOFF ─▶ HOVER ─▶ WAIT_START ─▶ TRACK ─▶ LAND
+//                                                                    └──▶ RC_OVERRIDE（控制权被外部夺走）
 //
 // ★ 本文件**零 ROS 依赖**（自带 POD 类型，不 include 任何 ROS 头）—— 与 `mocap` 的
 //   `mocap_rel_pose.hpp` 同一个理由：状态转移条件是"飞起来才发现错"的重灾区，
@@ -44,19 +44,39 @@
 //     拿它当判据的基准是循环定义。判稳时飞机必然在悬停点 `hover_pos_tol_m` 之内，
 //     所以记下来的原点与悬停点的差不超过一个判据宽度。
 //   · **轨迹原点**记录后进 `WAIT_START`，目标切到原点本身（"停在原地"，见 `update()` ⑦）。
-//   · **任务结束**：`WAIT_START` 保持 `hover_hold_s` ⟹ `LAND`（请求 `AUTO.LAND`）。
+//   · **任务结束**：`WAIT_START` 保持 `wait_start_timeout_s` ⟹ `LAND`（请求 `AUTO.LAND`）。
 //     **上锁不是我们发的**：PX4 的 `COM_DISARM_LAND = 2.0`（z0 实测值，ticket 15 对账）
 //     会在它自己的着陆检测判定落地 2 s 后上锁 ⟹ 我们只等 `armed` 的降沿。
 //   · **机头**：setpoint 的 yaw 一律 = **起飞机头**（STANDBY 时是当前机头，起飞后是锁定值）。
 //     ⚠️ **这条推翻了 ticket 05 的 `yaw` 参数（已删）**：那个参数默认 0，而 0 在
 //     ROS/ENU 口径下经 mavros 换算后是 PX4 的 +90°（机头朝东）⟹ 一旦在 OFFBOARD 里解锁，
 //     PX4 会**真的去转机头**。本张按 §3.4 的精神改成"不转向"。
+//
+// ★★ 本张（ticket 09）加的部分：**`WAIT_START → TRACK` 与轨迹跟踪**。
+//   · **开始键**只从 `note_start_edge()` 进来（ROS 侧是遥控器 ch9 的**上升沿**，
+//     判据在 `rc_switch.hpp`）。**本文件不读遥控器、不数边沿** —— 它只回答
+//     "这条边沿在当前任务态下算什么"。
+//   · **边沿的用法按任务态判定，不按计数器**（`note_start_edge` 里有完整理由）：
+//     `kIdle` ⟹ 受理起飞（§H.5.1 的"第 1 次"，D3 = 程序解锁）；`kWaitStart` ⟹ 开始轨迹
+//     （"第 2 次"）；其余任务态 ⟹ **当场丢掉并记日志**（不排队 —— 与 `request_takeoff`
+//     同一条纪律：排队会在操作员不看的某一刻自己飞起来）。
+//   · **`TRACK` 的目标 = 轨迹原点 + `/traj/reference`**（参考是**相对轨迹原点**的，
+//     ticket 07 的落地；漏掉原点会让飞机朝地面俯冲 —— ticket 09 的 Comments 逐字警告过）。
+//   · **参考的 yaw 不转发**：`traj` 的 `yaw_rad` 默认 0，而 0 在 ENU 口径下是"机头朝东"
+//     ⟹ 转发它会让飞机在半空中自己转 90°（与 ticket 05 的 `yaw` 参数同一个坑）。
+//     TRACK 的 yaw 仍是**起飞机头**。
+//   · **参考静默**（在 `TRACK` 里已经跑起来之后又停了）⟹ `Degrade::kTrajTimeout`：
+//     停发 + 请求降落。理由见 `TaskLimits::wait_start_timeout_s` 与 `TrackInput`。
+//   · **任务结束的两条路**：`progress ≥ 1.0`（轨迹真的飞完）与 `WAIT_START` 兜底超时
+//     （操作员一直没按开始键）—— 动作完全相同（停发 + 降落），但**必须在日志里分开说**
+//     （用 `EndReason`）：把后者说成"任务飞完了"是误导。
 
 #ifndef CONTROL__FSM_HPP_
 #define CONTROL__FSM_HPP_
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <vector>
 
 namespace control
@@ -80,12 +100,18 @@ enum class Phase
   kStandby,
   kTakeoff,     ///< 已解锁且在 OFFBOARD，目标 z 沿斜坡上升（ticket 08）
   kHover,       ///< 到高后定点保持，同时判稳（ticket 08）
-  /// 已判稳、**轨迹原点已记录**，目标 = 原点本身；保持 `hover_hold_s` 后自动 `LAND`。
-  /// ★ ticket 09 会在这里插入"遥控器开始键 ⟹ `TRACK`"。
+  /// 已判稳、**轨迹原点已记录**，目标 = 原点本身，等操作员按遥控器开始键。
+  /// ★ ticket 09：**这个态的出口有两条** —— 开始键的上升沿 ⟹ `TRACK`；
+  ///   兜底超时 `wait_start_timeout_s` ⟹ 任务结束进 `LAND`（`EndReason::kWaitStartTimeout`）。
+  ///   两条出口的动作完全不同（一个继续飞、一个降落），所以日志必须说清是哪一条。
   kWaitStart,
-  kTrack,       ///< 占位（ticket 09）
-  /// 停发 + 请求 `AUTO.LAND`。两个来源：**失效降级**（ticket 06）与**任务正常走完**（ticket 08），
-  /// 处置逐字相同，靠 `Decision::mission_complete` 区分（日志要说清是哪一种）。
+  /// 跟着 `/traj/reference` 飞（ticket 09）：目标 = **轨迹原点 + 参考**，
+  /// `progress ≥ 1.0` ⟹ 任务飞完（`EndReason::kTrajDone`）⟹ `LAND`。
+  /// ⚠️ 参考的 `yaw` **不转发**（理由见文件头 ticket 09 那一节）。
+  kTrack,
+  /// 停发 + 请求 `AUTO.LAND`。三个来源：**失效降级**（ticket 06）、**轨迹飞完**（ticket 09）、
+  /// **`WAIT_START` 兜底超时**（ticket 09）。处置逐字相同，靠 `Decision::end_reason` +
+  /// `Decision::degrade` 区分（日志要说清是哪一种）。
   kLand,
   kRcOverride,  ///< 控制权被外部夺走（ticket 06）：停发 + 交还控制权 + **不抢回 OFFBOARD**
 };
@@ -222,6 +248,22 @@ struct Health
   ///    非零）：那种场面动捕那两条**完全看不见**。两条路径的源码出处见
   ///    `docs/control/phase1-implementation.md` §4.4。
   bool ekf2_pos_lost{false};
+  /// ★★ ticket 09：在 `TRACK` 里**等参考等太久**（自"进 `TRACK` / 上一次收到参考"起超过
+  /// `TaskLimits::traj_timeout_s`）⟹ 停发 + 请求降落。
+  ///
+  /// ⚠️ **本字段由 `Fsm::update()` 填，不由边界层填** —— 这是本结构体里唯一的例外，
+  ///   理由必须写清楚：判据要的不是"话题静默了多久"，而是"**我们向 `traj` 要了流之后，
+  ///   它多久没给**"。两者的计时起点不同：
+  ///     · 刚进 `TRACK` 时参考**本来就还没开始发** —— `traj` 要等我们的 `/traj/start`
+  ///       才发第一帧（`traj_node.cpp:289`：`running_` 为假就一帧都不发）。拿"话题静默"
+  ///       直接当判据，会在进 `TRACK` 的**第二帧**就判失效（`fail-fast` 在 20 ms 的
+  ///       正常等待窗里就是误判）。
+  ///     · 边界层也不知道"重发 `/traj/start`"这件事（运行中重选轨迹之后要再发一次，
+  ///       发出去之后同样要给一个新窗口）。
+  ///   ⟹ 计时起点（进 `TRACK`、每次重发、每次收到参考）只有任务层知道，字段就在这里填。
+  ///   ★ 起点与边界层的 `traj_reference` 新鲜度**同时**到期（两者都从"最后一帧参考"起算），
+  ///     所以不会叠加成两个超时。
+  bool traj_stale{false};
 };
 
 /// 本帧的**导航读数**（ticket 08）—— 起飞与悬停判据要的量的最小集合。
@@ -262,6 +304,40 @@ struct Odometry
   }
 };
 
+/// 本帧的**轨迹参考**（ticket 09）—— `/traj/reference` + `/traj/progress` 的最小集合。
+///
+/// ★★ **口径**：参考是**相对轨迹原点**的（ENU，单位 m），**1 m 高度在原点里、不在轨迹里**
+///    （悬停轨迹的参考恒为 `(0,0,0)`，ticket 07 的落地）。所以 `TRACK` 的目标 = 轨迹原点 + 参考，
+///    **绝不能**把它直接当 setpoint 发出去 —— 那是把原点丢掉，飞机会先往地面附近扎
+///    （ticket 09 的 Comments 第 1 条逐字警告过）。
+///
+/// ★ 与 `Odometry` 同一条纪律：**边界层算好，本文件只做几何**。这里刻意**不**带新鲜度窗口，
+///   只报"上一帧参考是多久以前到的"（`age_s`）—— 因为"多久算失效"取决于"我们什么时候开始要流"
+///   （见 `Health::traj_stale`），那是任务层的事，边界层算不出来。
+struct TrajReference
+{
+  /// 距上一帧 `/traj/reference` 的时长（秒）。**从没收到过时是 `+inf`**。
+  /// ★ 用"年龄"而不是"是否新鲜"：本文件要拿它同时判两件事（流断没断、要不要重发
+  ///   `/traj/start`），两者阈值不同（`traj_stream_gap_s` vs `traj_timeout_s`），
+  ///   而边界层一旦替我折成布尔量就再也拆不开了。
+  double age_s{std::numeric_limits<double>::infinity()};
+  /// 参考位置（**相对轨迹原点**，ROS/ENU）。
+  double x{0.0};
+  double y{0.0};
+  double z{0.0};
+  /// 上一次收到的 `/traj/progress`（0–1）。**跑完之后 `traj` 会一直保持 1.0**。
+  /// ⚠️ 它是"最后一次收到的值"，流断的时候**不会**自己归零 ⟹ 判"跑完了"必须配合
+  ///   `progress_seen` 与 `track_started_` 两个闩锁（否则上一轮任务留下的 1.0 会让
+  ///   刚进 `TRACK` 的这一轮**当场**判成飞完，见 `update()` 的 `kTrack` 分支）。
+  double progress{0.0};
+  /// 收到过至少一帧 `/traj/progress`。
+  bool progress_seen{false};
+
+  /// 参考流"还活着"（年龄在 `gap_s` 之内）。★ 是本文件的小工具，不是边界层的判据。
+  bool alive(double gap_s) const {return age_s <= gap_s;}
+};
+
+
 /// 从四元数取 **ROS/ENU 口径**的偏航角（从 +x 逆时针，绕 +z）。
 /// ★ 放这里而不是边界层：它是纯函数（seam 2 可测），而 yaw 的正确性在实机上
 ///   代价很高（ticket 05 的 `yaw` 参数就是这么错的 —— 见文件头 ★）。
@@ -296,10 +372,32 @@ struct TaskLimits
   double hover_vel_tol_mps{0.10};
   /// 稳定判据需持续多久（工单 2 s）。
   double hover_settle_s{2.0};
-  /// 判稳后保持多久再自动降落（工单 60 s = §5.3 的验收时长）。
-  /// ⚠️ ticket 09 必须重新审这个数：操作员要在 `WAIT_START` 里按"开始"键进 `TRACK`，
-  ///   60 s 可能不够他准备 —— 那时它该由遥控器/参数给出更长的值（或改为不超时）。
-  double hover_hold_s{60.0};
+  /// `WAIT_START` 的**兜底时限**：这么久还没等到开始键就结束任务、自动降落。
+  /// ★★ ticket 09 取代了 ticket 08 的 `hover_hold_s`（那个数**就是这张票要重新审的**，
+  ///   见它删掉前的注释）：`WAIT_START` 是一个**等操作员**的态，60 s 按不到就降落等于
+  ///   "手慢就白飞一趟"。300 s 是给"起飞后还要切图/看 RViz/确认轨迹"留的时间。
+  /// ⚠️ 它的**动作是降落**，不是"继续等" —— 与 §5.3 的"悬停 60 s"不是一回事：
+  ///   后者由 **1 m 悬停轨迹**（`traj` 的 `hover_duration_s = 60 s`）在 `TRACK` 里兑现。
+  /// ★ `<= 0` = **不超时**（一直等操作员）。台架 pytest 用的就是这一档 ——
+  ///   否则"起飞 → 判稳 → 60 s 后降落"的既有用例要等 5 分钟。
+  double wait_start_timeout_s{300.0};
+  /// `/traj/reference` **断流**的判据（秒）：超过它没有新参考
+  ///   · 目标**不再更新**（保持上一个目标 —— 飞机停在原地，而不是回落到轨迹原点）；
+  ///   · 并且**重发一次 `/traj/start`**（运行中重选轨迹后 `traj` 会自己停流，
+  ///     见 `update()` 的 `kTrack` 分支）。
+  /// ★ 取 0.5 s 而不是"几个周期"：它是**重发 `/traj/start`** 的闸门，而重发这个动作
+  ///   在"其实还在跑"的情况下是一次**真实的指令跳变**（`traj` 会把参考时钟归零，
+  ///   飞机会掉头飞回轨迹起点）⟹ 必须大到"不可能是调度抖动"。
+  ///   `traj` 发参考是 50 Hz（周期 20 ms）⟹ 0.5 s = **连丢 25 帧**，台架上不会发生。
+  ///   ⚠️ **不要把它调小**：调到两三个周期，任何一次调度延迟都会让飞机掉头。
+  double traj_stream_gap_s{0.5};
+  /// 进 `TRACK` 之后（或上一次收到参考之后）这么久还没参考 ⟹ **放弃并降落**
+  ///   （`Degrade::kTrajTimeout`）。取 3.0 的理由：正常一次 `/traj/start` 的往返是
+  ///   **20 ms 级**（`traj` 下一个 50 Hz tick 就发），给到 3 s 已经是两个数量级的余量；
+  ///   而"操作员按了开始键但没选轨迹"（`traj` 只打一条 WARN、一帧都不发）必须有个头
+  ///   —— 否则飞机会一直悬在那里，而**程序没有任何出口**（那时飞机仍在我们手上，
+  ///   §H.7 的打杆接管还在，但那要操作员自己发现问题）。
+  double traj_timeout_s{3.0};
   /// 起飞命令的**有效期**：受理之后这么久还没解锁成功就作废、退回 STANDBY（不自动重试）。
   /// 取 5.0 的理由：`/mavros/state` 只有 1 Hz（解锁成功最多晚 1 s 才知道）+
   /// `/mavros/cmd/arming` 的服务往返 + 余量。⚠️ 它**也是**"前置不满足"的兜底时限
@@ -333,6 +431,11 @@ enum class Degrade
   /// ⚠️ 名字里的 `ekf2_` 是**故意的**：日志要靠它把"EKF2 说没位置"与"话题上没数据"
   ///   （`local_pos_timeout`）分开 —— 两者的排查方向完全不同。
   kEkf2PosLost,
+  /// ★★ ticket 09：`TRACK` 里**参考流没了**（`traj` 节点挂了 / 没选轨迹 / `/traj/start`
+  /// 被拒），且**重发 `/traj/start` 也没救回来**（判据 = `Health::traj_stale`）。
+  /// ⚠️ 排在最后：它只在 `TRACK` 里成立，而进 `TRACK` 本身就要求前面那些判据都是好的
+  ///   —— 真要同帧共现（比如动捕和参考同时断），钱都花在"先查动捕"上更对。
+  kTrajTimeout,
 };
 
 const char * to_string(Degrade d);
@@ -343,7 +446,8 @@ inline const std::vector<Degrade> & all_degrades()
   static const std::vector<Degrade> kAll{
     Degrade::kNone, Degrade::kRcOverride, Degrade::kModeLost, Degrade::kStateTimeout,
     Degrade::kMocapTimeout, Degrade::kLocalPosTimeout, Degrade::kRcTimeout, Degrade::kBatteryLow,
-    Degrade::kPositionInvalid, Degrade::kMocapStampStalled, Degrade::kEkf2PosLost};
+    Degrade::kPositionInvalid, Degrade::kMocapStampStalled, Degrade::kEkf2PosLost,
+    Degrade::kTrajTimeout};
   return kAll;
 }
 
@@ -419,8 +523,32 @@ inline Degrade first_degrade(const Guards & g, const Health & h, const PrevFrame
   //        再等消抖的 2 帧 ≈ 2 s）。这段时间里飞机是解锁状态而位置参考已经没了 ——
   //        所以真兜底仍然是动捕那两条（0.5 s 就报，且不看解锁状态）。
   if (g.armed && h.ekf2_pos_lost) {return Degrade::kEkf2PosLost;}
+
+  // ⑦ ticket 09：`TRACK` 里参考流没了（`traj` 挂了 / 没选轨迹 / `/traj/start` 被拒）。
+  //   ★★ 只有这一条判据**不带 `g.armed` 门**，反而要看 `g.armed` 的另一面 —— 它只在
+  //     `TRACK` 里成立，而进 `TRACK` 必须先判稳、先解锁（`kWaitStart` 是解锁之后才到的），
+  //     所以"未解锁时误报"在这条上构造不出来。判据本身（含计时起点）见 `Health::traj_stale`。
+  //   ★ 排在最后而不是最前：它对"飞机是不是安全"最不紧急（参考没了，飞机还悬在原位、
+  //     动捕和 EKF2 都还好好的），而同帧共现时前面的每一条都更需要先查。
+  if (h.traj_stale) {return Degrade::kTrajTimeout;}
   return Degrade::kNone;
 }
+
+/// 任务**正常结束**的原因（ticket 09，取代 ticket 08 的 `Decision::mission_complete`）。
+///
+/// ★ 为什么值得单开一个枚举而不是一个 bool：`WAIT_START` 的兜底超时与"轨迹真的飞完了"
+///   **动作逐字相同**（停发 + 请求降落），但两句日志的**意思完全相反** —— 把"操作员一直
+///   没按开始键"说成"任务飞完了"是误导，而现场的判断几乎全靠这条日志。
+/// ⚠️ 它**只覆盖"没出故障的结束"**。失效降级（ticket 06 那一家子）结束任务时这一栏是
+///   `kNone`，因为那时该看的是 `degrades`（`Decision::degrade`）—— 两条信息刻意不混。
+enum class EndReason
+{
+  kNone,             ///< 没有结束（在飞，或者结束的原因不是"正常走完"，见上）
+  kTrajDone,         ///< `TRACK`：`progress ≥ 1.0`，轨迹真的跑完了
+  kWaitStartTimeout, ///< `WAIT_START`：一直没等到开始键，兜底时限到了
+};
+
+const char * to_string(EndReason r);
 
 /// 决策 —— 由 ROS 边界执行：边界层不判断，只按这几个字段行事。
 struct Decision
@@ -450,7 +578,19 @@ struct Decision
   /// 进 `LAND` 的原因是"任务正常走完"而不是失效降级（日志用它区分两种降落）。
   /// ★ 与 `degrade == kNone` 是**两回事**：正常走完时 `degrade` 也是 `kNone`
   ///   ⟹ 只用 `degrade` 判断会把"任务飞完了"漏成"什么都没发生"。
-  bool mission_complete{false};
+  EndReason end_reason{EndReason::kNone};
+
+  // ────────── ticket 09 ──────────
+
+  /// 本帧该发**一次** `/traj/start`（`std_msgs/Empty`，`traj` 收到就把参考时钟归零）。
+  /// ★ 一次性脉冲，且**只可能出现在 `TRACK`**：
+  ///   · 进 `TRACK` 的第一帧必发（"开始飞"与"参考时钟零点"必须是同一时刻）；
+  ///   · 之后**只在参考流断了**（`traj_stream_gap_s`）才重发一次 —— 那是"运行中重选轨迹"
+  ///     的处置（ticket 09 Comments 第 2 条）：重选会让 `traj` 自己停流，
+  ///     要有人再发一次 start 它才会按新轨迹从零开始。
+  /// ⚠️ 重发在"其实还在跑"的情况下是**真实的指令跳变**（参考时钟归零 ⟹ 掉头飞回起点），
+  ///   所以闸门用的是 0.5 s（连丢 25 帧）而不是几个周期，理由见 `TaskLimits::traj_stream_gap_s`。
+  bool request_traj_start{false};
 };
 
 /// `/control/takeoff` 的受理结论（ticket 08）。★ 让"为什么没受理"在**服务应答**里就说清，
@@ -462,6 +602,21 @@ enum class TakeoffReply
 };
 
 const char * to_string(TakeoffReply r);
+
+/// 遥控器**开始键**一条上升沿的受理结论（ticket 09）。
+/// ★ 与 `TakeoffReply` 分开而不是合并：两者词表不同（这条多一个"丢掉"），
+///   合并之后"为什么没反应"在**两种**输入上会共用一句含糊的话。
+enum class StartEdgeReply
+{
+  kTakeoff,   ///< `kIdle`：这是 §H.5.1 的"第 1 次" ⟹ 受理起飞（D3 = 程序解锁）
+  kTrack,     ///< `kWaitStart`：这是 §H.5.1 的"第 2 次" ⟹ 开始轨迹
+  /// 其余任务态（`kRequested`/`kClimb`/`kHover`/`kTrack`/`kDone`）⟹ **当场丢掉**。
+  /// ★ 刻意**不排队**（与 `request_takeoff` 同一条纪律）：排队意味着"操作员在起飞过程中
+  ///   多按了一下，程序在几十秒后自己开跑轨迹"——那个时刻没有人会预期它发生。
+  kIgnored,
+};
+
+const char * to_string(StartEdgeReply r);
 
 class Fsm
 {
@@ -489,9 +644,29 @@ public:
   ///   静默重试会把"参数没配对"这类确定性的拒绝变成一串没人看的日志。
   void note_arming_failed();
 
+  /// 受理遥控器**开始键的一条上升沿**（ticket 09）。ROS 侧是 `/mavros/rc/in` 上
+  /// `start_channel` 的上升沿（判据 = `StartSwitchDetector`，200 ms 去抖、上电即高位不算）。
+  ///
+  /// ★★ **按任务态判定，不数边沿的次数**：§H.5.1 说的"第 1 次 / 第 2 次"是**同一把开关
+  ///   在同一个任务里的两次动作**，而它们之间的区别**不在次数上、在"当时飞机在干什么"上**：
+  ///     · `kIdle` ⟹ 受理起飞（`request_takeoff`，§H.5.1 的 D3 = 程序解锁）；
+  ///     · `kWaitStart` ⟹ 开始轨迹（进 `TRACK`）；
+  ///     · 其余 ⟹ 丢掉。
+  ///   用一个计数器去数"这是第几次按键"是**错的**，而且错得很具体：任务落地后计数器不会
+  ///   自己归零（除非每个退出路径都记得减），于是**第二次任务的第一次按键会被当成
+  ///   "第 2 次"**，飞机在操作员只想起飞的时候直接开跑轨迹。用任务态判则天然没有这个
+  ///   状态要同步 —— `kIdle` 就是 `kIdle`，不管之前飞过几轮。
+  ///   （"上电即在高位不算边沿"同理不在次数上，在 `StartSwitchDetector::released_` 上。）
+  ///
+  /// @param now_s 单调递增的秒（同 `update()`）
+  StartEdgeReply note_start_edge(double now_s);
+
   /// @param now_s 单调递增的秒（边界层给 `rclcpp::Node::now()`，本文件只用差值）
+  /// @param traj 本帧的轨迹参考（ticket 09）。★ 带默认值是**刻意的**：本张之前的所有
+  ///        调用点（ticket 05–08 的 ~130 处 + 单测）与 `TRACK` 无关，加一个必填参数会
+  ///        让它们全部改写一遍，而改写本身不带来任何信息（它们传的必然是"没有参考"）。
   Decision update(const Guards & guards, const Health & health, const Odometry & odom,
-    double now_s);
+    double now_s, const TrajReference & traj = {});
 
   /// 观测口（日志/测试用）：当前这轮连续流了多久（没在流时为 0）。
   double streaming_seconds(double now_s) const;
@@ -539,7 +714,8 @@ private:
     kRequested,  ///< 收到起飞命令，正在发/等解锁 → 仍是 `STANDBY`（飞机还没被我们驱动）
     kClimb,      ///< 爬升 → `TAKEOFF`
     kHover,      ///< 到高后定点保持并判稳 → `HOVER`
-    kWaitStart,  ///< 已判稳、轨迹原点已记录 → `WAIT_START`
+    kWaitStart,  ///< 已判稳、轨迹原点已记录，等开始键 → `WAIT_START`
+    kTrack,      ///< 跟着参考飞 → `TRACK`（ticket 09）
     kDone,       ///< 任务走完，等落地上锁 → `LAND`
   };
 
@@ -588,13 +764,40 @@ private:
   /// ⚠️ 哨兵值必须是**负数**：夹具/测试的 `now_s` 从 ~0 起算，用 `0.0` 当哨兵会在
   ///    开机后那几帧把"还没计时"和"从 0 秒起就在计时"混为一谈。
   double settle_started_at_s_{-1.0};
-  /// `WAIT_START` 的起点（`hover_hold_s` 从它起算）。
+  /// `WAIT_START` 的起点（`wait_start_timeout_s` 从它起算）。
   double wait_started_at_s_{0.0};
   /// **轨迹原点**（工单的 ★ 核心设计）：稳定判据成立那一刻记下的 EKF 位置。
   /// 之后 `WAIT_START`/`TRACK` 的目标就是它 —— 于是 EKF2 局部原点与动捕原点之间的
   /// 常值偏移被**自动吸收**（我们是"以当前点为 0"发的指令）。
   double traj_x_{0.0}, traj_y_{0.0}, traj_z_{0.0};
   bool traj_valid_{false};
+
+  // ────────── ticket 09（`TRACK`） ──────────
+
+  /// 任务正常结束的原因（只在转进 `kDone` 的那一刻落定，见 `Decision::end_reason`）。
+  EndReason end_reason_{EndReason::kNone};
+  /// 本轮 `TRACK` 里**发出过** `/traj/start`（⟹ 之后的"没有参考"是"要了没给"）。
+  bool traj_start_sent_{false};
+  /// 上一次发出 `/traj/start` 的时刻（重发的闸门，见 `TaskLimits::traj_stream_gap_s`）。
+  double last_traj_start_at_s_{0.0};
+  /// "等参考"的计时起点：进 `TRACK` 那一刻 / 上一次收到参考那一刻。
+  /// ★ 只用于 `Health::traj_stale`（`TaskLimits::traj_timeout_s` 从它起算）。
+  double traj_waited_since_s_{0.0};
+  /// 本轮 `TRACK` 里**收到过至少一帧参考**（诊断 + 说明"参考到底来没来过"）。
+  bool track_seen_reference_{false};
+  /// ★★ 本轮 `TRACK` 里**见过 `progress < 1.0`** ⟹ 这条轨迹真的在跑。
+  ///   为什么需要它（**不是防御性编程，是一个具体的坑**）：`traj` 跑完之后
+  ///   **会一直保持 `progress = 1.0` 并继续按 50 Hz 发参考**（`traj_node.cpp:302-308`）。
+  ///   于是**同一个节点进程里的第二轮任务**进 `TRACK` 时，手上那个"上一轮的 1.0"是
+  ///   **新鲜的**（不是陈旧数据）—— 只看"参考新鲜 + progress ≥ 1.0"会让飞机
+  ///   **一进 `TRACK` 就判成飞完、当场降落**。要求"先见它从 1.0 以下跑起来"就把这条堵死了。
+  ///   ⚠️ 前提：三条轨迹的时长都 > 0（`trajectories.hpp:148` 把非正时长夹到 1e-3，
+  ///     正方形/八字按周长÷限速算）⟹ 不存在"第一帧就是 1.0"的轨迹。
+  bool track_started_{false};
+  /// `TRACK` 的**最后一个目标**（ENU）。参考断流时用它继续发（"停在那儿别动"）。
+  /// ★ 进 `TRACK` 时初值是**轨迹原点**（= 判稳那一刻的位置），所以"还没收到第一帧参考"
+  ///   那几十毫秒里飞机就是原地悬停 —— 与 `WAIT_START` 的最后一段逐字连续。
+  double track_target_x_{0.0}, track_target_y_{0.0}, track_target_z_{0.0};
 
   /// `armed` 下降沿的复位动作（落地上锁 ⟹ 一切重来）。★ 抽出来是因为 `update()` 的
   /// ① 复位与任务层必须**同时**归零：漏一个就会出现"飞机已上锁，任务还记着上一轮的轨迹原点"。
@@ -607,6 +810,14 @@ private:
     settle_started_at_s_ = -1.0;
     climb_started_at_s_ = 0.0;
     wait_started_at_s_ = 0.0;
+    // ★ ticket 09：`TRACK` 的那一组闩锁**必须一起清** —— 留着 `track_started_` 会让
+    //   下一轮的第一帧就"见过 progress < 1.0"，而那正是它要挡的（见成员注释）。
+    end_reason_ = EndReason::kNone;
+    traj_start_sent_ = false;
+    last_traj_start_at_s_ = 0.0;
+    traj_waited_since_s_ = 0.0;
+    track_seen_reference_ = false;
+    track_started_ = false;
   }
 
   /// 停发 + 交出控制权的**公共动作**（④ 夺权 / ⑤ 失效 / ⑥ 守卫不成立 —— 三处的这一段
@@ -658,6 +869,31 @@ inline const char * to_string(TakeoffReply r)
   return "accepted";
 }
 
+/// 任务正常结束原因的**词表**（`traj_done` / `wait_start_timeout`）。★ 一样直接进日志。
+/// ⚠️ 这里**不许出现"任务完成"这种笼统的词**：这个枚举存在的唯一理由就是让
+///   "轨迹飞完了"与"没等到开始键"在日志里长得不一样。
+inline const char * to_string(EndReason r)
+{
+  switch (r) {
+    case EndReason::kTrajDone:         return "traj_done";
+    case EndReason::kWaitStartTimeout: return "wait_start_timeout";
+    case EndReason::kNone:             break;
+  }
+  return "none";
+}
+
+/// 开始键受理结论的**词表**（`takeoff` / `track` / `ignored`）——
+/// 现场脚本按它 grep "按键到底被当成了什么"。
+inline const char * to_string(StartEdgeReply r)
+{
+  switch (r) {
+    case StartEdgeReply::kTakeoff: return "takeoff";
+    case StartEdgeReply::kTrack:   return "track";
+    case StartEdgeReply::kIgnored: return "ignored";
+  }
+  return "ignored";
+}
+
 /// ★ 故意不写 `default:`：新增一条 `Degrade` 而这里没跟上时，`-Wswitch` 直接编译失败。
 inline const char * to_string(Degrade d)
 {
@@ -672,6 +908,7 @@ inline const char * to_string(Degrade d)
     case Degrade::kPositionInvalid:   return "position_invalid";
     case Degrade::kMocapStampStalled: return "mocap_stamp_stalled";
     case Degrade::kEkf2PosLost:       return "ekf2_pos_lost";
+    case Degrade::kTrajTimeout:       return "traj_timeout";
     case Degrade::kNone:              break;
   }
   return "none";
@@ -697,6 +934,45 @@ inline TakeoffReply Fsm::request_takeoff(double now_s)
   origin_valid_ = false;
   settle_started_at_s_ = -1.0;
   return TakeoffReply::kAccepted;
+}
+
+inline StartEdgeReply Fsm::note_start_edge(double now_s)
+{
+  // ★★ 判据是**当前任务态**，不是"这是第几次按键"（完整理由见声明处）。
+  switch (task_) {
+    case Task::kIdle:
+      // §H.5.1 的"第 1 次"：受理起飞。⚠️ 走 `request_takeoff()` 而不是自己置 `kRequested`
+      //   —— 受理的全部语义（不排队、前置当帧查、`takeoff_timeout_s` 兜底）都在那里，
+      //   复制一遍迟早走散（尤其是"已受理还在等解锁时再来一条"的拒绝）。
+      //   `request_takeoff` 在 `kIdle` 上必然受理 ⟹ 这里也必然返回 `kTakeoff`。
+      return (request_takeoff(now_s) == TakeoffReply::kAccepted) ? StartEdgeReply::kTakeoff
+                                                                 : StartEdgeReply::kIgnored;
+
+    case Task::kWaitStart:
+      // §H.5.1 的"第 2 次"：开始轨迹。★ 进 `TRACK` 需要的那一套记账在这里一次做齐
+      //   （全清，不是"只置一个"）—— 这一轮的 `TRACK` 与上一轮必须看不出区别。
+      task_ = Task::kTrack;
+      traj_start_sent_ = false;        // ⟹ `update()` 的第一帧必发 `/traj/start`
+      last_traj_start_at_s_ = now_s;
+      traj_waited_since_s_ = now_s;    // 等参考从这一刻起算
+      track_seen_reference_ = false;
+      track_started_ = false;
+      // ★ 断流时的保持目标从**轨迹原点**起（不是上一轮的最后一个目标 —— 那可能离这儿
+      //   半条轨迹远，飞机的第一帧就会朝它冲过去）。
+      track_target_x_ = traj_x_;
+      track_target_y_ = traj_y_;
+      track_target_z_ = traj_z_;
+      return StartEdgeReply::kTrack;
+
+    case Task::kRequested:
+    case Task::kClimb:
+    case Task::kHover:
+    case Task::kTrack:
+    case Task::kDone:
+      // 丢掉。★ 一处也不能"帮操作员记住"：见声明处的理由（排队 = 在自己不看的某一刻开跑）。
+      return StartEdgeReply::kIgnored;
+  }
+  return StartEdgeReply::kIgnored;
 }
 
 inline void Fsm::note_arming_failed()
@@ -740,13 +1016,14 @@ inline const char * Fsm::task_name() const
     case Task::kClimb:     return "climb";
     case Task::kHover:     return "hover";
     case Task::kWaitStart: return "wait_start";
+    case Task::kTrack:     return "track";
     case Task::kDone:      return "done";
   }
   return "idle";
 }
 
 inline Decision Fsm::update(const Guards & guards, const Health & health, const Odometry & odom,
-  double now_s)
+  double now_s, const TrajReference & traj)
 {
   Decision d;
 
@@ -804,7 +1081,17 @@ inline Decision Fsm::update(const Guards & guards, const Health & health, const 
   }
 
   // ── ② 本轮判据 ──
-  const Degrade reason = ever_streamed_ ? first_degrade(guards, health, prev) : Degrade::kNone;
+  // ★★ ticket 09：`TRACK` 里"参考没了"这一条**在任务层算**（理由见 `Health::traj_stale`）：
+  //   判据要的计时起点是"进 TRACK / 上次收到参考 / 上次重发 `/traj/start`"，
+  //   全是边界层看不到的事。这里把算好的结果填进 `Health` 的一份副本再喂给 `first_degrade`，
+  //   于是"降级判据"仍然只有 `first_degrade` 一个出处。
+  Health h = health;
+  if (task_ == Task::kTrack && traj.alive(limits_.traj_stream_gap_s)) {
+    traj_waited_since_s_ = now_s;   // 参考到了 ⟹ 重新起算
+  }
+  h.traj_stale = (task_ == Task::kTrack) &&
+    (now_s - traj_waited_since_s_) >= limits_.traj_timeout_s;
+  const Degrade reason = ever_streamed_ ? first_degrade(guards, h, prev) : Degrade::kNone;
 
   // ── ③ 闩锁：记住**首因**（最接近根因），闩锁期间不被后续判据改写 ──
   if (reason != Degrade::kNone) {
@@ -842,10 +1129,13 @@ inline Decision Fsm::update(const Guards & guards, const Health & health, const 
   // ── ⑤ 有失效 ⟹ 停发；已解锁时主动中止任务（请求 AUTO.LAND）──
   //   ★ ticket 08 把"任务**正常**走完"接进同一个出口：两者的**动作逐字相同**（停发 + 降落），
   //     分开写迟早会出现两处不一致（比如只给降级那条重试 `AUTO.LAND`）。差别只在日志里
-  //     怎么称呼它 ⟹ 用 `d.mission_complete` 传出去，由边界层决定措辞。
+  //     怎么称呼它 ⟹ 用 `d.end_reason` 传出去，由边界层决定措辞
+  //     （ticket 09 起它**两条正常出口**：轨迹飞完、`WAIT_START` 兜底超时 —— 两者动作
+  //      逐字相同、意思相反，措辞必须分得开，这正是把它从 bool 升成枚举的原因）。
   if (active != Degrade::kNone || task_ == Task::kDone) {
     halt(d);
-    d.mission_complete = (active == Degrade::kNone);
+    // ★ 只有"没出故障"的结束才报原因：那时 `degrade` 也是 `kNone`，两条信息互补。
+    d.end_reason = (active == Degrade::kNone) ? end_reason_ : EndReason::kNone;
     if (guards.armed) {
       // ★ 尽力而为：`AUTO.LAND` 需要 EKF2 的 local position（`mode_requirements.cpp:141`），
       //   位置真失效时 PX4 会**拒绝**它 —— 那时唯一兜底是 PX4 自己的失效保护
@@ -1016,12 +1306,71 @@ inline Decision Fsm::update(const Guards & guards, const Health & health, const 
       d.target_x = traj_x_;
       d.target_y = traj_y_;
       d.target_z = traj_z_;
-      if (now_s - wait_started_at_s_ >= limits_.hover_hold_s) {
-        // 任务正常结束 ⟹ `kDone`，下一帧走 ⑤ 的降落出口（那一刻 `d.request_land` 才有意义）。
-        // ★ 不在这里直接请求降落：保持"降落只有一个出口"这条纪律。
+      // ★★ 出口①（正常出口）是**开始键**：`note_start_edge()` 已经把 `task_` 改成 `kTrack`
+      //   ⟹ 那一帧根本走不到这里。所以本分支只剩出口②：兜底超时。
+      // ⚠️ 超时**不是"再等一会儿"，是结束任务 + 降落** —— 它存在的理由是"程序不能有一个
+      //   自己走不出去的态"（操作员忘了按键、遥控器没电、……），见 `wait_start_timeout_s`。
+      if (limits_.wait_start_timeout_s > 0.0 &&
+        now_s - wait_started_at_s_ >= limits_.wait_start_timeout_s)
+      {
+        end_reason_ = EndReason::kWaitStartTimeout;
         task_ = Task::kDone;
       }
       break;
+
+    case Task::kTrack: {
+      d.phase = Phase::kTrack;
+      // ★ yaw 仍然是**起飞机头**，**不转发参考的 `yaw`**（理由见文件头 ticket 09 那一节：
+      //   `traj` 的 `yaw_rad` 恒 0，而在 ENU 口径下 0 就是"机头朝东"）。
+      d.target_yaw = takeoff_yaw_;
+
+      // ── 目标 = 轨迹原点 + 参考（**加原点**，绝不直接转发参考）──
+      const bool ref_alive = traj.alive(limits_.traj_stream_gap_s);
+      if (ref_alive) {
+        track_seen_reference_ = true;
+        // ★★ 加原点 —— ticket 09 Comments 第 1 条的**唯一**执行处。
+        d.target_x = traj_x_ + traj.x;
+        d.target_y = traj_y_ + traj.y;
+        d.target_z = traj_z_ + traj.z;
+        track_target_x_ = d.target_x;
+        track_target_y_ = d.target_y;
+        track_target_z_ = d.target_z;
+      } else {
+        // 参考断了：**保持最后一个目标**（飞机悬停不动）。
+        // ★ 为什么不是"回落到轨迹原点"：那是一道肉眼看不见的位移指令（原点与当前点可能
+        //   差着半条轨迹的距离）——参考断掉的那一刻正是最不该主动加一次机动的时候。
+        //   这一支只在进 TRACK 后的头 0.5 s（还没收到第一帧）真正落到"原点"上，
+        //   那时 `d.target_*` 的默认值就是当前位姿，本来也不动。
+        d.target_x = track_target_x_;
+        d.target_y = track_target_y_;
+        d.target_z = track_target_z_;
+      }
+
+      // ── 要不要（重）发 `/traj/start` ──
+      //   · 进 TRACK 的第一帧必发：参考时钟的零点必须与"开始飞"同一时刻；
+      //   · 之后只在**参考流断了**且**距上次发也过了同样久**（节流）时重发一次 ——
+      //     那是"运行中重选轨迹"（`traj` 自己停流了）唯一的救法。
+      // ⚠️ 重发的闸门（`traj_stream_gap_s`）必须远大于 50 Hz 的周期，理由见那个成员的注释。
+      const bool due = (now_s - last_traj_start_at_s_) >= limits_.traj_stream_gap_s;
+      if (!traj_start_sent_ || (!ref_alive && due)) {
+        d.request_traj_start = true;
+        traj_start_sent_ = true;
+        last_traj_start_at_s_ = now_s;
+      }
+
+      // ── 任务结束：轨迹真的跑完 ──
+      // ⚠️ 两个条件都不能少（见 `track_started_` 的成员注释）：`progress` 是**最后一次
+      //   收到的值**，上一轮任务留下的 1.0 在流断时不会归零 —— 只看数值会让第二轮任务
+      //   一进 TRACK 就判飞完。要求"亲眼见过它从 1.0 以下跑起来"才算。
+      if (ref_alive && traj.progress_seen && !track_started_ && traj.progress < 1.0) {
+        track_started_ = true;
+      }
+      if (track_started_ && traj.progress >= 1.0) {
+        end_reason_ = EndReason::kTrajDone;
+        task_ = Task::kDone;
+      }
+      break;
+    }
 
     case Task::kDone:
       // 不可达（⑤ 已经把它拦在降落分支里了）。写出来是为了让 `-Wswitch` 保持完整。
