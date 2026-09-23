@@ -52,7 +52,8 @@
 │       ├── z0.params                 z0 飞控参数（928 行，待上机核实）
 │       └── papers/                   6 篇参考文献 + 中文索引
 ├── run/                              ★ **人工启动层**：`z0.py` 交互菜单（起链 + 每步核对，
-│                                          含「一键起链」`up` / `up.sh`）—— 不含飞行逻辑，
+│                                          含「一键起链」`up` / `up.sh` 与它的另一头
+│                                          「清除后台节点」`down` / `down.sh`）—— 不含飞行逻辑，
 │                                          也不替代台架清单 —— 见 [`run/README.md`](run/README.md)
 ├── tools/prereq-evidence/            ★ 前置条件取证脚本（只读）—— 服务 ticket 01
 └── src/                              ★ ROS2 工作区（**colcon 根 = 仓库根**，构建产物已被 .gitignore 挡住）

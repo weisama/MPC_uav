@@ -247,6 +247,7 @@ ros2 launch control control.launch.py
 | 菜单 **8= 起 bringup 一键（mocap+traj+control）** | 一条命令起三个（mavros **默认不起**） | 同样要确认飞机摆好；会问一句"已单独起过 vrpn 了吗" |
 | 菜单 **9= 操作台 fly.py** | 选轨迹 + 看状态 | 见 §4 |
 | 菜单 **10= 一键起链（mavros+GCS 桥 → vrpn → mocap → traj+control，顺序起）** | = §3.1 | 逐段等判据；`run/up.sh` 是它的一行别名 |
+| 菜单 **11= 清除后台节点** | 停掉在跑的节点（**按名字扫**，见 §3.5） | ⚠️ 它是**停进程、不是降落**；清单会先把"要停谁"摊开，问一句 y/N 才动手 |
 
 ### 3.3 ★ 顺序不能反
 
@@ -268,6 +269,34 @@ ros2 launch control control.launch.py
 台架上那条 `ros2 service call /control/takeoff …` **照旧手打**（**不是**给现场的入口：
 台上没有遥控接收机，"RC 在线"这条起飞前置本身就过不了），原文在
 [`bench-runbook.md`](bench-runbook.md) **T4**。
+
+### 3.5 收链的另一头：`run/down.sh` = 菜单 **11= 清除后台节点**
+
+```bash
+run/down.sh            # = run/z0.py down = 菜单 11
+run/down.sh --dry-run  # 只扫一眼"会停谁"，一个信号都不发
+```
+
+**为什么要有它**：`run/up.sh` 是"前台守着、Ctrl-C 一起停"（§7 第 2 条）—— 它能停的**只有它自己起的那些**。
+一旦起链的那个终端被关了、脚本被 `kill -9` 了，节点就成了孤儿，`Ctrl-C` 那条路**已经没有了**
+（`up` 记子进程的那张表是它进程里的局部变量，脚本一退就跟着没了）⟹ 这时只剩"按名字找"。
+
+| 它做什么 | 具体 |
+|---|---|
+| **按名字扫** | 白名单在 [`z0.py`](../../run/z0.py) 的 `DOWN_TARGETS`：mavros / vrpn_listener / mocap / traj / control / bringup。**不是**"停 `up` 起的那些" |
+| 先给清单、再问一句 | 每条都印出 **pid + 完整命令行**；你答 y 才动手（答 n 一个信号都不发） |
+| 顺序（先礼后兵） | **SIGINT → 等 5 s → SIGTERM → 等 3 s → SIGKILL**，与台架 `stop_dut` 同一纪律；只对**单个 pid** 发，不发进程组（别人终端的 shell 可能与它同组） |
+| 收尾 | **再扫一遍**并报串口状态（`/dev/ttyTHS1` 是否空出来）；还有剩的 ⟹ 如实报出来、退出码非零 |
+
+⚠️ **两件必须先知道的事**：
+
+1. **它是停进程，不是降落 —— 也不解锁、不切模式、不碰飞控。** setpoint 一停，PX4 会在
+   `COM_OF_LOSS_T`（1.0 s）后自己退出 OFFBOARD，按 `COM_OBL_RC_ACT`（现值 `0`）落回 Position；
+   而 **A1 未落实** ⟹ 遥控同时丢了 `NAV_RCL_ACT = 2` 会**试图返航**（室内没有 GPS）。
+   **飞机还在空中时先走 §1.2 的两条软路径**，别指望这一条。
+2. **按名字扫 ⟹ 别人会话、跑着的测试起的同类节点也会在清单里。** 现场只有一套飞机，这个代价是
+   *明说的*（[ticket 22 §八](../../.scratch/phase1/issues/22-run-menu-script.md) 的三个选择题之一）。
+   所以**动手前看一眼命令行**：不是你这套的就答 n。
 
 ---
 
@@ -361,7 +390,8 @@ ros2 topic echo /mavros/rc/in     # 看 channels[8]
 | 飞机**自己在降落** | 日志有 `degrade=` 或 `end_reason=`：前者看是哪条输入坏了，后者是正常收口（轨迹飞完 / `WAIT_START` 等超时 300 s） |
 | 飞机**不听我们的了** | `MANUAL/RC_OVERRIDE` ⟹ 有人打杆或模式被切走（§2.4 的夺权）；看是谁、不要"重试一下" |
 | **想立刻停任务** | §1.2 的两条软路径；☠️ ch8 是停桨，不是停任务 |
-| **想终止整条链** | 在 `run/up.sh` 那个终端里 `Ctrl-C`（**别 `kill -9`**，会留下 mavros 占串口） |
+| **想终止整条链** | 在 `run/up.sh` 那个终端里 `Ctrl-C`（**别 `kill -9`**，会留下 mavros 占串口）；⚠️ **那个终端已经关了 / 节点是别的会话起的** ⟹ `Ctrl-C` 这条路没有了，用 §3.5 的 **`run/down.sh`** |
+| **清完了串口还占着** | `run/down.sh` 的收尾会报串口状态；还占着多半是**清单里那条不是你的**（按名字扫 ⟹ 别人的也在）⟹ 看一眼命令行，用 `lsof /dev/ttyTHS1` 认出是谁（别急着 `kill -9`） |
 | 遥控器链路断了 | 只剩 offboard 断流保护（`COM_OF_LOSS_T=1.0 s` → `COM_OBL_RC_ACT`）；⚠️ A1 未改之前会**试图返航** |
 
 ★ **排障表更全的一版**在 [`run/README.md`](../../run/README.md)（daemon 坑 / 半拉子环境 / 刚体名大小写 /
@@ -374,6 +404,8 @@ ros2 topic echo /mavros/rc/in     # 看 channels[8]
 1. 飞机**落地上锁**之后 `/control/state` 自己回到 `MANUAL/STANDBY`（原点、轨迹原点、任务态全清）。
 2. **在 `run/up.sh` 的终端里 `Ctrl-C`** —— 子进程成组（`start_new_session`），先 SIGINT 超时才 SIGKILL
    （前台那个 `Ctrl-C` 到不了子进程，必须由脚本转发）。
+   ⚠️ **那个终端不在了**（关了 / 脚本被 `kill -9` 了）⟹ 走 §3.5 的 `run/down.sh`（菜单 **11= 清除后台节点**），
+   它扫的是名字、不依赖那张已经没了的子进程表。
 3. 若这一趟动了参数（§P0 那几条），**按 `bench-runbook.md` T8 恢复并回填读数**。
 4. 若飞控在录 ulog：**把它存档** —— 判据全在 PX4 侧，它才是硬证据（mavros 只是观察窗）。
 

@@ -107,6 +107,10 @@ ticket 06 时期本张还没有解锁路径，于是有个参数 `own_arming` �
 > ★ **懒得一条条敲**：菜单 **10= 一键起链**（或 `run/up.sh`）按**本节这个顺序**一次起齐
 > （mavros 那条**自带 `gcs_url` 桥**），每步**等判据成立**再加下一步，起完把那张核对表摊开 ——
 > 但它**不代做**"还差的那两步"（选轨迹、起飞 = 上面 T4 那条路），与上一段的边界一致。
+>
+> ★ **停的时候**：那个终端还在就 `Ctrl-C`（脚本转发，先 SIGINT）；**终端已经关了**就用菜单
+> **11= 清除后台节点**（或 `run/down.sh`）—— 它**按名字扫**、先列清单再问一句 y/N。
+> ⚠️ 那是**停进程、不是降落**，台上要先把桨拆了、飞机固定好。
 
 ```bash
 source /opt/ros/humble/setup.bash && source ~/mavros_ws/install/setup.bash && source ~/ros_ws/install/setup.bash

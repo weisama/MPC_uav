@@ -4,7 +4,7 @@
     run/z0.py                 # 交互菜单（敲数字）
     run/z0.py --list          # 只列菜单，不进入交互（给脚本/记录用）
     run/z0.py --dry-run mavros  # 只打印将要执行的命令，不执行
-    run/z0.py env|check|mavros|vrpn|mocap|traj|control|bringup|fly
+    run/z0.py env|check|mavros|vrpn|mocap|traj|control|bringup|fly|up|down
 
 ★ 它替你做掉的三件事：
 
@@ -30,6 +30,13 @@
 
 ⚠️ **本脚本不是 `bench-runbook.md` 的替代品**：那张表是**判据与记录**（做一遍、填读数、勾框），
    本脚本只是**把命令送出去**并把读数摊开给人看。谁先谁后见 `run/README.md`。
+
+★ **第 11 项「清除后台节点」（`down` / `run/down.sh`，ticket 22 §八）**：与第 10 项对称的另一头 ——
+   `up` 起、`down` 停。它**按名字扫**（`DOWN_TARGETS` 那张白名单，`pgrep -f`），
+   所以**别人会话 / 跑着的测试**起的同类节点也会在清单里（现场只有一套飞机，这个代价是明说过的）；
+   顺序是**先列清单 ⟹ 一次 y/N ⟹ SIGINT →（超时）SIGTERM →（超时）SIGKILL**，只发**单个 pid**
+   不发进程组（按名字扫出来的进程可能与别人终端的 shell 同组）。⚠️ **停进程不是降落**：
+   空中先按 `flight-runbook.md` **§1.2**（两条软路径）处置，理由写在 `DOWN_WARNING` 里。
 """
 
 from __future__ import annotations
@@ -402,6 +409,9 @@ ACTIONS: Tuple[Action, ...] = (
            "选轨迹 1/2/3；它**不发** `/traj/start`、不解锁 —— 那两条都在开始键上"),
     Action("up", "★ 一键起链（mavros+GCS 桥 → vrpn → mocap → traj+control，顺序起）", None,
            "逐段**等它真的起来**再走下一步；自带核对表，Ctrl-C 一起停（只停它起的那些）"),
+    Action("down", "★ 清除后台节点（扫 mavros/vrpn/mocap/traj/control 并停掉）", None,
+           "按**名字**扫（`DOWN_TARGETS`）⟹ 别人会话起的同类节点也在清单里；先列清单再问一句 y/N；"
+           "先 SIGINT 超时才升级 ⟹ **它不是降落**，空中先按 runbook §1.2 处置"),
 )
 
 ACTION_BY_KEY: Dict[str, Action] = {a.key: a for a in ACTIONS}
@@ -444,6 +454,17 @@ def forbidden_commands(actions: Iterable[Action]) -> List[str]:
 # ─────────────────────────── 只读：环境自检 ───────────────────────────
 
 
+def serial_state() -> dict:
+    """串口三态那一份 dict（`serial_line` 的入参形状）—— **只有这一处写**。
+
+    ★ `serial_line` 的 docstring 就是"一处写、两处用（判据只有一份，别再抄一遍）"：
+    到 2026-09-23 这份 dict 已经有三个用户（`collect_env` / `Probe.snapshot` / `cmd_down`），
+    复核时三份字面量一模一样 ⟹ 收成这个函数，别再抄第四遍。
+    """
+    return {"path": SERIAL_PORT, "exists": Path(SERIAL_PORT).exists(),
+            "holders": _serial_holders(SERIAL_PORT)}
+
+
 def _serial_holders(path: str) -> List[str]:
     if shutil.which("lsof") is None:
         return []
@@ -474,8 +495,7 @@ def collect_env() -> dict:
         "existing_setups": [str(p) for p in existing_setups()],
         "ros2_cli": shutil.which("ros2") or "",
         "packages": packages,
-        "serial": {"path": SERIAL_PORT, "exists": Path(SERIAL_PORT).exists(),
-                   "holders": _serial_holders(SERIAL_PORT)},
+        "serial": serial_state(),
         "domain": os.environ.get("ROS_DOMAIN_ID"),
         "localhost_only": os.environ.get("ROS_LOCALHOST_ONLY"),
         "ament_prefix_path": os.environ.get("AMENT_PREFIX_PATH", ""),
@@ -626,8 +646,7 @@ class Probe:
             "nodes": self._node.get_node_names(),
             "counts": {t: n - base.get(t, 0) for t, n in self._counts.items()},
             "last": dict(self._last),
-            "serial": {"path": SERIAL_PORT, "exists": Path(SERIAL_PORT).exists(),
-                       "holders": _serial_holders(SERIAL_PORT)},
+            "serial": serial_state(),
         }
 
     def close(self) -> None:
@@ -951,6 +970,260 @@ def cmd_up() -> int:
         stop_children(started)
 
 
+# ─────────────── 清除后台节点（第 11 项，ticket 22 §八，2026-09-23） ───────────────
+#
+# ★ 为什么不是"停 `up` 起的那些"：`up` 的子进程表（`started`）是 `cmd_up` 的**局部变量**，
+#   脚本一退就没了 —— 恰恰在"起链的终端被关了 / 被 `kill -9` 了、节点成了孤儿"这种最需要
+#   清除的场合，那份表也不在了。所以这一条**按名字扫**（操作者 2026-09-23 拍定），
+#   代价写在 `DOWN_WARNING` 里：别人会话/测试起的同类节点也会被扫进来。
+
+
+@dataclass(frozen=True)
+class DownTarget:
+    """一类要清除的进程。`pattern` 是 `pgrep -f` 的正则（**白名单，写在表里，不接受人输**）。
+
+    `key` 与 `ACTIONS` / `UP_CHAIN` 的 key 对齐 —— 不是另起一套命名；`label` 只用于打印。
+    """
+
+    key: str
+    label: str
+    pattern: str
+
+
+#: 要扫的进程。**逐条对着起链那几条命令写**（`ros2 launch <包> …`）加上它们拉起来的**可执行名**
+#: （`ros2 launch` 的父进程与节点本身是两个人 ⟹ 两种都要，`scan_down_targets` 按 pid 去重）。
+#: ⚠️ 模式**不许写宽**（不许出现 `python3` / `bash` / `.*` 这类）：它是 `pgrep -f`，宽一寸就误伤一片。
+#: ★ **`bringup` 那条只有前半**：它本身就是个 launch 壳（`ros2 launch bringup z0.launch.py`），
+#:   它拉起来的 mocap / traj / control 三个节点由**各自那三行**兜住 ⟹ 这一条故意不写自己的可执行名
+#:   （写 `z0.launch.py` 也只是重复匹同一个进程）。其余五行都是"命令 + 可执行名"两个人。
+DOWN_TARGETS: Tuple[DownTarget, ...] = (
+    DownTarget("mavros", "mavros（独占串口）",
+               r"ros2 launch mavros |(/| )mavros_node( |$)"),
+    DownTarget("vrpn", "vrpn_listener（动捕数据源）",
+               r"ros2 launch vrpn_listener |(/| )vrpn_listener( |$)"),
+    DownTarget("mocap", "mocap（相对位姿）",
+               r"ros2 launch mocap |(/| )mocap_rel_pose_node( |$)"),
+    DownTarget("traj", "traj（参考轨迹）",
+               r"ros2 launch traj |(/| )traj_node( |$)"),
+    DownTarget("control", "control（状态机）",
+               r"ros2 launch control |(/| )control_node( |$)"),
+    DownTarget("bringup", "bringup 一键（launch 壳）",
+               r"ros2 launch bringup "),
+)
+
+#: 停之前**必须让人看见**的那句话。事实来源是 `params-changes.md` §H.7（"急停 = 停桨"那张表）/
+#: `flight-runbook.md` §1.2（"想停任务，只有两条软路径"，操作者那一版）—— **屏上要指人去看的那一处
+#: 写 runbook §1.2**：这行字是给手上拿着遥控器的人看的，他手边那一页就是 runbook。
+DOWN_WARNING = (
+    "⚠️ 清除 = **停进程**，它**不会让飞机降落**：setpoint 一停，PX4 会在 `COM_OF_LOSS_T`（1.0 s）后\n"
+    "   自己退出 OFFBOARD，按 `COM_OBL_RC_ACT`（现值 `0`）落回 Position；而 **A1 还没落实**，\n"
+    "   遥控同时丢失时 `NAV_RCL_ACT = 2` 会让它**试图返航**（室内没有 GPS）。\n"
+    "   飞机若还在空中，先按 `flight-runbook.md` **§1.2 的两条软路径**处置（打杆接管 / 拨 ch6），\n"
+    "   别指望这一条 —— 依据在 `params-changes.md` §H.7。\n"
+    "★ 这是**按名字**扫的（`DOWN_TARGETS`）：**别人会话、跑着的测试**起的同类节点也会在清单里。"
+)
+
+#: 先礼后兵的信号阶梯与各自的等待上限 —— 与 `bench` 的 `stop_dut`（`scenario.py:298`）同一条纪律：
+#: 先 SIGINT 让节点走自己的收摊逻辑，超时才升级。★ 最后一档才是 SIGKILL。
+STOP_LADDER: Tuple[Tuple[int, float], ...] = (
+    (signal.SIGINT, 5.0), (signal.SIGTERM, 3.0), (signal.SIGKILL, 2.0),
+)
+
+
+def parse_pgrep(text: str) -> List[int]:
+    """`pgrep -f` 的输出（一行一个 pid）→ pid 表：**去重、保序**，脏行丢掉。"""
+    pids: List[int] = []
+    for line in text.splitlines():
+        line = line.strip()
+        if line.isdigit():                 # 非数字行（警告之类）不是 pid ⟹ 丢掉，不炸
+            pid = int(line)
+            if pid not in pids:
+                pids.append(pid)
+    return pids
+
+
+def _pgrep_ids(pattern: str) -> List[int]:
+    """按模式找 pid（`pgrep -f`：匹的是**整条命令行**）。找不到就是空表（pgrep 退 1，不是错误）。"""
+    if shutil.which("pgrep") is None:
+        return []
+    try:
+        out = subprocess.run(["pgrep", "-f", "--", pattern],
+                             capture_output=True, text=True, timeout=10)
+    except (OSError, subprocess.SubprocessError):
+        return []
+    return parse_pgrep(out.stdout)
+
+
+def _pid_cmdline(pid: int) -> str:
+    """这个 pid 的命令行（打印给人看 ⟹ 空白压成单空格）。取不到就空串。"""
+    try:
+        out = subprocess.run(["ps", "-o", "args=", "-p", str(pid)],
+                             capture_output=True, text=True, timeout=10)
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    return " ".join(out.stdout.split())
+
+
+def _pid_state(pid: int) -> str:
+    """`/proc/<pid>/stat` 里的状态字符（`Z` = 僵尸），取不到就空串。
+
+    ★ 解析用 `rsplit(") ", 1)`：命令行（`comm`）**可能自带空格甚至括号**，
+    但从**最后一个** `") "` 往后切永远是对的。
+    """
+    try:
+        with open(f"/proc/{pid}/stat") as fh:
+            return fh.read().rsplit(") ", 1)[-1].split(" ", 1)[0]
+    except (OSError, IndexError):
+        return ""
+
+
+def _pid_alive(pid: int) -> bool:
+    """只探存在性，**不发信号**。权限不足也算"活着"（存在、但我们动不了它）。
+
+    ⚠️ **僵尸要单独判**：`os.kill(pid, 0)` 对僵尸进程**是成功的**（它还在进程表里），
+    只看它就会对着尸体把阶梯升到 SIGKILL，最后报一句假的"没停掉"、退出码非零
+    —— 2026-09-23 拿两个真进程试 `stop_pids` 时撞上的（`/proc/<pid>/stat` 的状态是 `Z`）。
+    """
+    if _pid_state(pid) == "Z":
+        return False
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def _send_signal(pid: int, sig: int) -> None:
+    """给**单个 pid** 发信号。★ 有意不用 `os.killpg` —— 理由见 `cmd_down`。"""
+    try:
+        os.kill(pid, sig)
+    except (ProcessLookupError, PermissionError):
+        pass
+
+
+@dataclass(frozen=True)
+class DownHit:
+    """扫到的一个进程：它属于哪一条（`key`/`label`）+ 快照下来的命令行。"""
+
+    key: str
+    label: str
+    pid: int
+    cmdline: str
+
+
+def scan_down_targets() -> List[DownHit]:
+    """按 `DOWN_TARGETS` 逐条扫，**按 pid 去重**（同一个人会被几条模式同时命中）。
+
+    ★ 亲手把自己（以及父进程）剔掉 —— 否则"清除脚本把清除脚本杀了"。
+    ★ 僵尸也算"不在了"（`_pid_alive`）：它已经死了，只是父进程还没收尸；
+      列进"要停谁"只会让人以为没清干净。
+    """
+    hits: List[DownHit] = []
+    seen: set = set()
+    untouchable = {os.getpid(), os.getppid()}
+    for target in DOWN_TARGETS:
+        for pid in _pgrep_ids(target.pattern):
+            if pid in seen or pid <= 1 or pid in untouchable or not _pid_alive(pid):
+                continue
+            seen.add(pid)
+            hits.append(DownHit(key=target.key, label=target.label, pid=pid,
+                                cmdline=_pid_cmdline(pid)))
+    return hits
+
+
+def render_down(hits: Sequence[DownHit]) -> str:
+    """把清单摊开（**纯函数**）—— 动手之前，人得先看清"要停谁"。
+
+    ★ **命令行一个字都不截**：按名字扫会捞到别人会话的同类节点，而唯一的缓解手段就是
+    人**看一眼命令行**（不是你这套的就答 n）⟹ 截断等于把唯一的判据切掉。
+    第一手（2026-09-23 复核抓到）：原来写的 `[:88]` 把 mavros 那条正好切在
+    `fcu_url:=/dev/ttyTHS1`（尾巴 `:921600` 没了）、把 `mavros_node` 那条切在 `--param` 中间。
+    长就让它换行 —— 终端会折，判据不能丢。
+    """
+    if not hits:
+        return "没有扫到任何在跑的节点 —— 没什么可清的。"
+    lines = [f"扫到 {len(hits)} 个进程（按**名字**扫，模式在 `DOWN_TARGETS` 里）："]
+    for index, hit in enumerate(hits, start=1):
+        lines.append(f"  {index:2d}  {pad(hit.label, 26)}  PID {hit.pid:<7}  {hit.cmdline}")
+    return "\n".join(lines)
+
+
+def stop_pids(pids: Iterable[int], *, alive: Optional[Callable[[int], bool]] = None,
+              send: Optional[Callable[[int, int], None]] = None,
+              sleep: Optional[Callable[[float], None]] = None) -> List[int]:
+    """按信号阶梯停掉这些 pid，返回**还活着的**（杀不掉要如实报出来，不许假装成功）。
+
+    ★ 只发**单个 pid**，不发进程组：按名字扫出来的进程可能与**别人终端**的 shell 同组，
+      对那个组放 `killpg` 等于连人家的终端会话一起收掉。
+    ★ pid `0`/`1` 与自己一律跳过（给它们发信号不是"清除"，是事故）。
+    """
+    alive = alive or _pid_alive
+    send = send or _send_signal
+    sleep = sleep or time.sleep
+    targets = [pid for pid in dict.fromkeys(pids) if pid > 1 and pid != os.getpid()]
+    for sig, grace_s in STOP_LADDER:
+        pending = [pid for pid in targets if alive(pid)]
+        if not pending:
+            break
+        for pid in pending:
+            send(pid, sig)
+        remaining = grace_s               # ★ 用倒计时而不是看墙上的钟：注入的假 sleep 也能跑完
+        while remaining > 0 and any(alive(pid) for pid in pending):
+            sleep(0.1)
+            remaining -= 0.1
+    return [pid for pid in targets if alive(pid)]
+
+
+def _missing_scan_tools() -> List[str]:
+    """扫描靠的两个外部命令（`pgrep` 找 pid、`ps` 取命令行）缺了哪个。
+
+    ★ **缺工具与"没有可清的"在屏幕上长得一样**，而后果相反 —— 这个仓库为"静默为空"
+    已经交过两次学费（`check` 的 `ros2 daemon` 坑、半拉子环境那两条），所以单拎出来问一句。
+    """
+    return [name for name in ("pgrep", "ps") if shutil.which(name) is None]
+
+
+def cmd_down() -> int:
+    """清除后台节点：扫 ⟹ 列清单 ⟹ 一次 y/N ⟹ 先礼后兵停掉 ⟹ 再扫一遍看结果。
+
+    ★ **不给"按名字杀"的自由**：模式是 `DOWN_TARGETS` 里那张白名单（与人输的参数无关）。
+    """
+    ensure_sourced()
+    missing = _missing_scan_tools()
+    if missing:
+        print(f"⚠️ 本机缺 {'、'.join(missing)} —— **扫不出清单来**，所以这一条什么都没做。\n"
+              "   别把这句当成「已经清干净了」：`down` 判活的依据就在这两个命令上。")
+        return 1
+    hits = scan_down_targets()
+    print(render_down(hits))
+    if not hits:
+        print("  " + serial_line(serial_state(), occupied="（上面没扫到，可能不是本脚本认得的名字）"))
+        return 0
+    print()
+    print(DOWN_WARNING)
+    if not ask_confirm(f"把这 {len(hits)} 个进程停掉？（先 SIGINT，超时才 SIGTERM / SIGKILL）",
+                       default=False):
+        print("已取消。")
+        return 1
+    print("  信号阶梯：SIGINT → 等 5 s → SIGTERM → 等 3 s → SIGKILL（与 `bench` 的 `stop_dut` 同一纪律）")
+    survivors = stop_pids([hit.pid for hit in hits])
+    print()
+    left = scan_down_targets()
+    if survivors:
+        # ★ 这里**不会**再报僵尸（`_pid_alive` 已经把 `Z` 判成死了）⟹ 剩下的两条真实成因是：
+        #   不响应信号的（D 状态、卡在驱动里）与**我们没权限动**的（别人的会话、别的 uid）。
+        print(f"⚠️ 这 {len(survivors)} 个没停掉（不响应信号，或权限不够 —— `ps -o pid,stat,user,args -p …`）："
+              f"{'、'.join(str(pid) for pid in survivors)}")
+    if left:
+        print(f"⚠️ 再扫一遍还剩 {len(left)} 个：\n{render_down(left)}")
+    print("  " + serial_line(serial_state(),
+                             occupied="还占着它的大概率是没停掉的 mavros —— 再看一眼上面的清单",
+                             idle="mavros 停了它就该空出来"))
+    return 1 if (survivors or left) else 0
+
+
 # ─────────────────────────── 交互菜单 ───────────────────────────
 
 
@@ -997,19 +1270,24 @@ def launch_action(action: Action) -> int:
         return 0
 
 
-#: **在本进程里做**的动作（不起子进程）：两条只读的 + 一键起链的编排。
-IN_PROCESS_KEYS: Tuple[str, ...] = ("env", "check", "up")
+#: **在本进程里做**的动作（不起子进程）：两条只读的 + 一键起链 / 清除的编排。
+#: ★ 判据 = **表里 `cmd` 是空的**（不是另抄一份名单）：今天正好就是 env/check/up/down 四条，
+#: 上面那条 `READ_ONLY_KEYS` 用的是同一个套路 ⟹ 加一项菜单不用记着来这里改。
+IN_PROCESS_KEYS: Tuple[str, ...] = tuple(a.key for a in ACTIONS if a.cmd is None)
 
 
 def in_process_command(key: str) -> Callable[[], int]:
     """按名字**现取**（不是 import 期就绑死）—— 这样用例能把它们替换掉。"""
-    return {"env": cmd_env, "check": cmd_check, "up": cmd_up}[key]
+    return {"env": cmd_env, "check": cmd_check, "up": cmd_up, "down": cmd_down}[key]
 
 
 def dry_run_note(key: str) -> str:
-    """`--dry-run` 对**在本进程里做**的动作说什么 —— 两条只读的与 `up` 说的不一样。"""
+    """`--dry-run` 对**在本进程里做**的动作说什么 —— 三条各有各的话。"""
     if key == "up":
         return render_chain()
+    if key == "down":
+        # ★ 这一条**只看不停**：`--dry-run` 在这里格外要紧 —— 看一眼会停谁，然后什么都不发。
+        return render_down(scan_down_targets()) + "\n（`--dry-run`：只扫一眼，**一个信号都不发**）"
     return f"（`{key}` 是只读动作：本进程里直接跑，没有命令可打印；`--dry-run` 不执行）"
 
 
@@ -1063,7 +1341,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         prog="run/z0.py",
         description="z0 起链菜单 —— 常用启动 + 每步核对（不含任何会动飞机的入口）")
     parser.add_argument("action", nargs="?",
-                        help="动作名（env/check/mavros/vrpn/mocap/traj/control/bringup/fly）；"
+                        help="动作名（env/check/mavros/vrpn/mocap/traj/control/bringup/fly/up/down）；"
                              "不给就进交互菜单")
     parser.add_argument("--list", action="store_true", help="只列菜单，不进入交互")
     parser.add_argument("--dry-run", action="store_true", help="只打印将要执行的命令，不执行")

@@ -8,8 +8,13 @@
 现场那条真数据路径在 `test_z0_check_live.py`（对着台架夹具跑）。
 """
 
+import os
 import pathlib
+import re
+import signal
+import subprocess
 import sys
+import time
 from types import SimpleNamespace
 
 import pytest
@@ -475,3 +480,259 @@ def test_日志尾巴读的是最后几行(tmp_path):
     child = z0.Child(key="k", cmd="c", proc=None, log=log, fh=None)
     tail = child.tail(lines=3)
     assert "第20行" in tail and "第18行" in tail and "第17行" not in tail
+
+
+# ─────────────── 清除后台节点（第 11 项，ticket 22 §八，2026-09-23） ───────────────
+
+
+def _launch_package(key: str) -> str:
+    """从动作表那条命令里取出包名（`ros2 launch <包> <文件>`）—— **不另抄一份**。"""
+    cmd = z0.ACTION_BY_KEY[key].cmd or ""
+    assert cmd.startswith("ros2 launch "), f"{key} 那条命令不是 launch：{cmd}"
+    return cmd.split()[2]
+
+
+def test_清除目标表按名字扫_且把起链的每一条都盖住():
+    """★ 判据来自 ticket 22 §八：起链能起的每一条，清除都必须能扫到 ——
+    否则"清了之后串口还被占着"这类残留只能靠人肉 `ps`。"""
+    keys = [t.key for t in z0.DOWN_TARGETS]
+    assert keys[0] == "mavros", "串口的持有者应当排在最前面（最先要看它有没有放开）"
+    for key in z0.UP_CHAIN:
+        assert key in keys, f"起链里有 `{key}`，清除表里没有它 ⟹ 清了也留着"
+    for target in z0.DOWN_TARGETS:
+        assert target.label and target.pattern
+        re.compile(target.pattern)                      # ★ 模式得是能编译的正则（写错要在这里炸）
+        assert _launch_package(target.key) in target.pattern, \
+            f"{target.key}: 模式里没有它自己的包名 ⟹ 太宽或写错了：{target.pattern}"
+        for too_wide in ("python3", "bash", "sudo", "/opt/ros", ".*"):
+            assert too_wide not in target.pattern, f"{target.key}: 模式里有 {too_wide} ⟹ 会误伤"
+
+
+def test_清除目标表只有一张_且命令仍受安全不变式扫():
+    """清除走的是 `pgrep`/`kill`，不进 `ACTIONS` 的命令列；但**不许**因此出现
+    `ros2 service call` 那类字样（守卫表扫的是"最终送进 bash 的东西"，这里是另一条路径）。"""
+    text = " ".join(t.pattern for t in z0.DOWN_TARGETS)
+    for token in z0.FORBIDDEN_IN_COMMANDS:
+        assert token not in text
+
+
+def test_解析_pgrep_输出():
+    assert z0.parse_pgrep("") == []
+    assert z0.parse_pgrep("412\n7\n412\n") == [412, 7]     # 去重、保序
+    assert z0.parse_pgrep("不是数字\n9\n\n") == [9]          # 脏行丢掉，不炸
+
+
+def _fake_scan(monkeypatch, pids):
+    """把扫描的**两个外部读数**换成假的：pgrep 的结果 + "这个 pid 还在不在"。
+    造出来的 pid 是假的 ⟹ 不换 `_pid_alive` 的话它们会被当成僵尸剔掉（那另有专门用例）。"""
+    monkeypatch.setattr(z0, "_pgrep_ids", lambda pattern: list(pids))
+    monkeypatch.setattr(z0, "_pid_cmdline", lambda pid: f"假命令行 {pid}")
+    monkeypatch.setattr(z0, "_pid_alive", lambda pid: True)
+
+
+def test_扫描时把本脚本自己剔掉(monkeypatch):
+    """★ 把自己列进清单就是"清除脚本把清除脚本杀了"。"""
+    _fake_scan(monkeypatch, [os.getpid(), 4200])
+    hits = z0.scan_down_targets()
+    assert [h.pid for h in hits] == [4200]
+    assert hits[0].cmdline == "假命令行 4200"
+
+
+def test_同一个进程被两条模式扫到也只报一次(monkeypatch):
+    """`ros2 launch` 的父进程、bash 壳、节点本身**都会**命中 ⟹ 不去重就会停它三遍。"""
+    _fake_scan(monkeypatch, [4200, 4200, 7])
+    hits = z0.scan_down_targets()
+    assert [h.pid for h in hits] == [4200, 7]
+    assert [h.key for h in hits] == [z0.DOWN_TARGETS[0].key] * 2   # 归属 = 第一条命中的模式
+
+
+def test_停进程的顺序是先_SIGINT_再_SIGTERM_最后_SIGKILL():
+    """★ 与 `bench` 的 `stop_dut` 同一条纪律（`scenario.py:298`）：先礼后兵 ——
+    先 SIGINT 让节点走自己的收摊逻辑，超时才升级。"""
+    sent = []
+    alive = {7}
+
+    def fake_send(pid, sig):
+        sent.append(sig)
+        if sig == signal.SIGKILL:
+            alive.discard(pid)                          # 只有 SIGKILL 才杀得掉它
+
+    survivors = z0.stop_pids([7], alive=lambda pid: pid in alive,
+                             send=fake_send, sleep=lambda _s: None)
+    assert sent == [signal.SIGINT, signal.SIGTERM, signal.SIGKILL]
+    assert survivors == []
+
+
+def test_在_SIGINT_就退了的进程不会被补刀():
+    sent = []
+
+    def fake_send(pid, sig):
+        sent.append(sig)
+        if sig == signal.SIGINT:
+            alive.discard(pid)
+
+    alive = {7}
+    assert z0.stop_pids([7], alive=lambda pid: pid in alive,
+                        send=fake_send, sleep=lambda _s: None) == []
+    assert sent == [signal.SIGINT]
+
+
+def test_杀不掉的要如实报出来():
+    assert z0.stop_pids([7], alive=lambda pid: True,
+                        send=lambda pid, sig: None, sleep=lambda _s: None) == [7]
+
+
+def test_绝不向自己与_init_放信号():
+    """安全不变式：pid 0/1 与自己一律跳过（放信号给它们不是"清除"，是事故）。"""
+    sent = []
+    assert z0.stop_pids([0, 1, os.getpid()], alive=lambda pid: True,
+                        send=lambda pid, sig: sent.append(pid), sleep=lambda _s: None) == []
+    assert sent == []
+
+
+def _proc_state(pid: int) -> str:
+    """`/proc/<pid>/stat` 里那个状态字符（`Z` = 僵尸）。用例自己判"造出来的真是僵尸"。"""
+    try:
+        with open(f"/proc/{pid}/stat") as fh:
+            return fh.read().rsplit(") ", 1)[-1].split(" ", 1)[0]
+    except OSError:
+        return ""
+
+
+def _make_zombie() -> "subprocess.Popen":
+    """造一个**真**僵尸：杀掉子进程但**不收尸**（不 `wait()`）⟹ 它留在进程表里等父进程。"""
+    proc = subprocess.Popen(["sleep", "300"], start_new_session=True)
+    os.kill(proc.pid, signal.SIGINT)
+    deadline = time.time() + 5.0
+    while time.time() < deadline:
+        if _proc_state(proc.pid) == "Z":
+            return proc
+        time.sleep(0.05)
+    proc.wait()
+    pytest.fail("造不出僵尸态，这条用例本身没验到东西")
+
+
+def test_僵尸进程不算活着():
+    """★ 真事（2026-09-23 拿两个真进程试 `stop_pids` 时撞上的）：`os.kill(pid, 0)` 对**僵尸**
+    **是成功的** ⟹ 只看它就等于对着尸体连升三级，最后还报一句假的"没停掉"、退出码非零。
+    判据只能回 `/proc/<pid>/stat` 看状态字符。（僵尸在 `down` 的常见成因：对面那个
+    `run/z0.py up` 正在 `watch_children` 里收尸，中间那一小段窗口。）
+    """
+    proc = _make_zombie()
+    try:
+        assert z0._pid_alive(proc.pid) is False
+    finally:
+        proc.wait()
+
+
+def test_扫描不把僵尸算进清单(monkeypatch):
+    """僵尸**已经死了**，只是父进程还没收尸 —— 列进"要停谁"只会让人以为没清干净。"""
+    proc = _make_zombie()
+    try:
+        monkeypatch.setattr(z0, "_pgrep_ids", lambda pattern: [proc.pid])
+        monkeypatch.setattr(z0, "_pid_cmdline", lambda pid: "[sleep] <defunct>")
+        assert [h.pid for h in z0.scan_down_targets()] == []
+    finally:
+        proc.wait()
+
+
+def _hit(pid: int = 4242, key: str = "mavros") -> object:
+    return z0.DownHit(key=key, label=f"{key} 的假说明", pid=pid,
+                      cmdline=f"ros2 launch {_launch_package(key)} 假文件")
+
+
+def test_没有可清的节点时如实说没有(capsys, monkeypatch):
+    monkeypatch.setattr(z0, "ensure_sourced", lambda: None)
+    monkeypatch.setattr(z0, "scan_down_targets", lambda **k: [])
+    monkeypatch.setattr(z0, "_serial_holders", lambda path: [])
+    assert z0.cmd_down() == 0
+    out = capsys.readouterr().out
+    assert "没有" in out and "串口" in out
+
+
+def test_缺了扫不动的工具就不许说没有可清的(capsys, monkeypatch):
+    """★ "扫不动"与"没有可清的"在屏幕上长得一样、后果却相反（仓库为"静默为空"交过两次学费：
+    `check` 的 `ros2 daemon` 坑、半拉子环境）⟹ 缺 `pgrep`/`ps` 时必须**明说 + 非零退出**。"""
+    monkeypatch.setattr(z0, "ensure_sourced", lambda: None)
+    monkeypatch.setattr(z0, "_missing_scan_tools", lambda: ["pgrep"])
+    monkeypatch.setattr(z0, "scan_down_targets", lambda **k: [])   # 就算硬扫也是空 —— 正是危险形状
+    assert z0.cmd_down() != 0
+    out = capsys.readouterr().out
+    assert "pgrep" in out and "什么都没做" in out
+    assert "没有扫到任何在跑的节点" not in out      # ★ 不许把它说成"没什么可清的"
+
+
+def test_清单里的命令行一个字都不截():
+    """★ 按名字扫会捞到别人会话的节点，唯一的缓解手段就是人**看一眼命令行**
+    （复核 2026-09-23 抓到的真事：原先 `[:88]` 把 mavros 那条正好切在 `fcu_url:=…` 上）。"""
+    long_cmd = "ros2 launch mavros px4.launch fcu_url:=/dev/ttyTHS1:921600 gcs_url:=udp-b://0.0.0.0:14555@:14550"
+    text = z0.render_down([z0.DownHit(key="mavros", label="mavros（独占串口）", pid=38663,
+                                      cmdline=long_cmd)])
+    assert long_cmd in text, "命令行被截断了 —— 那就只剩 pid 可看，人认不出是不是自己那套"
+
+
+def test_进程内动作就是_cmd_为空的那几条():
+    """判据是**表里 `cmd` 为空**（与 `READ_ONLY_KEYS` 同一套路）⟹ 加一项菜单不用记着改名单。
+    这条用例把"推导成立"本身钉住：非进程内的动作**必须**有命令可跑。"""
+    assert z0.IN_PROCESS_KEYS == tuple(a.key for a in z0.ACTIONS if a.cmd is None)
+    for action in z0.ACTIONS:
+        assert (action.cmd is None) == (action.key in z0.IN_PROCESS_KEYS), \
+            f"{action.key}: `cmd` 空不空与它在不在进程内跑必须一致"
+
+
+def test_清除要先问一句_答_n_一个信号都不发(capsys, monkeypatch):
+    sent = []
+    monkeypatch.setattr(z0, "ensure_sourced", lambda: None)
+    monkeypatch.setattr(z0, "scan_down_targets", lambda **k: [_hit()])
+    monkeypatch.setattr(z0, "ask_confirm", lambda *a, **k: False)
+    monkeypatch.setattr(z0, "_send_signal", lambda pid, sig: sent.append((pid, sig)))
+    assert z0.cmd_down() == 1
+    assert sent == []
+    assert "已取消" in capsys.readouterr().out
+
+
+def test_答_y_才动手_并把结果与串口状态报出来(capsys, monkeypatch):
+    rounds = [[_hit()], []]                     # 第一扫：找到 1 个；停完再扫：一个不剩
+    monkeypatch.setattr(z0, "ensure_sourced", lambda: None)
+    monkeypatch.setattr(z0, "scan_down_targets", lambda **k: rounds.pop(0))
+    monkeypatch.setattr(z0, "ask_confirm", lambda *a, **k: True)
+    monkeypatch.setattr(z0, "stop_pids", lambda pids, **k: [])   # 都停掉了
+    monkeypatch.setattr(z0, "_serial_holders", lambda path: [])
+    assert z0.cmd_down() == 0
+    out = capsys.readouterr().out
+    assert "4242" in out                        # 动手前先让人看清是谁
+    assert "不会让飞机降落" in out                # ★ 在空中按它的后果，写在同一屏上
+    assert "串口" in out
+
+
+def test_停完还剩着就返回非零(capsys, monkeypatch):
+    monkeypatch.setattr(z0, "ensure_sourced", lambda: None)
+    monkeypatch.setattr(z0, "scan_down_targets", lambda **k: [_hit()])
+    monkeypatch.setattr(z0, "ask_confirm", lambda *a, **k: True)
+    monkeypatch.setattr(z0, "stop_pids", lambda pids, **k: [4242])   # 杀不掉
+    monkeypatch.setattr(z0, "_serial_holders", lambda path: ["mavros(4242)"])
+    assert z0.cmd_down() == 1
+    out = capsys.readouterr().out
+    assert "4242" in out and "串口" in out
+
+
+def test_dry_run_down_只看不停(capsys, monkeypatch):
+    monkeypatch.setattr(z0, "scan_down_targets", lambda **k: [_hit()])
+    monkeypatch.setattr(z0, "_serial_holders", lambda path: [])
+    monkeypatch.setattr(z0, "stop_pids",
+                        lambda *a, **k: pytest.fail("--dry-run 停进程了"))
+    assert z0.main(["--dry-run", "down"]) == 0
+    out = capsys.readouterr().out
+    assert "4242" in out                        # 会停谁要看得见
+    assert "不" in out
+
+
+def test_第_11_项是清除_前十条一个没动():
+    """★ 菜单号被跨文件钉死了（`docs/control/flight-runbook.md` 引用 1–10、
+    `test_flight_runbook.py` 逐条对齐）⟹ 新项**只能追加在末尾**。"""
+    assert [a.key for a in z0.ACTIONS[:10]] == [
+        "env", "check", "mavros", "vrpn", "mocap", "traj", "control", "bringup", "fly", "up"]
+    assert z0.ACTIONS[10].key == "down"
+    assert z0.ACTIONS[10].title in z0.menu_text()
+    assert not z0.ACTIONS[10].read_only, "它会停进程 ⟹ 不能算只读（否则 --dry-run 会撒谎）"
+    assert "down" in z0.IN_PROCESS_KEYS

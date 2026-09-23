@@ -10,6 +10,8 @@ run/z0.py --list         # 只列菜单（不进交互）
 run/z0.py env            # 环境自检（只读）
 run/z0.py check          # 起链核对（只读，约 5 s 一张表）
 run/z0.py up             # ★ 一键起链（第 10 项；run/up.sh 是它的一行别名）
+run/z0.py down           # ★ 清除后台节点（第 11 项；run/down.sh 是它的一行别名）
+run/down.sh --dry-run    # 只扫一眼"会停谁"，**一个信号都不发**
 run/z0.py --dry-run up   # 把顺序、每条命令、每步判据全列出来，**一条都不起**
 run/z0.py --dry-run mocap   # 只打印将要执行的命令，**不执行**
 run/z0.py mavros|vrpn|mocap|traj|control|bringup|fly   # 单条起（前台）
@@ -40,6 +42,7 @@ source /opt/ros/humble/setup.bash && source ~/mavros_ws/install/setup.bash && so
 | 8 | 起 bringup | 前台 | 一键起 mocap+traj+control；同样要确认飞机摆好；再问一句"已经单独起过 vrpn 了吗"（y ⟹ `use_vrpn:=false`）；其余参数见 [`bringup/README.md`](../src/bringup/README.md) |
 | 9 | 操作台 `fly.py` | 前台 | 选轨迹 1/2/3（**起飞前选好**） |
 | 10 | ★ **一键起链** | 本进程编排 + 前台守着 | 把上面 3→5→4→6→7 五步**按序**起齐（`bench-runbook.md` 的「起链（顺序不能反）」），每步**等判据成立**再加下一步；起完打印第 2 项那张核对表。详见下节 |
+| 11 | ★ **清除后台节点** | 本进程编排 | 与第 10 项相反的**另一头**：**按名字扫**（`DOWN_TARGETS`）在跑的节点 ⟹ 先摊开清单、问一句 y/N，再按 SIGINT→SIGTERM→SIGKILL 停；停完**再扫一遍**并报串口状态。详见下下节 |
 
 ## ★ 一键起链（第 10 项 / `run/up.sh`）
 
@@ -67,6 +70,60 @@ run/up.sh          # 等价于 run/z0.py up
   会**留下 mavros 占着串口**。
 - **它不代做"还差的那两步"**（见下节）：选轨迹（`fly.py` 敲 1/2/3）与起飞（**遥控器开始键**）——
   `up` 起完把这两步**打印出来提醒**，但不做。
+
+## ★ 清除后台节点（第 11 项 / `run/down.sh`）
+
+```bash
+run/down.sh              # 等价于 run/z0.py down
+run/down.sh --dry-run    # 只扫一眼"会停谁"，**一个信号都不发**
+```
+
+**为什么不是"停 `up` 起的那些"**：`up` 记子进程的那张表是 `cmd_up` 的**局部变量**，
+脚本一退（或被 `kill -9`）就跟着没了 —— 而**恰恰是那种场合最需要它**（起链的终端已经关了、
+节点成了孤儿，`Ctrl-C` 那条路没有了）。所以这一条**按名字扫**，白名单在 `DOWN_TARGETS`：
+
+| key | 扫什么（`pgrep -f` 的模式） |
+|---|---|
+| `mavros` | `ros2 launch mavros ` + `mavros_node` |
+| `vrpn` | `ros2 launch vrpn_listener ` + `vrpn_listener` |
+| `mocap` | `ros2 launch mocap ` + `mocap_rel_pose_node` |
+| `traj` | `ros2 launch traj ` + `traj_node` |
+| `control` | `ros2 launch control ` + `control_node` |
+| `bringup` | `ros2 launch bringup ` |
+
+★ 每条都是"**起链那条命令 + `ros2 launch` 拉起来的可执行名**"两个人（`ros2 launch` 的壳与节点本身
+是**两个进程**），按 pid 去重 —— 所以清单里一个节点可能出现两次，那是正常的。
+模式**刻意写窄**（不许出现 `python3` / `bash` / `.*`）：它是 `pgrep -f`，宽一寸就误伤一片。
+
+| 它做什么 | 具体 |
+|---|---|
+| 先列清单 | 每条印出 **pid + 完整命令行**（`render_down`）；这时**一个信号都没发** |
+| 问一句 | `ask_confirm` 一次 y/N；答 n ⟹ 直接返回（退出码 1，**什么都没动**） |
+| 停 | 阶梯 **SIGINT → 等 5 s → SIGTERM → 等 3 s → SIGKILL**（`STOP_LADDER`）；与台架 `stop_dut`（[`scenario.py:298`](../src/bench/bench/scenario.py#L298)）是**同一条纪律、不是同一组数字**（它每档等 5 s、且对**进程组**发，见下） |
+| 报结果 | 再扫一遍；还有剩的**如实报出来**（退出码非零），并打印 `/dev/ttyTHS1` 的占用状态 |
+
+**两条实现上的取舍，都是踩过才知道的**：
+
+1. **只发单个 pid，不发进程组**。`up` 那套用 `os.killpg` 是因为那些子进程**是它自己起的**
+   （`start_new_session=True` ⟹ 组是干净的）；而这里扫出来的人**可能与别人终端的 shell 同组**
+   ⟹ 对那个组放 `killpg` 等于连人家的终端会话一起收掉。
+2. **僵尸不算"活着"**（`_pid_alive` 回 `/proc/<pid>/stat` 看状态字符）。`os.kill(pid, 0)` 对僵尸
+   **是成功的**，只看它就会对着尸体把阶梯升到 SIGKILL、最后报一句假的"没停掉"、退出码非零。
+   第一手：拿两个真进程试 `stop_pids`（一个忽略 `SIGINT`、一个正常）时撞上的 —— 修复前后
+   分别报"两个都杀不掉（10.1 s）"与"干净（5.2 s，忽略 INT 的那个死在 SIGTERM）"。
+
+⚠️ **它不是降落，也不解锁、不切模式、不碰飞控**：setpoint 一停，PX4 在 `COM_OF_LOSS_T`（1.0 s）后
+自己退出 OFFBOARD，按 `COM_OBL_RC_ACT`（现值 `0`）落回 Position；**A1 未落实** ⟹ 遥控同时丢了
+`NAV_RCL_ACT = 2` 会**试图返航**（室内没有 GPS）。飞机还在空中时先按
+[`flight-runbook.md`](../docs/control/flight-runbook.md) §1.2 处置。
+⚠️ **按名字扫 ⟹ 别人会话 / 跑着的测试起的同类节点也在清单里**（现场只有一套飞机，这个代价是明说的）
+—— 动手前**看一眼命令行**，不是你这套的就答 n。
+
+★ **清除这条路不进 `ACTIONS` 的命令列**（第 11 项的 `cmd` 与第 10 项一样是 `None`：本进程里编排），
+所以它另有两条守卫用例：`test_清除目标表按名字扫_且把起链的每一条都盖住`（`UP_CHAIN` 每一条都要被盖住、
+模式得是能编译的正则、不许写宽）+ `test_清除目标表只有一张_且命令仍受安全不变式扫`
+（那张表里不许出现 `ros2 service call` / `ros2 param set` / `ros2 topic pub` / `ros2 action send_goal`——
+守卫扫的是"最终送进 `bash` 的东西"，这里是**另一条把字符串送出去的路径**，所以单独扫一遍）。
 
 ## ★ 它**不**做什么（安全边界）
 
@@ -121,6 +178,7 @@ run/up.sh          # 等价于 run/z0.py up
 | 起 mavros 报"打不开串口" | `/dev/ttyTHS1` 已被另一个 mavros 占着 —— 菜单 3 起之前就会告诉你占的人是谁 |
 | `mocap` 起来后位置整体偏一截 | 起 `mocap` 之前飞机就在动（阶段 A 原点漂了）；菜单 5/8 会先要你确认 |
 | 表里 `/traj/reference` 是 `·` | 正常：**没选轨迹本来就一帧不发**（`traj` 要 `select` + `start`） |
+| `run/down.sh` 说「缺 `pgrep`/`ps`」 | 这一条**什么都没做** —— 它判活与取命令行就靠这两个命令，别把这句当成"已经清干净了"（装 procps 或手工 `ps` 核对） |
 | 表里某话题"在图里但一帧都没来" | 两种可能：发布者没起，或 **QoS 不兼容**（后者**不报错**，见 [`bench/README.md`](../src/bench/README.md) 的「安全边界」） |
 | `ROS_DOMAIN_ID=73` | 那是**台架夹具域**（[`bench/pytest_support.py`](../src/bench/bench/pytest_support.py) 默认，且**硬拒 0**）⟹ 读数不是真飞机；核对表第一行会标出来 |
 | `test_z0_check_live.py` 的负控用例忽然红了 | ★ **别同时跑 `colcon test`** —— 两者同在夹具域 73，`control` 的用例会把 `/control/state`、`/mavros/setpoint_raw/local` 真发出帧来，负控（"只有订阅者的话题"）随即失真。第一手：2026-09-23 撞到 2 例假失败，colcon 跑完再跑就绿 |
@@ -128,7 +186,7 @@ run/up.sh          # 等价于 run/z0.py up
 ## 测试
 
 ```bash
-python3 -m pytest run/tests/test_z0_menu.py -q          # 纯函数 + 命令行拼装 + 安全不变式 + 一键起链编排（不需要 ROS，40 例）
+python3 -m pytest run/tests/test_z0_menu.py -q          # 纯函数 + 命令行拼装 + 安全不变式 + 一键起链/清除编排（不需要 ROS，57 例）
 python3 -m pytest run/tests/test_flight_runbook.py -q   # ★ 现场那一页的守卫：菜单号/命令/话题/degrade token 都钉在代码上（不需要 ROS，5 例）
 
 # ★ 正控：对着台架夹具（假 mavros）跑一遍 check，读数必须真的读到东西（5 例）
@@ -142,5 +200,5 @@ python3 -m pytest run/tests/test_z0_check_live.py -q
 ⚠️ **要一次跑整个 `run/tests/`，必须先 source**（上面那两行）。没 source 时
 `test_z0_check_live.py` 会在**模块级** `importorskip` 上跳掉，而 pytest 6.2.5 在那种情形下
 **连这一整个目录的其余用例一起收集不到**（第一手：未 source 跑 `pytest run/tests -q` ⟹
-`1 skipped`、0 例；source 后同样一条命令 ⟹ **`50 passed`**）——
+`1 skipped`、0 例；source 后同样一条命令 ⟹ **`67 passed`**）——
 ★ 所以"跑整个目录是绿的"这句**只有在 source 过的环境里才成立**，未 source 时那是**空收集**，不是绿。

@@ -15,6 +15,8 @@ ros2 launch bringup mavros.launch.py      # 单独起 mavros（上游 px4.launch
 `use_vrpn:=false` 这条**它在起之前会问一句**。本文件仍是参数的权威出处。
 ★ 要**一条命令起齐**（mavros 带 GCS 桥 → vrpn → mocap → traj + control，顺序起）：菜单 **10= 一键起链**
 或 `run/up.sh` —— 它同样**不含**下面那两步的入口。
+★ 要**反过来停掉它们**（起链那个终端已经关了、只好按名字找）：菜单 **11= 清除后台节点** 或 `run/down.sh`
+—— ⚠️ 那是**停进程、不是降落**，飞机在空中时先按 [`flight-runbook.md`](../../docs/control/flight-runbook.md) §1.2 处置。
 ★ **人工飞一次的完整走法**（遥控通道 + FSM + 起链 + 每步判读 + 排障）：
 [`docs/control/flight-runbook.md`](../../docs/control/flight-runbook.md) —— 本文件仍是**参数**的权威出处。
 
