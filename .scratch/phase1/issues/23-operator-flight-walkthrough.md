@@ -133,3 +133,23 @@ run/tests/test_flight_runbook.py    # ★ 它的守卫（5 例）：把这一页
 **测试**（2026-09-23，改完之后重跑）：
 `python3 -m pytest run/tests/test_flight_runbook.py -q` ⟹ **5 passed**；
 `source … && python3 -m pytest run/tests -q` ⟹ **50 passed**。
+
+### 2026-09-23 菜单改形（[`22`](22-run-menu-script.md) §九）对本页的同步
+
+**别处（22 号票）改了菜单编号**，本页是**跟着改的**（`operation_manual.md` 归本票，改号必须在这里落地，
+否则守卫 `run/tests/test_operation_manual.py` 会红）：
+
+| 本页位置 | 改动 |
+|---|---|
+| §0 时间线 ② | 「起齐后**把终端让给 `fly.py`** ⟹ ④ 就在那里敲」 |
+| §3.1 | 标题改为 菜单 **9= 一键启动全部（选轨迹 → 按开始键）**；步骤表补第 6 步（终端让给 `fly.py`）；日志目录 `run/logs/<时间戳>-up/` |
+| §3.1′（**新增**） | 菜单 **8= 一键启动（动捕+mavros，手动遥控飞）**（`run/z0.py up_manual`）—— 到 `mocap` 为止 |
+| §3.2 | 8/9 两行改写；加一句"**起 bringup 一键**与**操作台 `fly.py`** 两条**不再占菜单号**" |
+| §3.5 / §4 / §7 / §8 | 清除那节由第 11 项改 **10**；其余编号引用同步 |
+
+★ **本页的实质结论一条没改**：现场起飞**照旧**是遥控器开始键（第 1 次 = 解锁起飞、第 2 次 = 进 `TRACK`，
+压住 ≥ 0.3 s），轨迹**照旧**必须起飞前选好 —— 变的只是**菜单号**与"选轨迹那一步在哪儿敲"
+（原来写在 §0 的 ④，现在明说就是 `up` 第 6 步让出去的那个前台）。
+
+**测试**（2026-09-23）：`python3 -m pytest run/tests/test_operation_manual.py -q` ⟹ **5 passed**
+（改号时先红后绿：红的那一条正是 `菜单 **8= 起 bringup 一键（mocap+traj+control）**` 对不上 `ACTIONS[7]`）。

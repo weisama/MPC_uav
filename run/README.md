@@ -9,12 +9,14 @@ run/z0.py                # 交互菜单：敲数字
 run/z0.py --list         # 只列菜单（不进交互）
 run/z0.py env            # 环境自检（只读）
 run/z0.py check          # 起链核对（只读，约 5 s 一张表）
-run/z0.py up             # ★ 一键起链（第 10 项；run/up.sh 是它的一行别名）
-run/z0.py down           # ★ 清除后台节点（第 11 项；run/down.sh 是它的一行别名）
+run/z0.py up             # ★ 一键启动全部（第 9 项；run/up.sh 是它的一行别名）
+run/z0.py up_manual      # ★ 一键启动动捕+mavros（第 8 项）—— 手动遥控飞
+run/z0.py down           # ★ 清除后台节点（第 10 项；run/down.sh 是它的一行别名）
 run/down.sh --dry-run    # 只扫一眼"会停谁"，**一个信号都不发**
 run/z0.py --dry-run up   # 把顺序、每条命令、每步判据全列出来，**一条都不起**
 run/z0.py --dry-run mocap   # 只打印将要执行的命令，**不执行**
-run/z0.py mavros|vrpn|mocap|traj|control|bringup|fly   # 单条起（前台）
+run/z0.py mavros|vrpn|mocap|traj|control   # 单条起（前台）
+run/z0.py bringup|fly    # 两条**不进菜单**的（见下）；直接点名仍可跑
 ```
 
 ★ `--dry-run` 对**所有**动作都是"只打印、不执行" —— `env` / `check` 这两条只读动作**也不例外**
@@ -39,39 +41,49 @@ source /opt/ros/humble/setup.bash && source ~/mavros_ws/install/setup.bash && so
 | 5 | 起 mocap | 前台 | ★ **起之前要你确认"飞机已摆好、静止"**（阶段 A 原点在节点启动那一刻锁定） |
 | 6 | 起 traj | 前台 | 只发参考、不碰飞控；一帧不发直到被 select + start |
 | 7 | 起 control | 前台 | 台架 T3 用的就是这一条；`MANUAL/INIT` 是正常起始态 |
-| 8 | 起 bringup | 前台 | 一键起 mocap+traj+control；同样要确认飞机摆好；再问一句"已经单独起过 vrpn 了吗"（y ⟹ `use_vrpn:=false`）；其余参数见 [`bringup/README.md`](../src/bringup/README.md) |
-| 9 | 操作台 `fly.py` | 前台 | 选轨迹 1/2/3（**起飞前选好**） |
-| 10 | ★ **一键起链** | 本进程编排 + 前台守着 | 把上面 3→5→4→6→7 五步**按序**起齐（`bench-runbook.md` 的「起链（顺序不能反）」），每步**等判据成立**再加下一步；起完打印第 2 项那张核对表。详见下节 |
-| 11 | ★ **清除后台节点** | 本进程编排 | 与第 10 项相反的**另一头**：**按名字扫**（`DOWN_TARGETS`）在跑的节点 ⟹ 先摊开清单、问一句 y/N，再按 SIGINT→SIGTERM→SIGKILL 停；停完**再扫一遍**并报串口状态。详见下下节 |
+| 8 | ★ **一键启动（动捕+mavros，手动遥控飞）** | 本进程编排 + 前台守着 | mavros → vrpn → mocap **按序**起齐、每步等判据；★ **不起 `traj`/`control`** ⟹ 没有任何程序在上位控制飞机，起完**直接用遥控器手动起飞**。详见下节 |
+| 9 | ★ **一键启动全部（选轨迹 → 按开始键）** | 本进程编排 + 前台守着 | 把 3→4→5→6→7 五步**按序**起齐（`bench-runbook.md` 的「起链（顺序不能反）」），每步**等判据成立**；起完把**终端让给操作台 `fly.py`** 选轨迹，然后打印核对表 + 起飞提示。详见下节 |
+| 10 | ★ **清除后台节点** | 本进程编排 | 与第 9 项相反的**另一头**：**按名字扫**（`DOWN_TARGETS`）在跑的节点 ⟹ 先摊开清单、问一句 y/N，再按 SIGINT→SIGTERM→SIGKILL 停；停完**再扫一遍**并报串口状态。详见下下节 |
 
-## ★ 一键起链（第 10 项 / `run/up.sh`）
+★ **两条不进菜单**（`menu=False`：不显示、不占号，但命令仍在动作表里 ⟹ 安全不变式一条没松）：
+
+| key | 谁在用 | 位置 |
+|---|---|---|
+| `bringup` | `z0.launch.py` 一键起 mocap+traj+control —— `DOWN_TARGETS` 要从它取包名 | 照 [`bringup/README.md`](../src/bringup/README.md) 手打，或 `run/z0.py bringup`（会问一句 `use_vrpn:=false`） |
+| `fly` | 操作台 —— 第 9 项起齐后**前台**跑它选轨迹（`UP_HANDOFF`） | 第 9 项里自动起；想单独再跑：`run/z0.py fly` |
+
+## ★ 一键（第 8 / 9 项，`run/up.sh` = 第 9 项）
 
 ```bash
-run/up.sh          # 等价于 run/z0.py up
+run/up.sh              # 等价于 run/z0.py up（第 9 项：全部程序 + 选轨迹）
+run/z0.py up_manual    # 第 8 项：动捕 + mavros，手动遥控飞
 ```
 
-把 5 个终端收成 1 个：**mavros（带 GCS 桥）→ vrpn_listener → mocap → traj + control**，
-**逐段等它真的起来**再走下一步，最后打印上面第 2 项那张核对表，然后**前台守着**。
+**第 9 项**把 5 个终端收成 1 个：**mavros（带 GCS 桥）→ vrpn_listener → mocap → traj + control**，
+**逐段等它真的起来**再走下一步，**然后把终端让给操作台选轨迹**，最后打印上面第 2 项那张核对表 +
+起飞提示，**前台守着**。**第 8 项**就是同一张表的 **1–3 步**（到 `mocap` 为止，不起 `traj`/`control`）。
 
 | 步 | 起什么 | 起之前 | 起来的判据（**等**，不是"起了就算"） |
 |---|---|---|---|
 | 1 | `mavros` + **`gcs_url` 桥给 QGC** | 串口被谁占着；**已经有 mavros 在跑（`connected=True`）就问一句"沿用还是照样再起"** | `/mavros/state` 的 **`connected=True`**（≤60 s）★ **有帧 ≠ 连上飞控** |
 | 2 | `vrpn_listener` | — | `/vrpn/<刚体>/pose` 有帧（≤30 s；`Z0`/`z0` 都认） |
 | 3 | `mocap` | ★ **要你确认"飞机已摆好、静止、固定？"** | `/mocap/pose_enu` 有帧（≤30 s） |
-| 4 | `traj` | — | **不等**（没 `select` 就一帧不发，等它等于等到天荒地老） |
-| 5 | `control` | — | `/control/state` 有帧（≤30 s） |
-| 6 | — | — | 打印核对表 ⟹ 前台守着（**Ctrl-C 一起停**） |
+| 4 | `traj`（**只有第 9 项**） | — | **不等**（没 `select` 就一帧不发，等它等于等到天荒地老） |
+| 5 | `control`（**只有第 9 项**） | — | `/control/state` 有帧（≤30 s） |
+| 6 | **终端让给 `fly.py`**（**只有第 9 项**，前台） | — | 你敲 1/2/3 选轨迹（**起飞前选好**），选完按它的提示退出 |
+| 7 | — | — | 打印核对表 + **起飞提示**（开始键按两下、压住 ≥0.3 s）⟹ 前台守着（**Ctrl-C 一起停**） |
 
-- **日志**：`run/logs/<时间戳>/01-mavros.log … 05-control.log`（已在 `.gitignore` 里）。
-  某步等超时、或**子进程半路自己退了**，就把那个日志的**最后几行**打出来 —— 卡住了先看它。
+- **日志**：`run/logs/<时间戳>-up/01-mavros.log … 05-control.log`（第 8 项是 `…-up_manual/`，只有 3 个；
+  已在 `.gitignore` 里）。某步等超时、或**子进程半路自己退了**，就把那个日志的**最后几行**打出来。
 - **Ctrl-C 一起停**：子进程各自成组（`start_new_session`）⟹ 停的时候**整组一起**停
   （先 SIGINT、超时才 SIGKILL）。★ 前台那个 `Ctrl-C` **到不了**子进程（它们自成会话），
   必须由本脚本转发 —— 所以**别 `kill -9` 本脚本**：`SIGKILL` 不可捕获，转发就没了，
   会**留下 mavros 占着串口**。
-- **它不代做"还差的那两步"**（见下节）：选轨迹（`fly.py` 敲 1/2/3）与起飞（**遥控器开始键**）——
-  `up` 起完把这两步**打印出来提醒**，但不做。
+- ⚠️ **第 6 步把终端让出去那一段**：那时前台跑的是 `fly.py`，`Ctrl-C` 归它；脚本的后台子进程仍在，
+  你退出 `fly.py` 之后脚本接着守着（`Ctrl-C` 又回到"一起停"）。
+- **起飞那一下不代做**（见下节）：脚本只把"按开始键哪两下、压多久"写在屏上。
 
-## ★ 清除后台节点（第 11 项 / `run/down.sh`）
+## ★ 清除后台节点（第 10 项 / `run/down.sh`）
 
 ```bash
 run/down.sh              # 等价于 run/z0.py down
@@ -119,7 +131,7 @@ run/down.sh --dry-run    # 只扫一眼"会停谁"，**一个信号都不发**
 ⚠️ **按名字扫 ⟹ 别人会话 / 跑着的测试起的同类节点也在清单里**（现场只有一套飞机，这个代价是明说的）
 —— 动手前**看一眼命令行**，不是你这套的就答 n。
 
-★ **清除这条路不进 `ACTIONS` 的命令列**（第 11 项的 `cmd` 与第 10 项一样是 `None`：本进程里编排），
+★ **清除这条路不进 `ACTIONS` 的命令列**（第 10 项的 `cmd` 与第 9 项/第 8 项一样是 `None`：本进程里编排），
 所以它另有两条守卫用例：`test_清除目标表按名字扫_且把起链的每一条都盖住`（`UP_CHAIN` 每一条都要被盖住、
 模式得是能编译的正则、不许写宽）+ `test_清除目标表只有一张_且命令仍受安全不变式扫`
 （那张表里不许出现 `ros2 service call` / `ros2 param set` / `ros2 topic pub` / `ros2 action send_goal`——
@@ -140,8 +152,9 @@ run/down.sh --dry-run    # 只扫一眼"会停谁"，**一个信号都不发**
 可以多问一句的两条参数（mavros 的 `gcs_url`、bringup 的 `use_vrpn`）**做成了 y/N，值写在动作表里**：
 有意**不给"随手输一段参数"**的自由 —— 那等于把任意 shell 片段送进 `bash -c`，与上面这条边界相冲。
 
-★ **一键起链（第 10 项）不新开一条"起链用的命令表"**：`up` 的动作表项 `cmd=None`（本进程里编排），
-它起的每一条都**只写 key**（`UP_CHAIN`），命令取自上面那张动作表 ⟹ 下面这套守卫**不用改就盖住它**。
+★ **两条一键（第 8 / 9 项）都不新开一条"起链用的命令表"**：`up` / `up_manual` 的动作表项 `cmd=None`
+（本进程里编排），它们起的每一条都**只写 key**（`UP_CHAIN` / `MANUAL_CHAIN`，第 9 项另有 `UP_HANDOFF` 把 `fly` 放前台），
+命令取自上面那张动作表 ⟹ 下面这套守卫**不用改就盖住它们**。
 
 ★ 这条由 `run/tests/test_z0_menu.py` 的用例盯着：一条扫**动作表**（主命令**与**可选参数的取值，
 不含 `ros2 service call` / `ros2 param set` / `ros2 topic pub` / `ros2 action send_goal`），
@@ -186,7 +199,7 @@ run/down.sh --dry-run    # 只扫一眼"会停谁"，**一个信号都不发**
 ## 测试
 
 ```bash
-python3 -m pytest run/tests/test_z0_menu.py -q          # 纯函数 + 命令行拼装 + 安全不变式 + 一键起链/清除编排（不需要 ROS，57 例）
+python3 -m pytest run/tests/test_z0_menu.py -q          # 纯函数 + 命令行拼装 + 安全不变式 + 两条一键/清除编排（不需要 ROS，62 例）
 python3 -m pytest run/tests/test_operation_manual.py -q   # ★ 现场那一页的守卫：菜单号/命令/话题/degrade token 都钉在代码上（不需要 ROS，5 例）
 
 # ★ 正控：对着台架夹具（假 mavros）跑一遍 check，读数必须真的读到东西（5 例）
@@ -200,5 +213,5 @@ python3 -m pytest run/tests/test_z0_check_live.py -q
 ⚠️ **要一次跑整个 `run/tests/`，必须先 source**（上面那两行）。没 source 时
 `test_z0_check_live.py` 会在**模块级** `importorskip` 上跳掉，而 pytest 6.2.5 在那种情形下
 **连这一整个目录的其余用例一起收集不到**（第一手：未 source 跑 `pytest run/tests -q` ⟹
-`1 skipped`、0 例；source 后同样一条命令 ⟹ **`67 passed`**）——
+`1 skipped`、0 例；source 后同样一条命令 ⟹ **`72 passed`**）——
 ★ 所以"跑整个目录是绿的"这句**只有在 source 过的环境里才成立**，未 source 时那是**空收集**，不是绿。

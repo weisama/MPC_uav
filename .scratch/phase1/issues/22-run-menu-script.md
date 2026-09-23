@@ -16,12 +16,19 @@ Type: task
 > 与第 10 项**对称的另一头**：**按名字扫**（`pgrep`）、先列清单再问一句 y/N、
 > SIGINT →（超时）SIGTERM →（超时）SIGKILL。见 **§八**（三条拍板决策 + 两条实现取舍，
 > 其中"僵尸不算活着"是拿真进程试出来的）。★ 它**不是降落**：空中先按 runbook §1.2 处置。
+>
+> ★★ **2026-09-23 改形（操作者指令）：菜单收成 10 项，两条「一键」各管一个用法**。见 **§九**。
+> 删掉菜单里第 8 项（起 bringup 一键）与第 9 项（操作台 `fly.py`）的**号**（命令仍在动作表里，
+> `menu=False`），旧第 10 项「一键起链」顺延为 **9 = 一键启动全部（选轨迹 → 按开始键）**，
+> 新 **8 = 一键启动（动捕+mavros，手动遥控飞）**，旧第 11 项「清除后台节点」顺延为 **10**。
+> ★ 三条拍板决策里最关键的一条：**起飞那一下仍是遥控器开始键**，脚本只把它写在屏上。
 
 **What to build:** 把「起链」那几条**天天要手打**的命令收进仓库根的一个入口：
 
 ```
 run/z0.py            # 交互菜单（不认识的直接敲数字）
-run/up.sh            # ★ 一键起链（= 菜单第 10 项，见 §七）
+run/up.sh            # ★ 一键启动全部（= 菜单第 9 项，见 §七 / §九）
+run/z0.py up_manual  # ★ 一键启动动捕+mavros（= 菜单第 8 项）—— 手动遥控飞
 ```
 
 **为什么单开一张**：Phase 1 的启动知识现在**散在四处**，每处都只讲自己那一段 ——
@@ -259,6 +266,58 @@ run/down.sh --dry-run # 只扫一眼"会停谁"，一个信号都不发
 - ★ **没做的**：拿真的那条链（真 mavros/vrpn/mocap/traj/control）跑一次 `down` ——
   它要**停掉正在跑的飞控串口链路**，而现场只有一套飞机 ⟹ 照 §五 的规矩**留给人**，不假装已过。
 
+## 九、★ 追加：菜单改形 —— 两条「一键」，编号顺延（2026-09-23）
+
+**操作者原话**：「去掉 8 和 9，10 改为一键启动全部程序并且可以选择轨迹然后按键起飞和执行轨迹并顺延为 9，
+8 改为一键启动动捕和 mavros 可以手动遥控起飞」。
+
+**做的事**：把菜单从"11 项（含两条用不上的入口）"收成 **10 项**，两条一键**各管一个用法**：
+
+| # | 项 | 起什么 | 起完谁管飞 |
+|---|---|---|---|
+| ~~8~~ | ~~起 bringup 一键（mocap+traj+control）~~ | **删掉了菜单号**（`menu=False` 保留在动作表里） | — |
+| ~~9~~ | ~~操作台 `fly.py`~~ | **删掉了菜单号**（同上） | — |
+| 8 | ★ 一键启动（动捕+mavros，手动遥控飞） | mavros → vrpn → mocap（`MANUAL_CHAIN`） | **你，遥控器**（上位没有任何程序） |
+| 9 | ★ 一键启动全部（选轨迹 → 按开始键） | mavros → vrpn → mocap → traj → control（`UP_CHAIN`）+ **前台 `fly.py`** | `control`（你按开始键进 TRACK） |
+| 10 | ★ 清除后台节点 | `down`（**原第 11 项，编号顺延**） | — |
+
+**三条决策**（2026-09-23 操作者三问三答）：
+
+1. **起飞那一下 = 遥控器开始键**（**不是** `/control/takeoff`）。理由不是偏好：两个入口**走同一个
+   受理路径**（`Fsm::request_takeoff`），而**进 `TRACK` 根本没有服务**，只有开始键第 2 次上升沿
+   （[`control/README.md`](../../../src/control/README.md) 的「两个入口，一个受理路径」与 `WAIT_START`
+   的两个出口；边沿语义在 [`params-changes.md`](../../../docs/reference/params-changes.md) §H.5）。
+   既然轨迹飞行**非得**按键，就不把"起飞"做成第二套入口 —— 那样只会多一条"程序起飞绕开开始键防线"的路（§二）。
+2. **选轨迹 = 起齐后把终端让给 `fly.py`（前台）**。`/traj/select` 必须有人发，而本脚本**不许**
+   发（§二的 AST 不变式：只许订阅）。让出前台是**唯一**既满足"人能敲 1/2/3"、又不让本脚本
+   开口说话的办法。脚本只把"该敲什么"写在屏上。
+3. **全部程序 = 分开起 5 条、每步等判据**（与 §七 一致）：不用 `z0.launch.py` 那条一键
+   —— 它把 5 个进程当成"同时"拉起，而现场要的是**每步等到判据成立**再走下一步。
+
+**★ 为什么 `bringup` / `fly` 是删号、不是删项**：`Action` 加了 `menu=False`，菜单表由
+`MENU_ACTIONS = tuple(a for a in ACTIONS if a.menu)` 推出 ⟹ **不显示、不占号，但命令仍在 `ACTIONS` 里**。
+两条都留着有实打实的理由：`DOWN_TARGETS` 的 `bringup` 行**要从它的 `cmd` 取包名**（删了就 KeyError，
+第一手）；`fly` 是第 9 项 `UP_HANDOFF` 要起的那条（删了 `UP_HANDOFF` 就没东西可指）。
+⟹ "**命令的唯一出处是 `ACTIONS`**"这条不变式**一条没松**，第 9 项起的每一条仍**只写 key**。
+
+**判据**（追加）：
+
+1. **菜单号稳定**：`[a.key for a in MENU_ACTIONS] == ["env","check","mavros","vrpn","mocap","traj","control","up_manual","up","down"]`，
+   且 `ACTIONS == MENU_ACTIONS + ("bringup","fly")`（隐藏的两条排在最后，不占号）。
+2. **跨文件仍对齐**：`operation_manual.md` 的 `菜单 **N= 标题**` 与 `ACTIONS[N-1].title` 逐条对得上
+   （`run/tests/test_operation_manual.py`）；`bringup/README.md` / `bench-runbook.md` 的指针同步改号。
+3. **安全不变式一条不减**：两条一键的 `cmd is None` 且非只读；`forbidden_commands` 扫 `MANUAL_CHAIN`/`UP_CHAIN`/`UP_HANDOFF`
+   的**每一步**；`MANUAL_CHAIN` 里**不许有 `control`**（那正是"手动遥控飞"的定义）。
+4. **让出前台这件事被钉住**：`foreground == [ACTION_BY_KEY["fly"].cmd]`，且**发生在 5 条后台之后**
+   （`out.index("05-control") < out.index(fly_cmd)`）；**失败/超时那条路上 `foreground == []`**。
+
+**证据**（2026-09-23，agent）：
+
+- `python3 -m pytest run/tests/test_z0_menu.py -q` → **62 passed**；`run/tests/test_operation_manual.py` → **5 passed**。
+- `python3 run/z0.py --list` / `--dry-run up` / `--dry-run up_manual`：菜单十条、两条一键的顺序与判据齐全，
+  **一条都没真起**。
+- ★ **没做的**：拿真机跑这两条一键 —— 同 §五 / §八，要占串口、要人在场摆飞机 ⟹ **留给人**。
+
 ## Comments
 
 - **2026-09-23（agent，立项）**：`Status: ready-for-agent`。范围与形态是操作者拍的：
@@ -350,3 +409,33 @@ run/down.sh --dry-run # 只扫一眼"会停谁"，一个信号都不发
   ★ **2026-09-23 改名（操作者要求，不改上面这些记录）**：`docs/control/flight-runbook.md` →
   **仓库根 `operation_manual.md`**，守卫测试 → `run/tests/test_operation_manual.py`。
   本文提到旧名的那两处（§八 判据 4、上面复核表第 2 行）是**当时的原文**，照实留着。
+
+- **2026-09-23（agent，§九 菜单改形）**：操作者指令「**去掉 8 和 9**，10 改为一键启动全部程序并且
+  可以**选择轨迹然后按键起飞和执行轨迹**并顺延为 9，8 改为一键启动动捕和 mavros，可以手动遥控起飞」。
+  三问三答拍定 **①起飞那一下 = 遥控器开始键**（不是 `/control/takeoff`）、
+  **②选轨迹 = 起齐后把终端让给 `fly.py`（前台）**、**③全部程序 = 分开起 5 条、每步等判据**。
+
+  **落地**（全部在 `run/z0.py` 一张动作表里）：
+
+  - `Action` 加 `menu: bool = True`；`MENU_ACTIONS = tuple(a for a in ACTIONS if a.menu)`
+    ⟹ 菜单表与 `menu_loop` 一律走它，`ACTIONS` 仍是命令的**唯一出处**。
+  - 新增 `MANUAL_CHAIN`（3 条）/ `UP_CHAIN`（5 条，原样）/ `UP_HANDOFF = ("fly",)`、
+    `Chain` 数据类 + `CHAINS`/`CHAIN_BY_KEY`；`render_chain` / `cmd_chain` 由原来只服务 `up`
+    改成**参数化两条**（`cmd_up` / `cmd_up_manual` 各是一行）。
+  - 新增 `handover(key)`：打印"终端要交给谁、敲什么"，然后 `run_foreground(cmd)` —— **就是这一步
+    把前台让出去**，也是唯一新增的"人能敲键"的地方。日志目录带链名（`…-up_manual/`），
+    mavros 复用那句确认照旧（`ask_confirm` 默认 True）。
+  - `bringup` / `fly` **保留在 `ACTIONS` 里、只去掉菜单号**：`DOWN_TARGETS` 的 bringup 行要从
+    它的 `cmd` 取包名（删了就 KeyError），`fly` 是 `UP_HANDOFF` 指的那条。★ 因此 §二 的不变式
+    （动作表扫描 + AST 扫描）**未改一字**就盖住了新代码。
+  - 同步改号：`operation_manual.md`（§0 时间线 / §3.1 表格与 §3.1′ 新增 / §3.2 两条隐藏项 /
+    §3.5 标题 / §4 / §7 / §8）、`src/bringup/README.md` 的指针块、
+    `docs/control/bench-runbook.md` 的指针、根 `README.md` 的目录图、`run/README.md`（菜单表 +
+    一键那节拆成两条 + 清除那节改号 + 测试计数）。
+  - ★ **本票 §七 的产物没有作废**：`up` 还是那 5 条、还是每步等判据；**多出来的只是第 6 步
+    "把终端让给 `fly.py`"**与屏上的起飞提示。
+
+  **测试**：`run/tests/test_z0_menu.py` ⟹ **62 passed**（新增/改写：菜单十条与表里顺序一致、
+  隐藏的两条不占号、`UP_HANDOFF == ("fly",)`、`MANUAL_CHAIN` 里没有 `control`、
+  `--dry-run up_manual` 只到 mocap、让出前台发生在 5 条后台**之后**且**失败时一次都不发生**）；
+  `run/tests/test_operation_manual.py` ⟹ **5 passed**（跨文件菜单号守卫，改号时先红后绿）。

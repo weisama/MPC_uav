@@ -11,11 +11,15 @@ ros2 launch bringup mavros.launch.py      # 单独起 mavros（上游 px4.launch
 
 ★ **懒得手打上面这几条**（以及 mavros/vrpn/mocap 分开起、起完核对）：[`run/z0.py`](../../run/z0.py)
 是给人工用的启动菜单（用法与排障见 [`run/README.md`](../../run/README.md)）—— 它带 `source` 前缀、
-每步给读数、并且**不含任何解锁/起飞入口**（与下面的「起完之后**还差两步**」一致）；
-`use_vrpn:=false` 这条**它在起之前会问一句**。本文件仍是参数的权威出处。
-★ 要**一条命令起齐**（mavros 带 GCS 桥 → vrpn → mocap → traj + control，顺序起）：菜单 **10= 一键起链**
-或 `run/up.sh` —— 它同样**不含**下面那两步的入口。
-★ 要**反过来停掉它们**（起链那个终端已经关了、只好按名字找）：菜单 **11= 清除后台节点** 或 `run/down.sh`
+每步给读数、并且**不含任何解锁/起飞入口**（与下面的「起完之后**还差两步**」一致）。
+★ 本包的 `z0.launch.py` **不再占菜单号**（2026-09-23 起）：命令仍在它的动作表里，
+`run/z0.py bringup` 直接调得到（`use_vrpn:=false` 那条**它在起之前会问一句**）。本文件仍是参数的权威出处。
+★ 要**一条命令起齐**（mavros 带 GCS 桥 → vrpn → mocap → traj + control，顺序起，起完把终端让给
+本包的操作台 `fly.py` 选轨迹）：菜单 **9= 一键启动全部（选轨迹 → 按开始键）** 或 `run/up.sh`
+—— 它同样**不含**下面那两步的入口（起飞仍是你按遥控器开始键）。
+★ 只想**手动遥控飞**（不跑轨迹）：菜单 **8= 一键启动（动捕+mavros，手动遥控飞）**（`run/z0.py up_manual`）
+—— 到 `mocap` 为止，**不起**本包的 `traj`/`control`。
+★ 要**反过来停掉它们**（起链那个终端已经关了、只好按名字找）：菜单 **10= 清除后台节点（扫 mavros/vrpn/mocap/traj/control 并停掉）** 或 `run/down.sh`
 —— ⚠️ 那是**停进程、不是降落**，飞机在空中时先按 [`operation_manual.md`](../../operation_manual.md) §1.2 处置。
 ★ **人工飞一次的完整走法**（遥控通道 + FSM + 起链 + 每步判读 + 排障）：
 [`operation_manual.md`](../../operation_manual.md) —— 本文件仍是**参数**的权威出处。

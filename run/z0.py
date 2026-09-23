@@ -4,7 +4,9 @@
     run/z0.py                 # 交互菜单（敲数字）
     run/z0.py --list          # 只列菜单，不进入交互（给脚本/记录用）
     run/z0.py --dry-run mavros  # 只打印将要执行的命令，不执行
-    run/z0.py env|check|mavros|vrpn|mocap|traj|control|bringup|fly|up|down
+    run/z0.py env|check|mavros|vrpn|mocap|traj|control|up|up_manual|down
+                              # ↑ 菜单里那 10 项（`up` = 全部程序、`up_manual` = 手动遥控飞）
+    run/z0.py bringup|fly     # ↓ 两条**不进菜单**的（命令仍在 ACTIONS 里，见下面的注释）
 
 ★ 它替你做掉的三件事：
 
@@ -22,6 +24,15 @@
      值写在动作表里（`OptionalArg`）—— 有意**不给"随手输一段参数"**的自由，那等于把任意 shell
      片段送进 `bash -c`，与下面这条边界相冲。
 
+★ **两条「一键」**（第 8 / 9 项，ticket 22 §七 / §九）：
+
+   · **第 9 项 `up`**（`run/up.sh`）＝ mavros（带 GCS 桥）→ vrpn → mocap → traj → control
+     **按序起 + 每步等判据**，起完**把终端让给操作台 `fly.py`** 选轨迹，然后打印核对表 +
+     起飞提示并前台守着。★ 起什么**只写 key**（`UP_CHAIN`），命令仍取自 `ACTIONS`。
+   · **第 8 项 `up_manual`** ＝ 同一张表的**前三条**（到 `mocap` 为止，**不起** traj/control）
+     ⟹ 没有任何程序在上位控制飞机，起完**直接用遥控器手动飞**。
+   · ★ 两条**都不代做"起飞"**：选轨迹是在让出去的前台里敲 1/2/3，起飞是**遥控器开始键**。
+
 ★★ **它不提供任何"让飞机动"的入口 —— 解锁 / 起飞 / 切模式 / 改参数 / 发帧，一个都没有。**
    两条理由写在仓库里，不是洁癖：`z0.launch.py` 的「本包**不给**"程序起飞"的入口，因为它会绕开
    "开始键之前不发控制指令"这条防线」、`bench-runbook.md` 的「起完之后**还差两步**（刻意不自动化）」。
@@ -31,7 +42,7 @@
 ⚠️ **本脚本不是 `bench-runbook.md` 的替代品**：那张表是**判据与记录**（做一遍、填读数、勾框），
    本脚本只是**把命令送出去**并把读数摊开给人看。谁先谁后见 `run/README.md`。
 
-★ **第 11 项「清除后台节点」（`down` / `run/down.sh`，ticket 22 §八）**：与第 10 项对称的另一头 ——
+★ **第 10 项「清除后台节点」（`down` / `run/down.sh`，ticket 22 §八）**：与第 8/9 项对称的另一头 ——
    `up` 起、`down` 停。它**按名字扫**（`DOWN_TARGETS` 那张白名单，`pgrep -f`），
    所以**别人会话 / 跑着的测试**起的同类节点也会在清单里（现场只有一套飞机，这个代价是明说过的）；
    顺序是**先列清单 ⟹ 一次 y/N ⟹ SIGINT →（超时）SIGTERM →（超时）SIGKILL**，只发**单个 pid**
@@ -59,7 +70,7 @@ from typing import IO, Callable, Dict, Iterable, List, Optional, Sequence, Tuple
 #: 仓库根 = `run/` 的上一级。★ 本脚本**必须在仓库里**跑：install/ 与 docs 都相对它。
 REPO = Path(__file__).resolve().parents[1]
 
-#: `run/` 自己 —— 一键起链的日志写在它下面（`run/logs/<时间戳>/`，已被 .gitignore 挡住）。
+#: `run/` 自己 —— 两条一键的日志写在它下面（`run/logs/<时间戳>-<链名>/`，已被 .gitignore 挡住）。
 RUN_DIR = Path(__file__).resolve().parent
 
 ROS_DISTRO = os.environ.get("ROS_DISTRO", "humble")
@@ -351,7 +362,7 @@ class OptionalArg:
 
     ★ 有意**不做成"随便输一段参数"** —— 那样等于把任意 shell 片段送进 `bash -c`，
     与本脚本"命令出口只有 `ACTIONS` 那几条"的边界相冲（每条的 `suffix` 都写在表里，测试扫得到）。
-    `name` 只用于"一键起链默认带上哪几条"（`UP_OPTIONALS`）与测试指认，不参与命令拼装。
+    `name` 只用于"一键默认带上哪几条"（`UP_OPTIONALS`）与测试指认，不参与命令拼装。
     """
 
     name: str
@@ -361,7 +372,11 @@ class OptionalArg:
 
 @dataclass(frozen=True)
 class Action:
-    """一个菜单项。`cmd=None` ⟹ 在**本进程**里做（只读检查、或像 `up` 那样做编排）。"""
+    """一个菜单项。`cmd=None` ⟹ 在**本进程**里做（只读检查、或像 `up` 那样做编排）。
+
+    `menu=False` ⟹ **不进菜单**（也不占菜单号），但仍在表里 —— 这样"命令的唯一出处是
+    `ACTIONS`"这条仍然成立：一键流程要前台调用的 `fly` 就是靠它拿到命令的（见 `UP_HANDOFF`）。
+    """
 
     key: str
     title: str
@@ -371,10 +386,13 @@ class Action:
     warn_serial: bool = False          # 起之前先看串口有没有被别人占着
     optionals: Tuple[OptionalArg, ...] = ()   # 起之前逐条问的可选参数（y/N）
     read_only: bool = False            # ★ 只读（`--dry-run` 与"什么都不起"的判据都靠它）
+    menu: bool = True                  # ★ 进不进菜单（`fly` 进一键流程、不单独占一项）
 
 
 #: ★ 这张表是**唯一的**命令出口 —— `run/tests/test_z0_menu.py` 扫的就是它。
 #: 加一条之前先读文件头的「不提供任何让飞机动的入口」。
+#: ★ **菜单号 = 本表里 `menu=True` 的那些项的顺序**（`MENU_ACTIONS`）⟹ 插队会动号，
+#: 跨文件引用菜单号的地方（`operation_manual.md` + 它的守卫）会跟着红。
 ACTIONS: Tuple[Action, ...] = (
     Action("env", "环境自检（只读）", None,
            "三条 setup / 六个包 / 串口 / 域号 / 当前 commit",
@@ -398,23 +416,40 @@ ACTIONS: Tuple[Action, ...] = (
            "只发参考、不碰飞控；一帧不发直到被 select + start（start 由 control 发）"),
     Action("control", "起 control（单独）", "ros2 launch control control.launch.py",
            "台架 T3 就是这么起的；起早了停在 `MANUAL/INIT` 并逐条列出缺什么 —— 那是正常状态"),
+    Action("up_manual", "★ 一键启动（动捕+mavros，手动遥控飞）", None,
+           "mavros（带 GCS 桥）→ vrpn → mocap，逐段等判据；★ **不起 traj/control** ⟹ "
+           "没有任何程序在上位控制飞机，起完**直接遥控器手动起飞**"),
+    Action("up", "★ 一键启动全部（选轨迹 → 按开始键）", None,
+           "mavros → vrpn → mocap → traj → control 逐段等判据；起完把**终端让给操作台**选轨迹，"
+           "然后你按**遥控器开始键**（第 1 次 = 解锁起飞、第 2 次 = 进 TRACK）；Ctrl-C 一起停"),
+    Action("down", "★ 清除后台节点（扫 mavros/vrpn/mocap/traj/control 并停掉）", None,
+           "按**名字**扫（`DOWN_TARGETS`）⟹ 别人会话起的同类节点也在清单里；先列清单再问一句 y/N；"
+           "先 SIGINT 超时才升级 ⟹ **它不是降落**，空中先按 runbook §1.2 处置"),
+
+    # ★★ 下面两条**不进菜单**（`menu=False`，不占菜单号）。操作者 2026-09-23 拍定把菜单里
+    #   原来那两项（8= bringup / 9= 操作台 fly.py）去掉，换成两条一键流程；但它们的**命令**
+    #   仍留在表里，理由各一条：
+    #   · `fly` —— 第 9 项起齐之后要**前台**把它跑起来选轨迹（`UP_HANDOFF`）；
+    #   · `bringup` —— `DOWN_TARGETS` 要从它身上取包名（`z0.launch.py` 照 runbook 手打仍可行，
+    #     留下的那个 launch 壳得扫得到）。两条都受同一套不变式扫查。
     Action("bringup", "起 bringup 一键（mocap+traj+control）", "ros2 launch bringup z0.launch.py",
            "★ 起之前飞机要摆好（内含 mocap）；mavros **默认不起**（独占串口、要人看一眼）",
            confirm="飞机已摆好、静止、固定？（bringup 里有 mocap）",
            optionals=(OptionalArg(
                "use_vrpn",
                "已经单独起过 vrpn_listener 了吗？（y ⟹ 追加 use_vrpn:=false）",
-               "use_vrpn:=false"),)),
+               "use_vrpn:=false"),),
+           menu=False),
     Action("fly", "操作台 fly.py", "ros2 run bringup fly.py",
-           "选轨迹 1/2/3；它**不发** `/traj/start`、不解锁 —— 那两条都在开始键上"),
-    Action("up", "★ 一键起链（mavros+GCS 桥 → vrpn → mocap → traj+control，顺序起）", None,
-           "逐段**等它真的起来**再走下一步；自带核对表，Ctrl-C 一起停（只停它起的那些）"),
-    Action("down", "★ 清除后台节点（扫 mavros/vrpn/mocap/traj/control 并停掉）", None,
-           "按**名字**扫（`DOWN_TARGETS`）⟹ 别人会话起的同类节点也在清单里；先列清单再问一句 y/N；"
-           "先 SIGINT 超时才升级 ⟹ **它不是降落**，空中先按 runbook §1.2 处置"),
+           "选轨迹 1/2/3；它**不发** `/traj/start`、不解锁 —— 那两条都在开始键上",
+           menu=False),
 )
 
 ACTION_BY_KEY: Dict[str, Action] = {a.key: a for a in ACTIONS}
+
+#: **菜单里看得见的那些**（编号就是它们的顺序）。`menu=False` 的仍在 `ACTIONS` 里，
+#: 但既不显示、也不占号 —— 数字键 → key 的映射只走这张表。
+MENU_ACTIONS: Tuple[Action, ...] = tuple(a for a in ACTIONS if a.menu)
 
 #: 只读动作（`env` / `check`）—— 判据是表里那个 `read_only`，不是"`cmd` 是不是空"：
 #: `up` 的 `cmd` 也是空，但它会**起进程**（本进程里做编排）。
@@ -565,7 +600,7 @@ def _msg_class(type_string: str):
 
 
 class Probe:
-    """一个**只订阅**的 rclpy 节点 —— 同一张图上可以反复采（一键起链要一步一步等读数）。
+    """一个**只订阅**的 rclpy 节点 —— 同一张图上可以反复采（一键要一步一步等读数）。
 
     ★ 用**本进程的 rclpy 节点**，不经过 `ros2` CLI：CLI 的 daemon 会让图**静默为空**
     （第一手：同域内 daemon 与夹具的 `ROS_LOCALHOST_ONLY` 不一致时，
@@ -602,7 +637,7 @@ class Probe:
     def _discover(self) -> Dict[str, str]:
         """按图里**真实存在**的话题订。
 
-        ★ 每次都重看一遍图：一键起链里话题是**逐步出现**的（mavros 起了才有 `/mavros/state`），
+        ★ 每次都重看一遍图：一键里话题是**逐步出现**的（mavros 起了才有 `/mavros/state`），
         一次性的发现会让后面的步子对着不存在的话题空等。
         """
         topics = {name: types[0] for name, types in self._node.get_topic_names_and_types() if types}
@@ -670,7 +705,7 @@ def cmd_check() -> int:
     return 0
 
 
-# ─────────────────────── 一键起链（ticket 22 §七） ───────────────────────
+# ─────────────────── 一键（第 8 / 9 项，ticket 22 §七 / §九） ───────────────────
 #
 # ★ 它**不代做**"还差的那两步"（选轨迹 `fly.py` / 起飞 = 遥控器开始键）—— 见 ticket 22 §二：
 #   `z0.launch.py` 的「本包**不给**"程序起飞"的入口，因为它会绕开"开始键之前不发控制指令"这条防线」。
@@ -680,8 +715,53 @@ def cmd_check() -> int:
 #: ★ 每一项都是 `ACTIONS` 里的 key（**不是另抄一份命令**）⟹ ticket 22 那条不变式天然盖住它们。
 UP_CHAIN: Tuple[str, ...] = ("mavros", "vrpn", "mocap", "traj", "control")
 
-#: 一键起链**默认带上**的可选参数（按 `OptionalArg.name` 指认；值仍写在 `ACTIONS` 里）。
+#: 「动捕 + mavros，手动遥控飞」那条 —— 前三条同上，**到 mocap 为止**：
+#: 不起 traj/control ⟹ 没有任何程序在上位控制飞机（遥控器怎么飞就怎么飞）。
+MANUAL_CHAIN: Tuple[str, ...] = ("mavros", "vrpn", "mocap")
+
+#: 起齐之后**把终端让给**谁：`up` 要选轨迹，而选轨迹是在操作台里敲 1/2/3（前台）。
+#: ★ 与 `UP_CHAIN` 分开是因为**形态不同**：那几条后台起 + 等判据，这一条要占着 stdin/stdout。
+UP_HANDOFF: Tuple[str, ...] = ("fly",)
+
+#: 一键**默认带上**的可选参数（按 `OptionalArg.name` 指认；值仍写在 `ACTIONS` 里）。
 UP_OPTIONALS: Dict[str, Tuple[str, ...]] = {"mavros": ("gcs_url",)}
+
+
+@dataclass(frozen=True)
+class Chain:
+    """一条一键流程：后台按序起哪几条 + 起完要不要把终端让给操作台 + 起完说哪几句。
+
+    ★ 起什么**只写 key**（命令仍取自 `ACTIONS`）；`closing` 是**提示**（起飞那两步怎么做），
+    不是命令 —— 它不含任何能送进 `bash -c` 的东西。
+    """
+
+    key: str                          # 与 `ACTIONS` 的 key 对齐（第 8 / 第 9 项那两条）
+    label: str                        # 打印用
+    steps: Tuple[str, ...]
+    handoff: Tuple[str, ...] = ()
+    closing: Tuple[str, ...] = ()
+
+
+CHAINS: Tuple[Chain, ...] = (
+    Chain("up_manual", "一键启动动捕 + mavros（手动遥控飞）", MANUAL_CHAIN, (), (
+        "★ 现在**直接用遥控器起飞**就行 —— 本流程**没有** traj/control：",
+        "  没有任何程序在上位控制飞机，飞成什么样全看你手上的杆。",
+        "  动捕经 mavros 变成 EKF2 的位置估计（`/mavros/vision_pose/pose`）⟹ 位置信息在，"
+        "但**没人替你把杆**。",
+    )),
+    Chain("up", "一键启动全部（选轨迹 → 按开始键）", UP_CHAIN, UP_HANDOFF, (
+        "★ 起飞与执行轨迹**都在你手上**（本脚本刻意不代做 —— ticket 22 §二）：",
+        "   ① 选轨迹：刚把终端让给操作台那一步（没选成的话再跑 `ros2 run bringup fly.py`）；",
+        "      ★ **必须起飞前选好** —— `control` 进 `TRACK` 那一下要拿去发 `/traj/start`。",
+        "   ② 起飞/开始轨迹：**遥控器开始键**（开始通道，现场是 CH9）",
+        "      第 1 次上升沿 = 解锁 + 起飞、第 2 次 = 进 `TRACK`（开始执行轨迹）。",
+        "      ⚠️ **每次压住 ≥ 0.3 s 再松**（200 ms 去抖对上 10 Hz 采样，压得太准会按不动）；",
+        "      ⚠️ 上电时它若已停在**高位**，那**不算边沿**（必须先见低位）；",
+        "      ⚠️ 起飞前置里有一条「遥控在线」⟹ 台上没接遥控接收机时**永远解不了锁**（刻意如此）。",
+    )),
+)
+
+CHAIN_BY_KEY: Dict[str, Chain] = {c.key: c for c in CHAINS}
 
 #: 每一步"起来了没有"等的那个话题。`None` ⟹ **不等**。
 #: ★ `traj` 是 `None` 不是偷懒：它没被 `select` 就一帧都不发（等它等于等到天荒地老）。
@@ -901,10 +981,26 @@ def watch_children(children: Sequence[Child], interval_s: float = 1.0) -> int:
             return 1
 
 
-def render_chain() -> str:
-    """`--dry-run up` 打印的东西：顺序、每步命令、判据、要人确认的话 —— **一条都不起**。"""
-    lines = ["一键起链（`run/z0.py up` 或 `run/up.sh`）—— 本模式**一条都不起**，只是把要发生的事摊开：", ""]
-    for index, key in enumerate(UP_CHAIN, start=1):
+def handover(key: str) -> int:
+    """**把终端让给**一条动作（前台跑）—— 操作者要在里面敲键（操作台选轨迹）。
+
+    ★ 与后台那几条分开：它们的输出进日志、人不必看着；这一条**必须占着 stdin/stdout**
+    （选轨迹就是敲 1/2/3）。可测性仍然只有一个出口（`run_foreground`）。
+    """
+    action = ACTION_BY_KEY[key]
+    cmd = (action.cmd or "") + optionals_suffix(action, [False] * len(action.optionals))
+    print(f"★ 下面把终端让给「{action.title}」—— 敲 1/2/3 选轨迹（**起飞前选好**），"
+          "选完按它的提示退出，本脚本接着守着。")
+    print(f"$ {sourced_command(cmd)}")
+    return run_foreground(cmd)
+
+
+def render_chain(chain_key: str) -> str:
+    """`--dry-run up` / `--dry-run up_manual` 打印的东西：顺序、每步命令、判据、
+    要人确认的话、起完那几句 —— **一条都不起**。"""
+    chain = CHAIN_BY_KEY[chain_key]
+    lines = [f"{chain.label}（`run/z0.py {chain_key}`）—— 本模式**一条都不起**，只是把要发生的事摊开：", ""]
+    for index, key in enumerate(chain.steps, start=1):
         action = ACTION_BY_KEY[key]
         defaults = UP_OPTIONALS.get(key, ())
         cmd = (action.cmd or "") + optionals_suffix(
@@ -917,28 +1013,30 @@ def render_chain() -> str:
             lines.append(f"   起之前先看 `{SERIAL_PORT}` 被谁占着（占了就问一句）")
         if action.confirm:
             lines.append(f"   起之前会问：{action.confirm}")
-    lines += [
-        "",
-        "★ 它**不代做**那两步（ticket 22 §二）：① 选轨迹（`ros2 run bringup fly.py` 敲 1/2/3）；",
-        "  ② 起飞（**遥控器开始键**第 1 次上升沿 = 解锁起飞、第 2 次 = 进 TRACK）。",
-        "★ 收尾：跑起来之后前台守着，**Ctrl-C 一起停**（只停它起的那些）。",
-    ]
+    for key in chain.handoff:
+        action = ACTION_BY_KEY[key]
+        lines.append(f"{len(chain.steps) + 1}. ★ 把终端让给「{action.title}」（**前台**，人要敲键）")
+        lines.append(f"   $ {sourced_command(action.cmd or '')}")
+    lines += ["", *chain.closing,
+              "★ 收尾：跑起来之后前台守着，**Ctrl-C 一起停**（只停它起的那些）。"]
     return "\n".join(lines)
 
 
-def cmd_up() -> int:
-    """一键起链：按 `UP_CHAIN` 的顺序逐段起，**每段等到它的判据成立**再走下一步。"""
+def cmd_chain(chain_key: str) -> int:
+    """一键：按 `steps` 的顺序逐段起，**每段等到它的判据成立**再走下一步；
+    然后（`handoff`）把终端让出去，最后打印核对表 + 起飞提示并前台守着。"""
+    chain = CHAIN_BY_KEY[chain_key]
     ensure_sourced()
-    log_dir = RUN_DIR / "logs" / time.strftime("%Y%m%d-%H%M%S")
+    log_dir = RUN_DIR / "logs" / f"{time.strftime('%Y%m%d-%H%M%S')}-{chain_key}"
     started: List[Child] = []
     probe = Probe()
-    total = len(UP_CHAIN)
+    total = len(chain.steps)
     try:
-        print(f"一键起链：{' → '.join(UP_CHAIN)}")
+        print(f"{chain.label}：{' → '.join(chain.steps)}")
         print(f"日志目录：{log_dir}/")
         print("★ 起 `mocap` 之前飞机必须**已摆好并静止**（阶段 A 原点在它启动那一刻锁定）。")
         print()
-        for index, key in enumerate(UP_CHAIN, start=1):
+        for index, key in enumerate(chain.steps, start=1):
             if key == "mavros" and STEP_READY["mavros"](probe.snapshot(2.0)):
                 # 现场常态：mavros 在别的终端里长期跑着 ⟹ 别起第二个（串口只有一个）
                 if ask_confirm("★ 检测到 mavros **已经在跑**（`/mavros/state` connected=True）—— 沿用它？"
@@ -949,17 +1047,20 @@ def cmd_up() -> int:
             ok, _ = start_and_wait(probe, key, log_dir, started, index=index, total=total)
             if not ok:
                 print()
-                print("✗ 起链中断 —— 先把这一步的问题解决掉（日志在上面），再重跑 `run/z0.py up`。")
+                print(f"✗ 起链中断 —— 先把这一步的问题解决掉（日志在上面），再重跑 `run/z0.py {chain_key}`。")
                 return 1
             print()
+
+        for key in chain.handoff:
+            print()
+            handover(key)               # ★ 前台：Ctrl-C 归上面那个 handler（= 一起停）
 
         print("=" * 72)
         print(render_snapshot(probe.snapshot(4.0)))
         print("=" * 72)
-        print("★ 还差的两步（**本脚本刻意不代做**）：")
-        print("   ① 选轨迹：`ros2 run bringup fly.py` 敲 1/2/3（**起飞前选好**）")
-        print("   ② 起飞：遥控器开始键第 1 次上升沿 = 解锁起飞、第 2 次 = 进 TRACK（压住 ≥ 0.3 s 再松）")
-        print(f"★ 日志：{log_dir}/（例如 `tail -f {log_dir}/{total:02d}-control.log`）")
+        for line in chain.closing:
+            print(line)
+        print(f"★ 日志：{log_dir}/（例如 `tail -f {log_dir}/{total:02d}-{chain.steps[-1]}.log`）")
         print("★ 现在前台守着 —— **Ctrl-C 一起停**（只停本脚本起的那些）。")
         return watch_children(started)
     except KeyboardInterrupt:
@@ -970,7 +1071,18 @@ def cmd_up() -> int:
         stop_children(started)
 
 
-# ─────────────── 清除后台节点（第 11 项，ticket 22 §八，2026-09-23） ───────────────
+def cmd_up_manual() -> int:
+    """第 8 项：动捕 + mavros（手动遥控飞）。"""
+    return cmd_chain("up_manual")
+
+
+def cmd_up() -> int:
+    """第 9 项：全部程序（含把终端让给操作台选轨迹）。"""
+    return cmd_chain("up")
+
+
+# ─────────────── 清除后台节点（第 10 项，ticket 22 §八，2026-09-23） ───────────────
+# ★ 编号 2026-09-23 顺延过一次（原第 11 项）：菜单收成 10 项，两条一键占 8/9（ticket 22 §九）。
 #
 # ★ 为什么不是"停 `up` 起的那些"：`up` 的子进程表（`started`）是 `cmd_up` 的**局部变量**，
 #   脚本一退就没了 —— 恰恰在"起链的终端被关了 / 被 `kill -9` 了、节点成了孤儿"这种最需要
@@ -1234,10 +1346,10 @@ def menu_text() -> str:
         "  ★ 本脚本**不提供**任何会动飞机的入口：解锁 / 起飞 / 切模式 / 改参数 / 发帧都没有。",
         "    起飞只有两条路：遥控器开始键（CH9 第 1 次上升沿）或台架的 `/control/takeoff` 服务",
         "    （后者照旧手打，原文在 `docs/control/bench-runbook.md` T4）。",
-        "  ★ 起 `mocap` / `bringup` 之前，飞机必须**已摆好并静止**（阶段 A 原点在启动那一刻锁定）。",
+        "  ★ 起 `mocap` 之前，飞机必须**已摆好并静止**（阶段 A 原点在启动那一刻锁定）。",
         "",
     ]
-    for index, action in enumerate(ACTIONS, start=1):
+    for index, action in enumerate(MENU_ACTIONS, start=1):
         lines.append(f"  {index}  " + pad(action.title, 36) + action.note)
     lines.append("  0  退出")
     return "\n".join(lines)
@@ -1270,7 +1382,7 @@ def launch_action(action: Action) -> int:
         return 0
 
 
-#: **在本进程里做**的动作（不起子进程）：两条只读的 + 一键起链 / 清除的编排。
+#: **在本进程里做**的动作（不起子进程）：两条只读的 + 两条一键 / 清除的编排。
 #: ★ 判据 = **表里 `cmd` 是空的**（不是另抄一份名单）：今天正好就是 env/check/up/down 四条，
 #: 上面那条 `READ_ONLY_KEYS` 用的是同一个套路 ⟹ 加一项菜单不用记着来这里改。
 IN_PROCESS_KEYS: Tuple[str, ...] = tuple(a.key for a in ACTIONS if a.cmd is None)
@@ -1278,13 +1390,14 @@ IN_PROCESS_KEYS: Tuple[str, ...] = tuple(a.key for a in ACTIONS if a.cmd is None
 
 def in_process_command(key: str) -> Callable[[], int]:
     """按名字**现取**（不是 import 期就绑死）—— 这样用例能把它们替换掉。"""
-    return {"env": cmd_env, "check": cmd_check, "up": cmd_up, "down": cmd_down}[key]
+    return {"env": cmd_env, "check": cmd_check,
+            "up": cmd_up, "up_manual": cmd_up_manual, "down": cmd_down}[key]
 
 
 def dry_run_note(key: str) -> str:
-    """`--dry-run` 对**在本进程里做**的动作说什么 —— 三条各有各的话。"""
-    if key == "up":
-        return render_chain()
+    """`--dry-run` 对**在本进程里做**的动作说什么 —— 各有各的话。"""
+    if key in CHAIN_BY_KEY:
+        return render_chain(key)
     if key == "down":
         # ★ 这一条**只看不停**：`--dry-run` 在这里格外要紧 —— 看一眼会停谁，然后什么都不发。
         return render_down(scan_down_targets()) + "\n（`--dry-run`：只扫一眼，**一个信号都不发**）"
@@ -1323,8 +1436,8 @@ def menu_loop() -> int:
             return 0
         if choice in ("0", "q", "quit", "exit"):
             return 0
-        if choice.isdigit() and 1 <= int(choice) <= len(ACTIONS):
-            key = ACTIONS[int(choice) - 1].key
+        if choice.isdigit() and 1 <= int(choice) <= len(MENU_ACTIONS):
+            key = MENU_ACTIONS[int(choice) - 1].key
         elif choice in ACTION_BY_KEY:
             key = choice
         else:
@@ -1341,8 +1454,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         prog="run/z0.py",
         description="z0 起链菜单 —— 常用启动 + 每步核对（不含任何会动飞机的入口）")
     parser.add_argument("action", nargs="?",
-                        help="动作名（env/check/mavros/vrpn/mocap/traj/control/bringup/fly/up/down）；"
-                             "不给就进交互菜单")
+                        help="动作名（env/check/mavros/vrpn/mocap/traj/control/up_manual/up/down，"
+                             "另有不进菜单的 fly）；不给就进交互菜单")
     parser.add_argument("--list", action="store_true", help="只列菜单，不进入交互")
     parser.add_argument("--dry-run", action="store_true", help="只打印将要执行的命令，不执行")
     args = parser.parse_args(argv)

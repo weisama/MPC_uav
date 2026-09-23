@@ -198,12 +198,17 @@ def test_每条起链命令都带_source_前缀():
 
 def test_菜单与_动作表对得上():
     text = z0.menu_text()
-    for action in z0.ACTIONS:
+    for action in z0.MENU_ACTIONS:
         assert action.title in text
+    assert z0.MENU_ACTIONS == z0.ACTIONS[:len(z0.MENU_ACTIONS)], \
+        "菜单项应当是动作表的**前若干条**（否则菜单号与表里顺序会各说各话）"
     assert text.index("1  环境自检") < text.index("0  退出")   # 数字与动作表的顺序一致
+    assert "操作台 fly.py" not in text, "`fly` 不进菜单（它是一键流程里那一步，`menu=False`）"
     assert z0.ACTION_BY_KEY["mocap"].confirm          # 起 mocap 必须要求确认
-    assert z0.ACTION_BY_KEY["bringup"].confirm        # bringup 里有 mocap ⟹ 也要
     assert z0.ACTION_BY_KEY["mavros"].warn_serial     # mavros 起之前先看串口
+    # ★ 一键那两项要覆盖 mocap（`confirm` 由 `start_and_wait` 逐步照做，不是在这里另判）
+    for key in ("up", "up_manual"):
+        assert z0.ACTION_BY_KEY[key].cmd is None and not z0.ACTION_BY_KEY[key].read_only
 
 
 # ─────────────────────────── 命令行拼装（--dry-run / 可选参数） ───────────────────────────
@@ -212,7 +217,7 @@ def test_菜单与_动作表对得上():
 def test_list_只列菜单且返回_0(capsys):
     assert z0.main(["--list"]) == 0
     out = capsys.readouterr().out
-    for action in z0.ACTIONS:
+    for action in z0.MENU_ACTIONS:
         assert action.title in out
 
 
@@ -271,7 +276,17 @@ def test_可选参数的值也受安全不变式扫查():
 
 def test_起链的顺序就是操作手册那条():
     assert z0.UP_CHAIN == ("mavros", "vrpn", "mocap", "traj", "control")
-    assert set(z0.UP_CHAIN) <= set(z0.ACTION_BY_KEY), "起链里出现了动作表里没有的东西"
+    # 第 8 项：动捕 + mavros（手动遥控飞）—— **没有** traj/control（没人上位控制飞机）
+    assert z0.MANUAL_CHAIN == ("mavros", "vrpn", "mocap")
+    assert z0.UP_HANDOFF == ("fly",)
+    assert tuple(chain.key for chain in z0.CHAINS) == ("up_manual", "up")
+    for chain in z0.CHAINS:
+        keys = list(chain.steps) + list(chain.handoff)
+        assert set(keys) <= set(z0.ACTION_BY_KEY), \
+            f"{chain.key} 里出现了动作表里没有的东西：{set(keys) - set(z0.ACTION_BY_KEY)}"
+        assert chain.label and chain.closing, f"{chain.key}: 起完要说的话不能是空的"
+        # 两条链的公共前缀必须**逐字相同**（否则"第 8 项就是第 9 项的前三条"这句话是假的）
+        assert chain.steps[:len(z0.MANUAL_CHAIN)] == z0.MANUAL_CHAIN
     assert set(z0.UP_OPTIONALS) <= set(z0.ACTION_BY_KEY)
     for key, names in z0.UP_OPTIONALS.items():
         have = {opt.name for opt in z0.ACTION_BY_KEY[key].optionals}
@@ -279,21 +294,26 @@ def test_起链的顺序就是操作手册那条():
 
 
 def test_起链里没有会动飞机的入口():
-    """★ `up` 起的命令**全部**来自 `ACTIONS`（它只写 key）⟹ 22 号票那条不变式盖住它。"""
-    assert z0.forbidden_commands([z0.ACTION_BY_KEY[k] for k in z0.UP_CHAIN]) == []
-    assert "control" in z0.UP_CHAIN          # 控制节点在链上，但**起飞**不在（下面那条）
-    assert z0.ACTION_BY_KEY["up"].cmd is None
-    assert not z0.ACTION_BY_KEY["up"].read_only, \
-        "`up` 会起进程，不能算只读 —— 否则 `--dry-run` 与核对表都会撒谎"
+    """★ 一键起的命令**全部**来自 `ACTIONS`（两条链都只写 key）⟹ 22 号票那条不变式盖住它们。"""
+    for chain in z0.CHAINS:
+        keys = list(chain.steps) + list(chain.handoff)
+        assert z0.forbidden_commands([z0.ACTION_BY_KEY[k] for k in keys]) == []
+        assert z0.ACTION_BY_KEY[chain.key].cmd is None
+        assert not z0.ACTION_BY_KEY[chain.key].read_only, \
+            f"`{chain.key}` 会起进程，不能算只读 —— 否则 `--dry-run` 与核对表都会撒谎"
+    assert "control" in z0.UP_CHAIN          # 控制节点在链上，但**起飞**不在（起飞只有遥控器开始键）
+    assert "control" not in z0.MANUAL_CHAIN  # ★ 手动飞那条**根本不起** control
+    assert z0.ACTION_BY_KEY["fly"].cmd, "起完要前台跑操作台 ⟹ 它必须有命令"
 
 
 def test_每一步要么有起来的判据要么明说不等():
-    for key in z0.UP_CHAIN:
-        if key == "traj":
-            assert key not in z0.STEP_READY and z0.STEP_TOPIC[key] is None
-            assert "不等" in z0.wait_hint(key)
-        else:
-            assert key in z0.STEP_READY and key in z0.STEP_TIMEOUT_S
+    for chain in z0.CHAINS:
+        for key in chain.steps:
+            if key == "traj":
+                assert key not in z0.STEP_READY and z0.STEP_TOPIC[key] is None
+                assert "不等" in z0.wait_hint(key)
+            else:
+                assert key in z0.STEP_READY and key in z0.STEP_TIMEOUT_S
     assert set(z0.STEP_READY) <= set(z0.UP_CHAIN)
 
 
@@ -328,14 +348,35 @@ def test_dry_run_up_把顺序与判据全摊开_且一条都不起(capsys, monke
 
     monkeypatch.setattr(z0, "start_child", boom)
     monkeypatch.setattr(z0, "cmd_up", boom)
+    monkeypatch.setattr(z0, "run_foreground", boom)
     assert z0.main(["--dry-run", "up"]) == 0
     out = capsys.readouterr().out
     for key in z0.UP_CHAIN:
         assert z0.ACTION_BY_KEY[key].cmd in out, f"{key} 的命令没摊出来"
+    assert z0.ACTION_BY_KEY["fly"].cmd in out, "起完要让终端给操作台选轨迹 —— 那条命令也要摊出来"
     assert "gcs_url" in out            # ★ 默认带上的那条要看得见（否则现场不知道它在）
     assert "connected=True" in out     # 判据也摊开
-    assert "遥控器开始键" in out        # 还差的那两步写清楚了
+    assert "遥控器开始键" in out        # 起飞那两步写清楚了
     assert "飞机已摆好" in out          # `mocap` 那条人工确认
+    assert "0.3 s" in out              # ★ 现场那条压键要点（去抖：压得太准会按不动）
+
+
+def test_dry_run_up_manual_只到_mocap_且不起_control(capsys, monkeypatch):
+    """第 8 项（手动遥控飞）与第 9 项只差后两条 + 选轨迹那一步 —— 摊开的命令必须**正好**是这些。"""
+    def boom(*_args, **_kwargs):
+        raise AssertionError("`--dry-run up_manual` 起了东西")
+
+    monkeypatch.setattr(z0, "start_child", boom)
+    monkeypatch.setattr(z0, "cmd_up_manual", boom)
+    monkeypatch.setattr(z0, "run_foreground", boom)
+    assert z0.main(["--dry-run", "up_manual"]) == 0
+    out = capsys.readouterr().out
+    for key in z0.MANUAL_CHAIN:
+        assert z0.ACTION_BY_KEY[key].cmd in out, f"{key} 的命令没摊出来"
+    assert z0.ACTION_BY_KEY["control"].cmd not in out, "手动飞那条**不许**起 control"
+    assert z0.ACTION_BY_KEY["traj"].cmd not in out, "手动飞那条**不许**起 traj"
+    assert z0.ACTION_BY_KEY["fly"].cmd not in out, "手动飞那条不选轨迹（没有 traj 可选）"
+    assert "遥控器" in out              # 起完是"你自己用遥控器飞"
 
 
 # ── 编排（把外部世界全换成假的：探测 / 起进程 / 等 / 确认 / 日志目录）──
@@ -365,14 +406,19 @@ def fake_child():
 
 @pytest.fixture
 def up_world(monkeypatch, tmp_path, fake_child):
-    """把 `cmd_up` 的外部世界全换成假的；返回 (喂探测的快照表, 起过的子进程表)。"""
+    """把一键流程的外部世界全换成假的；返回 (喂探测的快照表, 起过的子进程表)。
+
+    ★ 前台那一步（`handover`）也换掉：它会真去跑 `fly.py` 并把终端抢走。
+    """
     snapshots: list = [{}]
     started: list = []
+    foreground: list = []
 
     monkeypatch.setattr(z0, "ensure_sourced", lambda: None)     # 否则会真的带 source 重 exec
     monkeypatch.setattr(z0, "RUN_DIR", tmp_path)
     monkeypatch.setattr(z0, "Probe", lambda *a, **k: _Probe(snapshots))
     monkeypatch.setattr(z0, "watch_children", lambda *a, **k: 0)
+    monkeypatch.setattr(z0, "run_foreground", lambda cmd: foreground.append(cmd) or 0)
 
     def start_child(key, log_path):
         child = fake_child(key, "假命令", log_path)
@@ -382,7 +428,7 @@ def up_world(monkeypatch, tmp_path, fake_child):
     monkeypatch.setattr(z0, "start_child", start_child)
     monkeypatch.setattr(z0, "ask_confirm", lambda *a, **k: True)
     monkeypatch.setattr(z0, "render_snapshot", lambda snap: "（假核对表）")
-    return snapshots, started
+    return snapshots, started, foreground
 
 
 class _Probe:
@@ -399,8 +445,8 @@ class _Probe:
         self.closed = True
 
 
-def test_一键起链按顺序起五条_每步都等到判据(up_world, monkeypatch):
-    snapshots, started = up_world
+def test_一键起链按顺序起五条_每步都等到判据_最后把终端让给操作台(up_world, monkeypatch, capsys):
+    snapshots, started, foreground = up_world
     waited = []
     monkeypatch.setattr(z0, "wait_for_step",
                         lambda probe, key, **k: (waited.append(key), (True, {}))[1])
@@ -411,10 +457,29 @@ def test_一键起链按顺序起五条_每步都等到判据(up_world, monkeypa
                                              "04-traj.log", "05-control.log"]
     # `traj` 没有判据（没 select 就一帧不发）⟹ 不空等它
     assert waited == ["mavros", "vrpn", "mocap", "control"]
+    # ★ 选轨迹那一步：**前台**跑操作台（人要在里面敲 1/2/3），且它在起齐**之后**
+    assert foreground == [z0.ACTION_BY_KEY["fly"].cmd]
+    out = capsys.readouterr().out
+    assert out.index("05-control") < out.index(z0.ACTION_BY_KEY["fly"].cmd)
+    assert "起飞与执行轨迹" in out, "起完要把「还差的两步」写在屏上（含开始键那两下）"
+
+
+def test_手动飞那条只起三条_不占前台_也没有_traj_control(up_world, monkeypatch, capsys):
+    snapshots, started, foreground = up_world
+    waited = []
+    monkeypatch.setattr(z0, "wait_for_step",
+                        lambda probe, key, **k: (waited.append(key), (True, {}))[1])
+
+    assert z0.cmd_up_manual() == 0
+    assert [c.key for c in started] == list(z0.MANUAL_CHAIN)
+    assert [c.log.name for c in started] == ["01-mavros.log", "02-vrpn.log", "03-mocap.log"]
+    assert waited == ["mavros", "vrpn", "mocap"]      # 三条都有判据（没有 traj）
+    assert foreground == [], "手动飞那条不选轨迹 ⟹ 不把终端让出去（前台一直守着）"
+    assert "遥控器" in capsys.readouterr().out
 
 
 def test_mavros_已经在跑就问沿用_并且收尾不停它(up_world, monkeypatch, capsys):
-    snapshots, started = up_world
+    snapshots, started, _foreground = up_world
     snapshots[0] = {"counts": {"/mavros/state": 1},      # 第一口探测就看到 mavros 在跑
                     "last": {"/mavros/state": "connected=True armed=False mode=POSCTL"}}
     monkeypatch.setattr(z0, "wait_for_step", lambda *a, **k: (True, {}))
@@ -427,7 +492,7 @@ def test_mavros_已经在跑就问沿用_并且收尾不停它(up_world, monkeyp
 
 
 def test_某一步超时_打日志尾巴_停掉其余的_返回_1(up_world, monkeypatch, capsys):
-    snapshots, started = up_world
+    snapshots, started, foreground = up_world
     monkeypatch.setattr(z0, "wait_for_step",
                         lambda probe, key, **k: (key != "mocap", {}))   # 卡在 mocap
 
@@ -437,10 +502,11 @@ def test_某一步超时_打日志尾巴_停掉其余的_返回_1(up_world, monk
     assert [c.key for c in started] == ["mavros", "vrpn", "mocap"]      # 没往下起 traj/control
     assert all(c.stopped for c in started), "中断后不能留下任何子进程（尤其是 mavros）"
     assert all(c.closed for c in started)
+    assert foreground == [], "起链都没起齐 ⟹ 不许把终端让出去"
 
 
 def test_子进程半路退了_不当成超时(up_world, monkeypatch, capsys):
-    snapshots, started = up_world
+    snapshots, started, _foreground = up_world
 
     def wait(probe, key, *, alive=None, **k):
         started[-1].running = False        # 模拟它自己退了
@@ -727,12 +793,21 @@ def test_dry_run_down_只看不停(capsys, monkeypatch):
     assert "不" in out
 
 
-def test_第_11_项是清除_前十条一个没动():
-    """★ 菜单号被跨文件钉死了（`operation_manual.md` 引用 1–10、
-    `test_operation_manual.py` 逐条对齐）⟹ 新项**只能追加在末尾**。"""
-    assert [a.key for a in z0.ACTIONS[:10]] == [
-        "env", "check", "mavros", "vrpn", "mocap", "traj", "control", "bringup", "fly", "up"]
-    assert z0.ACTIONS[10].key == "down"
-    assert z0.ACTIONS[10].title in z0.menu_text()
-    assert not z0.ACTIONS[10].read_only, "它会停进程 ⟹ 不能算只读（否则 --dry-run 会撒谎）"
-    assert "down" in z0.IN_PROCESS_KEYS
+def test_菜单十条_号与表里的顺序一致_隐藏的两条不占号():
+    """★ 菜单号被跨文件钉死了（`operation_manual.md` 逐条引用、
+    `test_operation_manual.py` 拿 `ACTIONS[N-1].title` 对）⟹ 动号要三处一起动。
+
+    2026-09-23 操作者拍定的形状：菜单里**去掉** 8= bringup / 9= 操作台 `fly.py`，
+    8= 一键启动动捕+mavros（手动遥控飞），9= 一键启动全部，10= 清除后台节点。
+    ★ 那两条**命令**没删，只是 `menu=False`（不显示、不占号）：`fly` 是一条键流程的第 6 步，
+    `bringup` 是 `DOWN_TARGETS` 取包名的地方 —— 删了它们，"命令的唯一出处是 `ACTIONS`"就破了个口。
+    """
+    assert [a.key for a in z0.MENU_ACTIONS] == [
+        "env", "check", "mavros", "vrpn", "mocap", "traj", "control", "up_manual", "up", "down"]
+    assert [a.key for a in z0.ACTIONS] == [a.key for a in z0.MENU_ACTIONS] + ["bringup", "fly"], \
+        "菜单项应当排在前面、`menu=False` 的排在后面（号 = 位置 ⟹ 别让隐藏项插队）"
+    for key in ("bringup", "fly"):
+        assert not z0.ACTION_BY_KEY[key].menu
+        assert z0.ACTION_BY_KEY[key].title not in z0.menu_text(), f"{key} 不该出现在菜单里"
+    assert not z0.MENU_ACTIONS[9].read_only, "它会停进程 ⟹ 不能算只读（否则 --dry-run 会撒谎）"
+    assert "down" in z0.IN_PROCESS_KEYS and "up_manual" in z0.IN_PROCESS_KEYS
