@@ -32,7 +32,7 @@ Type: task
 
 | 参数 | 值 | 对本票的意义 |
 |---|---|---|
-| `PWM_MAIN_TIM0` | **`-4` = DShot300** | ★ **输出协议的实际开关**。值表来自 `src/drivers/pwm_out/module.yaml`（px4-z0 @ `5ba2e91f`）：`-5`=DShot150 / **`-4`=DShot300** / `-3`=DShot600 / `-2`=DShot1200 / `-1`=OneShot / `>0`=PWM 频率。`reboot_required: true` |
+| `PWM_MAIN_TIM0` | **`-4` = DShot300** | ★ **输出协议的实际开关**。值表来自 `src/drivers/pwm_out/module.yaml`（**真身 `4a0e65f2` `:21-32`**，☠️ 原注 fork `5ba2e91f` 已换树核对）：`-5`=DShot150 / **`-4`=DShot300** / `-3`=DShot600 / `-2`=DShot1200 / `-1`=OneShot / `>0`=PWM 频率。`reboot_required: true`（参数名是模板 `${PWM_MAIN_OR_AUX}_TIM0` 展开而来，文件里不出现完整名） |
 | `PWM_MAIN_TIM1/2` | `400` / `400` | 其余定时器组仍是 400 Hz PWM（本机 4 电机只用 MAIN1–4 ⟹ `PWM_MAIN_FUNC1..4 = 101/102/103/104`） |
 | `MOT_PWM_TYPE` | **不存在** | ⚠️ 别去找它：**官方 v1.14.3 / v1.15.0 也都没有**（两份 `src/drivers/pwm_out/module.yaml` 均无；`src/lib/mixer_module/motor_params.c` 只有 `MOT_SLEW_MAX` / `THR_MDL_FAC`）。**1.14 起协议由 `PWM_MAIN_TIM0` 决定** |
 | `CBRK_IO_SAFETY` | `22027` | 安全开关已屏蔽 ⟹ **排除**「没按安全开关所以无输出」 |
@@ -45,10 +45,10 @@ Type: task
 
 | 结论 | 一手证据 |
 |---|---|
-| 「干脆不发」只有一个分支：`if (!_outputs_on) return false;` | px4-z0 @ `5ba2e91f` `src/drivers/dshot/DShot.cpp:417` |
-| 而 `_outputs_on` 在 `Run()` 里**恒被置为 true** | 同上 `:533` `bool outputs_on = true;`（无任何条件）；**官方 v1.14.3 @ `1dacb4c` `:458` 写法一字不差** |
-| **未解锁时发的是命令帧，不是静默** | 同上 `:436-448`：`stop_motors` 为真时逐个输出 `up_dshot_motor_command(i, DShot_cmd_motor_stop, …)`（`:445`） |
-| `stop_motors` 何时为真 | `src/lib/mixer_module/mixer_module.cpp:475` `bool stop_motors = !_throttle_armed && !_actuator_test.inTestMode();`（`_throttle_armed` 在 `:417` 由 `armed && !lockdown` 得出） |
+| 「干脆不发」只有一个分支：`if (!_outputs_on) return false;` | ☠️ ~~px4-z0 @ `5ba2e91f` `DShot.cpp:417`~~ → **真身 `4a0e65f2` `src/drivers/dshot/DShot.cpp:342-344`**（已换树核对，见文末 Comments） |
+| 而 `_outputs_on` 在 `Run()` 里**恒被置为 true** | 真身 `DShot.cpp:458` `bool outputs_on = true;`（无任何条件）；**官方 v1.14.3 @ `1dacb4c` 同行为 `:458`，写法一字不差** |
+| **未解锁时发的是命令帧，不是静默** | 真身 `DShot.cpp:370` 与 `:394`：`stop_motors` 为真时逐个输出 `up_dshot_motor_command(i, DShot_cmd_motor_stop, …)`（☠️ ~~`:436-448` / `:445`~~，已换树核对） |
+| `stop_motors` 何时为真 | `src/lib/mixer_module/mixer_module.cpp:472` `bool stop_motors = !_throttle_armed && !_actuator_test.inTestMode();`（`_throttle_armed` 在 `:417` 由 `armed && !lockdown` 得出）（☠️ ~~`:475`~~） |
 | ★ **另一条"静默"分支**：若**所有输出都没分配功能**，驱动会**一个字节都不发** | `mixer_module.cpp:437-442` 算 `all_disabled`（任一 `_functions[i]` 非空即为 false）→ `:458-459` `if (!all_disabled \|\| !_was_all_disabled)` 才往下走。**本机 `PWM_MAIN_FUNC1..4 = 101..104` 已分配 ⟹ 按源码应当发帧** ⟹ 要落到"实机 `dshot` 驱动到底起没起"（§四 T3） |
 
 ⟹ **「电调报无信号」等价于「帧真的没到」**：要么**发端停了**（驱动没起来 / FMU 重启或挂死），
@@ -166,10 +166,9 @@ Type: task
    —— `PWM_MAIN_FUNC1..4` 置 `0` 再置回原值 —— 以及 `dshot beep1 -m 1`（点名）、`dshot status`，
    **在 z0 上一条都没跑**。⟹「能不能免重启」**未知**：本票既没证实也没否掉它。
 2. **信号排线 / GND 没量**（万用表、示波器都没上）⟹ 候选 E **完全没动**。
-3. **§2.2 的源码引用未在 z0 真身树上逐条核对**（见本文末条 Comments）：
-   `~/refs/px4-z0 @ 5ba2e91f` 被 [`spec.md`](../spec.md) 标为**与 z0 无关的 fork**，
-   z0 真身是 `Minderring/PX4-Autopilot @ 4a0e65f2`。本次新增的引用（`src/drivers/drv_dshot.h:52`、
-   `DShot.cpp` 的 `beep1`…`beep5` 命令表）**同样取自 `5ba2e91f`** ⟹ 结论方向大概率不变，但引用得换树。
+3. ~~**§2.2 的源码引用未在 z0 真身树上逐条核对**~~ ✅ **2026-09-23 已做**（见文末 2026-09-23 那条 Comments）：
+   `~/refs/px4-z0 @ 5ba2e91f` 是**与 z0 无关的 fork**（真身是 `Minderring/PX4-Autopilot @ 4a0e65f2`），
+   但逐条重读真身后的结论是 **§2.2 的机理链全部成立、只有部分行号变** ⟹ **本项不再是本票的未验证项**。
 4. **`dshot` 驱动本身起没起没看过**（`dshot status` 未跑）⟹ 候选 **C 既没被证实也没被否**。
 5. **电调侧（AM32 bootloader 竞态）只是网上的机理假说**，z0 上**零一手证据**。
 
@@ -250,3 +249,28 @@ Type: task
     [PX4 issue #27696](https://github.com/PX4/PX4-Autopilot/issues/27696)、[AM32-bootloader #23](https://github.com/am32-firmware/AM32-bootloader/issues/23)。
     ⚠️ **只是检索摘要（二手），且 z0 上一条都没跑** ⟹ 记进 §六.6 当"未验证线索"，**不算结论**。
   - z0 的四个原值（已在 §四 T6 之外单列）：`PWM_MAIN_FUNC1..4 = 103 / 102 / 101 / 104`。
+
+---
+
+**2026-09-23（agent，★ 把"待换树核对"做掉了 —— 结论全部不变，只有行号变）**：
+
+本票 §2.2 与末条 Comments 里的"**待换树核对**"已完成。做法：用 `~/refs/px4-z0` 里的**真身 commit 对象**
+（`Minderring/PX4-Autopilot` @ `4a0e65f2`）逐条 `git show 4a0e65f2:<path>` 重读，**不再用 fork `5ba2e91f`**。
+
+| 本票原引（fork `5ba2e91f`） | 真身 `4a0e65f2` | 判定 |
+|---|---|---|
+| `DShot.cpp:417` `if (!_outputs_on) return false;` | **`DShot.cpp:342-344`**（同一句，拆成三行） | ✅ **结论不变** |
+| `DShot.cpp:533` `bool outputs_on = true;` | **`DShot.cpp:458`** —— 与本票已记的「官方 v1.14.3 @ `1dacb4c` `:458` 一字不差」**完全吻合** | ✅ 旁证成立 |
+| `DShot.cpp:436-448` / `:445` 未解锁发 `DShot_cmd_motor_stop` | **`DShot.cpp:370` 与 `:394`**（两处，各一句 `up_dshot_motor_command(i, DShot_cmd_motor_stop, …)`） | ✅ **结论不变**（真身里这条路径有**两**处，不是一处） |
+| `drv_dshot.h:52` / `:79` / `:80` | **`drv_dshot.h:52` / `:79` / `:80`** | ✅ **逐字、行号全同** |
+| `mixer_module.cpp:437-442` `all_disabled` | **`mixer_module.cpp:437` / `:442`**（`:458` `if (!all_disabled)`） | ✅ 同上 |
+| `mixer_module.cpp:475` `bool stop_motors = !_throttle_armed && …` | **`mixer_module.cpp:472`** | ✅ 结论不变 |
+| `mixer_module.cpp:417` `_throttle_armed` | **`mixer_module.cpp:417`** | ✅ **行号全同** |
+| `src/drivers/pwm_out/module.yaml` 的值表（无行号） | **`:21-32`**：`default: 400`(`:21`)、`values:`(`:22`)、`-5 DShot150`…`-1 OneShot`(`:23-27`)、`50/100/200/400`(`:28-31`)、`reboot_required: true`(`:32`) | ✅ 值表**逐字一致**；`PWM_MAIN_TIM0` 是模板 `${PWM_MAIN_OR_AUX}_TIM0` 展开后的名字，文件里**不出现完整参数名**（本票原先没写行号，补上） |
+| `MOT_PWM_TYPE` 不存在 | 真身 `src/drivers/pwm_out/module.yaml` 里**确无**；`src/lib/mixer_module/motor_params.c` 只有 `:55 MOT_SLEW_MAX` | ✅ **结论不变** |
+| `DShot.cpp` 的 `beep1`…`beep5` 命令表 | **`DShot.cpp:653-657`**（`{"beep1", DShot_cmd_beacon1, 1}` …） | ✅ 结论不变 |
+
+**⟹ §2.2 的机理链（"驱动只要活着就在发帧，未解锁发的是有效命令帧而不是静默"）在 z0 真身树上全部成立**，
+本票的排查方向不需要因"引用错了树"而调整。
+⚠️ 但**这不改变本票的 `wontfix` 收口**：根因仍然没定位，§六.4 的五项仍然没验证 —— 这次只是**把引用的可信度补上**。
+（可复核命令：`cd ~/refs/px4-z0 && git show 4a0e65f2:src/drivers/dshot/DShot.cpp | sed -n '342p;458p;370p;653,657p'`。）

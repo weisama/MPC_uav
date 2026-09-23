@@ -208,19 +208,25 @@ low_voltage: 18.0     # ← 6S 电池
 
 ---
 
-## A.6 `HKUST-Aerial-Robotics/Nxt-FC` + `Peize-Liu/PX4-Autopilot` —— ★★ **飞控侧的权威来源**
+## A.6 `Minderring/PX4-Autopilot`（**z0 固件真身**）+ `Nxt-FC` / ~~`Peize-Liu/PX4-Autopilot`~~ —— ★★ **飞控侧的权威来源**
+
+> ☠️ **2026-09-21 定案：标题里的 `Peize-Liu/PX4-Autopilot` 已降格。** 真身是
+> **`Minderring/PX4-Autopilot` @ `4a0e65f2`**（v1.14.3 系的 MicoAir 厂商构建，飞控自报的读数；
+> 见 [`refs-manifest.md`](refs-manifest.md) §2.5(d)）。`Peize-Liu` 那支 fork（`5ba2e91f`）**与 z0 无关**，
+> 它的 `.gitmodules` 指认**不等于飞控里烧的那一份**。**下表凡提到 `hkust/nxt-dual` 的行都受此影响。**
 
 **这不是"代码参考"，而是"事实来源"**——它决定了 z0 的固件与参数的比对基准。
 
 | 关键事实 | 对 z0 的影响 |
 |---|---|
-| ★ **`hkust_nxt-dual` 板级目标 2024-04-02 才进上游，只在 PX4 ≥ v1.15.0 存在** | ⚠️ **z0 若跑 1.14.x，不在官方支持矩阵内**，必然是 MicoAir/HKUST 的构建 |
-| `boards/hkust/nxt-dual/init/rc.board_defaults` 给出**板级默认参数** | ✅ **这是 `z0.params` 的权威 diff 基准**（`BAT1_A_PER_V 17` / `BAT1_V_DIV 10.1` / `PWM_MAIN_TIM0 -4` / `CBRK_SUPPLY_CHK 894281` / `SYS_HAS_MAG 0` …） |
-| ⚠️ **`ADC_BATTERY_CURRENT_CHANNEL` 曾为 `ADC12_CH(5)`，上游已修为 `ADC12_CH(8)`** | ⚠️ **若 z0 出厂固件含此 bug，电池电流采样读的是错误通道，电流/电量保护全是空转** |
+| ★ **`hkust_nxt-dual` 板级目标 2024-04-02 才进上游，只在 PX4 ≥ v1.15.0 存在** | ⚠️ **z0 不在官方支持矩阵内**，必然是厂商构建 ✅（已证实：真身 `boards/` 里只有 `micoair/{h743, h743-v2, h743-aio}`）。⚠️ **但别把「厂商构建」读成「跑 `hkust_nxt-dual`」** —— 真身树里**没有 `hkust/`**，用的是 `micoair` 板级目标 |
+| ~~`boards/hkust/nxt-dual/init/rc.board_defaults` 给出**板级默认参数**~~ ☠️ **该路径不在真身树里** | ⚠️ **本行原称它是 `z0.params` 的"权威 diff 基准"，作废。** 真身树里的对应文件是 `boards/micoair/{h743,h743-v2,h743-aio}/init/rc.board_defaults`，**三块板的默认值互不相同**（`BAT1_A_PER_V` = 40 / 40 / 14.14，`BAT1_V_DIV` = 21.2 / 21.12 / 21.12，`IMU_GYRO_CUTOFF` = 80 / 80 / 100，`SYS_HAS_MAG` = 1 / 1 / 0）。**到底该拿哪一块当基准 = "板名 NxtPX4v2 ≠ 固件目标名"这个未决项的一部分**，见 [`refs-manifest.md`](refs-manifest.md) §2.5(d)④ —— **在它定案前不要引本行当基准** |
+| ⚠️ **`ADC_BATTERY_CURRENT_CHANNEL` 曾为 `ADC12_CH(5)`，上游已修为 `ADC12_CH(8)`** | ✅ **但这条缺陷（在 `boards/hkust/nxt-dual`）不在真身树里** —— 真身的 `boards/micoair/h743-aio` 写的是 `/* PC1 */ ADC1_CH(11)`，**与引脚相符、无此缺陷**。**2026-09-21 上电实测亦判为「未中招」**（见 [`params-changes.md`](params-changes.md) §A4） |
 | `firmware/` 里的预编译固件是 **`nxt-v1`（单 BMI088 + BMP388）** | ❌ **不要刷到 NxtPX4v2（双 BMI088 + SPL06）上**，传感器直接不工作 |
-| fork 的 `feat_deprecated_v1.14.x_high_imu` 分支的 `rc.board_defaults` **只有 2 行** | ⚠️ **1.14.x 构建不会自动带电池/电机/autostart 默认值，必须全部写进 `z0.params`** |
+| ☠️ ~~fork 的 `feat_deprecated_v1.14.x_high_imu` 分支的 `rc.board_defaults` **只有 2 行**~~ | ⚠️ **本行描述的是 fork 的分支，不是 z0 的固件** —— 由此推出的「**1.14.x 构建不会自动带电池/电机/autostart 默认值，必须全部写进 `z0.params`**」**对真身不成立**：真身三块 `micoair` 板的 `rc.board_defaults` 都自带 `BAT1_*` / `MC_ROLLRATE_K` / `CBRK_SUPPLY_CHK` / `SYS_AUTOSTART` 等 |
 
-**取舍**：🔶 **读、不抄**。用来比对参数、判断固件风险。完整证据见 [`open-source-survey.md`](open-source-survey.md) §9。
+**取舍**：🔶 **读、不抄**。用来比对参数、判断固件风险。完整证据见 [`open-source-survey.md`](open-source-survey.md) §9
+与 [`refs-manifest.md`](refs-manifest.md) §2.5(d)。
 
 ---
 

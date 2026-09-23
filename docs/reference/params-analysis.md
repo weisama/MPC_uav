@@ -11,6 +11,13 @@
 > 对账全文见 [`.scratch/phase1/issues/15-fcu-param-reconciliation.md`](../../.scratch/phase1/issues/15-fcu-param-reconciliation.md)；
 > 逐项处置（改/不改/何时改）见 [`params-changes.md`](params-changes.md) **§I**。
 > ⚠️ **本文是取证正文，不是行动清单** —— 行动清单看 `params-changes.md`（它已取代本文 §6）。
+>
+> ☠️ **2026-09-23 —— 本文的引用基准已从 fork 换成真身**：本文多处曾按
+> `Peize-Liu/PX4-Autopilot @ 5ba2e91f` 引行号，**该 fork 与 z0 固件无关**。
+> z0 固件**真身 = `Minderring/PX4-Autopilot` @ `4a0e65f2`**（v1.14.3 系的 MicoAir 厂商构建）。
+> 全文已逐处按真身重新核对，「行号变了」的都已就地标注；**判词被推翻的只有一处**：
+> §3.5.1（ADC 电流通道）—— 由"中招/必须重刷"**改为「未中招」**。
+> 权威判定与分支对照见 [`refs-manifest.md`](refs-manifest.md) §2.5(d) / §2.6 / §2.7。
 
 ---
 
@@ -108,13 +115,17 @@ param show CA_ROTOR*
 
 **① z0 的角速率环增益全是 PX4 出厂默认值 —— 根本没有"被调过"的痕迹。**
 
-| 参数 | z0 值 | 固件默认值（`Peize-Liu/PX4-Autopilot @ 5ba2e91f`，`src/modules/mc_rate_control/mc_rate_control_params.c`） |
+| 参数 | z0 值 | 固件默认值（**真身** `Minderring/PX4-Autopilot @ 4a0e65f2`，`src/modules/mc_rate_control/mc_rate_control_params.c`） |
 |---|---|---|
-| `MC_ROLLRATE_P` | `0.15` | `PARAM_DEFINE_FLOAT(MC_ROLLRATE_P, 0.15f)` @ `:51` |
-| `MC_ROLLRATE_I` | `0.2` | `PARAM_DEFINE_FLOAT(MC_ROLLRATE_I, 0.2f)` @ `:63` |
-| `MC_ROLLRATE_D` | `0.003` | `PARAM_DEFINE_FLOAT(MC_ROLLRATE_D, 0.003f)` @ `:88` |
-| `MC_PITCHRATE_P` | `0.15` | `PARAM_DEFINE_FLOAT(MC_PITCHRATE_P, 0.15f)` @ `:132` |
-| `MC_YAWRATE_P` | `0.2` | `PARAM_DEFINE_FLOAT(MC_YAWRATE_P, 0.2f)` @ `:212` |
+| `MC_ROLLRATE_P` | `0.15` | `PARAM_DEFINE_FLOAT(MC_ROLLRATE_P, 0.15f)` @ `:53` |
+| `MC_ROLLRATE_I` | `0.2` | `PARAM_DEFINE_FLOAT(MC_ROLLRATE_I, 0.2f)` @ `:65` |
+| `MC_ROLLRATE_D` | `0.003` | `PARAM_DEFINE_FLOAT(MC_ROLLRATE_D, 0.003f)` @ `:90` |
+| `MC_PITCHRATE_P` | `0.15` | `PARAM_DEFINE_FLOAT(MC_PITCHRATE_P, 0.15f)` @ `:134` |
+| `MC_YAWRATE_P` | `0.2` | `PARAM_DEFINE_FLOAT(MC_YAWRATE_P, 0.2f)` @ `:214` |
+
+> ☠️ **2026-09-23 重新锚定**：本表原引 fork `Peize-Liu/PX4-Autopilot @ 5ba2e91f`，行号为
+> `51 / 63 / 88 / 132 / 212`。**该 fork 与 z0 无关**（见 [`refs-manifest.md`](refs-manifest.md) §2.5(d)）。
+> 已按**真身** `4a0e65f2` 逐行复核：五行**全部 +2**（上表即真身行号），**取值一字未变 ⟹ 结论不变**。
 
 **逐条相符。** 所以"偏差被调参吸收"这个机制**不可能存在**。
 
@@ -122,8 +133,12 @@ param show CA_ROTOR*
 
 `ControlAllocator::update_allocation_method()`（`src/modules/control_allocator/ControlAllocator.cpp:142-205`）
 把 `CA_METHOD` 交给各 effectiveness 源；而 `CA_METHOD = 2` 的语义是 **Auto**，不是"归一化分配"
-（`src/modules/control_allocator/module.yaml:35-46` 逐字：`0: Pseudo-inverse with output clipping` /
+（`src/modules/control_allocator/module.yaml:33-44` 逐字：`0: Pseudo-inverse with output clipping` /
 `1: Pseudo-inverse with sequential desaturation technique` / `2: Automatic`，`default: 2`）。
+> ☠️ **2026-09-23 重新锚定**：原先写 `module.yaml:35-46`（fork 的行号）。已按**真身** `4a0e65f2`
+> 复核 —— `CA_METHOD` 块在 **`:33-44`**（`values:` 三行在 `:41/:42/:43`，`default: 2` 在 `:44`），
+> 本文件其余四处 control_allocator 引用（`ControlAllocator.cpp:142`、`ActuatorEffectivenessMultirotor.hpp:52`、
+> `ActuatorEffectiveness.hpp:156`、`ControlAllocationPseudoInverse.cpp:73`）在真身中**行号与内容逐字未变**。
 
 `ActuatorEffectivenessMultirotor::getNormalizeRPY()`
 （`ActuatorEffectiveness/ActuatorEffectivenessMultirotor.hpp:52-55`）**无条件**返回
@@ -229,20 +244,41 @@ listener battery_status -n 5
 # 看 voltage_v / current_a / remaining 是否有真实数据
 ```
 
-#### 3.5.1 ★★★ 更深的病根：固件的 ADC 电流通道写在错误的引脚上（**本轮第一手验证**）
+#### 3.5.1 ~~★★★ 更深的病根：固件的 ADC 电流通道写在错误的引脚上（**本轮第一手验证**）~~
 
-上面说的是"链路没配起来"。但 **2026-09-20 这一轮查到了更硬的事实：z0 固件里电流采样读的是错误的 ADC 通道**，
-这不是"没配"，是"配错了"。
+> ☠️ **标题判词已反 —— 对 z0 是「未中招」。当前有效结论见本节页首更正块。**
+
+> ### ☠️ **2026-09-23 本节前提已被推翻 —— 结论是「未中招」，不是「配错了」**
+>
+> **本节整节（§3.5.1）建立在「fork `Peize-Liu/PX4-Autopilot @ 5ba2e91f` 就是 z0 的固件」这个前提上，
+> 而该前提是错的。** fork 与 z0 **无关**（它是 v1.15 世代；`Nxt-FC` 的 submodule 指认是一条**错的线索**）。
+>
+> z0 固件**真身** = `Minderring/PX4-Autopilot` @ `4a0e65f2`（v1.14.3 系的 MicoAir 厂商构建）。
+> **真身那棵树里根本没有 `boards/hkust/`** —— 只有 `boards/micoair/{h743, h743-v2, h743-aio}`。
+> 而 `boards/micoair/h743-aio` 写的是 `/* PC1 */ ADC1_CH(11)`，**与引脚相符、无此缺陷**。
+>
+> **→ 2026-09-21 实测判定：z0 「未中招」**（读数与判据见 [`params-changes.md`](params-changes.md) §A4）。
+> 下面整节保留作为**取证过程与版本边界的存档**，但其结论（"必须重编重刷固件"）**对 z0 不成立**；
+> Phase 3 的「重编重刷 `pr_fix_hkust_nxt_dual`」这个修法也因此**要重定**。
+> 权威判定见 [`refs-manifest.md`](refs-manifest.md) §2.5(d) / §2.7。
+
+上面说的是"链路没配起来"。~~但 **2026-09-20 这一轮查到了更硬的事实：z0 固件里电流采样读的是错误的 ADC 通道**，
+这不是"没配"，是"配错了"。~~（☠️ **针对 fork 成立，针对 z0 不成立** —— 见上方更正块。）
 
 **取证**（全部第一手，非二手总结）：
 
-**第一步，先找到 z0 固件的真身。** `HKUST-Aerial-Robotics/Nxt-FC` **不是固件源码仓库**（只有 51 个文件，
-是硬件 + 预览版二进制 + 两个 submodule）。其 `.gitmodules` 给出真身：
+~~**第一步，先找到 z0 固件的真身。**~~ **（☠️ 这一步走错了方向）**
+`HKUST-Aerial-Robotics/Nxt-FC` **不是固件源码仓库**（只有 51 个文件，
+是硬件 + 预览版二进制 + 两个 submodule），这是对的；但**它的 `.gitmodules` 指的不是 z0 的固件**：
 
 ```
 url = https://github.com/Peize-Liu/PX4-Autopilot.git    branch = develop
 Nxt-FC/main 钉在 commit  5ba2e91ff227fe4da0133371e88dc81b038bb81e   (2024-07-02)
 ```
+
+> ☠️ **该 commit 与 z0 固件无关。** `Nxt-FC` 的 `.gitmodules` 描述的是 **Nxt-FC 这个仓库自己的**
+> 上游依赖，**不等于飞控里烧录的内容**。z0 飞控自报的 `flight_custom_version` 直接给出真身 hash
+> **`4a0e65f233`**（见 [`refs-manifest.md`](refs-manifest.md) §2.5(d)）。
 
 **第二步，读该 commit 的板级配置**（`boards/hkust/nxt-dual/src/board_config.h:89-102`，逐字）：
 
@@ -266,10 +302,11 @@ Nxt-FC/main 钉在 commit  5ba2e91ff227fe4da0133371e88dc81b038bb81e   (2024-07-0
 
 **第三步，确认版本边界**（对照 PX4 上游三个 tag 的同一文件）：
 
-| 固件 | `ADC_BATTERY_CURRENT_CHANNEL` |
+| 固件 | `boards/hkust/nxt-dual` 的 `ADC_BATTERY_CURRENT_CHANNEL` |
 |---|---|
-| `Peize-Liu/PX4-Autopilot @ 5ba2e91f`（**z0 实际在跑的**） | `ADC12_CH(5)` |
-| PX4 上游 **v1.14.3** | 无 `boards/hkust`（该板级目标尚不存在） |
+| ~~`Peize-Liu/PX4-Autopilot @ 5ba2e91f`~~（☠️ **不是 z0 的固件，与 z0 无关**） | `ADC12_CH(5)` |
+| **z0 固件真身** `Minderring/PX4-Autopilot @ 4a0e65f2` | **没有 `boards/hkust/`**（其 `boards/micoair/h743-aio` 写 `/* PC1 */ ADC1_CH(11)`，**与引脚相符、无此缺陷** ⟹ **未中招**） |
+| PX4 上游 **v1.14.3**（tag `1dacb4c`） | 无 `boards/hkust`（该板级目标尚不存在） |
 | PX4 上游 **v1.15.0** | `ADC12_CH(5)` ← **仍带 bug** |
 | PX4 上游 **v1.16.0** | `ADC12_CH(8)` ← **已修** |
 
@@ -300,14 +337,22 @@ ADC(uint32_t base_address = SYSTEM_ADC_BASE, uint32_t channels = ADC_CHANNELS, b
 所以 `board_adc` **只采样通道 4 和 5**，而 `analog_battery` 只能从 `adc_report` 里已采样的通道中挑。
 **通道 8 永远不会出现在 `adc_report` 里 → 把 `BAT1_I_CHANNEL` 设成 `8` 拿不到任何有效读数。**
 
-> **→ 结论：这个 bug 无法用参数绕过，必须重编重刷固件。**
+> **→ 结论：~~这个 bug 无法用参数绕过，必须重编重刷固件。~~**
+> ☠️ **该结论只对 fork 成立。对 z0：这个 bug 不在它的固件里，无需绕、也无需重刷**（见本节页首更正块）。
 > 附带一个**待台架验证的次要猜测**（**不是修复方案**）：把 `BAT1_I_CHANNEL` 设成 `8`
 > 也许能把"读到错误引脚的天晓得的垃圾值"变成"干净的 0"，即把**不可判定**的坏读数变成
 > **可判定**的"无电流采样"。这可能比现在好（假电流会骗过库仑计），但**只能在台架上试**，
 > 且改之前要确认它不会让 `battery_status` 整条报错。
 
-**对 Q15 的影响**：用户已在 Q15 接受了「加一条电压下限」的修正 —— **现在这条修正的必要性被第一手证实了**，
-因为**电流/库仑计数这条路是假的，唯一可信的电池观测量是电压**。
+**对 Q15 的影响**：用户已在 Q15 接受了「加一条电压下限」的修正 ——
+~~**现在这条修正的必要性被第一手证实了**，因为**电流/库仑计数这条路是假的，唯一可信的电池观测量是电压**。~~
+
+> ☠️ **2026-09-23 更正**：**"电流这条路是假的"不成立。** 2026-09-21 实测（[`params-changes.md`](params-changes.md) §A4）
+> 未解锁状态读到的 `current_battery` 是 `[37, 38, 36, 37, 36, 36]`（10 mA 单位，≈0.37 A，**有变化**），
+> `current_consumed = 23 mAh` —— **电流是能读的**。
+> 「加一条电压下限」这条修正**仍然要做**，但理由是**电压下限本来就是独立的安全带**
+> （`BAT_LOW_THR = 0.15` / `CRIT = 0.07` 都已设值、`COM_LOW_BAT_ACT = 0` 却无动作），
+> **不再**靠"电流不可信"来支撑。
 
 ### 3.6 ⚠️ `EKF2_EV_POS_X/Y/Z = 0` —— 外参可能没标
 
@@ -347,8 +392,9 @@ ADC(uint32_t base_address = SYSTEM_ADC_BASE, uint32_t channels = ADC_CHANNELS, b
 **原文的疑虑**：枚举值在不同 PX4 版本间变过，`3` 可能是 "MAVLink RC"，若是则物理遥控器被忽略，
 与 `COM_RC_OVERRIDE` 的安全意图冲突。
 
-**→ 已对照 z0 固件源码结案**（`Peize-Liu/PX4-Autopilot @ 5ba2e91f`，
-`src/modules/commander/commander_params.c`，逐字）：
+**→ 已对照 z0 固件源码结案**（**真身** `Minderring/PX4-Autopilot @ 4a0e65f2`，
+`src/modules/commander/commander_params.c:168-186`，逐字 —— ☠️ 原引 fork `5ba2e91f`，已按真身复核：
+该块在真身中为 `:168-186`，**注释与 `PARAM_DEFINE_INT32(COM_RC_IN_MODE, 3)` 逐字一致**）：
 
 ```
 /**
@@ -503,14 +549,24 @@ PARAM_DEFINE_INT32(COM_RC_IN_MODE, 3);
 
 `z0.params`：`COM_FLTMODE1 = 2`、`COM_FLTMODE4 = 1`、`COM_FLTMODE6 = 7`，其余 `-1`（未分配）。
 
-固件里的枚举（`Peize-Liu/PX4-Autopilot @ 5ba2e91f`，`src/modules/commander/module.yaml`，逐字）：
+固件里的枚举（**真身** `Minderring/PX4-Autopilot @ 4a0e65f2`，
+`src/modules/commander/commander_params.c:361-374` 的 `@value` 清单，逐字）：
 
 ```
 -1: Unassigned          0: Manual          1: Altitude        2: Position
- 9: Position Slow       3: Mission         4: Hold            10: Takeoff
-11: Land                5: Return          6: Acro             7: Offboard
- 8: Stabilized         12: Follow Me      13: Precision Land
+ 3: Mission             4: Hold           10: Takeoff        11: Land
+ 5: Return              6: Acro             7: Offboard        8: Stabilized
+12: Follow Me          13: Precision Land
 ```
+
+> ☠️ **2026-09-23 重新锚定 + 一处事实更正**：
+> 1. **文件引错了**：原文引 `src/modules/commander/module.yaml` —— 该文件**在真身（以及上游 v1.14.3）里根本不存在**
+>    （`git show 4a0e65f2:src/modules/commander/module.yaml` 报 `does not exist`）。`COM_FLTMODE1..6`
+>    实际定义在 `src/modules/commander/commander_params.c`，行号 **`:377 / :401 / :425 / :449 / :473 / :497`**；
+>    其 `@value` 清单在 **`:361-374`**。
+> 2. **原文表里那个 `9: Position Slow` 是多余的** —— 真身的 `@value` 清单里**没有 9**
+>    （`grep '@value 9'` 在该文件无命中）。删掉它**不影响本节结论**：z0 用到的是 `2`/`1`/`7`。
+> 3. 其余 **14** 个值（`-1/0/1/2/3/4/5/6/7/8/10/11/12/13`）在真身中**逐字一致**。
 
 **所以 z0 的模式开关实际是**：
 
@@ -550,7 +606,8 @@ PARAM_DEFINE_INT32(COM_RC_IN_MODE, 3);
 >
 > 本节曾建议「改为 **`0`（无动作）**」—— **`NAV_RCL_ACT` 根本没有 `0` 这个值。**
 >
-> **第一手证据**（`Peize-Liu/PX4-Autopilot @ 5ba2e91f`，`src/modules/commander/commander_params.c:651-668`，逐字）：
+> **第一手证据**（**真身** `Minderring/PX4-Autopilot @ 4a0e65f2`，`src/modules/commander/commander_params.c:789-806`，逐字
+> —— ☠️ 原引 fork `5ba2e91f` 的 `:651-668`，已按真身复核为 `:789-806`，**内容逐字一致**）：
 >
 > ```
 > /**
@@ -568,7 +625,7 @@ PARAM_DEFINE_INT32(COM_RC_IN_MODE, 3);
 > ```
 >
 > **合法值只有 `1 / 2 / 3 / 5 / 6`（`@min 1`）** —— 与 `NAV_DLL_ACT` 不同，
-> **后者才有 `@value 0 Disabled`**（`commander_params.c:634-649`）。**两者枚举不对称，我先前把它们类比错了。**
+> **后者才有 `@value 0 Disabled`**（`commander_params.c:769-787` —— ☠️ 原引 `:634-649`，已按真身复核）。**两者枚举不对称，我先前把它们类比错了。**
 >
 > **→ 修正后的正确建议：`NAV_RCL_ACT` 改为 `1`（Hold mode）** —— 室内动捕飞行时，
 > 遥控丢失后**让 PX4 的位置控制器就地保持当前位置**，这是最符合 `(A)`/`(C)` 级飞行的行为。
@@ -612,7 +669,8 @@ PARAM_DEFINE_INT32(COM_RC_IN_MODE, 3);
 >
 > 本文曾写「`SER_GPS1_BAUD = 0` 说明 GPS 口是关的，理论上可以挪用」—— **错。**
 >
-> **第一手证据**（`Peize-Liu/PX4-Autopilot @ 5ba2e91f`，`Tools/serial/serial_params.c.jinja:11-13`，逐字）：
+> **第一手证据**（**真身** `Minderring/PX4-Autopilot @ 4a0e65f2`，`Tools/serial/serial_params.c.jinja:11-13`，逐字
+> —— ☠️ 原引 fork `5ba2e91f`，已按真身复核：**该文件该行号在真身中逐字一致，无需改动**）：
 >
 > ```
 >  * Note: certain drivers such as the GPS can determine the Baudrate automatically.

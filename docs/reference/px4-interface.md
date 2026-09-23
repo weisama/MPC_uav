@@ -178,7 +178,10 @@ PX4 官方 Offboard 文档明确列出每种 setpoint 需要什么估计：
 ./scripts/check-message-compatibility.py -v <你的 px4_msgs 目录> <PX4-Autopilot 目录>
 ```
 
-**必须选的版本**：与飞控固件 **PX4 1.14.x** 对应的 `px4_msgs` tag。**不要用 main 分支。**
+**必须选的版本**：**`release/1.14` @ `ffb6e80e`**（★ 2026-09-21 用户签字）。
+它对应的是 **z0 固件真身** = `Minderring/PX4-Autopilot` @ `4a0e65f2`（**v1.14.3 系**的 MicoAir **厂商构建**，
+不是上游 v1.14.3 原版；两者 `msg/` 已实测逐字节相同）。**不要用 main 分支**，
+也**不要从任何 fork 生成** —— 见 [`refs-manifest.md`](refs-manifest.md) §2.5(d) / §2.6 执行版。
 
 ---
 
@@ -278,7 +281,7 @@ if (last_transform_stamp == stamp) { /* dropped */ return; }
 - [ ] `COM_RC_OVERRIDE = 3` 生效：打杆能踢出 Offboard（**实飞前用低油门验证一次**）
 - [ ] 遥控器链路确认（`COM_RC_IN_MODE` 含义已核实，见 params-analysis 3.9）
 - [ ] `UXRCE_DDS_CFG` 已打开，`ros2 topic list | grep /fmu` 能看到话题
-- [ ] `px4_msgs` 版本与固件 1.14.x 匹配（跑过 `check-message-compatibility.py`）
+- [ ] `px4_msgs` 钉在 **`release/1.14` @ `ffb6e80e`**（与真身 `4a0e65f2` 的 `msg/` blob 全同；跑过 `check-message-compatibility.py`）
 - [ ] `/fmu/in/offboard_control_mode` 心跳 ≥ 2 Hz 且持续 ≥ 1 s
 - [ ] **推力数值范围写死为 `[-1, 1]`**，在代码里有断言
 - [ ] 角速率符号（FRD）经实机验证

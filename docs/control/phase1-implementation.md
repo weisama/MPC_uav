@@ -21,7 +21,7 @@
 | H4 | 动捕原点 | **未起飞时静止帧为原点**；姿态**仅归零 yaw** | 用户 Q16 / Q21(b) |
 | H5 | 参考轨迹 | **脚本启动后输入数字选择**：①起飞 1 m 悬停 ②边长 1 m 正方形 ③半径 0.5 m 八字 | 用户 Q15 |
 | H6 | SITL | **跳过**（Phase 1 无 MPC，实机试错代价可接受） | 用户 Q8(b)；Phase 2 **不跳** |
-| H7 | 固件 | **留在 PX4 1.14.x，不刷固件** | 用户 Q12 |
+| H7 | 固件 | **留在 PX4 1.14.3 系（真身 = `Minderring/PX4-Autopilot` @ `4a0e65f2`），不刷固件** ✅ 2026-09-21 已飞控实测确认（`flight_sw_version = 1.14.3`） | 用户 Q12 + [`refs-manifest.md`](../reference/refs-manifest.md) §2.5(d) |
 
 **★ 指导思想：Phase 1 只引入一个新变量（动捕 + offboard 链路），把 MPC / acados / uXRCE-DDS 全部推迟。**
 Phase 2 的所有新东西**追加**在这套骨架上，**不推翻**它 —— 见 [`phase2-implementation.md`](phase2-implementation.md) §3.4。
@@ -360,18 +360,20 @@ Phase 1 走的是 mavros，**不存在"微秒"这一层**：
 1. **mavros 出向**：`PositionTarget.header.stamp`（ROS2 `builtin_interfaces/Time`）被换算成 MAVLink 的
    `time_boot_ms`，即 **毫秒**、且会**截断成 32 位** —— 见 `mavros/include/mavros/plugin.hpp:264-267`
    与 `setpoint_raw.cpp` 的 `local_cb`。
-2. **PX4 侧根本不读这个字段**（★ 2026-09-21 在 `~/refs/px4-v1.15.0` 上逐行读过，与 z0 固件同代）：
-   `src/modules/mavlink/mavlink_receiver.cpp:960`
+2. **PX4 侧根本不读这个字段**（★ 2026-09-22 **改在 `~/refs/px4-v1.14.3`（tag `1dacb4c`）上复核** ——
+   原注是 09-21 在 `~/refs/px4-v1.15.0` 上读的并称"与 z0 固件同代"，**那句"同代"是错的**：
+   z0 真身属 **v1.14.3 系**，不是 v1.15。**结论不变，行号已按 v1.14.3 更正**）：
+   `src/modules/mavlink/mavlink_receiver.cpp:943`
    `MavlinkReceiver::handle_message_set_position_target_local_ned()` 只读 `type_mask` /
-   `coordinate_frame` / 各分量，**`target_local_ned.time_boot_ms` 一次都没出现**；
+   `coordinate_frame` / 各分量，**`target_local_ned.time_boot_ms` 在该函数据内一次都没出现**（`grep -c` = 0）；
    `trajectory_setpoint.timestamp` 是在发布处用 **`hrt_absolute_time()`** 自己打的
-   （同上文件 **1067 行**：`setpoint.timestamp = hrt_absolute_time();`）。
+   （同上文件 **1050 行**：`setpoint.timestamp = hrt_absolute_time();`）。
 
 **⟹ Phase 1 的实现口径**（与 mavros 自带 setpoint 插件一致）：`header.stamp = now()`，**不要**去凑"微秒"。
 
 > ★ 同一次阅读还确认了两件与本节点行为直接相关的事：
 > - 该 handler **只在 `nav_state == NAVIGATION_STATE_OFFBOARD` 时才把 setpoint 发进 ORB**
->   （`mavlink_receiver.cpp:1066` 的注释原文 "only publish setpoint once in OFFBOARD"）
+>   （`mavlink_receiver.cpp:1049` 的注释原文 "only publish setpoint once in OFFBOARD"）
 >   ⟹ **切模式之前流的那些 setpoint 是被丢弃的**，
 >   起作用的不是它们本身，而是它们每条都触发的 **`offboard_control_mode` 发布** ——
 >   那才是"offboard 信号存在"的判据（`Commander::offboardControlCheck()`）。
@@ -982,7 +984,15 @@ z0 的链路跑在 `MAVLINK_MODE_ONBOARD`，该模式配 `ESTIMATOR_STATUS` **1.
 `vrpn_listener.zip` 里的 `README.md` **还在教你 clone 公开的 `efc-robot/vrpn_client_ros2`**——**这是过时的**。源码已被定制（`stamp = now()` 替换了 `msg_time`，见 A.2）。
 → **vendored 后写一个 `VENDORED.md`**，写明来源、定制点、"勿替换"。
 
-### 8.2 ⚠️ 电池电流采样**大概率**读的是错误通道
+### 8.2 ✅ 电池电流采样：**实测未中招 —— 本条缺陷不在这块固件里**（2026-09-21 结案）
+
+> ☠️ **2026-09-21 定案：本小节原判（"⚠️ 电池电流采样**大概率**读的是错误通道"）作废。**
+> 原判的推理是「z0 是 1.14.x，连 `hkust/nxt-dual` 这个板级目标都还不存在 ⟹ 1.14 的构建几乎必然带 `CH(5)`」——
+> **它默认了"z0 的固件是某个含 `hkust/nxt-dual` 的构建"**，而真身（`4a0e65f2`）树里**根本没有 `hkust/`**：
+> 它的板级目标是 `boards/micoair/h743-aio`，其电流通道写的是 `/* PC1 */ ADC1_CH(11)`，**与引脚相符、无此缺陷**。
+> ⟹ **"板级目标在 1.14 里不存在"既推不出"必然带 `CH(5)`"，也不是 z0 的实际处境。**
+> **实测亦证实未中招**（读数与判据见 [`../reference/params-changes.md`](../reference/params-changes.md) §A4）。
+> 完整证据链见 [`../reference/refs-manifest.md`](../reference/refs-manifest.md) §2.5(d)③。
 
 上游修复 commit **`129c0f188a`（2024-11-19，"hkust_nxt-dual: fix ADC_BATTERY_CURRENT channel mismatch"）**把 `ADC_BATTERY_CURRENT_CHANNEL` 从 `ADC12_CH(5)` 改为 `ADC12_CH(8)`。
 
@@ -991,12 +1001,12 @@ z0 的链路跑在 `MAVLINK_MODE_ONBOARD`，该模式配 `ESTIMATOR_STATUS` **1.
 | v1.15.0（2024-08-23） | `ADC12_CH(5)` ❌ | `ADC12_CH(5)` |
 | v1.16.0 / main | **`ADC12_CH(8)`** ✅ | `ADC12_CH(5)` |
 
-**★ 为什么说"大概率"而不是"万一"**：**z0 是 1.14.x，连 `hkust/nxt-dual` 这个板级目标都还不存在**（v1.15.0 才引入）→ **1.14 的构建几乎必然带 `CH(5)`**。
+⚠️ **仍值得记住的两条**（它们讲的是 `hkust/*` 那两块板，**不是 z0 这块**）：
+- 修复**只针对 `nxt-dual`**；`nxt-v1` 在 main 上**仍是 `CH(5)`**（对它是对的）—— **不要照抄 `nxt-v1` 的写法**
+- 版本边界：**上游 v1.15.0 仍带、v1.16.0 才修**（第一手核实）
 
-⚠️ **修复只针对 `nxt-dual`。`nxt-v1` 在 main 上仍是 `CH(5)`（对它是对的）——不要照抄。**
-
-→ **若中招，电流/电量保护全是空转**：你会在电量充足时被强制降落，或更糟，**在过流时毫无保护**。
-→ **排查**：上电后在 QGC 看电流读数——未解锁应 ≈0，上电后应合理。**恒为 0 或恒为怪值 = 中招。**
+→ ~~**若中招，电流/电量保护全是空转**~~ —— ✅ **排查已执行：未中招**，电流/电量保护是真的
+（但 **Phase 3 重编固件时，`pr_fix_hkust_nxt_dual` 那一行对 z0 的固件不适用**，修法要重定）。
 
 ### 8.3 ⚠️ 不要刷 Nxt-FC 仓库里的预编译固件
 

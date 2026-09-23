@@ -9,7 +9,9 @@ Type: task
 
 **Blocked by:** [04](04-offline-ocp.md)
 
-**本张负责的改动（M7 / M8 / M9）**：M7 状态源从 PX4 话题换成动捕 ENU 话题（**因此可删掉输入侧的坐标系转换**）、M8 删掉为绕过消息版本问题而写的双订阅 hack（`_v1` 后缀话题是 v1.16 才有的机制，在 v1.15 世代的 fork 里**根本不存在**）、M9 补上定义了却没使用的死变量。
+**本张负责的改动（M7 / M8 / M9）**：M7 状态源从 PX4 话题换成动捕 ENU 话题（**因此可删掉输入侧的坐标系转换**）、M8 删掉为绕过消息版本问题而写的双订阅 hack（`_v1` 后缀话题 / `msg/versioned/` 是 **v1.16 才有**的机制，在 **z0 真身（v1.14.3 系）**里**根本不存在**）、M9 补上定义了却没使用的死变量。
+
+> ☠️ **2026-09-23 措辞更正**：M8 原写"在 **v1.15 世代的 fork** 里根本不存在" —— **结论本身不变**（真身里同样不存在），但**对象选错了**：那是拿 fork 当参照物。真身的 `msg/` 与**上游 v1.14.3 逐字节相同**，所以这句话更贴对象的说法是"**v1.16 才有**"。见 [`refs-manifest.md`](../../../docs/reference/refs-manifest.md) §2.6 执行版。
 
 - [ ] 订阅 `/mocap/pose_enu`（**不是** NED）与 `/fmu/out/vehicle_status`（判断是否已 armed / offboard）
 - [ ] 发布 `/fmu/in/vehicle_rates_setpoint` 与 `/fmu/in/offboard_control_mode`（`body_rate = True`，其余 False）

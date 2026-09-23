@@ -314,7 +314,7 @@ Status: ready-for-agent
 > ⚠️ **第 2 项与第 3 项互为前提**：QGC 只能通过串口连上飞控，所以先在 QGC 里看版本这件事
 > 本身依赖串口通了。
 
-### ⚠️ 一个已知的硬件缺陷（预期会中招）+ 已定决策 Q37=a
+### ✅ 一个**曾以为会中招**的硬件缺陷（**实测：未中招**）+ 已定决策 Q37=a（☠️ 其"修复"一半已作废）
 
 `nxt-dual` 板的电池电流采样通道**写错了**：固件里 `ADC_BATTERY_CURRENT_CHANNEL = ADC12_CH(5)`，
 而电流实际接在 **PC5 = `ADC12_INP8` = 通道 8**。**版本边界已第一手核实**：
@@ -322,7 +322,7 @@ Status: ready-for-agent
 | 版本 | 该宏 |
 |---|---|
 | 上游 v1.14.3 | 无 `boards/hkust`（不适用） |
-| 上游 v1.15.0 / fork `5ba2e91f` / fork `main` | ❌ `ADC12_CH(5)` |
+| 上游 v1.15.0 / ☠️ ~~fork `5ba2e91f`~~（**与 z0 无关**）/ fork `main` | ❌ `ADC12_CH(5)` |
 | 上游 v1.16.0 / fork `pr_fix_hkust_nxt_dual` | ✅ `ADC12_CH(8)` |
 
 （☠️ **2026-09-21 第三次更正 —— 这一小段的判词前后反了两回，完整交代**：
@@ -336,17 +336,20 @@ Status: ready-for-agent
 「该编哪块板」还是个待定项，见 [ticket 11](issues/11-firmware-version-conflict.md)）。
 ⚠️ **实测也确实未中招**（A4 的读数）。）
 
-**后果**：电流/电量保护可能是假的。**上电后必须在 QGC 核对读数。**
+~~**后果**：电流/电量保护可能是假的。**上电后必须在 QGC 核对读数。**~~
+☠️ **后果不成立** —— 上面 ③ 的定案 + A4 的实测都要它作废：**电流/电量保护不是假的**，那处缺陷不在这块固件里。
+（"上电核对读数"这个动作**已经做了**，见 A4；它的价值从"判定是否中招"变成"留一条基线"。）
 
 **★ 已定（Q37=a）——分两步，不阻塞 Phase 1：**
 
 | | 时机 | 内容 |
 |---|---|---|
-| **核实** | ★ **Phase 1 首飞前（阻塞）** | QGC / `listener battery_status` 看电流是否恒 0 或怪值。成本≈0 |
-| **修复** | **Phase 3 实机飞行之前**（不阻塞 Phase 1，也基本不额外花钱） | 用 fork 自带的 `pr_fix_hkust_nxt_dual` @ `8161c4cd` —— 它相对 `main` **只差一行**（`CH(5)`→`CH(8)`）。因为 Q31=a 已要求从 fork 构建 SITL，**重编所需的工具链那时已经在手**，代价接近零 |
+| **核实** | ★ ~~Phase 1 首飞前（阻塞）~~ ✅ **已于 2026-09-21 完成** | QGC / `listener battery_status` 看电流是否恒 0 或怪值 ⟹ **未中招**（读数见 [`params-changes.md`](../../docs/reference/params-changes.md) §A4） |
+| ~~**修复**~~ | ☠️ **作废，无此项** | ~~用 fork 自带的 `pr_fix_hkust_nxt_dual` @ `8161c4cd` —— 它相对 `main` **只差一行**（`CH(5)`→`CH(8)`）。因为 Q31=a 已要求从 fork 构建 SITL，**重编所需的工具链那时已经在手**，代价接近零~~ ⟹ **那条修复修的是 `boards/hkust/nxt-dual`，而真身树里没有 `hkust/`**，**对 z0 不适用**。⚠️ **Q37=a 的"修复"这一半作废；"重编"这件事本身仍在 Phase 3 的待办里**（因为板级目标待定），见 [`phase3/issues/04`](../phase3/issues/04-firmware-reflash.md) |
 
-**理由**：`ADC_CHANNELS` 是**编译期宏**，参数改不了；但**电压通道未受影响**，所以 Phase 1 可用
+**理由**（☠️ 对 z0 已不适用，保留作对照）：`ADC_CHANNELS` 是**编译期宏**，参数改不了；但**电压通道未受影响**，所以 Phase 1 可用
 「电压 + 计时」兜底，不必为一处电流读数在首飞前引入"刚刷的固件"这个新变量。
+⟹ 对 z0 而言这条**没有对象**（缺陷不在），但 Phase 1 用「电压 + 计时」的兜底做法**照样是对的**，保留不动。
 详见 [`params-changes.md`](../../docs/reference/params-changes.md) A4/F1 与 [`refs-manifest.md`](../../docs/reference/refs-manifest.md) §2.7(b)。
 
 ### 关于 50 ms 动捕延迟

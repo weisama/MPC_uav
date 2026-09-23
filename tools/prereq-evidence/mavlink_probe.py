@@ -261,7 +261,7 @@ def _decode_git_hash_bytes(raw):
         memcpy(&msg.flight_custom_version, &fw_vendor_version, 3);
 
     所以三件事：
-      1. 塞进去的是 **uint64 的二进制镜像（小端）**，不是 "5ba2e91f" 这样的字符串；
+      1. 塞进去的是 **uint64 的二进制镜像（小端）**，不是 "4a0e65f2" 这样的字符串；
       2. `& 0xFFFFFFFFFF000000` 已经砍掉了低 3 字节 → 只保留 hash 的**前 5 字节**；
       3. 随后**前 3 字节又被厂商版本覆盖** → 只有 `[3:8]` 这 5 个字节还是 hash。
 
@@ -423,18 +423,23 @@ def probe_port(port: str, baud: int, wait: float, samples: int = 6) -> int:
             print(f"     vendor_id={ver.vendor_id} product_id={ver.product_id}")
             print(f"     capabilities=0x{ver.capabilities:x}")
             print()
-            print("     ★ 与 refs-manifest.md §2.5 的对照：文档原先假定 z0 固件真身是 fork "
-                  "`5ba2e91f`（v1.15 世代）。")
+            # 期望值 = refs-manifest.md §2.5(d) 的定案（2026-09-21），不是那个已作废的 fork。
+            EXPECTED_SHA = "4a0e65f2331b23b9c8352656e9ccb6edeaea5d6c"
+            print("     ★ 与 refs-manifest.md §2.5(d) 的对照：定案的 z0 固件真身是 "
+                  "`Minderring/PX4-Autopilot` @ `4a0e65f2`（**v1.14.3 系**的 MicoAir 厂商构建）。")
+            print("       ⚠️ fork `Peize-Liu/PX4-Autopilot @ 5ba2e91f`（v1.15 世代）**与 z0 无关** —— "
+                  "本脚本 2026-09-23 之前的版本把它当成了期望值，会给出**反的**判定。")
             if git_prefix is None:
                 print("       ⚠️ 取不到 hash，这一栏无法核对 —— **不要**据此改动 §2.5。")
                 print("          但注意：**上面 `flight_sw_version` 的原文仍是一个独立证据** ——")
                 print("          若它解出的世代与 §2.5 的结论不符，那本身就要记进 §2.5。")
-            elif "5ba2e91f".startswith(git_prefix[:8]):
-                print(f"       ✅ `{git_prefix[:8]}` 与 `5ba2e91f` **一致** → §2.5 的判定得到实测支持。")
+            elif EXPECTED_SHA.startswith(git_prefix[:8]):
+                print(f"       ✅ `{git_prefix[:8]}` 与定案真身 `4a0e65f2` **一致** "
+                      "→ §2.5(d) 的判定得到实测支持。")
             else:
-                print(f"       ⚠️ `{git_prefix[:8]}` 与 `5ba2e91f` **不一致** —— "
+                print(f"       ⚠️ `{git_prefix[:8]}` 与定案真身 `4a0e65f2` **不一致** —— "
                       "**以飞控报出的为准**：去查这个 commit 属于哪个仓库/分支，")
-                print("          它才是真正的「z0 固件真身」；§2.5/§2.6 要以它为准。")
+                print("          它才是真正的「z0 固件真身」；§2.5(d)/§2.6 要以它为准。")
             got += 1
 
         # --- ④ 电流 ---------------------------------------------------------

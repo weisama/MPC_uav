@@ -21,7 +21,8 @@
 | `Fast-Drone-250/` | `git@github.com:ZJU-FAST-Lab/Fast-Drone-250.git` | `8ff64274b161bb829653faf5946656658e7e2c9f` | 2022-11-09 | 文档未记 commit。**FSM 设计的真正源头** |
 | `Sim2real-UAV-Params-/` | `git@github.com:Huan-qun/Sim2real-UAV-Params-.git` | `b7aeebb71cc708445fbac70a4863c736d4674630` | 2026-08-30 | `z0.params` 的出处；`S2R/assets/vrpn_listener.zip` 见 `mocap-setup.md` §6.2 |
 | `Nxt-FC/` | `git@github.com:HKUST-Aerial-Robotics/Nxt-FC.git`（分支 `main`） | `153b7d13609e870a8abc6ff909461a13ea2d69f8` | 2024-08-13 | ⚠️ **不是固件源码仓库**（仅 51 个文件：硬件 + 预览版二进制 + submodule） |
-| **`px4-z0/`** | `git@github.com:Peize-Liu/PX4-Autopilot.git` | **`5ba2e91ff227fe4da0133371e88dc81b038bb81e`** | 2024-07-02 | ★ **z0 固件的真身**。以 **fetch-only** 方式保存（无工作树）；读文件用 `git show FETCH_HEAD:<path>` |
+| **`px4-z0/`** | `git@github.com:Peize-Liu/PX4-Autopilot.git` | **`5ba2e91ff227fe4da0133371e88dc81b038bb81e`** | 2024-07-02 | ☠️ ~~★ **z0 固件的真身**~~ —— **2026-09-21 定案：与 z0 无关**（z0 **不跑 fork**，真身是 `4a0e65f2`，见 §2.5(d)）。本目录现只承担「读 **fork** 源码」职责。以 **fetch-only** 方式保存（无工作树）；读文件用 `git show <ref>:<path>` |
+| ↑ 同上目录里的**真身** | `Minderring/PX4-Autopilot`（**按 SHA 取，未建 remote**） | **`4a0e65f2331b23b9c8352656e9ccb6edeaea5d6c`** | 2024-11-18 | ★ **z0 固件真身（v1.14.3 系的 MicoAir 厂商构建）**。commit/tree 落在 `~/refs/px4-z0/` 的**同一个对象库**里（`--depth 1 --filter=blob:none`，见 §2.5(d)②）；⚠️ **来源 URL 未在 git config 里留痕**（是一次性 `git fetch <url> <sha>`），重建时按 §2.5(d)② 的口径重取 |
 | `px4-v1.14.3/` `px4-v1.15.0/` `px4-v1.16.0/` | `git@github.com:PX4/PX4-Autopilot.git`（三个 tag） | `1dacb4c` / `30e763b` / `6ea3539` | — | 作对照用（如 ADC 通道的版本边界）。**fetch-only，无工作树** |
 
 ## 2. ★ z0 固件真身是怎么找到的
@@ -39,8 +40,15 @@
 ```
 
 `Nxt-FC/main` 指向 `PX4-Autopilot` @ `5ba2e91f`，该 commit 的 `boards/hkust/` 下**确实有
-`nxt-dual` 与 `nxt-v1`**。而 PX4 官方上游 **v1.14.3 无 `boards/hkust`，v1.15.0 起才有** ——
-这解释了为什么 z0 的固件只能来自 fork。
+`nxt-dual` 与 `nxt-v1`**。而 PX4 官方上游 **v1.14.3 无 `boards/hkust`，v1.15.0 起才有**。
+
+> ☠️ ~~这解释了为什么 z0 的固件只能来自 fork。~~ **2026-09-21 定案：这句是错的，z0 的固件与这条 submodule 线索无关。**
+> `Nxt-FC` 的 `.gitmodules` 只说明 **Nxt-FC 这个项目**配哪支 PX4，**不等于飞控里烧的那一份**。
+> 真身是按飞控自报的 `flight_custom_version` 反查出来的 `4a0e65f2`（`Minderring/PX4-Autopilot`，
+> 2024-11-18），它的 `boards/` 里是 `micoair/{h743, h743-v2, h743-aio}`、**没有 `hkust/`** ——
+> 也就是说，**上面那个「上游没有 `hkust/`」的观察与 z0 的固件根本不冲突**：
+> z0 用的既不是上游的 `hkust_nxt-dual`，也不是 fork 的，而是**厂商自己的 `micoair` 板级目标**。
+> 见 §2.5(d)。
 
 > ⛔ **2026-09-20 订正一处推理（~~结论不变，理由换掉~~）**：本文档曾由「`nxt-dual` 只在 PX4 ≥ 1.15.0 存在」
 > **推出**「所以 z0 固件是 v1.15 世代」。**这个推理是错的** —— 上游和 fork 是两回事：
@@ -85,8 +93,13 @@
 
 ### (a) `px4_msgs` `release/1.14` 与 z0 固件**不兼容**
 
+> ☠️ **2026-09-21 定案：本小节整段作废** —— 下面拿来比的「z0 固件」是
+> `Peize-Liu/PX4-Autopilot @ 5ba2e91f`（**fork**），而**飞控不跑 fork**（真身 = `4a0e65f2`）。
+> 换成真身后，`release/1.14` 在**共有的 184 个 `msg/` 文件上 blob 全同** ⟹ **可用且已签字**。
+> 见 §2.5(d)③ 与 §2.6 执行版。**本小节仅作留存，不要再引用。**
+
 按 Q24=a 的验收步骤，把 `px4_msgs` `release/1.14` @ `ffb6e80e` 的 `msg/*.msg` 与
-`Peize-Liu/PX4-Autopilot @ 5ba2e91f` 的 `msg/` **逐字节比对**（firmware 侧 216 个 blob 全部用
+~~`Peize-Liu/PX4-Autopilot @ 5ba2e91f`~~（**☠️ 拿错的参照物 —— 这是 fork，不是 z0 的固件**）的 `msg/` **逐字节比对**（firmware 侧 216 个 blob 全部用
 `git hash-object` 对过 tree SHA，**100% 覆盖，非抽样**）：
 
 | 结果 | 数量 |
@@ -126,6 +139,11 @@ DDS 话题名**完全一样**（`/fmu/in/offboard_control_mode`、`/fmu/out/vehi
 
 ### (b) 因此：**"z0 是 PX4 1.14.x" 这个标签是错的**
 
+> ☠️ **2026-09-21 定案：本小节整个作废 —— 连标题这句判词也是反的。**
+> 下面把 `5ba2e91f`（fork）当成 z0 的固件，而**飞控不跑 fork**（真身 = `4a0e65f2`，见 §2.5(d)）。
+> 「z0 是 1.14.x」这个标签**反而一直是对的**（真身是 **v1.14.3 系**的 MicoAir 厂商构建）。
+> **本小节仅作留存，不要再引用。**
+
 `5ba2e91f` 的 `msg/OffboardControlMode.msg` 有 `thrust_and_torque` + `direct_actuator`。
 **上游对照（第一手）**：
 
@@ -133,19 +151,31 @@ DDS 话题名**完全一样**（`/fmu/in/offboard_control_mode`、`/fmu/out/vehi
 |---|---|
 | PX4 **v1.14.3**（tag `1dacb4c`） | `bool actuator` |
 | PX4 **v1.15.0**（tag `30e763b`） | **`bool thrust_and_torque` + `bool direct_actuator`** |
-| **z0 fork `5ba2e91f`** | **`thrust_and_torque` + `direct_actuator`** ← **与 v1.15.0 一致** |
+| ~~**z0 fork `5ba2e91f`**~~ **fork `5ba2e91f`（☠️ ※ 不是 z0 的固件）** | **`thrust_and_torque` + `direct_actuator`** ← **与 v1.15.0 一致，故属 v1.15 世代** |
+
+> ☠️ ※ **上表第三行只是 `5ba2e91f`（`feat_fast_lab_stable`，2024-07-02），与 z0 无关。**
+> z0 的固件是 `4a0e65f2`（v1.14.3 系），它的 `msg/` 与**上游 v1.14.3 逐字节相同**
+> ⟹ `OffboardControlMode` 那一栏是 **`bool actuator`**，即**上表第一行**。见 §2.5(d)。
 
 旁证：`VehicleLocalPosition.heading_var`、`VehicleCommand.source_component` 为 `uint16`、
 存在 `srv/` 目录、**无** `msg/versioned/`（v1.16 才有）—— 全部指向**v1.15 世代**。
+☠️ **这四条旁证描述的同样是 `5ba2e91f`（fork），不是 z0 的固件**；真身那棵树的对应结论见 §2.5(d)。
 
-> 📌 **`5ba2e91f` 是 2024-07-02 的 `main`**，早于 v1.15.0 的发布，所以它**既不是 v1.14 也不是 v1.15.0 正式版**，
+> 📌 ~~**`5ba2e91f` 是 2024-07-02 的 `main`**，早于 v1.15.0 的发布，所以它**既不是 v1.14 也不是 v1.15.0 正式版**，
 > 而是走向 v1.15 的一个中间 commit。**→ `px4_msgs` 的 `release/1.15` 也未必逐字节相同。**
 > **最稳的做法：从 fork 自身的 `msg/` 生成 `px4_msgs`**（或把它 `msg/` 下 216 个定义 +
-> `srv/VehicleCommand.srv` 直接打包成包）。**这需要在 Phase 2 的 S1 步骤里定案。**
+> `srv/VehicleCommand.srv` 直接打包成包）。**这需要在 Phase 2 的 S1 步骤里定案。**~~
+>
+> ☠️ **2026-09-21 上段整块作废（Q31=a 已被推翻）。** 事实更正：
+> 1. `5ba2e91f` **不是 `main`** —— 它是 `feat_fast_lab_stable`，且与 `main` 已分叉（§2.7(a)）；
+> 2. **不需要从任何 fork 生成 `px4_msgs`** —— 真身 `4a0e65f2` 的 `msg/` 与 `release/1.14` @ `ffb6e80e`
+>    在共有的 184 个文件上 blob 全同，**直接用 `release/1.14` 即可**（§2.6 执行版，用户已签字）。
 >
 > ⚠️ **一处仍然悬空**：`z0.params` 头写 `Version: 1.14.3 dev`。但该头**来自上游参考机的参数文件**
 > （`Huan-qun/Sim2real-UAV-Params-` 的 `uav1.params`），**未必描述 z0 自己**。
 > **→ 首飞前在 QGC 读飞控实际报出的版本号，这是唯一的终审。**
+> ✅ **2026-09-21 这条终审已做**：MAVLink `AUTOPILOT_VERSION` 实测 `flight_sw_version = 0x010e0300`（= `1.14.3`）、
+> 8 字节 `00 00 00 33 f2 65 0e 4a` ⟹ hash `4a0e65f233`。见 §2.5(c)(d)。
 
 ### (c) ★★★ 2026-09-21 **终审读数已拿到：飞控自报 1.14.3 —— 与 (b) 的结论冲突，此事未决**
 > ☠️ **2026-09-21 后续定案：本节「未决」已结，且本节下半部分（`flight_custom_version` 解不出 hash
@@ -333,6 +363,23 @@ memcpy(&msg.flight_custom_version, &fw_vendor_version, fw_vendor_version_length)
    **错的**：三块 micoair 板**全都带 BMI088**（实测 `default.px4board`），只剩气压计（DPS310 vs SPL06）有差。
    要把 ① 钉死到能指导 Phase 3，唯一便宜的硬办法是**只读**读参数表的 `CAL_ACC*_ID` / `CAL_BARO0_ID`。
 2. **§2.6 怎么改** → ✅ **用户已签字**，见 §2.6「执行版」。
+
+> **★ 2026-09-23 给 ① 补一条旁证（弱证据，别当判据用）**：真身树里三个 `micoair` 目标的板级默认值**互不相同**，
+> 而 `z0.params` 的实测值**与三个都不匹配**：
+>
+> | 板级目标 | `BAT1_A_PER_V` | `BAT1_V_DIV` |
+> |---|---|---|
+> | `boards/micoair/h743/init/rc.board_defaults` | `40` | `21.2` |
+> | `boards/micoair/h743-v2/init/rc.board_defaults` | `40` | `21.12` |
+> | `boards/micoair/h743-aio/init/rc.board_defaults` | `14.14` | `21.12` |
+> | **`z0.params`（飞控实测导出）** | **`17.0`** | **`10.02`** |
+>
+> ⚠️ **这条证据很弱，不要拿它下结论**：`BAT1_A_PER_V` / `BAT1_V_DIV` 是**用户/台架标定出来的值**
+> （跟着电流计与分压电阻走），**本来就不必等于板级默认值** —— 所以"不匹配"**既不构成"不是这三块中的哪一块"，
+> 也不构成"是"**。它只能说明"**不能靠这两个值反推板级目标**"这一件事，作用是把一条诱人的捷径划掉。
+> **钉死 ① 仍要靠上面那个只读办法**（`CAL_ACC*_ID` / `CAL_BARO0_ID`，三块 micoair 板只剩气压计有差）。
+> 记在这里是因为 [ticket 10](../../.scratch/phase1/issues/10-docs-1-14-sweep.md) §四 的待办表拿它当过落点 ——
+> 旁证应当留在**权威文件**里，而不是只留在票里。
 
 > 📌 **方法教训（与 §0 那两条同源）**：09-21 那次错，错在**拿"我以为的编码"去否证"实测的字节"**，
 > 而不是去查源码。结果是把一份**正确**的读数（`4a0e65f233`）当成假证据作废，

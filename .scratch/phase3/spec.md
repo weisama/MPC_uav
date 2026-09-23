@@ -8,12 +8,12 @@ Status: ready-for-human
 > **tracker**：本地 markdown，约定见 [`issue-tracker.md`](../../docs/agents/issue-tracker.md)、标签见 [`triage-labels.md`](../../docs/agents/triage-labels.md)。
 >
 > **阻塞关系**：本 spec **被三件事硬阻塞** —— Phase 2 的 SITL 达标、`hover_thrust` 的实机测量、
-> 以及一次固件重刷（ADC 一行修复）。详见 Further Notes。
+> 以及一次固件重编（☠️ ~~ADC 一行修复~~ —— **那条缺陷不在 z0 的固件里，修法与目标都要重定**）。详见 Further Notes。
 >
 > 相关：[`phase2/spec.md`](../phase2/spec.md)（SITL 验证）、[`phase1/spec.md`](../phase1/spec.md)、
 > [`phase2-implementation.md`](../../docs/control/phase2-implementation.md)（工程细节）、
 > [`params-changes.md`](../../docs/reference/params-changes.md)（参数改动表）、
-> [`refs-manifest.md`](../../docs/reference/refs-manifest.md) §2.7（固件一行修复）、
+> [`refs-manifest.md`](../../docs/reference/refs-manifest.md) §2.7（☠️ 固件修复：**修法已作废，待重定**）、
 > [`CONTEXT.md`](../../CONTEXT.md)（术语权威）。
 
 ---
@@ -35,7 +35,9 @@ Phase 2 结束时，我有一条**在 SITL 里闭环验证过**的 (C) 级 MPC �
 **不改控制律，改的是它脚下的地基。**
 
 1. **四项前置测量**（全部在装桨之前完成）：电机实际位置、`MPC_THR_HOVER` 悬停油门、动捕↔IMU 外参、延迟 `τ`。
-2. **一次固件重刷**：把 ADC 电流采样的一行修复（`CH(5)`→`CH(8)`）打在 z0 固件真身 `5ba2e91f` 上，**重刷后重新记录飞控实际报出的版本号**。
+2. **一次固件重编重刷**：~~把 ADC 电流采样的一行修复（`CH(5)`→`CH(8)`）打在 z0 固件真身 `5ba2e91f` 上~~
+   —— ☠️ **2026-09-23 更正：这一条整句作废。** ① **对象错**：`5ba2e91f` 是**与 z0 无关**的 fork，真身是 `Minderring/PX4-Autopilot` @ `4a0e65f2`（v1.14.3 系的 MicoAir 厂商构建）；② **修法错**：那个 `CH(5)`→`CH(8)` 修的是 `boards/hkust/nxt-dual`，而**真身树里没有 `hkust/`**，`boards/micoair/h743-aio` 写的是 `/* PC1 */ ADC1_CH(11)`，**与引脚相符、本来就没有这个缺陷**（2026-09-21 上电实测亦判「未中招」，见 [`params-changes.md`](../../docs/reference/params-changes.md) §A4）。
+   **⟹ 仍要做的是**：确认**该编哪块板级目标**（板名 `NxtPX4v2` 与真身树里的 `micoair/{h743, h743-v2, h743-aio}` 对不上，见 [`refs-manifest.md`](../../docs/reference/refs-manifest.md) §2.5(d)④），重编后**重新记录飞控实际报出的版本号** `flight_sw_version` / `flight_custom_version`。（"为什么还要重编" → 见 Further Notes。）
 3. **参数落地**：按 [`params-changes.md`](../../docs/reference/params-changes.md) 执行首飞阻塞项（尤其 `NAV_RCL_ACT = 1` Hold），并导出 z0 自己的参数与参考表 diff。
 4. **四级实机阶梯**：拆桨看方向 → 系绳离地 20 cm → 系绳闭环悬停 → 自由飞三条轨迹。**每级停下来看日志，不通过不进下一级。**
 5. **保留 Phase 1 回退**：任何时刻可退回 (A) 级控制。
@@ -59,7 +61,7 @@ Phase 2 结束时，我有一条**在 SITL 里闭环验证过**的 (C) 级 MPC �
 8. 作为操作者，我想在首飞前**导出 z0 自己的飞控参数**并与参考表 diff，因为参考参数文件是**另一台机器**导出的，差异才是真正要改的东西。
 9. 作为操作者，我想把 `NAV_RCL_ACT` 从 `2`（Return）改成 **`1`（Hold）**，因为在室内无 GPS、home 点不可靠的环境里，遥控一掉 PX4 会尝试**返航**。
 10. 作为开发者，我想在固件重刷后**在 QGC 重新记录飞控实际报出的版本号**，因为这是版本问题的**唯一终审**，也是 `px4_msgs` 选版的依据。
-11. 作为操作者，我想确认 `MC_BAT_SCALE_EN` **保持 0**，这样 ADC 那个已知缺陷不会被升级成"控制环里的乘性干扰"。
+11. 作为操作者，我想确认 `MC_BAT_SCALE_EN` **保持 0**，这样电池测量的噪声不会被升级成"控制环里的乘性干扰"。（☠️ **2026-09-23**：原先的理由"ADC 那个已知缺陷"已不成立 —— 那条缺陷不在 z0 的固件里；**结论不变**，理由收窄为上面这条一般性原则。）
 12. 作为操作者，我想在**明确保留、不要动**的那批参数（`COM_RC_OVERRIDE`、`COM_RC_STICK_OV`、`EKF2_EV_DELAY`、`PWM_MAIN_FUNC*` 等）上不做"照默认值改回去"的动作，因为那批值是**刻意配过**的。
 
 ### 延迟标定
@@ -117,11 +119,21 @@ Phase 2 结束时，我有一条**在 SITL 里闭环验证过**的 (C) 级 MPC �
 > **均匀缩放会被完全约掉** —— 所以"改了会不会有效果"取决于实测结果，不取决于几何是否写错。
 > 这条是本轮推翻旧结论后的修正版（Q21 → Q32=a）。
 
-### ★ 固件：一次、且只有一次重刷
+### ★ 固件：一次、且只有一次重编重刷
 
-- **刷什么**：把 `ADC_BATTERY_CURRENT_CHANNEL` 从 `ADC12_CH(5)` 改成 **`ADC12_CH(8)`** —— 这是 fork 自带的 `pr_fix_hkust_nxt_dual` @ `8161c4cd` **相对 `main` 的全部差异（一行）**。
-- **基线**：仍打在 **z0 固件真身 `5ba2e91f`** 上，**不切到 `main`**（两者已分叉，且 `5ba2e91f` 是 `Nxt-FC` 钉住的那一个）。取那一行，不是取那个分支。
-- **为什么排在这里**（Q37=a）：`ADC_CHANNELS` 是**编译期宏，参数无法绕过**；但**电压通道未受影响**，所以 Phase 1 用"电压 + 计时"就能兜住。而 Phase 2 为了 SITL **本来就要建 fork 的完整构建环境**，所以到这一步重编的代价≈0，还能避免在首飞前引入"刚刷的固件"这个新变量。
+> ☠️ **2026-09-23 —— 本节原先的"刷什么 / 基线"两行整块作废**（对象与修法双错），已划掉；
+> 保留在下方供复核。当前有效的待办只有一条：**确认该编哪块板级目标**。
+
+- ~~**刷什么**：把 `ADC_BATTERY_CURRENT_CHANNEL` 从 `ADC12_CH(5)` 改成 **`ADC12_CH(8)`** —— 这是 fork 自带的 `pr_fix_hkust_nxt_dual` @ `8161c4cd` **相对 `main` 的全部差异（一行）**。~~
+  → **作废理由**：那个固定修的是 `boards/hkust/nxt-dual`；**真身树里没有 `hkust/`**，它的 `boards/micoair/h743-aio` 写 `/* PC1 */ ADC1_CH(11)`，**与引脚相符、无此缺陷**（实测亦判「未中招」，[`params-changes.md`](../../docs/reference/params-changes.md) §A4）。
+- ~~**基线**：仍打在 **z0 固件真身 `5ba2e91f`** 上，**不切到 `main`**（两者已分叉，且 `5ba2e91f` 是 `Nxt-FC` 钉住的那一个）。取那一行，不是取那个分支。~~
+  → **作废理由**：`5ba2e91f` **不是 z0 的固件**（真身 = `Minderring/PX4-Autopilot` @ `4a0e65f2`；`Nxt-FC` 的 submodule 指认是错的线索）。
+- ★ **当前有效的待办**：**确认板级目标**。真身树里只有 `micoair/{h743, h743-v2, h743-aio}`，而**板名是 `NxtPX4v2`**，
+  两者对不上（`hkust_nxt-dual` 只是**上游 ≥ 1.15.0 的目标名**，v1.14.3 里也没有它）。
+  详见 [`refs-manifest.md`](../../docs/reference/refs-manifest.md) §2.5(d)④。**这一步没结论之前，本节不要动手。**
+- **为什么排在这里**（Q37=a）：~~`ADC_CHANNELS` 是编译期宏，参数无法绕过~~ —— 这条**对 z0 已不适用**。
+  仍然成立的是**时机**：Phase 2 为了 SITL **本来就要建那棵树的完整构建环境**，所以到这一步重编的代价≈0，
+  还能避免在首飞前引入"刚刷的固件"这个新变量。
 - ⚠️ **重刷后必须重新记录版本号，并重新导出参数与参考表 diff。**
   **注意：这一条的理由还没有第一手证据** —— PX4 通常会在刷固件时保留参数，但**版本跨越时是否重置、重置哪些，本轮未核实**。
   所以这里不假设"会重置"也不假设"不会"，**只按"必须重新 diff 一次"执行** —— 那个动作反正本来就要做（User Stories → 固件与参数 → 第 8 条）。
@@ -221,7 +233,7 @@ Phase 1 / Phase 2 的 seam 1 形态；Phase 1 的实机验证顺序（拆桨 →
 |---|---|---|
 | **Phase 2 的 SITL 达标** | 流程性 | 包括它的 seam 3 量化判据与实测最坏求解耗时。**没有这个数字就定不了实机 MPC 频率** |
 | **`hover_thrust` 的实机测量** | ★ **技术上硬阻塞** | 唯一"测不准就飞不起来"的参数，**只能从 Phase 1 的悬停日志反推**。Phase 2 的验收也被它阻塞 —— 所以它其实是 **Phase 1 → Phase 2 验收 → Phase 3** 这条链上的公共依赖 |
-| **固件重刷（ADC 一行修复）** | ★ **阻塞，不阻塞 Phase 1/2** | 排在实机飞行之前（Q37=a）。它依赖 Phase 2 建立的 fork 构建环境，所以**顺序上必须在 Phase 2 之后** |
+| **固件重编重刷**（☠️ ~~ADC 一行修复~~ —— **修法已作废**） | ★ **阻塞，不阻塞 Phase 1/2** | 排在实机飞行之前（Q37=a）。它依赖 Phase 2 建立的那棵树的构建环境，所以**顺序上必须在 Phase 2 之后**。⚠️ **动手前必须先定板级目标**（见 §固件：一次、且只有一次重编重刷） |
 
 **→ 这意味着 Phase 3 不能与 Phase 1/2 并行开工**，它的每一步都以"飞机已被验证过"为前提。
 
@@ -258,7 +270,7 @@ Phase 1 / Phase 2 的 seam 1 形态；Phase 1 的实机验证顺序（拆桨 →
 
 - 工程细节（参数核对、实施步骤、避坑清单）：[`phase2-implementation.md`](../../docs/control/phase2-implementation.md)。
 - 参数现值 / 建议值 / 是否阻塞：[`params-changes.md`](../../docs/reference/params-changes.md)（**本 spec 的 P1–P4 全部对应它的 A/C 节**）。
-- 固件一行修复与版本判定：[`refs-manifest.md`](../../docs/reference/refs-manifest.md) §2.5–§2.7。
+- 固件**真身判定**与版本边界：[`refs-manifest.md`](../../docs/reference/refs-manifest.md) §2.5–§2.7（☠️ §2.7 里那条"一行修复"**对 z0 不适用**，见该节标注）。
 - FSM 转换表：[`xi35-fsm.md`](../../docs/reference/xi35-fsm.md)。
 
 **两者冲突时以实施清单的技术细节为准，以本 spec 的范围与判据为准。**

@@ -31,7 +31,7 @@
 | G3 | MPC 状态输入 | **动捕直出**（不经 EKF2） | 用户 Q9 + roadmap D8；延迟更低 |
 | G4 | 求解器 | **acados** + `SQP_RTI` + `PARTIAL_CONDENSING_HPIPM` | roadmap §4.5，与 px4-mpc 一致 |
 | G5 | 代码骨架 | **`DISCOWER/px4-mpc`**（复制改造，不引依赖） | 第一手读过三个核心文件，见 §2 |
-| G6 | 固件版本 | ☠️ **2026-09-21 整行作废，待 [ticket 10](../../.scratch/phase1/issues/10-docs-1-14-sweep.md) 重写**：本行原写「版本基准统一到 fork `5ba2e91f`（Q31=a）」+「固件是 **v1.15 世代**」—— **两句都反了**。真身 = `Minderring/PX4-Autopilot` @ `4a0e65f2`（**v1.14.3 系**的 MicoAir 构建），fork `5ba2e91f` **与 z0 无关**；`px4_msgs` 基准 = **`release/1.14` @ `ffb6e80e`**（与真身共有的 184 个 `msg/` blob 全同）—— 见 [`refs-manifest.md`](../reference/refs-manifest.md) §2.5(d) 与 §2.6 执行版。⚠️ **「不刷固件」这条决定本身不变** | 用户 Q12 + [`refs-manifest.md`](../reference/refs-manifest.md) §2.5(d) / §2.6 |
+| G6 | 固件版本 | ★ **版本基准 = z0 固件真身 `Minderring/PX4-Autopilot` @ `4a0e65f2`**（**v1.14.3 系**的 MicoAir 厂商构建，飞控自报 `1.14.3`）。⟹ **`px4_msgs` = `release/1.14` @ `ffb6e80e`**（与真身共有的 184 个 `msg/` blob 全同，✅ 用户签字）；**SITL 被控对象 = 上游 v1.14.3（tag `1dacb4c`）**。☠️ ~~版本基准统一到 fork `5ba2e91f`（Q31=a）~~ + ☠️ ~~固件是「v1.15 世代」~~ —— **两句都反了，`5ba2e91f` 与 z0 无关**。见 [`refs-manifest.md`](../reference/refs-manifest.md) §2.5(d) 与 §2.6 执行版。⚠️ **「不刷固件」这条决定本身不变** | 用户 Q12 + [`refs-manifest.md`](../reference/refs-manifest.md) §2.5(d) / §2.6 |
 | G7 | 上线顺序 | **先 SITL 验证 MPC，再实机** | 用户 Q8(b) |
 | G8 | INDI | **第一版不做**，作为步骤 2 | roadmap D3 |
 | G9 | 参考轨迹 | **第一阶段手写**（悬停 / 正方形 / 八字），与 Phase 1 同一套 | 用户 Q15 |
@@ -276,7 +276,7 @@ ubu = np.array([+Fmax,     wmax,       wmax,      +0.5*wmax])
 | M5 | `solve()` 失败 + NaN 的兜底路径 | 坑 2、坑 3 | 🔴 |
 | M6 | `R` 改罚 `u − u_ref` | 坑 4 | 🟡 |
 | M7 | 状态源从 PX4 话题换成 `/mocap/pose_enu` | G3；且**因此不需要 (a) 那两行转换** | 🟡 |
-| M8 | 删掉 `_v1` 后缀话题的双订阅 hack | `_v1` / `msg/versioned/` 是 **v1.16 才有**的机制，**fork（v1.15 世代）里根本不存在** → 这段兼容代码对我们纯属死代码 | 🟢 |
+| M8 | 删掉 `_v1` 后缀话题的双订阅 hack | `_v1` / `msg/versioned/` 是 **v1.16 才有**的机制，**z0 真身（v1.14.3 系）里根本不存在** → 这段兼容代码对我们纯属死代码（⚠️ 该结论与 09-21 那轮的措辞「fork（v1.15 世代）里不存在」**等价且更贴对象**：真身的 `msg/` 与上游 v1.14.3 逐字节相同） | 🟢 |
 | M9 | 补上 `MPC_HORIZON = 15` 这个**定义了却没用的死变量** | 代码卫生 | 🟢 |
 
 > 📌 **M7 顺带干掉了一整类 bug**：既然动捕原生就是 ENU/FLU，MPC 内部也用 ENU/FLU，那么 §2.3(a) 那段手写四元数转换（`1/√2·[w+z, x+y, x−y, w−z]`，**整个文件里最容易写错的一行**）**可以直接删掉**。详见 §3.2。
@@ -421,9 +421,9 @@ ubu = np.array([+Fmax,     wmax,       wmax,      +0.5*wmax])
 
 | 项 | 值 | 备注 |
 |---|---|---|
-| PX4 源码 | ★ **fork `Peize-Liu/PX4-Autopilot @ 5ba2e91f`**（~~`v1.14.3`~~，Q31=a 已改） | 需**带 `--recursive` 的完整 clone**（23 个 submodule）；`~/refs/px4-z0` 是 fetch-only，**不能直接构建** → 建议新目录 `~/refs/px4-z0-build/` |
-| SITL 仿真后端 | **gazebo-classic 或 gz-sim 都可用（Q12 的 gazebo-classic 选择不变）** | ✅ 第一手：fork 的 `init.d-posix/airframes/` **63 个**，`4001_gz_x500`（gz-sim）**与** gazebo-classic 两套都在；`Tools/simulation/{gz,gazebo-classic}` 都在 |
-| `px4_msgs` | ★ **从 fork 的 `msg/` + `srv/` 生成**（Q31=a 已定） | ❌ **`release/1.14` 已被 Q24 的验收步骤判定为不兼容**（28/184 个共用消息字段布局不同）。`release/1.15` **也不必试**（`5ba2e91f` 早于 v1.15.0 发布）。详见 §6.1 与 [`refs-manifest.md`](../reference/refs-manifest.md) §2.5–§2.6 |
+| PX4 源码 | ★ **上游 `PX4/PX4-Autopilot` @ tag `v1.14.3`（`1dacb4c`）**（§2.6 执行版；用户未单独表态，取默认） | 需**带 `--recursive` 的完整 clone**（23 个 submodule）；`~/refs/px4-v1.14.3` 是 `--depth 1 --filter=blob:none`，**不能直接构建** → 建议新目录 `~/refs/px4-v1.14.3-build/`。⚠️ 动手前先实测 `ROMFS/.../init.d-posix/airframes/` 条目数，确认要用的机型在（v1.14.3 这里条目比 fork 少）。☠️ ~~fork `Peize-Liu/PX4-Autopilot @ 5ba2e91f`~~ —— **作废，飞控不跑 fork** |
+| SITL 仿真后端 | **gazebo-classic 或 gz-sim 都可用（Q12 的 gazebo-classic 选择不变）** | ✅ 第一手（对 fork 核过；上游 v1.14.3 的 `4001_gz_x500` 亦已核到，见 [`refs-manifest.md`](../reference/refs-manifest.md) §2.6 可行性表） |
+| `px4_msgs` | ★ **钉 `release/1.14` @ `ffb6e80e`**（✅ **用户签字**） | ✅ 与真身 `4a0e65f2` 在**共有的 184 个 `msg/` 文件上 blob 全同**（唯一集合差异 `msg/CMakeLists.txt`，那是 PX4 的构建文件）。☠️ ~~从 fork 的 `msg/` + `srv/` 生成（Q31=a）~~ + ☠️ ~~`release/1.14` 已被判为不兼容（28/184 字段不同）~~ —— **两条都作废**（那是拿 fork 比出来的）。详见 §6.1 与 [`refs-manifest.md`](../reference/refs-manifest.md) §2.5(d)/§2.6 执行版 |
 | 中间件代理 | `micro-xrce-dds-agent udp4 -p 8888` | PX4 SITL 默认端口 |
 
 **⚠️ 必须做的版本校验**（roadmap 与 [`open-source-survey.md`](../reference/open-source-survey.md) §10 都强调过）：
@@ -568,37 +568,40 @@ ROS 侧：  ros2 interface show px4_msgs/msg/VehicleRatesSetpoint
 
 ## 6. 六个必须提前知道的坑
 
-### 6.1 ★★ `px4_msgs` 版本不匹配 → **静默失败**（**此坑已经踩到，不是假设**）
+### 6.1 ★★ `px4_msgs` 版本不匹配 → **静默失败**
 
 v1.15 及以前，`px4_msgs` 与固件不匹配时：话题存在、能发布、**无报错**，但 PX4 不理会。
 **排查时你会怀疑 MPC、怀疑符号、怀疑一切，唯独不会怀疑消息定义。**
 
-> ### ✅ Q24 的验收步骤**已执行**（2026-09-20），结论是**不兼容**
+> ### ☠️ Q24 那次验收**判反了** —— 2026-09-21 定案：`release/1.14` **兼容，已签字采用**
 >
-> 原计划 `px4_msgs` `release/1.14` @ `ffb6e80e`。逐字节比对后：**184 个共用消息中 28 个字段布局不同**，
-> 11 个关键消息里 **6 个是破坏性的**。而且 **`px4_msgs` 与 fork 都没有版本号机制**
-> （`msg/versioned/` 是 **v1.16 才有**），所以**没有任何自动保护**能替你挡住 —— 正是本节描述的场景。
+> 2026-09-20 执行 Q24 验收时写的结论是「**不兼容**：184 个共用消息中 28 个字段布局不同」。
+> **该结论作废** —— 它是拿 **fork `5ba2e91f`**（**不是 z0 的固件**）的 `msg/` 比出来的。
+> 换成**真身 `4a0e65f2`**（v1.14.3 系的 MicoAir 厂商构建）后重比：**共有的 184 个 `msg/` 文件 blob 全同**
+> （唯一集合差异是 `msg/CMakeLists.txt`，那是 PX4 自己的构建文件，`px4_msgs` 本就不带）。
 >
-> **好消息（一条巧合）**：Phase 2/3 真正要发的 **`VehicleRatesSetpoint` 恰好逐字节相同**，
-> `VehicleAttitudeSetpoint` 也相同。**坏消息**：配套的
-> **`OffboardControlMode`（offboard 心跳必需）是破坏性的**（`bool actuator` → `bool thrust_and_torque`
-> + `bool direct_actuator`），`VehicleStatus` / `VehicleLocalPosition` / `VehicleControlMode` / `VehicleCommand` 也全是。
+> **⟹ `px4_msgs` = `release/1.14` @ `ffb6e80e`**（✅ **用户已签字**）。**不要从任何 fork 生成。**
 >
-> **→ 附带推翻一个项目前提**：`5ba2e91f` 的 `msg/OffboardControlMode.msg` 与 **上游 v1.15.0 一致**、
-> 与 v1.14.3 不同（第一手对照三个 tag）。**所以 z0 固件是「v1.15 世代」，"1.14.x" 这个标签是错的**（G6 已更新）。
-> ⚠️ 但 `5ba2e91f` 是 2024-07-02 的 `main`、**早于 v1.15.0 发布**，
-> **→ `release/1.15` 也未必逐字节相同；最稳的做法是从 fork 自身的 `msg/` 生成 `px4_msgs`。**
+> ☠️ 那次验收"附带推翻的项目前提"**同样作废**：~~`5ba2e91f` 的 `OffboardControlMode` 与上游 v1.15.0 一致
+> ⟹ z0 固件是「v1.15 世代」、「1.14.x」这个标签是错的~~。
+> `OffboardControlMode` 带 `thrust_and_torque` 是 **fork 的事实**；真身那一栏是 **`bool actuator`**
+> （与上游 v1.14.3 相同）。⟹ **「z0 是 1.14.x」这个标签一直是对的**，G6 已按定案重写。
 >
-> 完整对照表见 [`refs-manifest.md`](../reference/refs-manifest.md) §2.5。
+> ⚠️ **本节描述的坑本身仍然真实存在**（`msg/versioned/` 是 **v1.16 才有**，没有任何自动保护）
+> —— 只是**我们并没有踩到它**：这一次的"不匹配"是误报。
 >
-> **→ S1 的第一步不再是"选一个版本"，而是"定案怎么得到与 fork 逐字节一致的 `px4_msgs`"。**
+> **→ S1 的第一步不再是"定案怎么得到与 fork 逐字节一致的 `px4_msgs`"，而是
+> 「用 `release/1.14` @ `ffb6e80e` + 上游 v1.14.3 跑 SITL，并跑一遍 `check-message-compatibility.py` **复验**」。**
 >
-> ### ✅ 已复验：本文依赖「1.14 行为」的**载重结论扛住了版本更正**
+> 完整对照表见 [`refs-manifest.md`](../reference/refs-manifest.md) §2.5(d) 与 §2.6 执行版。
 >
-> 版本更正会威胁所有"对着上游 v1.14.3 验出来的行为结论"。**已重新对着 fork `5ba2e91f` 复核最关键的一条**：
+> ### ✅ 载重结论已**对着真身**复验（2026-09-22 重做）
+>
+> 原注写的是"已重新对着 **fork** `5ba2e91f` 复核" —— **对策对象又选错了**（fork 不是 z0 的固件）。
+> 现已**直接对着真身 `4a0e65f2` 的树**重读一遍（`git show <sha>:<path>`，对象在 `~/refs/px4-z0/` 里）：
 >
 > §3.3 / §6.3 的「offboard 分支对 `thrust_body` **不做任何 hover-thrust 重标定，原样透传**」——
-> `src/modules/mc_rate_control/MulticopterRateControl.cpp:182`（fork 内，逐字）：
+> `src/modules/mc_rate_control/MulticopterRateControl.cpp:182`（**真身内，逐字**）：
 >
 > ```cpp
 > } else if (_vehicle_rates_setpoint_sub.update(&vehicle_rates_setpoint)) {
@@ -611,26 +614,28 @@ v1.15 及以前，`px4_msgs` 与固件不匹配时：话题存在、能发布、
 > }
 > ```
 >
-> **与 v1.14.3 那一行逐字相同。→ §3.3、§6.2、§6.3 三条结论不受版本更正影响。**
+> **与 v1.14.3 那一行逐字相同，行号也相同（都是 `:182`）。→ §3.3、§6.2、§6.3 三条结论成立。**
 >
-> ### ✅ Q33=a 复验清单（2026-09-20 完成）
+> ### ✅ 复验清单（**2026-09-22 全部改对着真身 `4a0e65f2` 重做**）
 >
-> 本文所有标注「第一手（PX4 `v1.14.3`）」的条目**已逐条对着 fork `5ba2e91f` 复验完毕**：
+> 原清单（2026-09-20，Q33=a）是对着 **fork `5ba2e91f`** 做的 —— **对策对象错了**，
+> 已逐条对着**真身**重验。**结论全部成立**；下表行号是**真身内**的行号（与 fork 有出入，已更正）：
 >
-> | 条目 | 复验结果 | 证据 |
+> | 条目 | 复验结果 | 真身内证据 |
 > |---|---|---|
-> | §3.3 / §6.2 / §6.3 `thrust_body` 原样透传、不受 `MPC_THR_HOVER` 影响 | ✅ **成立** | fork `MulticopterRateControl.cpp:182` 与 v1.14.3 逐字相同 |
-> | §3.3 `MC_BAT_SCALE_EN` 默认 **0**（关闭） | ✅ **成立** | fork `mc_rate_control_params.c:294` `PARAM_DEFINE_INT32(MC_BAT_SCALE_EN, 0);` —— **含义**：角速率环**不做**电池电压推力补偿 → `(C)` 级的推力映射**不需要**考虑电压 sag |
-> | §6.4 QoS（订阅 `fmu/out/*` 必须 `BEST_EFFORT`） | ✅ **成立**，且已拆成两个方向说清楚（见 §6.4） | fork `dds_topics.h.em:109`、`utilities.hpp:120-125` |
-> | §6.5 时间戳单位微秒 | ✅ **成立**（两条独立证据） | fork `msg/VehicleRatesSetpoint.msg:1`、`dds_topics.h.em:91/146` |
-> | §6.1 `px4_msgs` 版本 | ❌ **推翻了** | 见上 |
-> | S1 `gz_x500` 可用性（原注 v1.14.3） | ✅ **fork 也有，且更多** | fork 的 `init.d-posix/airframes/` **63 个**，含 `4001_gz_x500`（gz-sim）**与** gazebo-classic 两套；`Tools/simulation/{gz,gazebo-classic}` 都在 |
+> | §3.3 / §6.2 / §6.3 `thrust_body` 原样透传、不受 `MPC_THR_HOVER` 影响 | ✅ **成立** | `src/modules/mc_rate_control/MulticopterRateControl.cpp:182` `_thrust_setpoint = Vector3f(vehicle_rates_setpoint.thrust_body);`（**与 v1.14.3 逐字相同**） |
+> | §3.3 `MC_BAT_SCALE_EN` 默认 **0**（关闭） | ✅ **成立** | `src/modules/mc_rate_control/mc_rate_control_params.c:400` `PARAM_DEFINE_INT32(MC_BAT_SCALE_EN, 0);`（~~原注 `:294` 是 fork 的行号~~）—— **含义**：角速率环**不做**电池电压推力补偿 → `(C)` 级的推力映射**不需要**考虑电压 sag |
+> | §6.4 QoS（订阅 `fmu/out/*` 必须 `BEST_EFFORT`） | ✅ **成立** | `src/modules/uxrce_dds_client/dds_topics.h.em:69`（`uxr_prepare_output_stream(session, best_effort_stream_id, …)`，~~原注 `:109`~~）、`utilities.hpp:114-119`（datareader QoS = `VOLATILE` + `BEST_EFFORT` + `KEEP_LAST`，~~原注 `:120-125`~~） |
+> | §6.5 时间戳单位微秒 | ✅ **成立**（两条独立证据） | `msg/VehicleRatesSetpoint.msg:1` 逐字含 `(microseconds)`；`dds_topics.h.em:52` 与 `:103` `int64_t time_offset_us = session->time_offset / 1000; // ns -> us`（~~原注 `:91/:146`~~） |
+> | §6.1 `px4_msgs` 版本 | ❌ **原判被推翻 → 改判「`release/1.14` 兼容」** | 见上 |
+> | S1 SITL 机型可用性 | ✅ **上游 v1.14.3 也有 `4001_gz_x500`** | 见 [`refs-manifest.md`](../reference/refs-manifest.md) §2.6 可行性表（~~原注"fork 63 个"~~ 是对 fork 数的，已不相关） |
 >
-> **★ 一条重要的范围澄清**：**§2.4 的「五个坑」不需要按 fork 复验** ——
+> **★ 一条仍然成立的范围澄清**：**§2.4 的「五个坑」不需要按真身复验** ——
 > 那五条针对的是 **px4-mpc 自己的 Python 代码**（`0.07` 魔数、`raise` 兜底、代价罚 `u−0`、约束范围），
 > **与 PX4 固件版本无关**。它们已在 Q25 的那一轮里对着 px4-mpc `master` 核过。
 >
-> **→ Q33=a 执行完毕：所有依赖「PX4 版本」的载重结论现在都建立在 fork `5ba2e91f` 之上，不再依赖上游 v1.14.3。**
+> **→ 所有依赖「PX4 版本」的载重结论，现在都建立在真身 `4a0e65f2`（v1.14.3 系）之上。**
+> ⚠️ 仍未复验的一项：S1 要用的 **SITL 机型条目数**（v1.14.3 比 fork 少）—— 记在 S1 表里，动手前实测。
 
 ### 6.2 `thrust_body` 是 `[-1, 1]`，**不是** `[0,1]`、**不是**牛顿
 
@@ -646,13 +651,13 @@ FRD 下 z 朝下 ⇒ **向上推力是负值**。写成 `+F/T_max` 会直接**�
 PX4 的 `fmu/*` 话题是 **BEST_EFFORT**。ROS 2 默认 `RELIABLE` 的订阅者**与 BEST_EFFORT 发布者不兼容**，表现为「话题列出来了，但一个回调都不进」。
 → 订阅者必须显式声明 `BEST_EFFORT`。（px4-mpc 里已写对，**照抄别改**。）
 
-> ✅ **2026-09-20 对着 fork `5ba2e91f` 复验通过**，并把两个方向拆开说清楚了 ——
+> ✅ **2026-09-22 对着真身 `4a0e65f2` 复验通过**（原注是对着 fork 做的，已改对象并更正行号），把两个方向拆开说清楚了 ——
 > **原表述把「订阅」和「发布」当成一回事，实际不对称**：
 >
 > | 方向 | 固件侧的事实（第一手） | 我们该怎么做 |
 > |---|---|---|
-> | **订阅 `fmu/out/*`** | PX4 **所有**出向话题都走 **best-effort 流**（`dds_topics.h.em:109`：`uxr_prepare_output_stream(session, best_effort_stream_id, ...)`） | **必须声明 `BEST_EFFORT`** —— RELIABLE 订阅者**匹配不上**。这就是"话题在、回调不进"的成因 |
-> | **发布 `fmu/in/*`** | PX4 建的 DataReader 是 **`VOLATILE` + `BEST_EFFORT` + `KEEP_LAST`**（`utilities.hpp:120-125`，`uxrQoS_t qos = {...}` 逐字）；且 `create_data_reader` 用的输入流是 `best_effort_in_stream_id`（`dds_topics.h.em:174`） | `BEST_EFFORT` 即可。⚠️ 注意 PX4 的 reader 是 **`VOLATILE`**，所以 pub 侧用 `TRANSIENT_LOCAL` **也兼容**（volatile reader 接受 transient-local writer，只是拿不到历史样本）—— px4-mpc 的 `TRANSIENT_LOCAL` 因此没问题，**不是 bug** |
+> | **订阅 `fmu/out/*`** | PX4 **所有**出向话题都走 **best-effort 流**（`dds_topics.h.em:69`：`uxr_prepare_output_stream(session, best_effort_stream_id, ...)`） | **必须声明 `BEST_EFFORT`** —— RELIABLE 订阅者**匹配不上**。这就是"话题在、回调不进"的成因 |
+> | **发布 `fmu/in/*`** | PX4 建的 DataReader 是 **`VOLATILE` + `BEST_EFFORT` + `KEEP_LAST`**（`utilities.hpp:114-119`，`uxrQoS_t qos = {...}` 逐字）；且 `create_data_reader` 用的输入流是 `best_effort_in_stream_id`（`dds_topics.h.em:131`） | `BEST_EFFORT` 即可。⚠️ 注意 PX4 的 reader 是 **`VOLATILE`**，所以 pub 侧用 `TRANSIENT_LOCAL` **也兼容**（volatile reader 接受 transient-local writer，只是拿不到历史样本）—— px4-mpc 的 `TRANSIENT_LOCAL` 因此没问题，**不是 bug** |
 >
 > **`depth` 也不对称**：PX4 的 reader `depth = orb_get_queue_size(...) * 2`，px4-mpc 的 pub `depth = 1` —— 兼容，不用对齐。
 
@@ -660,9 +665,9 @@ PX4 的 `fmu/*` 话题是 **BEST_EFFORT**。ROS 2 默认 `RELIABLE` 的订阅者
 
 `Clock().now().nanoseconds / 1000`。PX4 全用微秒。传成纳秒的话时间戳会大到离谱，PX4 可能直接丢弃。**这个错误不会报错，只会"没反应"。**
 
-> ✅ **2026-09-20 对着 fork `5ba2e91f` 复验通过（两条独立证据）**：
+> ✅ **2026-09-22 对着真身 `4a0e65f2` 复验通过（两条独立证据）**（原注是对着 fork 做的，已改对象并更正行号）：
 > ① `msg/VehicleRatesSetpoint.msg:1` 逐字 `uint64 timestamp	# time since system start (microseconds)`；
-> ② 固件在 DDS 边界上自己做 `ns → us` 换算 —— `dds_topics.h.em:91` 与 `:146`：
+> ② 固件在 DDS 边界上自己做 `ns → us` 换算 —— `dds_topics.h.em:52` 与 `:103`：
 > `int64_t time_offset_us = session->time_offset / 1000; // ns -> us`。
 > **→ 微秒是 DDS 边界的硬约定，不是习惯。**
 
