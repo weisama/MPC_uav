@@ -221,6 +221,30 @@ def test_list_只列菜单且返回_0(capsys):
         assert action.title in out
 
 
+def test_进菜单前先把_source_重入走完(monkeypatch):
+    """★ 回归（2026-09-23 现场反馈：**数字要敲第二次才认**）。
+
+    `ensure_sourced()` 是"把本进程 `exec` 掉重开"。菜单是**先读完一行再派发**的 ——
+    重入若发生在派发里，用户已经敲进缓冲区的那一行就随旧进程一起没了、菜单重印一遍。
+    第一手：未 source 的 shell 里 `printf "1\\nq\\n" | python3 run/z0.py` ⟹ 菜单印**两遍**、
+    第一行凭空消失。⟹ 重入必须排在 `input()` **之前**（即 `menu_loop` 之前）。
+    """
+    calls = []
+    monkeypatch.setattr(z0, "ensure_sourced", lambda: calls.append("ensure"))
+    monkeypatch.setattr(z0, "menu_loop", lambda: calls.append("menu") or 0)
+    assert z0.main([]) == 0
+    assert calls == ["ensure", "menu"]
+
+
+def test_只列菜单不重入_source(monkeypatch):
+    """`--list` 只打印菜单，不碰 rclpy ⟹ 不必为它白等一次 `source`（有意省掉）。"""
+    calls = []
+    monkeypatch.setattr(z0, "ensure_sourced", lambda: calls.append("ensure"))
+    monkeypatch.setattr(z0, "menu_loop", lambda: calls.append("menu") or 0)
+    assert z0.main(["--list"]) == 0
+    assert calls == []
+
+
 def test_dry_run_只打印不执行(capsys, monkeypatch):
     def boom(_cmd):                      # 被执行到就该炸
         raise AssertionError("--dry-run 执行了命令")

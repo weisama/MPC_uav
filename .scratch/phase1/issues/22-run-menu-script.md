@@ -318,6 +318,40 @@ run/down.sh --dry-run # 只扫一眼"会停谁"，一个信号都不发
   **一条都没真起**。
 - ★ **没做的**：拿真机跑这两条一键 —— 同 §五 / §八，要占串口、要人在场摆飞机 ⟹ **留给人**。
 
+### 九之一、★ 现场反馈修掉的一个 bug：**数字要敲第二次才认**（2026-09-23，操作者报的）
+
+**症状**（操作者原话）：「脚本输入数字，只有第二次才会成功识别输入的数字」。
+
+**根因**：`ensure_sourced()` 是"**把本进程 `exec` 掉**、在 source 过的环境里重开一次"，
+而它原先只挂在**动作**里，菜单却是"先 `input()` 读完一行、再派发"的 ⟹
+用户敲的那一行**已经进了旧进程的缓冲区**，旧进程 `sys.exit` 走了它就没了；
+重开的那个进程拿到空 argv、于是**把菜单又印一遍**。现场感受正是"敲第二次才认"。
+
+**第一手复现**（不用等现场 —— 用管道就能逼出来，且能证明机制）：
+未 source 的 shell 里 `printf "1\nq\n" | python3 run/z0.py` ⟹ 菜单印**两遍**、
+第一行"1"**一点动静都没有**（`工作空间：` 不出现），第二个提示直接 EOF。
+
+**★ 它在 source 过的 shell 里照样发生** —— `ensure_sourced()` 的提前返回条件是
+`Z0_SOURCED=1` **或**"一条 `setup.bash` 都不存在"，**都不看**当前环境是否已 source
+（`existing_setups()` 只查文件在不在）。所以这是**每次**跑交互菜单都撞，不是"首次才撞"。
+取证：把修复前的 `run/z0.py`（`git show HEAD:run/z0.py`）放到 `/tmp` 里，
+在**已 source** 的 shell 里跑同一条管道 ⟹ 同样印两遍菜单、`工作空间：` 不出现。
+
+**改法**（一处）：把 `ensure_sourced()` 提到 `main()` 里、**`menu_loop()` 之前** ——
+重入发生在"还没读 stdin"的时候，菜单只印一遍。各 `cmd_*` / `launch_action` 里那几处**保留**
+（从**未 source 的 shell** 直接 `run/z0.py check` 那条路还得靠它们，且重入是幂等的）。
+
+**判据**（追加）：`main([])` 的调用顺序必须是 `ensure_sourced` ⟹ `menu_loop`（新增用例
+`test_进菜单前先把_source_重入走完` 钉住）；`--list` 不重入（它不碰 rclpy，白等一次 `source` 没意义，
+另有用例钉住）。
+
+**证据**：`run/tests/test_z0_menu.py` ⟹ **64 passed**（+2）；`source … && pytest run/tests -q` ⟹ **74 passed**；
+管道复现改前/改后各一次（改前：菜单两遍 + 第一行无反应；改后：第一行当场跑出 `工作空间：` 与
+`ROS_DOMAIN_ID=0`，且**已 source 与未 source 两种 shell 都对**）。
+
+★ **为什么之前的用例没抓住**：所有用例都直接调纯函数 / `dispatch` / `main(["--dry-run", …])`，
+**没有一条喂真 stdin 进 `menu_loop`**。教训已写进 `run/README.md` 的排障表（现场按症状就能对上）。
+
 ## Comments
 
 - **2026-09-23（agent，立项）**：`Status: ready-for-agent`。范围与形态是操作者拍的：
@@ -439,3 +473,11 @@ run/down.sh --dry-run # 只扫一眼"会停谁"，一个信号都不发
   隐藏的两条不占号、`UP_HANDOFF == ("fly",)`、`MANUAL_CHAIN` 里没有 `control`、
   `--dry-run up_manual` 只到 mocap、让出前台发生在 5 条后台**之后**且**失败时一次都不发生**）；
   `run/tests/test_operation_manual.py` ⟹ **5 passed**（跨文件菜单号守卫，改号时先红后绿）。
+
+- **2026-09-23（agent，现场反馈的 bug 修完）**：操作者报「**脚本输入数字，只有第二次才会成功识别**」。
+  根因是 `ensure_sourced()`（把本进程 exec 掉重开）排在读 stdin **之后** ⟹ 敲的第一行随旧进程消失。
+  改法：把它提到 `main()` 里 `menu_loop()` 之前（**一处**），并在 `ensure_sourced` 的 docstring 里写明
+  "调用点必须排在读 stdin 之前"。取证：修复前那份代码在**已 source** 的 shell 里跑同一管道同样印两遍菜单
+  ⟹ 说明它是每次必撞、不是首次才撞。详见 **§九之一**。
+  测试 ⟹ `test_z0_menu.py` **64 passed**、整目录 **74 passed**（新增 2 条钉住重入的顺序与 `--list` 不重入）。
+  `run/README.md` 的排障表加了一行（按现场症状就能对上）。

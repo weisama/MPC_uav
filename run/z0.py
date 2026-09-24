@@ -344,6 +344,13 @@ def ensure_sourced() -> None:
     而同一台机器上 `ros2 launch control …` 本来跑得起来 —— 一个会撒谎的自检比没有更坏。
     ⟹ 判据改成**环境是不是 source 过的**（`Z0_SOURCED`），不是"能不能 import rclpy"。
     重入是幂等的：`source` 只往前提路径，不动 `ROS_DOMAIN_ID` 之类的取值。
+
+    ⚠️ **它是"把自己 exec 掉"，所以调用点必须排在"读 stdin"之前。** 交互菜单那条路
+    （`main` ⟹ `menu_loop`）在进循环**之前**先调一次，就是为了这个 —— 放在动作里做的话，
+    用户已经敲进缓冲区的那一行会随旧进程一起没掉（详见 `main` 里那段第一手记录）。
+    其余调用点都在各自 `cmd_*` 的**第一句**（早于那里的 `ask_confirm`）⟹ 没有 stdin 可丢；
+    而 `launch_action` **根本不需要**它：那条路要 source 的是 `run_foreground` 起的子进程，
+    父进程只碰 `lsof` 与 y/N。
     """
     if os.environ.get("Z0_SOURCED") == "1" or not existing_setups():
         return
@@ -1465,6 +1472,13 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         return 0
     if args.action:
         return dispatch(args.action, dry_run=args.dry_run)
+    # ★ **进菜单之前**就把 source 重入走完（2026-09-23 现场反馈，第一手复现见下面这段）。
+    #   `ensure_sourced()` 是把**本进程 `exec` 掉**重开 ⟹ 它必须发生在**读 stdin 之前**。
+    #   原先它只在动作里做，而菜单是"先读完一行再派发"的 —— 于是用户敲的那一行
+    #   随旧进程一起消失、菜单重印一遍，现场感受就是"**数字要敲第二次才认**"。
+    #   第一手（未 source 的 shell，`printf "1\nq\n" | python3 run/z0.py`）：
+    #   菜单印**两遍**、第一行凭空不见；提到这里之后只印一遍。
+    ensure_sourced()
     return menu_loop()
 
 

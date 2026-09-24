@@ -24,7 +24,9 @@ run/z0.py bringup|fly    # 两条**不进菜单**的（见下）；直接点名�
 `--dry-run mavros` 还会把"起之前会问哪几句"一并列出来，免得现场不知道有 `gcs_url` 这条可选参数。
 
 `env` / `check` 在没 `source` 过的 shell 里会**自己带 source 重新 exec 一次**（`Z0_SOURCED=1` 防重入）；
-起链的每条命令也各自带 `source` 前缀 —— 顺序与 `bench-runbook.md` 的「起链（顺序不能反）」一致：
+**交互菜单那条路在印菜单之前就先重入完** —— 它也是 `exec`，不能排在读数字之后（否则你敲的那一行会
+随旧进程消失，见排障表那条）。起链的每条命令也各自带 `source` 前缀 —— 顺序与
+`bench-runbook.md` 的「起链（顺序不能反）」一致：
 
 ```bash
 source /opt/ros/humble/setup.bash && source ~/mavros_ws/install/setup.bash && source ~/ros_ws/install/setup.bash
@@ -193,13 +195,14 @@ run/down.sh --dry-run    # 只扫一眼"会停谁"，**一个信号都不发**
 | 表里 `/traj/reference` 是 `·` | 正常：**没选轨迹本来就一帧不发**（`traj` 要 `select` + `start`） |
 | `run/down.sh` 说「缺 `pgrep`/`ps`」 | 这一条**什么都没做** —— 它判活与取命令行就靠这两个命令，别把这句当成"已经清干净了"（装 procps 或手工 `ps` 核对） |
 | 表里某话题"在图里但一帧都没来" | 两种可能：发布者没起，或 **QoS 不兼容**（后者**不报错**，见 [`bench/README.md`](../src/bench/README.md) 的「安全边界」） |
+| 菜单里敲的数字**要敲第二次才认** | ★ **已修**（2026-09-23，ticket 22 §九）：`ensure_sourced()` 是"把本进程 `exec` 掉重开"，原先它只挂在动作里 ⟹ 你敲的那一行**随旧进程一起没掉**、菜单重印一遍。现在重入提到 `input()` 之前，菜单只印一遍。**若你的机器上还这样**，说明跑的**不是**修好之后的 commit（`git log -1 run/z0.py` 看一眼） |
 | `ROS_DOMAIN_ID=73` | 那是**台架夹具域**（[`bench/pytest_support.py`](../src/bench/bench/pytest_support.py) 默认，且**硬拒 0**）⟹ 读数不是真飞机；核对表第一行会标出来 |
 | `test_z0_check_live.py` 的负控用例忽然红了 | ★ **别同时跑 `colcon test`** —— 两者同在夹具域 73，`control` 的用例会把 `/control/state`、`/mavros/setpoint_raw/local` 真发出帧来，负控（"只有订阅者的话题"）随即失真。第一手：2026-09-23 撞到 2 例假失败，colcon 跑完再跑就绿 |
 
 ## 测试
 
 ```bash
-python3 -m pytest run/tests/test_z0_menu.py -q          # 纯函数 + 命令行拼装 + 安全不变式 + 两条一键/清除编排（不需要 ROS，62 例）
+python3 -m pytest run/tests/test_z0_menu.py -q          # 纯函数 + 命令行拼装 + 安全不变式 + 两条一键/清除编排（不需要 ROS，64 例）
 python3 -m pytest run/tests/test_operation_manual.py -q   # ★ 现场那一页的守卫：菜单号/命令/话题/degrade token 都钉在代码上（不需要 ROS，5 例）
 
 # ★ 正控：对着台架夹具（假 mavros）跑一遍 check，读数必须真的读到东西（5 例）
@@ -213,5 +216,5 @@ python3 -m pytest run/tests/test_z0_check_live.py -q
 ⚠️ **要一次跑整个 `run/tests/`，必须先 source**（上面那两行）。没 source 时
 `test_z0_check_live.py` 会在**模块级** `importorskip` 上跳掉，而 pytest 6.2.5 在那种情形下
 **连这一整个目录的其余用例一起收集不到**（第一手：未 source 跑 `pytest run/tests -q` ⟹
-`1 skipped`、0 例；source 后同样一条命令 ⟹ **`72 passed`**）——
+`1 skipped`、0 例；source 后同样一条命令 ⟹ **`74 passed`**）——
 ★ 所以"跑整个目录是绿的"这句**只有在 source 过的环境里才成立**，未 source 时那是**空收集**，不是绿。
