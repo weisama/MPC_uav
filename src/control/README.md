@@ -33,6 +33,11 @@
    ⚠️ 开始键是**一档两位置开关**：上电时它若已停在**高位**，那**不算边沿**（必须先见低位，H.5.2）。
    现场动作要点（**每次压住 ≥0.3 s** —— 200 ms 去抖对上 10 Hz 采样 = 恰好 3 帧，压得太准会有一半
    概率按不动）见 `params-changes.md` §H.12。
+   ★★ 同一把开关还有**第 3 种用法**（ticket 07 增补，§H.5 第 4 条）：**在飞时长按 ≥1.2 s**
+   （`start_land_hold_s = 1.0` + 去抖）⟹ **立即自动降落**（`end_reason=land_pressed`）——
+   这是唯一一条"不用交还控制权"的停法。★ 资格看**按下那一刻**："按完起飞还按着不放"
+   **不会**让飞机刚离地就降落（判据不能写成"到点那一刻是否在飞"，那会当场掉飞机）。
+   ★ 也因此，`WAIT_START` 里"第 2 次按键 = 开始轨迹"的动作落到了**松手**上。
 5. **降级之后想复位，只有两条路**（都不要去"帮它一把"）：
    - **落地上锁**（`connected=true ∧ armed=false` —— **可信的**那次降沿，见下面第 2 条）—— 主路径，
      对四类原因都有效；
@@ -51,9 +56,10 @@
 所以 `STANDBY` 虽然已经切进 OFFBOARD 模式，但飞机未解锁 ⟹ `/control/state` 仍是 `MANUAL/STANDBY`。
 这条定义让"切模式"与"交出控制权"两件事不被混为一谈。
 
-`LAND` 有**三个**来源，动作逐字相同、只有原因不同：ticket 06 的失效降级（日志 `degrade=<原因>`）、
+`LAND` 有**四个**来源，动作逐字相同、只有原因不同：ticket 06 的失效降级（日志 `degrade=<原因>`）、
 ticket 08 的 `WAIT_START` 兜底超时（`end_reason=wait_start_timeout`）、
-ticket 09 的轨迹跑完（`end_reason=traj_done`）。
+ticket 09 的轨迹跑完（`end_reason=traj_done`）、
+ticket 07 增补的**长按开始键**（`end_reason=land_pressed` —— ★ 这一条**不是**降级：操作员要求的收口）。
 
 ## 起飞 / 悬停 / 降落（ticket 08）
 
@@ -62,14 +68,15 @@ MANUAL/STANDBY ──开始键第 1 次上升沿（或 /control/takeoff）──
       │ armed 上升沿（锁原点 + 锁机头）
       ▼
 AUTO/TAKEOFF ──爬到 origin+1 m，≤0.5 m/s──▶ AUTO/HOVER ──判稳 2 s──▶ AUTO/WAIT_START
-                                                                          │ 开始键第 2 次上升沿
+                                                                          │ 开始键第 2 次上升沿 + 松手
                                                                           ▼
                                                                      AUTO/TRACK
                                                      （setpoint = 轨迹原点 + /traj/reference）
                                       运行中 /traj/select 重选 ⟹ 保持上一个目标 + 按闸门重发 /traj/start
-                                                                          │ 完成度 ≥ 1.0
-                                                                          ▼
+         ★ 在飞时长按开始键 ≥1 s（ticket 07 增补）───────────────────────┐  │ 完成度 ≥ 1.0
+                                                                          ▼  ▼
                                                               MANUAL/LAND（请求 AUTO.LAND）
+                                                     ★ 四条来源动作逐字相同，只有 end_reason= 不同
                                                                             │ PX4 的 COM_DISARM_LAND=2.0 自己上锁
                                                                             ▼
                                                               MANUAL/STANDBY（armed 降沿 ⟹ 全部复位）
@@ -105,7 +112,9 @@ AUTO/TAKEOFF ──爬到 origin+1 m，≤0.5 m/s──▶ AUTO/HOVER ──判�
 | 爬升 | 目标 z 从**进入 `TAKEOFF` 那一刻的 EKF 位置**线性上升到 +`takeoff_altitude_m`，速率 ≤`climb_speed_mps` | 起飞原点（锁一次，之后每帧不跟着当前位姿跑） |
 | `TAKEOFF → HOVER` | `\|z − (原点+高度)\| < takeoff_alt_tol_m` ∧ `\|v_z\| < takeoff_vel_tol_mps` **持续** `takeoff_settle_s` | ⚠️ **原点+高度**，不是当帧的 `target_z` —— 写成 `target_z` 的话判据在斜坡**发出去的那一瞬间**就满足，斜坡形同虚设 |
 | 稳定 | `位置误差 < hover_pos_tol_m` ∧ `\|v\| < hover_vel_tol_mps` **持续** `hover_settle_s` | **悬停点** = 起飞原点正上方 `takeoff_altitude_m`（不是轨迹原点 —— 它此刻还不存在，拿它当基准是循环定义） |
-| `WAIT_START` 的两个出口 | ① **开始键第 2 次上升沿** ⟹ 进 `TRACK`（⚠️ 不是降落）；② 等满 `wait_start_timeout_s`（默认 300 s）⟹ 走 `LAND`（`end_reason=wait_start_timeout`） | ② 是"操作员一直不按键"这条**自己走不出去的态**的兜底。★ §5.3 的验收要求它 **> 60 s** |
+| `WAIT_START` 的两个出口 | ① **开始键第 2 次上升沿 ⟹ 松手** ⟹ 进 `TRACK`（⚠️ 不是降落）；② 等满 `wait_start_timeout_s`（默认 300 s）⟹ 走 `LAND`（`end_reason=wait_start_timeout`） | ② 是"操作员一直不按键"这条**自己走不出去的态**的兜底。★ §5.3 的验收要求它 **> 60 s**。★ ① 的动作在**松手**上（ticket 07 增补裁定 3）|
+| `TRACK` / 在飞的态 收口 | ★ **长按开始键 ≥ `start_land_hold_s`（1.0 s）** ⟹ 立即 `LAND`（`end_reason=land_pressed`）。★ 资格看**按下那一刻**：只有在飞的态（`kClimb`/`kHover`/`kWaitStart`/`kTrack`）上产生的**边沿**才算数；未解锁（`kIdle`）与已受理未解锁（`kRequested`）⟹ 忽略并记 WARN | 不按"到点那一刻的当前态"判 —— 那样"按完起飞还按着不放"会在 1 s 后把正在爬升的飞机判去降落（第一手链条见 ticket 07 增补的 Comments）|
+| `TRACK` 完成 | 参考完成度 `progress ≥ 1.0` ⟹ `LAND`（`end_reason=traj_done`） |
 | `TRACK` 完成 | 参考完成度 `progress ≥ 1.0` ⟹ `LAND`（`end_reason=traj_done`） | ★ **必须先见过一次"完成度 < 1.0"**（`track_started_` 那一位）—— 否则上一轮留下的 1.0 会让第二个任务一进 `TRACK` 就降落 |
 | `TRACK` 的参考流 | 断流 > `traj_stream_gap_s`（0.5 s）⟹ **保持上一个目标** + 重发一次 `/traj/start`；总断流 > `traj_timeout_s`（3.0 s）⟹ `degrade=traj_timeout` | ⚠️ 重发会让 `traj` 的参考时钟归零 ⟹ 那个闸门**不许调小**（判据见 `TaskLimits` 上那两段说明） |
 
@@ -148,15 +157,16 @@ WAIT_START ──开始键第 2 次上升沿──▶ TRACK ──progress ≥ 1
 "完成度 1.0"这件事在任务之间**不自动消失**，所以收口判据必须自己带一位 `track_started_`
 （先见过 < 1.0 才认 ≥ 1.0），否则第二个任务一进 `TRACK` 就降落。
 
-★ **边沿的归属按任务态判、不数次数**（`note_start_edge`）：`kIdle` ⟹ 起飞、`kWaitStart` ⟹ 进 `TRACK`、
-其余 ⟹ 丢掉并记日志。用计数器数"第几次按键"是错的 —— 落地后计数器不会自己归零，
+★ **边沿的归属按任务态判、不数次数**（`note_start_edge`）：`kIdle` ⟹ 起飞、`kWaitStart` ⟹ **松手**进 `TRACK`、
+在飞的态（`kClimb`/`kHover`/`kWaitStart`/`kTrack`）⟹ **锁存降落资格**（长按 ≥1 s 即降落）、
+`kRequested`/`kDone` ⟹ 丢掉并记日志。用计数器数"第几次按键"是错的 —— 落地后计数器不会自己归零，
 **第二个任务的第一次按键会被当成"第 2 次"**，飞机在操作员只想起飞的时候直接开跑轨迹。
 
 ### 降落与上锁：我们只做一半
 
 - **请求降落是我们的**：`d.request_land` ⟹ `/mavros/set_mode` 请求 `AUTO.LAND`（与 ticket 06 的降级
-  走**同一个出口**、逐字相同的动作，靠 `Decision::end_reason` 区分措辞 —— 词表就两个值
-  `traj_done` / `wait_start_timeout`；那个布尔量装不下两条正常出口，ticket 09 换掉了它）。
+  走**同一个出口**、逐字相同的动作，靠 `Decision::end_reason` 区分措辞 —— 词表就三个值
+  `traj_done` / `wait_start_timeout` / `land_pressed`；那个布尔量装不下多条正常出口，ticket 09 换掉了它）。
   已在我们请求的
   `AUTO.LAND` 里就**不重发**。
 - **上锁不是我们的**：PX4 的 `COM_DISARM_LAND = 2.0`（z0 实测值）在它自己的着陆检测判定落地 2 s 后上锁
@@ -182,10 +192,12 @@ WAIT_START ──开始键第 2 次上升沿──▶ TRACK ──progress ≥ 1
 | `takeoff_origin=(x, y, z)` | 起飞原点（进入 `TAKEOFF` 那一刻的 EKF 位置） |
 | `traj_origin=(x, y, z)` | **轨迹原点** —— 稳定判据成立那一刻的位置；与动捕原点对账就看它 |
 | `MAV_RESULT=<n>` | `/mavros/cmd/arming` 的应答码（`0=ACCEPTED`，见 `px4_interface.cpp`；`0` 之外一律走"被拒"路径） |
-| `任务正常走完（end_reason=<词表>）` | ★ 这次 `LAND` 是**正常收口**、不是降级。词表只有两个：`traj_done`（轨迹跑完）/ `wait_start_timeout`（等开始键超时）。⚠️ 两种来源与降级**动作逐字相同**，只有原因不同 ⟹ 判"是不是降级"要看有没有 `degrade=` |
+| `任务正常走完（end_reason=<词表>）` | ★ 这次 `LAND` 是**正常收口**、不是降级。词表三个：`traj_done`（轨迹跑完）/ `wait_start_timeout`（等开始键超时）/ `land_pressed`（**操作员长按开始键**，ticket 07 增补）。⚠️ 来源与降级**动作逐字相同**，只有原因不同 ⟹ 判"是不是降级"要看有没有 `degrade=` |
 | `degrade=<token>` | 降级原因（ticket 06 + 09 的 `traj_timeout`） |
-| `遥控器开始键：**第 1 次上升沿**` / `**第 2 次上升沿**` | 确认过的边沿及其去向（起飞 / 进 `TRACK`） |
-| `遥控器开始键：上升沿**被丢掉**了` | ★ **每一次被丢掉的边沿都要有日志**（含当前任务态）：现场最难查的一类问题是"按了没反应"，而它只有两种可能 —— 边沿没产生（去抖不够，见 §H.12）或产生了但没被接受 |
+| `遥控器开始键：**第 1 次上升沿**` / `**第 2 次上升沿**` | 确认过的边沿及其去向（起飞 / 记下"松手进 `TRACK`"） |
+| `遥控器开始键：**松手** ⟹ 进入 TRACK` | 裁定 3 落地的那一帧：**松手**才真的开跑轨迹 |
+| `遥控器开始键：上升沿**被丢掉**了` / `遥控器开始键：已**锁存降落资格**` | ★ **每一次边沿都要有日志**（含当前任务态）：现场最难查的一类问题是"按了没反应"，而它只有两种可能 —— 边沿没产生（去抖不够，见 §H.12）或产生了但当时没资格。★ 飞起来之后按下**不再叫"丢掉"**：它"锁存降落资格"（按住 ≥1 s 即降落）|
+| `遥控器开始键：**长按 1.0 s** ⟹ 立即自动降落` / `遥控器开始键：长按**被忽略**了` | 长按**生效**（`end_reason=land_pressed`）/ **没生效**（"这一次按下发生在未解锁的时候"—— 资格看**按下那一刻**，不看按满的那一刻）|
 | `TRACK：**轨迹参考已经来了**` / `**轨迹参考断了**` | 参考流的第一帧到达 / 断了（后者只在**真的断了**时打；离开 `TRACK` **不打** —— 那是"不需要了"，不是"断了"，ticket 09 的台架实测抓到的假告警） |
 | `TRACK 进行中：` | 节流心跳：参考年龄 + 转发出去的完成度 |
 | `traj_origin=(x, y, z)` | 已在上面列过；它同时是 `WAIT_START` / `TRACK` 的**唯一目标基准** |
@@ -411,6 +423,7 @@ mavros 把 `header.stamp` 换算成 MAVLink 的 `time_boot_ms`（**毫秒**，�
 | `start_channel` | `9` | ★ **1-based**（与 PX4 的 `RC_MAP_*` 同一约定）⟹ ch9 = `/mavros/rc/in` 的 `channels[8]`。⚠️ 值来自 §H.1 的裁定，**别就地改**；⚠️ 台架核对（验收项 6）**尚未做**（EdgeTX 的 CH9 分配 + 遥控链路都不在位） |
 | `start_threshold` / `release_threshold` | `0.75` / `0.25` | 归一化阈值（**不是 µs**，与 PX4 的 `*_TH` 同一把尺）。两者之间是**死区**（回差）：不作判断，所以"开关停在阈值附近微抖"不会产生一串边沿 |
 | `debounce_ms` | `200.0` | 电平要**连续**保持多久才算确认。★ 参数是毫秒、代码里是秒（§H.1 的裁定就是按毫秒说的）。⚠️ 对上 10 Hz 的帧间隔 ⟹ 要 3 帧；**现场每次压住 ≥0.3 s**，理由见 §H.12 |
+| `start_land_hold_s` | `1.0` | ★ ticket 07 增补：**在飞时长按开始键满这么久 ⟹ 立即自动降落**（`end_reason=land_pressed`）。⚠️ 判据从**电平被确认**起算（`debounce_ms` 之后）⟹ **物理按住 ≈1.2 s**；`<= 0` 关闭该功能。★ 只有"在飞态产生边沿"的那一次按下才起算（资格见 `note_start_edge`）|
 | `start_low_us` / `start_high_us` | `1000.0` / `2000.0` | 折算的两个端点。★ **方向由这两个数定义**（`low_us` ↔ 0、`high_us` ↔ 1），不由名字说了算 —— 换一个方向相反的通道，**把两个数对调**即可（不改代码）。⚠️ 若哪天把 ch9 也映射进 PX4 用，这两个数必须与那边的 `RC9_MIN/MAX/REV` 对齐（§H.1：`RC9_REV = 1`） |
 | `*_topic` / `*_service` | mavros 2.15.1 默认名 | 多机/台架复用不改代码（`traj_*` / `control_traj_progress_topic` 同） |
 
@@ -471,10 +484,10 @@ colcon test  --packages-up-to control --executor sequential   # ★ 串行：并
 | `test/test_control_standby.py` | **seam 1**（话题边界） | 只断言外部可观测的话题 | 正常路径下飞机**发了什么** |
 | `test/test_control_failsafe.py` | **seam 1**（话题边界） | 同上 | 失效时**停止**了什么、请求了什么模式 |
 | `test/test_control_takeoff.py` | **seam 1**（话题边界） | 同上（+ 服务应答） | 起飞这一整条链：**解锁、爬升、判稳、记轨迹原点、自动降落、复位** |
-| `test/test_control_track.py` | **seam 1**（话题边界） | 同上 | ★ ticket 09：开始键两次上升沿、`/traj/start` 的时机与重发、目标 = 轨迹原点 + 参考、参考不来时的原地保持与超时、完成度收口、转发逐值核对 |
+| `test/test_control_track.py` | **seam 1**（话题边界） | 同上 | ★ ticket 09：开始键两次上升沿（第 2 次**松手**才进 `TRACK`）、`/traj/start` 的时机与重发、目标 = 轨迹原点 + 参考、参考不来时的原地保持与超时、完成度收口、转发逐值核对；★ ticket 07 增补：`TRACK`/`WAIT_START` 里长按 ⟹ `end_reason=land_pressed` + 停发 + `AUTO.LAND`，起飞途中一直按着 ⟹ 长按被忽略 |
 | `test/test_fsm.cpp` | **seam 2**（纯函数，零 ROS） | 零依赖，直接调 `fsm.hpp` | **是哪条守卫**放行的、降级怎么闩锁与复位、判据的**基准**是什么 |
 | `test/test_rc_stick.cpp` | **seam 2**（纯函数，零 ROS） | 零依赖，直接调 `rc_stick.hpp` | 摇杆**在不在动**（变化率判据）|
-| `test/test_rc_switch.cpp` | **seam 2**（纯函数，零 ROS） | 零依赖，直接调 `rc_switch.hpp` | ★ ticket 09：开始键的**边沿**（12 例）。三条坑在话题层面完全同形，所以在这里各钉一条 |
+| `test/test_rc_switch.cpp` | **seam 2**（纯函数，零 ROS） | 零依赖，直接调 `rc_switch.hpp` | ★ ticket 09：开始键的**边沿**（12 例）。三条坑在话题层面完全同形，所以在这里各钉一条。★ ticket 07 增补：**长按时长**与**松手事件**（7 例）—— 到点只报一次、松手重新计时、`hold_s <= 0` 关掉、上电即高位不产生、死区不打断计时 |
 
 seam 1 的 DUT 是**子进程**（`control_node` 可执行文件），输入来自**假 mavros + 脚本化动捕**；
 夹具在 `src/bench/`，用法见 `src/bench/README.md`。
@@ -556,27 +569,34 @@ seam 2（`test/test_fsm.cpp`，72 例）：四条守卫**逐条**掀掉时缺项
 `TRACK` 完成度 ≥1.0（或 `WAIT_START` 超时）走降落出口、落地上锁后原点/轨迹原点全清
 （且能重新起飞）、起飞后机头锁定而 `STANDBY` 跟随当前机头。
 
-轨迹链（seam 2，同一文件，ticket 09）：**边沿按任务态归属**（`kIdle`⟹起飞、`kWaitStart`⟹`TRACK`、
-其余⟹丢掉 —— 含"第二个任务的第一次按键**不会**被当成第 2 次"这条）、
+轨迹链（seam 2，同一文件，ticket 09）：**边沿按任务态归属**（`kIdle`⟹起飞、`kWaitStart`⟹**松手**进 `TRACK`、
+在飞的态⟹**锁存降落资格**、`kRequested`/`kDone`⟹丢掉 —— 含"第二个任务的第一次按键**不会**被当成第 2 次"这条）、
 **参考在 `TRACK` 开头就带 1.0 时不收口**（`track_started_`）、断流时**保持上一个目标**且
 闸门到点才重发 `/traj/start`、`traj_stale` 的计时起点是**最后一帧参考**（不是进 TRACK 那一刻）、
-`WAIT_START` 的超时出口（`end_reason=wait_start_timeout`，含"配成 `<= 0` 就不超时"那条边界）。
+`WAIT_START` 的超时出口（`end_reason=wait_start_timeout`，含"配成 `<= 0` 就不超时"那条边界）；
+★ ticket 07 增补的 7 例：`TRACK` 里长按 ⟹ `Phase::kLand` + `request_land` + `end_reason=kLandPressed` + 停发、
+**未解锁时按下的长按作废（即使到点时已解锁）** —— 就是"按完起飞一直按着⟹刚离地就降落"那个反例、
+`WAIT_START` 里长按 ⟹ 直接降落且一帧 `TRACK` 都没进过、`WAIT_START` 里短按**松手** ⟹ 进 `TRACK`、
+夺权闩锁里长按 ⟹ 什么都不请求、已在降级收口中 ⟹ 不报 `land_pressed`。
 ⚠️ **`end_reason` 的词表没有逐字符守卫**（`degrade=` 那一套有 `DegradeNames`，`end_reason` 没有对应的
-一条 —— `to_string(EndReason)` 目前只被 `EXPECT_EQ` 按**值**断言过）。两个 token（`traj_done` /
-`wait_start_timeout`）眼下都合法，所以不是缺陷，只是**两套日志词表的守卫不对称**；文档若哪天为
+一条 —— `to_string(EndReason)` 目前只被 `EXPECT_EQ` 按**值**断言过）。三个 token（`traj_done` /
+`wait_start_timeout` / `land_pressed`）眼下都合法，所以不是缺陷，只是**两套日志词表的守卫不对称**；文档若哪天为
 `end_reason=` 也发一条 grep 配方，就该把这条补上。
 
 seam 2（`test/test_rc_stick.cpp`，13 例）：变化率判据的边界 —— 第一帧不作判断、快速推杆/反向推杆算在动、
 **慢速大行程漂移不算在动**、推到头保持不动会衰减到阈值以下、非正周期与 NaN 不作判断（且不污染状态）、
 单帧越过阈值不算、默认阈值与固件 `COM_RC_STICK_OV` 同源。
 
-seam 2（`test/test_rc_switch.cpp`，12 例，ticket 09）：开始键**边沿**判据的三个坑各钉一条 ——
+seam 2（`test/test_rc_switch.cpp`，19 例，ticket 09 + 07 增补）：开始键**边沿**判据的三个坑各钉一条 ——
 ① **上电即在高位不算边沿**（必须先确认过低位）；② **短于去抖窗的高位脉冲不算**、
 死区读数**不打断**去抖计时、一直停在阈值带内不产生边沿；③ **一次边沿只能被取走一次**
 （"取走"是消费语义 —— 可读的边沿会在下一帧被再读一次 ⟹ 一次按键被当成两次：第 1 次解锁、
 第 2 次开轨迹）。另有三条边界：`reset()` 之后**必须重新看见低位**才承认下一次高位是边沿
 （断链期间开关动没动过我们不知道）、**折算方向由参数决定**（两个端点**允许反着配**）、
 端点配成相等时永远不产生边沿、越界读数不钳位（越界有信息量）。
+★ 增补的 7 例（ticket 07）：**长按事件在恰好按满 `hold_s` 的那一帧产生且只产生一次**、
+按不到 `hold_s` 就松手不产生、松手后再按**重新计时**、`hold_s <= 0` 整个关掉、
+**上电即在高位不产生长按**（不是"操作员按下了"）、死区读数**不打断**长按计时、`take_release()` 是事件。
 
 ⚠️ **没被自动化覆盖的一处**：`request_mode()` 的重试节流（重复请求抑制、悬空请求丢弃、
 重试间隔）。它是**输出侧的发送节奏**而非输入判据，只有"切模式恰好失败/悬空"时才走到 ——

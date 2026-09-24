@@ -1480,6 +1480,18 @@ control::TrajReference ref_stale(double x = 0.0, double y = 0.0, double z = 0.0,
 }
 
 /// 以 0.02 s 的步长喂 `frames` 帧，每帧的读数与参考都由调用方给。
+/// §H.5.1 的"**第 2 次按键**"：从 `WAIT_START` 进 `TRACK`。
+/// ★★ ticket 07 增补起这是**两个动作**：按下只"记下要开轨迹"，**松手**才真的进 ——
+///   同一次按下还可能是"长按降落"的起点（用户裁定 `WAIT_START` 里也算），按下就开跑的话
+///   那条命令根本无从表达。本函数把两步做齐，让别的用例读起来仍像"按了一下开始键"。
+void press_and_release_start(Climbing & c)
+{
+  EXPECT_EQ(c.fsm.note_start_edge(c.now + 0.02), control::StartEdgeReply::kTrackOnRelease);
+  c.now += 0.02;
+  EXPECT_TRUE(c.fsm.note_start_release(c.now)) << "松手没有兑现「第 2 次按键 = 开始轨迹」";
+  EXPECT_STREQ(c.fsm.task_name(), "track");
+}
+
 control::Decision advance_traj(Climbing & c, int frames, const control::Odometry & odom,
   const control::TrajReference & traj)
 {
@@ -1506,10 +1518,14 @@ TEST(StartEdge, 未起飞时第一条边沿受理起飞)
 }
 
 /// ★★ 判据是**当前任务态**，不是"这是第几次按键"。
-/// 这一条钉的是"丢掉"的两个具体形态：**连按**（手快）与**起飞途中按**（开关抖了）。
+/// 这一条钉的是起飞途中的两次按下：**连按**（手快）与**爬升途中按**（开关抖了）。
 /// 少了它，一个"数次数"的实现会在 `kRequested` 里把第二下当成"第 2 次 = 开始轨迹"
 /// —— 于是飞机**刚受理起飞就打算开跑轨迹**，而操作员只是在确认"按键有没有反应"。
-TEST(StartEdge, 起飞过程中按下的边沿被丢掉且不会排队)
+/// ★ ticket 07 增补把这两处**分开**了，因为它们在新的语义下**不是同一件事**：
+///   · `kRequested`（还没解锁）⟹ 真·丢掉，**连降落资格都不给**；
+///   · `kClimb`（已在飞）⟹ 不是丢掉：给这次按下锁存**降落资格**（按住 1 s ⟹ 降落），
+///     但**仍然不排队**"等判稳之后开跑轨迹"。
+TEST(StartEdge, 起飞过程中按下的边沿不会排队也不给降落资格)
 {
   // ① 受理之后、解锁之前（`kRequested`）：最容易发生的"连按两下"。
   control::Fsm fsm(0.0, control::TaskLimits{});
@@ -1518,17 +1534,25 @@ TEST(StartEdge, 起飞过程中按下的边沿被丢掉且不会排队)
   EXPECT_EQ(fsm.note_start_edge(100.02), control::StartEdgeReply::kIgnored)
     << "解锁还没发生就再按一下，不该被当成「第 2 次 = 开始轨迹」";
   EXPECT_STREQ(fsm.task_name(), "requested");
+  // ★★ 这一刻飞机**还在地上** ⟹ 这一次按下连降落资格都没有。给了它的后果很具体：
+  //   操作员按完起飞、手还停在开关上（§H.12：10 Hz 遥控下"按住"是常态），1 s 到点时
+  //   飞机已经在爬升 ⟹ 它**刚离地就自己降落**。
+  EXPECT_EQ(fsm.note_start_long_press(), control::StartLandReply::kNotEligible)
+    << "「还没解锁」那一次按下拿到了降落资格 —— 用「到点那一刻」判的实现就错在这里";
 
   // ② 爬升途中。
   Climbing c = reach_climb();
   ASSERT_STREQ(c.fsm.task_name(), "climb");
-  EXPECT_EQ(c.fsm.note_start_edge(c.now + 0.02), control::StartEdgeReply::kIgnored);
-  EXPECT_STREQ(c.fsm.task_name(), "climb") << "丢掉就是丢掉";
+  EXPECT_EQ(c.fsm.note_start_edge(c.now + 0.02), control::StartEdgeReply::kLandHold)
+    << "在飞态里的边沿**不是丢掉**：它给这一次按下锁存降落资格（ticket 07 增补）";
+  EXPECT_STREQ(c.fsm.task_name(), "climb") << "但按一下本身不改变任何任务";
 
-  // ★ 而"丢掉"必须是**真的丢掉**：不许替操作员记着，等判稳之后自己开跑。
+  // ★ 而"不排队"这条纪律必须仍然成立：那条边沿不许替操作员记着"等判稳之后开跑轨迹"。
   stop_at_wait_start(c);
   EXPECT_STREQ(c.fsm.task_name(), "wait_start") << (
     "那一条边沿被排队了 —— 飞机会在操作员没再看它的时候自己开跑轨迹");
+  EXPECT_FALSE(c.fsm.note_start_release(c.now + 0.02))
+    << "松手把上一次按下欠下的「开始轨迹」兑现了 —— 那就是排队";
 }
 
 /// ★★ 计数器写法（"第 1 次 / 第 2 次"）的反例：**任务态回到 `kIdle` 之后，
@@ -1548,7 +1572,7 @@ TEST(StartEdge, 落地重新起飞后第一条边沿仍然是受理起飞)
   const control::Odometry odom = odom_at(ox, oy, oz, c.yaw);
 
   // 第 2 次按键 ⟹ 开始轨迹；跑到 100% ⟹ 任务飞完 ⟹ 降落。
-  ASSERT_EQ(c.fsm.note_start_edge(c.now + 0.02), control::StartEdgeReply::kTrack);
+  press_and_release_start(c);
   advance_traj(c, 1, odom, ref_at(0.0, 0.0, 0.0, 0.0));
   advance_traj(c, 1, odom, ref_at(1.0, 0.0, 0.0, 1.0));
   EXPECT_EQ(advance_traj(c, 1, odom, ref_at(1.0, 0.0, 0.0, 1.0)).phase, control::Phase::kLand);
@@ -1581,7 +1605,7 @@ TEST(Track, 进TRACK第一帧就发一次start且目标等于轨迹原点)
   EXPECT_DOUBLE_EQ(oy, c.y);
   EXPECT_DOUBLE_EQ(oz, c.z + c.limits.takeoff_altitude_m) << "判稳时飞机就停在悬停点上";
 
-  ASSERT_EQ(c.fsm.note_start_edge(c.now + 0.02), control::StartEdgeReply::kTrack);
+  press_and_release_start(c);
   const control::Odometry odom = odom_at(ox, oy, oz, c.yaw);
 
   // 还没收到任何参考的读法（`traj` 要等我们的 `/traj/start` 才发第一帧）。
@@ -1609,7 +1633,7 @@ TEST(Track, 收到参考后目标等于轨迹原点加参考)
   stop_at_wait_start(c);
   double ox = 0.0, oy = 0.0, oz = 0.0;
   ASSERT_TRUE(c.fsm.traj_origin(&ox, &oy, &oz));
-  ASSERT_EQ(c.fsm.note_start_edge(c.now + 0.02), control::StartEdgeReply::kTrack);
+  press_and_release_start(c);
   const control::Odometry odom = odom_at(ox, oy, oz, c.yaw);
   advance_traj(c, 1, odom, ref_stale());
 
@@ -1637,7 +1661,7 @@ TEST(Track, 参考断流时保持最后一个目标并在闸门到点后重发st
   stop_at_wait_start(c);
   double ox = 0.0, oy = 0.0, oz = 0.0;
   ASSERT_TRUE(c.fsm.traj_origin(&ox, &oy, &oz));
-  ASSERT_EQ(c.fsm.note_start_edge(c.now + 0.02), control::StartEdgeReply::kTrack);
+  press_and_release_start(c);
   const control::Odometry odom = odom_at(ox, oy, oz, c.yaw);
   const double entered_at = c.now;
   advance_traj(c, 1, odom, ref_stale());              // 进 TRACK 的第一帧（发 start）
@@ -1676,7 +1700,7 @@ TEST(Track, 完成度到1时任务飞完并请求降落)
   stop_at_wait_start(c);
   double ox = 0.0, oy = 0.0, oz = 0.0;
   ASSERT_TRUE(c.fsm.traj_origin(&ox, &oy, &oz));
-  ASSERT_EQ(c.fsm.note_start_edge(c.now + 0.02), control::StartEdgeReply::kTrack);
+  press_and_release_start(c);
   const control::Odometry odom = odom_at(ox, oy, oz, c.yaw);
 
   // 参考从 0 起 ⟹ 这条轨迹真的在跑（见下一条用例：这一步不能少）。
@@ -1708,7 +1732,7 @@ TEST(Track, 上一轮留下的完成度1不会让这一轮当场判飞完)
   stop_at_wait_start(c);
   double ox = 0.0, oy = 0.0, oz = 0.0;
   ASSERT_TRUE(c.fsm.traj_origin(&ox, &oy, &oz));
-  ASSERT_EQ(c.fsm.note_start_edge(c.now + 0.02), control::StartEdgeReply::kTrack);
+  press_and_release_start(c);
   const control::Odometry odom = odom_at(ox, oy, oz, c.yaw);
 
   const control::Decision d = advance_traj(c, frames_of(0.40), odom, ref_at(0.0, 0.0, 0.0, 1.0));
@@ -1734,7 +1758,7 @@ TEST(Track, 参考一直不来时判traj_timeout并请求降落)
   stop_at_wait_start(c);
   double ox = 0.0, oy = 0.0, oz = 0.0;
   ASSERT_TRUE(c.fsm.traj_origin(&ox, &oy, &oz));
-  ASSERT_EQ(c.fsm.note_start_edge(c.now + 0.02), control::StartEdgeReply::kTrack);
+  press_and_release_start(c);
   const control::Odometry odom = odom_at(ox, oy, oz, c.yaw);
 
   // 计时起点是"进 TRACK"，不是"话题静默了多久" —— 刚进 TRACK 时参考本来就还没开始发。
@@ -1750,4 +1774,206 @@ TEST(Track, 参考一直不来时判traj_timeout并请求降落)
   EXPECT_EQ(d.end_reason, control::EndReason::kNone) << (
     "这是**失效降级**结束的任务：不许报成「正常走完」——两条信息必须分开");
   EXPECT_EQ(d.authority, control::Authority::kManual);
+}
+
+// ═══════════ ticket 07 增补：长按开始键 ≥ `start_land_hold_s` ⟹ 立即自动降落 ═══════════
+//
+// 四条裁定（用户 2026-09-24）：① 时长 1 s（判据在 `StartSwitchDetector`，这一层只收**事件**）；
+// ② 资格看**按下那一刻**；③ `WAIT_START` 里也算 ⟹ 进 `TRACK` 的动作挪到**松手**；
+// ④ 到点就执行（不等到松手）。完整交代与反例见
+// `.scratch/phase1/issues/07-traj-reference-trajectories.md` 的增补一节。
+
+/// ★★ 在飞时长按 ⟹ 走**正常收口**那条出口：停发 + 请求 `AUTO.LAND` + `end_reason=land_pressed`。
+/// ★ 与"轨迹飞完"逐字同一个出口（`update()` ⑤）：动作一样、措辞不同 —— 那正是
+///   `EndReason` 存在的理由（现场看到的"飞机自己降落了"必须能一眼分成三件事）。
+TEST(StartLand, TRACK里长按立刻请求降落并报land_pressed)
+{
+  Climbing c = reach_climb();
+  stop_at_wait_start(c);
+  press_and_release_start(c);
+  double ox = 0.0, oy = 0.0, oz = 0.0;
+  ASSERT_TRUE(c.fsm.traj_origin(&ox, &oy, &oz));
+  const control::Odometry odom = odom_at(ox, oy, oz, c.yaw);
+  const control::TrajReference ref = ref_at(0.5, -0.25, 0.10, 0.3);
+  advance_traj(c, 1, odom, ref);
+
+  // 按下（一条新的边沿）：只锁存"这次按下有资格"，**什么任务都不改**。
+  EXPECT_EQ(c.fsm.note_start_edge(c.now + 0.02), control::StartEdgeReply::kLandHold);
+  EXPECT_STREQ(c.fsm.task_name(), "track");
+  const control::Decision early = advance_traj(c, frames_of(0.5), odom, ref);
+  EXPECT_EQ(early.phase, control::Phase::kTrack) << "还不到一半时长就想降落";
+  EXPECT_FALSE(early.request_land);
+
+  // 到点 ⟹ 这一帧就收口（不等松手）。
+  c.now += 0.02;
+  EXPECT_EQ(c.fsm.note_start_long_press(), control::StartLandReply::kLand);
+  const control::Decision d = advance_traj(c, 1, odom, ref);
+  EXPECT_EQ(d.phase, control::Phase::kLand);
+  EXPECT_TRUE(d.request_land) << "降落必须是我们请求的（上锁才是 PX4 的事）";
+  EXPECT_FALSE(d.stream_setpoint) << "请求降落之后必须停发 setpoint";
+  EXPECT_EQ(d.end_reason, control::EndReason::kLandPressed) << "措辞必须与「飞完了」分得开";
+  EXPECT_EQ(d.degrade, control::Degrade::kNone) << "这是**正常收口**，不是降级";
+  EXPECT_EQ(d.authority, control::Authority::kManual);
+  // ⚠️ 这一帧的 `d.target_*` 是**默认值**、不是"当前位置"：收口走的是 `halt()` 那条早退，
+  //    根本走不到 ⑦ 里那句"默认目标 = 当前位置"。停发之后它没有意义 ⟹ 故意不去断言它。
+}
+
+/// 按住**不到**时长就松手 ⟹ 什么都不发生（任务、模式、日志措辞都不动）。
+TEST(StartLand, 按住不到时长就松手什么都不发生)
+{
+  Climbing c = reach_climb();
+  stop_at_wait_start(c);
+  press_and_release_start(c);
+  double ox = 0.0, oy = 0.0, oz = 0.0;
+  ASSERT_TRUE(c.fsm.traj_origin(&ox, &oy, &oz));
+  const control::Odometry odom = odom_at(ox, oy, oz, c.yaw);
+  const control::TrajReference ref = ref_at(0.5, -0.25, 0.10, 0.3);
+  advance_traj(c, 1, odom, ref);
+
+  EXPECT_EQ(c.fsm.note_start_edge(c.now + 0.02), control::StartEdgeReply::kLandHold);
+  advance_traj(c, frames_of(0.5), odom, ref);          // 按了 0.5 s
+  c.now += 0.02;
+  EXPECT_FALSE(c.fsm.note_start_release(c.now)) << "TRACK 里的松手没有「欠下的开始」要兑现";
+
+  // ★ 松手之后再久也不该降落：时长判据在检测器里，它的"这次按下"已经作废
+  //   （`StartSwitchDetector` 的 `松手后再按重新计时` 钉的就是它）。
+  const control::Decision d = advance_traj(c, frames_of(3.0), odom, ref);
+  EXPECT_EQ(d.phase, control::Phase::kTrack) << "短按把在飞的任务改道了";
+  EXPECT_FALSE(d.request_land);
+  EXPECT_EQ(d.end_reason, control::EndReason::kNone);
+}
+
+/// ★★★ 本张最关键的一条：**资格看"按下那一刻"**。
+/// 反例（用"1 s 到点那一刻的任务态"判资格的实现）在这里会请求 `AUTO.LAND`：
+/// 那一次按下发生在 `kIdle`（飞机还在地上），1 s 之后飞机已经在 `kClimb` 里爬升 ——
+/// 于是一架刚离地的飞机自己往回坐。现场链条见增补一节的 Comments 第 1 条。
+TEST(StartLand, 未解锁时按下的长按作废即使到点时已解锁)
+{
+  control::Fsm fsm(0.0, control::TaskLimits{});
+  fsm.update(all_ok(),  health_ok(), odom_ok(),  100.0);
+
+  // 第 1 次按键（`kIdle` ⟹ 受理起飞）。★ 操作员的手**留在开关上**。
+  ASSERT_EQ(fsm.note_start_edge(100.0), control::StartEdgeReply::kTakeoff);
+
+  // 这一秒里 PX4 解锁完成 ⟹ 飞机已经在爬升（此刻任务态是 `kClimb`）。
+  double now = 100.0;
+  for (int i = 0; i < 10; ++i) {
+    now += 0.1;
+    fsm.update(armed_offboard(),  health_ok(), odom_ok(),  now);
+  }
+  ASSERT_STREQ(fsm.task_name(), "climb") << "前提没成立：这一秒里飞机没有起飞";
+
+  // 长按到点 —— ★ 那一次按下是在 `kIdle` 上发生的 ⟹ 作废。
+  EXPECT_EQ(fsm.note_start_long_press(), control::StartLandReply::kNotEligible)
+    << "用「到点那一刻」判资格的实现会在这里请求 AUTO.LAND —— 飞机刚离地就降落";
+  const control::Decision d = fsm.update(armed_offboard(),  health_ok(), odom_ok(),  now + 0.02);
+  EXPECT_FALSE(d.request_land);
+  EXPECT_EQ(d.phase, control::Phase::kTakeoff) << "长按把起飞任务掐了";
+  EXPECT_EQ(d.end_reason, control::EndReason::kNone);
+}
+
+/// ★ 裁定③：`WAIT_START` 里长按**直接降落**，而且**一帧 `TRACK` 都没进过**。
+/// ★ 为什么"一帧都没进"值得单独断言：进了 `TRACK` 的下一帧就会发 `/traj/start`，
+///   而那会让参考时钟归零、飞机朝轨迹起点动 —— "按住 1 s 降落"里不该夹着这一段运动。
+TEST(StartLand, WAIT_START里长按直接降落不经过TRACK)
+{
+  Climbing c = reach_climb();
+  stop_at_wait_start(c);
+  // ★ 按下**不当场**进 TRACK —— 这正是"按住不动"能被表达出来的前提（裁定③）。
+  EXPECT_EQ(c.fsm.note_start_edge(c.now + 0.02), control::StartEdgeReply::kTrackOnRelease);
+  EXPECT_STREQ(c.fsm.task_name(), "wait_start") << "短按要到松手才进 TRACK";
+
+  c.now += 0.02;
+  EXPECT_EQ(c.fsm.note_start_long_press(), control::StartLandReply::kLand);
+  const control::Decision d = advance_traj(c, 1, odom_ok(), ref_stale());
+  EXPECT_EQ(d.phase, control::Phase::kLand);
+  EXPECT_TRUE(d.request_land);
+  EXPECT_FALSE(d.request_traj_start) << "一帧 TRACK 都没进过 ⟹ 一条 /traj/start 都不该发";
+  EXPECT_EQ(d.end_reason, control::EndReason::kLandPressed);
+
+  // ★ 降落的收口把"欠下的开始"清掉了 ⟹ 松手不许再把飞机开进 TRACK。
+  c.now += 0.02;
+  EXPECT_FALSE(c.fsm.note_start_release(c.now)) << "松手又把飞机开跑了";
+  EXPECT_STREQ(c.fsm.task_name(), "done");
+}
+
+/// ★ 裁定③的另一半：`WAIT_START` 里**短按松手**才是"开始轨迹"。
+/// ★ 这一条的时序就是现场的手上动作：拨上去、再拨回来，两下都在 1 s 内完成。
+TEST(StartLand, WAIT_START里短按松手才开始轨迹)
+{
+  Climbing c = reach_climb();
+  stop_at_wait_start(c);
+  double ox = 0.0, oy = 0.0, oz = 0.0;
+  ASSERT_TRUE(c.fsm.traj_origin(&ox, &oy, &oz));
+
+  ASSERT_EQ(c.fsm.note_start_edge(c.now + 0.02), control::StartEdgeReply::kTrackOnRelease);
+  c.now += 0.5;                       // 按住 0.5 s（< 1 s：这是短按）
+  EXPECT_TRUE(c.fsm.note_start_release(c.now));
+  EXPECT_STREQ(c.fsm.task_name(), "track");
+
+  // 进 TRACK 的第一帧照旧：目标 = 轨迹原点、发一次 `/traj/start`。
+  const control::Decision d = advance_traj(c, 1, odom_at(ox, oy, oz, c.yaw), ref_stale());
+  EXPECT_EQ(d.phase, control::Phase::kTrack);
+  EXPECT_TRUE(d.request_traj_start);
+  EXPECT_DOUBLE_EQ(d.target_x, ox);
+}
+
+/// ★ 控制权已经被夺走（飞行员打杆 ⟹ `kRcOverride`）⟹ 长按**什么模式都不请求**。
+/// 与 `update()` ④ 同一条纪律：不跟正在接管飞机的人抢 —— 包括不请求 `AUTO.LAND`。
+TEST(StartLand, 夺权时长按什么都不请求)
+{
+  Climbing c = reach_climb();
+  stop_at_wait_start(c);
+  press_and_release_start(c);
+  double ox = 0.0, oy = 0.0, oz = 0.0;
+  ASSERT_TRUE(c.fsm.traj_origin(&ox, &oy, &oz));
+  const control::Odometry odom = odom_at(ox, oy, oz, c.yaw);
+  advance_traj(c, 1, odom, ref_stale());
+
+  EXPECT_EQ(c.fsm.note_start_edge(c.now + 0.02), control::StartEdgeReply::kLandHold);
+
+  // 飞行员打杆 ⟹ 夺权闩锁（`Degrade::kRcOverride` 是"夺权"那一类）。
+  control::Health stick = health_ok();
+  stick.rc_sticks_moving = true;
+  c.now += 0.02;
+  const control::Decision d0 = c.fsm.update(armed_offboard(),  stick, odom,  c.now, ref_stale());
+  EXPECT_EQ(d0.phase, control::Phase::kRcOverride);
+  EXPECT_FALSE(d0.request_land);
+
+  EXPECT_EQ(c.fsm.note_start_long_press(), control::StartLandReply::kTakeover)
+    << "控制权在飞行员手上，长按必须什么都不做";
+  const control::Decision d = c.fsm.update(armed_offboard(),  stick, odom,  c.now + 0.02, ref_stale());
+  EXPECT_EQ(d.phase, control::Phase::kRcOverride);
+  EXPECT_FALSE(d.request_land) << "夺权闩锁期间请求了 AUTO.LAND —— 在跟接管飞机的人抢";
+  EXPECT_EQ(d.end_reason, control::EndReason::kNone);
+}
+
+/// ★ 程序**已经在收口**时（这里用"低压降级已闩锁"这一种）长按 ⟹ 不再记一次"正常收口"。
+/// ★ 为什么值得单独一条：那种场面本来就会降落，但**原因不是**"操作员按了键"——
+///   措辞必须指向真正的首因（`degrade=` 那一行），否则排查方向会被引到遥控器上。
+TEST(StartLand, 已在降级收口中时长按不报land_pressed)
+{
+  Climbing c = reach_climb();
+  stop_at_wait_start(c);
+  press_and_release_start(c);
+  double ox = 0.0, oy = 0.0, oz = 0.0;
+  ASSERT_TRUE(c.fsm.traj_origin(&ox, &oy, &oz));
+  const control::Odometry odom = odom_at(ox, oy, oz, c.yaw);
+  advance_traj(c, 1, odom, ref_stale());
+
+  EXPECT_EQ(c.fsm.note_start_edge(c.now + 0.02), control::StartEdgeReply::kLandHold);
+
+  // 低压 ⟹ 失效降级（已解锁 ⟹ 闩锁到落地上锁）。
+  control::Health low = health_ok();
+  low.battery_low = true;
+  c.now += 0.02;
+  const control::Decision d0 = c.fsm.update(armed_offboard(),  low, odom,  c.now, ref_stale());
+  EXPECT_EQ(d0.degrade, control::Degrade::kBatteryLow);
+  EXPECT_TRUE(d0.request_land) << "低压本来就该请求降落";
+
+  EXPECT_EQ(c.fsm.note_start_long_press(), control::StartLandReply::kAlreadyClosing);
+  const control::Decision d = c.fsm.update(armed_offboard(),  low, odom,  c.now + 0.02, ref_stale());
+  EXPECT_EQ(d.degrade, control::Degrade::kBatteryLow) << "首因不许被按键改写";
+  EXPECT_EQ(d.end_reason, control::EndReason::kNone) << (
+    "这是**失效降级**结束的任务：不许报成「操作员按了键」——两条信息必须分开");
 }

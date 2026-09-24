@@ -200,6 +200,10 @@ public:
     rc_start.debounce_s = declare_parameter<double>("debounce_ms", rc_start.debounce_s * 1e3) * 1e-3;
     rc_start.low_us = declare_parameter<double>("start_low_us", rc_start.low_us);
     rc_start.high_us = declare_parameter<double>("start_high_us", rc_start.high_us);
+    // ★ ticket 07 增补（2026-09-24 用户裁定）：**长按开始键 ≥ 这么久 ⟹ 立即自动降落**。
+    //   `<= 0` = 关掉这条功能（那是"回到 ticket 09 那一版行为"的配置方式）。
+    //   ⚠️ 计时从**电平被确认**那一刻起算（`debounce_ms` 之后）⟹ 现场"按 1 s"要按 ≈ 1.2 s。
+    rc_start.land_hold_s = declare_parameter<double>("start_land_hold_s", rc_start.land_hold_s);
     rc_start_ = rc_start;
 
     // ★★ **ticket 06 / 08 之间的那条缝已经被真实实现取代**（ticket 08）：`own_arming` 参数
@@ -377,6 +381,15 @@ private:
       const control::StartEdgeReply reply = fsm_->note_start_edge(now_s);
       log_start_edge(reply);
     }
+    // ★★ ticket 07 增补：**长按**与**松手**两条事件。顺序不能反 —— 长按那条会把"欠下的开始"
+    //   清掉（`track_on_release_`），松手那条再见它时就不该再把飞机开进 `TRACK`。
+    //   （两条事件物理上不可能同帧：上升沿到"够久"之间隔着 `land_hold_s`，而松手更在之后。）
+    if (px4_->take_start_long_press()) {
+      log_start_long_press(fsm_->note_start_long_press());
+    }
+    if (px4_->take_start_release()) {
+      log_start_release(fsm_->note_start_release(now_s));
+    }
 
     const control::Guards guards = px4_->guards(now_s);
     const control::Health health = px4_->health(now_s);
@@ -434,6 +447,8 @@ private:
         return "任务走完：轨迹完成度到 1";
       case control::EndReason::kWaitStartTimeout:
         return "任务走完：等开始键超时";
+      case control::EndReason::kLandPressed:
+        return "任务走完：操作员长按开始键";
       case control::EndReason::kNone:
         break;
     }
@@ -517,22 +532,84 @@ private:
           "遥控器开始键：**第 1 次上升沿** ⟹ 已受理起飞（★ 受理 ≠ 起飞：真正起飞要等解锁）。%s",
           tail.c_str());
         return;
-      case control::StartEdgeReply::kTrack:
+      case control::StartEdgeReply::kTrackOnRelease:
         RCLCPP_WARN(
           get_logger(),
-          "遥控器开始键：**第 2 次上升沿** ⟹ 进入 TRACK（目标 = 轨迹原点 + /traj/reference），"
-          "下一帧发 %s 让 traj 把参考时钟归零。%s",
-          topics_.traj_start.c_str(), tail.c_str());
+          "遥控器开始键：**第 2 次上升沿** ⟹ 已记下「开始轨迹」—— ★ **松手**那一刻才真的进 "
+          "TRACK（按住 ≥ %.1f s 则改为降落，见 ticket 07 的增补）。%s",
+          rc_start_.land_hold_s, tail.c_str());
+        return;
+      case control::StartEdgeReply::kLandHold:
+        RCLCPP_WARN(
+          get_logger(),
+          "遥控器开始键：已**锁存降落资格**（当前在飞）。按住 ≥ %.1f s ⟹ 立即自动降落；"
+          "按住不到这个时长就松手则什么都不发生。%s",
+          rc_start_.land_hold_s, tail.c_str());
         return;
       case control::StartEdgeReply::kIgnored:
         RCLCPP_WARN(
           get_logger(),
           "遥控器开始键：上升沿**被丢掉**了 —— 当前任务态是 %s，这一步不接受开始键。%s\n"
           "  ★ 任务态的推进与**按键次数无关**（不数第几次），只看当前在哪一步："
-          "只有 IDLE 与 WAIT_START 接受这条边沿（见 `Fsm::note_start_edge`）。",
+          "只有 IDLE 与 WAIT_START 接受这条边沿（见 `Fsm::note_start_edge`）。\n"
+          "  ★ 但已受理起飞、**还没解锁**的 `kRequested` 也走这一条：那一刻飞机还在地上，"
+          "连「长按降落」的资格都不给（给了它就会「刚离地就降落」）。",
           fsm_->task_name(), tail.c_str());
         return;
     }
+  }
+
+  /// **长按**开始键的受理结论（ticket 07 增补）。★ 与 `log_start_edge` 一样：
+  /// 每一次都要留下一条日志，**包括被忽略的那一次** —— "按了没反应"只有两种可能
+  /// （事件没产生 / 产生了但当时没有资格），而这里的 `not_eligible` 就是后者的证据。
+  void log_start_long_press(control::StartLandReply reply)
+  {
+    // ⚠️ 故意不写 `default:`：新增一条 `StartLandReply` 而漏掉文案时 `-Wswitch` 编译失败。
+    switch (reply) {
+      case control::StartLandReply::kLand:
+        RCLCPP_WARN(
+          get_logger(),
+          "遥控器开始键：**长按 %.1f s** ⟹ 立即自动降落（任务就此正常收口，"
+          "`end_reason=%s`）。",
+          rc_start_.land_hold_s, control::to_string(control::EndReason::kLandPressed));
+        return;
+      case control::StartLandReply::kNotEligible:
+        RCLCPP_WARN(
+          get_logger(),
+          "遥控器开始键：长按**被忽略**了 —— 这一次按下发生在**未解锁**的时候"
+          "（当前任务态 %s）。★ 判据看的是**按下那一刻**，不是按满的这一刻："
+          "按完起飞再一直按着，不会让飞机刚离地就降落。",
+          fsm_->task_name());
+        return;
+      case control::StartLandReply::kTakeover:
+        RCLCPP_WARN(
+          get_logger(),
+          "遥控器开始键：长按**被忽略**了 —— **控制权不在我们手上**（`degrade=%s`，"
+          "见同一拍的诊断块）。★ 我们此时不请求任何模式，连 `AUTO.LAND` 也不请求："
+          "不跟正在接管飞机的人抢。",
+          control::to_string(fsm_->latched_reason()));
+        return;
+      case control::StartLandReply::kAlreadyClosing:
+        RCLCPP_WARN(
+          get_logger(),
+          "遥控器开始键：长按**不用管了** —— 程序已经在收口（当前任务态 %s，`degrade=%s`）。",
+          fsm_->task_name(), control::to_string(fsm_->latched_reason()));
+        return;
+    }
+  }
+
+  /// **松手**（确认低位）那一帧 (ticket 07 增补)。★ 只有"兑现了欠下的开始"才打日志 ——
+  /// 每一次松手都打的话，"上电时开关本来就在低位"那条也会冒出来。
+  void log_start_release(bool entered_track)
+  {
+    if (!entered_track) {
+      return;
+    }
+    RCLCPP_WARN(
+      get_logger(),
+      "遥控器开始键：**松手** ⟹ 进入 TRACK（目标 = 轨迹原点 + %s），下一帧发 %s 让 traj "
+      "把参考时钟归零。",
+      topics_.traj_reference.c_str(), topics_.traj_start.c_str());
   }
 
   /// `/control/takeoff` 的回调 —— **只投递命令**，推进留给下一帧 `tick()`。

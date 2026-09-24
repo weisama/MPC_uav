@@ -202,6 +202,10 @@ struct RcStart
   /// 说了算 —— 换一个方向相反的接收机通道只要改这两个数（见 `rc_switch.hpp`）。
   double low_us{1000.0};
   double high_us{2000.0};
+  /// **长按**判据：一条边沿之后电平持续为高这么久 ⟹ `take_start_long_press()` 给一条
+  /// （ticket 07 增补；`<= 0` = 关掉这条功能）。⚠️ 计时从**电平被确认**那一刻起算
+  /// ⟹ 现场"按 1 s"实际要按 ≈ 1.2 s（`debounce_s` 之后才开始计时）。
+  double land_hold_s{1.0};
 };
 
 /// `Px4Interface` 的**全部配置**。★ 打包成一个结构体而不是继续往构造函数上加参数：
@@ -268,6 +272,14 @@ public:
   /// 取走遥控器开始键的**一条上升沿**（§H.5.1 的"第 1 次 = 起飞 / 第 2 次 = 开始轨迹"）。
   /// ★ 消费语义：一次按键只可能被取走一次（判据与理由见 `rc_switch.hpp`）。
   bool take_start_edge() {return start_.take_edge();}
+
+  /// 取走**一条长按**事件（ticket 07 增补）：一次边沿之后，电平持续为高满
+  /// `RcStart::land_hold_s` 的那一刻给出一次。消费语义同 `take_start_edge()`。
+  bool take_start_long_press() {return start_.take_long_press();}
+
+  /// 取走**一条松手**事件（确认低位那一刻）。★ 只有 `WAIT_START` 里"第 2 次按键"
+  /// 需要它：那一次的动作现在发生在**松手**（见 `Fsm::note_start_release`）。
+  bool take_start_release() {return start_.take_release();}
 
   /// 诊断用：开始键的判据现在怎么看这档开关（`high` / `released` / 边沿总数）。
   /// ★ 这三个是"按键没反应"这类现场问题的**唯一**分辨手段：是没收到帧、

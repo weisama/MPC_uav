@@ -546,6 +546,11 @@ enum class EndReason
   kNone,             ///< 没有结束（在飞，或者结束的原因不是"正常走完"，见上）
   kTrajDone,         ///< `TRACK`：`progress ≥ 1.0`，轨迹真的跑完了
   kWaitStartTimeout, ///< `WAIT_START`：一直没等到开始键，兜底时限到了
+  /// ★★ ticket 07 增补（2026-09-24 用户裁定）：**长按开始键 ≥ `start_land_hold_s`** ⟹
+  ///   操作员要求**立即**降落。它与上面两条**动作逐字相同**（停发 + 请求 `AUTO.LAND`），
+  ///   所以走同一个出口；差别只在日志措辞 —— 现场看到的"飞机自己降落了"必须能一眼分成
+  ///   "飞完了""等不到键""操作员按的"三件事。
+  kLandPressed,
 };
 
 const char * to_string(EndReason r);
@@ -609,14 +614,42 @@ const char * to_string(TakeoffReply r);
 enum class StartEdgeReply
 {
   kTakeoff,   ///< `kIdle`：这是 §H.5.1 的"第 1 次" ⟹ 受理起飞（D3 = 程序解锁）
-  kTrack,     ///< `kWaitStart`：这是 §H.5.1 的"第 2 次" ⟹ 开始轨迹
-  /// 其余任务态（`kRequested`/`kClimb`/`kHover`/`kTrack`/`kDone`）⟹ **当场丢掉**。
+  /// `kWaitStart`：§H.5.1 的"第 2 次"。★★ ticket 07 增补起它**不当场进 `TRACK`** 了：
+  /// 进 `TRACK` 的动作挪到**松手**那一刻（`note_start_release`），因为"按住不动 ≥ 1 s"
+  /// 在同一次按下里还要表达另一件事（降落）——按下就开跑的话那条命令根本无从表达。
+  kTrackOnRelease,
+  /// ★★ 已在飞（`kClimb`/`kHover`/`kTrack`）：**这不是"丢掉"** —— 它给这次按下锁存了
+  /// "有资格成为一次降落请求"，按住够久（`start_land_hold_s`）就会降落。
+  /// ★ 但它**不改变任何任务**：光按一下不松（不到时长）什么都不发生。
+  kLandHold,
+  /// 其余任务态（`kRequested`/`kDone`）⟹ **当场丢掉**，连降落资格都不给
+  /// （`kRequested` 是"已受理起飞、还没解锁"⟹ 那一刻飞机还在地上，
+  /// 若把这里算成有资格，操作员按住不放会让飞机**刚起飞就降落**，见声明处的反例）。
   /// ★ 刻意**不排队**（与 `request_takeoff` 同一条纪律）：排队意味着"操作员在起飞过程中
   ///   多按了一下，程序在几十秒后自己开跑轨迹"——那个时刻没有人会预期它发生。
   kIgnored,
 };
 
 const char * to_string(StartEdgeReply r);
+
+/// 一条**长按**事件（`StartSwitchDetector::take_long_press()`）的受理结论（ticket 07 增补）。
+/// ★ 与 `StartEdgeReply` 分开：词表不同（这条多一个"已有别的原因在收口"），
+///   合并之后"为什么没反应"在两种输入上会共用一句含糊的话。
+enum class StartLandReply
+{
+  /// 受理：任务就此**正常收口**（停发 + 请求 `AUTO.LAND`），`end_reason = kLandPressed`。
+  kLand,
+  /// 这次按下的**那一刻**不在飞行态（未解锁的 `INIT`/`STANDBY`，或已受理起飞但还没解锁）
+  /// ⟹ 丢掉。★ 判据锁存在边沿那一帧，**不是**看 1 s 到点那一刻的任务态。
+  kNotEligible,
+  /// 控制权已被夺走（`RC_OVERRIDE` / 模式被外部切走）⟹ **什么模式都不请求** ——
+  /// 与 `update()` ④ 同一条纪律：不跟正在接管飞机的人抢。
+  kTakeover,
+  /// 程序**已经在收口**了（任务已 `kDone`，或已因失效降级而在降落）⟹ 不用再管这一次。
+  kAlreadyClosing,
+};
+
+const char * to_string(StartLandReply r);
 
 class Fsm
 {
@@ -660,6 +693,24 @@ public:
   ///
   /// @param now_s 单调递增的秒（同 `update()`）
   StartEdgeReply note_start_edge(double now_s);
+
+  /// 开始键**松手**了（`StartSwitchDetector::take_release()`，确认低位那一刻）。
+  /// ★ 唯一的作用是兑现 §H.5.1 的"第 2 次按键"：`kWaitStart` 里按下时只**记下**要开轨迹
+  ///   （见 `note_start_edge`），到松手这一帧才真的进 `TRACK`。
+  /// ⚠️ 它**不判断**"这一次按下算不算短按"—— 时长全由 `StartSwitchDetector` 说了算：
+  ///   真按够长的那些，松手之前就已经走 `note_start_long_press()` 收口了（那条路会把
+  ///   "要开轨迹"这个待办清掉）⟹ 走到这里的必然是不足时长的那些。
+  /// @return 这一帧是否真的进了 `TRACK`（边界层据此打日志；没人等着的松手返回 false）
+  bool note_start_release(double now_s);
+
+  /// 受理**长按**开始键（`StartSwitchDetector::take_long_press()`）：按住够久了 ⟹ 立即降落。
+  ///
+  /// ★★ **资格看"按下那一刻"**：这一位在 `note_start_edge()` 里就锁存了 —— 只有落在
+  ///   *已解锁并在飞* 的任务态（`kClimb`/`kHover`/`kWaitStart`/`kTrack`）上的边沿才算数。
+  ///   反例见 `note_start_edge()` 的注释：用"1 s 到点那一刻"的任务态判，操作员按完起飞
+  ///   手还停在开关上时，到点那一刻飞机**已经在爬升**，于是它刚离地就自己降落。
+  /// @return 受理结论（本方**不打印**任何东西，文案由边界层按它出）
+  StartLandReply note_start_long_press();
 
   /// @param now_s 单调递增的秒（边界层给 `rclcpp::Node::now()`，本文件只用差值）
   /// @param traj 本帧的轨迹参考（ticket 09）。★ 带默认值是**刻意的**：本张之前的所有
@@ -799,6 +850,34 @@ private:
   ///   那几十毫秒里飞机就是原地悬停 —— 与 `WAIT_START` 的最后一段逐字连续。
   double track_target_x_{0.0}, track_target_y_{0.0}, track_target_z_{0.0};
 
+  // ────────── ticket 07 增补（长按开始键 ⟹ 降落） ──────────
+
+  /// ★★ **这一条边沿有没有资格成为一次降落请求** —— 在**边沿那一帧**就定下来
+  ///   （`note_start_edge`），长按事件到点时只核对它，**不再看当时的任务态**。
+  ///   看当时的任务态会让"按完起飞、手还停在开关上"变成"刚离地就降落"（反例见声明处）。
+  /// 松手时清掉（这一次按下结束了）。
+  bool land_hold_armed_{false};
+  /// `WAIT_START` 里按下之后"**欠一次开始**"：松手那一帧兑现（进 `TRACK`）。
+  /// ★ 它就是"第 2 次按键的动作挪到松手"这件事的全部状态。
+  bool track_on_release_{false};
+
+  /// 进 `TRACK` 的那一套记账（★ 一处做齐、**全清**，不是"只置一个"：这一轮的 `TRACK`
+  /// 与上一轮必须看不出区别）。ticket 07 增补起由 `note_start_release()` 调用。
+  void start_tracking(double now_s)
+  {
+    task_ = Task::kTrack;
+    traj_start_sent_ = false;        // ⟹ `update()` 的第一帧必发 `/traj/start`
+    last_traj_start_at_s_ = now_s;
+    traj_waited_since_s_ = now_s;    // 等参考从这一刻起算
+    track_seen_reference_ = false;
+    track_started_ = false;
+    // ★ 断流时的保持目标从**轨迹原点**起（不是上一轮的最后一个目标 —— 那可能离这儿
+    //   半条轨迹远，飞机的第一帧就会朝它冲过去）。
+    track_target_x_ = traj_x_;
+    track_target_y_ = traj_y_;
+    track_target_z_ = traj_z_;
+  }
+
   /// `armed` 下降沿的复位动作（落地上锁 ⟹ 一切重来）。★ 抽出来是因为 `update()` 的
   /// ① 复位与任务层必须**同时**归零：漏一个就会出现"飞机已上锁，任务还记着上一轮的轨迹原点"。
   void reset_mission()
@@ -818,6 +897,10 @@ private:
     traj_waited_since_s_ = 0.0;
     track_seen_reference_ = false;
     track_started_ = false;
+    // ★ ticket 07 增补：开始键那两位也一起清 —— 留着"要开轨迹"的待办会让**下一轮**的
+    //   第一次松手就把飞机开进 `TRACK`（而那一轮操作员可能只想起飞）。
+    land_hold_armed_ = false;
+    track_on_release_ = false;
   }
 
   /// 停发 + 交出控制权的**公共动作**（④ 夺权 / ⑤ 失效 / ⑥ 守卫不成立 —— 三处的这一段
@@ -877,21 +960,35 @@ inline const char * to_string(EndReason r)
   switch (r) {
     case EndReason::kTrajDone:         return "traj_done";
     case EndReason::kWaitStartTimeout: return "wait_start_timeout";
+    case EndReason::kLandPressed:      return "land_pressed";
     case EndReason::kNone:             break;
   }
   return "none";
 }
 
-/// 开始键受理结论的**词表**（`takeoff` / `track` / `ignored`）——
+/// 开始键受理结论的**词表**（`takeoff` / `track_on_release` / `land_hold` / `ignored`）——
 /// 现场脚本按它 grep "按键到底被当成了什么"。
 inline const char * to_string(StartEdgeReply r)
 {
   switch (r) {
-    case StartEdgeReply::kTakeoff: return "takeoff";
-    case StartEdgeReply::kTrack:   return "track";
-    case StartEdgeReply::kIgnored: return "ignored";
+    case StartEdgeReply::kTakeoff:         return "takeoff";
+    case StartEdgeReply::kTrackOnRelease:  return "track_on_release";
+    case StartEdgeReply::kLandHold:        return "land_hold";
+    case StartEdgeReply::kIgnored:         return "ignored";
   }
   return "ignored";
+}
+
+/// 长按受理结论的**词表**（`land` / `not_eligible` / `takeover` / `already_closing`）。
+inline const char * to_string(StartLandReply r)
+{
+  switch (r) {
+    case StartLandReply::kLand:           return "land";
+    case StartLandReply::kNotEligible:    return "not_eligible";
+    case StartLandReply::kTakeover:       return "takeover";
+    case StartLandReply::kAlreadyClosing: return "already_closing";
+  }
+  return "not_eligible";
 }
 
 /// ★ 故意不写 `default:`：新增一条 `Degrade` 而这里没跟上时，`-Wswitch` 直接编译失败。
@@ -945,34 +1042,80 @@ inline StartEdgeReply Fsm::note_start_edge(double now_s)
       //   —— 受理的全部语义（不排队、前置当帧查、`takeoff_timeout_s` 兜底）都在那里，
       //   复制一遍迟早走散（尤其是"已受理还在等解锁时再来一条"的拒绝）。
       //   `request_takeoff` 在 `kIdle` 上必然受理 ⟹ 这里也必然返回 `kTakeoff`。
+      // ★ 这一次按下**没有降落资格**（那一刻飞机还没被我们驱动）⟹ 显式清掉那一位：
+      //   资格是"这一条边沿带来的"，不能靠"上一条边沿没留下它"活着。
+      land_hold_armed_ = false;
       return (request_takeoff(now_s) == TakeoffReply::kAccepted) ? StartEdgeReply::kTakeoff
                                                                  : StartEdgeReply::kIgnored;
 
     case Task::kWaitStart:
-      // §H.5.1 的"第 2 次"：开始轨迹。★ 进 `TRACK` 需要的那一套记账在这里一次做齐
-      //   （全清，不是"只置一个"）—— 这一轮的 `TRACK` 与上一轮必须看不出区别。
-      task_ = Task::kTrack;
-      traj_start_sent_ = false;        // ⟹ `update()` 的第一帧必发 `/traj/start`
-      last_traj_start_at_s_ = now_s;
-      traj_waited_since_s_ = now_s;    // 等参考从这一刻起算
-      track_seen_reference_ = false;
-      track_started_ = false;
-      // ★ 断流时的保持目标从**轨迹原点**起（不是上一轮的最后一个目标 —— 那可能离这儿
-      //   半条轨迹远，飞机的第一帧就会朝它冲过去）。
-      track_target_x_ = traj_x_;
-      track_target_y_ = traj_y_;
-      track_target_z_ = traj_z_;
-      return StartEdgeReply::kTrack;
+      // §H.5.1 的"第 2 次" —— ★★ 但**不当场进 `TRACK`**（ticket 07 增补）：
+      //   同一次按下还可能是"长按降落"的起点（用户裁定 `WAIT_START` 里也算），
+      //   而按下就开跑会让那条命令**根本无从表达**（而且那 1 s 里飞机已经在跟参考飞了）。
+      //   ⟹ 这里只记下"欠一次开始"，由**松手**（`note_start_release`）兑现；
+      //     按够时长则由长按事件收口（它会把这个待办清掉）。
+      track_on_release_ = true;
+      land_hold_armed_ = true;
+      return StartEdgeReply::kTrackOnRelease;
 
-    case Task::kRequested:
     case Task::kClimb:
     case Task::kHover:
     case Task::kTrack:
+      // ★★ 已解锁并在飞 ⟹ 这一次按下**有降落资格**（ticket 07 增补要的就是这条路）。
+      //   除此之外**什么都不做**：按一下不松（不到时长）不改变任何任务。
+      land_hold_armed_ = true;
+      return StartEdgeReply::kLandHold;
+
+    case Task::kRequested:
     case Task::kDone:
-      // 丢掉。★ 一处也不能"帮操作员记住"：见声明处的理由（排队 = 在自己不看的某一刻开跑）。
+      // 丢掉，**连降落资格都不给**。★ `kRequested` 是"已受理起飞、还没解锁"——那一刻飞机
+      //   还在地上，若把它算成有资格，操作员按完起飞不松手会让飞机**刚离地就降落**
+      //   （反例的完整链条见声明处）。一处也不能"帮操作员记住"：排队 = 在自己不看的某一刻开跑。
+      land_hold_armed_ = false;
       return StartEdgeReply::kIgnored;
   }
   return StartEdgeReply::kIgnored;
+}
+
+inline bool Fsm::note_start_release(double now_s)
+{
+  const bool pending = track_on_release_;
+  // ★ 无论走哪条路，**这一次按下都结束了**：待办与降落资格一起清（长按那条路已经清过一遍）。
+  track_on_release_ = false;
+  land_hold_armed_ = false;
+  // 只有"在 `WAIT_START` 里按下、还没被长按接管"的那一次才兑现。别的松手一律不管：
+  // 起飞的松手、`TRACK` 里按了一下又松开的松手、任务已经在收口时的松手。
+  if (!pending || task_ != Task::kWaitStart) {
+    return false;
+  }
+  start_tracking(now_s);
+  return true;
+}
+
+inline StartLandReply Fsm::note_start_long_press()
+{
+  // ① 控制权已经被夺走 ⟹ **什么模式都不请求**（同 `update()` ④ 的纪律）。
+  if (latch_ == Latch::kTakeover) {
+    land_hold_armed_ = false;
+    return StartLandReply::kTakeover;
+  }
+  // ② 这次按下的那一刻没有资格 —— 判据是**边沿那一帧**锁存的那一位，
+  //    **不是**现在这个任务态（反例见 `note_start_edge` 的注释）。
+  if (!land_hold_armed_) {
+    return StartLandReply::kNotEligible;
+  }
+  land_hold_armed_ = false;
+  track_on_release_ = false;   // 已经要降落了，松手不许再把飞机开进 `TRACK`
+  // ③ 程序**已经在收口**了：任务自己走完（`kDone`），或已因失效降级在降落（闩锁）。
+  //    这一条只影响日志措辞 —— 那两种情况本来就会降落，这里不做第二件事。
+  if (task_ == Task::kDone || latch_ != Latch::kNone) {
+    return StartLandReply::kAlreadyClosing;
+  }
+  // ④ 受理：**正常收口**。★ 这里只置状态，真正的动作（停发 + 请求 `AUTO.LAND`）留给本帧的
+  //    `update()` ⑤ —— "降落只有一个出口"这条纪律不许在这里破。
+  end_reason_ = EndReason::kLandPressed;
+  task_ = Task::kDone;
+  return StartLandReply::kLand;
 }
 
 inline void Fsm::note_arming_failed()

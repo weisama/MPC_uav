@@ -51,7 +51,7 @@ Px4Interface::Px4Interface(rclcpp::Node & node, const Px4Config & config)
   modes_(config.modes), rc_start_(config.rc_start), traj_progress_cb_(config.on_traj_progress),
   // ★ 开始键的判据（§H.1 的那一组数）—— 有状态，所以在这里构造而不是每帧现算。
   start_(rc_start_.start_threshold, rc_start_.release_threshold, rc_start_.debounce_s,
-    rc_start_.low_us, rc_start_.high_us)
+    rc_start_.low_us, rc_start_.high_us, rc_start_.land_hold_s)
 {
   // 摇杆阈值来自参数（`COM_RC_STICK_OV` 的 µs 等价物）⟹ 检测器在这里才构造。
   for (StickMoveDetector & det : stick_) {

@@ -392,8 +392,8 @@ Phase 1 走的是 mavros，**不存在"微秒"这一层**：
 | `STANDBY` | 未解锁；**已开始以 50 Hz 持续发布 setpoint**（位置=当前，yaw=**当前机头**）。★ **收到起飞命令但还没解锁的期间也是它** —— 那时飞机仍未被我们驱动 | 流 setpoint，不解锁 |
 | `TAKEOFF` | 已解锁且在 OFFBOARD，爬升到 1.0 m | 目标 z 线性上升，≤0.5 m/s |
 | `HOVER` | 定点保持；同时**判定是否稳定** | 目标 = **悬停点**（= 起飞原点正上方 1 m。⚠️ 不是轨迹原点 —— 它此刻还不存在） |
-| `WAIT_START` | 已稳定、**轨迹原点已记录**，等遥控器开始键的**第 2 次上升沿** | 目标 = **轨迹原点**（停在原地）；兜底 `wait_start_timeout_s`（默认 300 s，`<= 0` = 永不） ⟹ `end_reason=wait_start_timeout` |
-| `TRACK` | 执行选定轨迹 | 目标 = **轨迹原点 + `/traj/reference`**（相对量由 `control` 加原点，见 §3.3） |
+| `WAIT_START` | 已稳定、**轨迹原点已记录**，等遥控器开始键的**第 2 次上升沿**（★ 2026-09-24 起：进 `TRACK` 的动作落在**松手**上 —— 同一把开关的"按住不放"被长按降落占用了） | 目标 = **轨迹原点**（停在原地）；兜底 `wait_start_timeout_s`（默认 300 s，`<= 0` = 永不） ⟹ `end_reason=wait_start_timeout` |
+| `TRACK` | 执行选定轨迹 | 目标 = **轨迹原点 + `/traj/reference`**（相对量由 `control` 加原点，见 §3.3）。★ 在飞的态（`TAKEOFF`/`HOVER`/`WAIT_START`/`TRACK`）里**长按开始键 ≥ `start_land_hold_s`（1 s，物理 ≈1.2 s）** ⟹ 立即 `LAND`（`end_reason=land_pressed`，ticket 07 增补） |
 | `LAND` | 自动降落 | 交给 PX4 的 `AUTO.LAND` |
 | `RC_OVERRIDE` | 遥控器打杆接管 | **停止发 setpoint**，退出 OFFBOARD |
 
@@ -432,9 +432,10 @@ Phase 1 走的是 mavros，**不存在"微秒"这一层**：
 | `STANDBY` | `TAKEOFF` | 解锁请求已发出 ∧ `state.armed` ⟹ **就在这一帧锁定起飞原点与机头**，斜坡从这里起算 |
 | `TAKEOFF` | `HOVER` | `\|z − (起飞原点+1.0)\| < 0.10 m` ∧ `\|v_z\| < 0.1 m/s` **持续** 1 s ⚠️ 基准是**原点+高度**，不是当帧的 `target_z`（见下） |
 | `HOVER` | `WAIT_START` | **稳定判据**成立（见 §5.1）；★ **此刻记录轨迹原点** |
-| `WAIT_START` | `TRACK` | **遥控器开始键的第 2 次上升沿**（去抖 200 ms）—— 归 ticket 09 ✅；★ 边沿的归属由**任务态**决定，不是由边沿计数决定 |
+| `WAIT_START` | `TRACK` | **遥控器开始键的第 2 次上升沿 + 松手**（去抖 200 ms）—— 归 ticket 09 ✅；★ 边沿的归属由**任务态**决定，不是由边沿计数决定。★ 按下只"记下"，**松手那一刻**才真的换态（ticket 07 增补的裁定 3） |
 | `WAIT_START` | `LAND` | 超过 `wait_start_timeout_s`（默认 300 s）⟹ **任务正常走完**（`end_reason=wait_start_timeout`） |
 | `TRACK` | `LAND` | 轨迹执行完毕（`/traj/progress ≥ 1.0`，且**必须先见过 < 1.0**）⟹ `end_reason=traj_done` |
+| 在飞的态 | `LAND` | **长按开始键 ≥ `start_land_hold_s`** ⟹ `end_reason=land_pressed`（ticket 07 增补）。★ 资格看**按下那一刻**：那条边沿必须发生在已解锁并在飞的态上；未解锁（`kIdle`）/ 已受理未解锁（`kRequested`）⟹ 忽略并记 WARN，**不请求任何模式**；控制权已被夺走 ⟹ 同样忽略并记 WARN |
 | `TRACK` | `LAND` | 参考流断超过 `traj_timeout_s`（3.0 s）⟹ 降级 `degrade=traj_timeout` |
 | 任意 | `RC_OVERRIDE` | `COM_RC_OVERRIDE` 触发 / 检测到 `state.mode != "OFFBOARD"` |
 | 任意 | `LAND` | 电池低于阈值 / 输入超时 / `EKF2` 位置失效 |
@@ -934,14 +935,23 @@ z0 的链路跑在 `MAVLINK_MODE_ONBOARD`，该模式配 `ESTIMATOR_STATUS` **1.
   `DegradeNames` 的**逐字符守卫**（任何 `degrade=` token 跑出 `[a-z0-9_]` 即变红）。
   ⚠️ **`end_reason` 没有对应的逐字符守卫**（只有 `DegradeNames` 有）—— `to_string(EndReason)` 的取值只在
   测试里按**值**断言。若要像 `degrade=` 那样发布一份 `end_reason=` 的 grep 配方，得先补这条守卫。
-  **ticket 09 的轨迹链那一半**（13 例）：**边沿按任务态归属**（`kIdle` ⟹ 起飞、`kWaitStart` ⟹ `TRACK`、
-  其余一律丢弃）、`TRACK` 的目标 = 轨迹原点 + 相对参考、参考流断 `traj_stream_gap_s` 后重发 `/traj/start`、
+  **ticket 09 的轨迹链那一半**（13 例）：**边沿按任务态归属**（`kIdle` ⟹ 起飞、`kWaitStart` ⟹ **松手**进 `TRACK`、
+  在飞的态 ⟹ **锁存降落资格**、`kRequested`/`kDone` ⟹ 丢弃）、`TRACK` 的目标 = 轨迹原点 + 相对参考、参考流断 `traj_stream_gap_s` 后重发 `/traj/start`、
   `traj_timeout_s` ⟹ `degrade=traj_timeout`、完成度 `≥ 1.0` 且**必须先见过 < 1.0** ⟹ `end_reason=traj_done`。
+  **ticket 07 增补的长按降落那一半**（7 + 7 + 2 例，三个接缝各一层）：检测器报"按住够久了"这个**事实**
+  （恰好按满 `hold_s` 那帧报**一次**、松手即作废并重新计时、`hold_s <= 0` 关掉、上电即高位不算），
+  状态机判"这一次按下算不算数"（资格看**按下那一刻** ⟹ **未解锁时按下的长按作废，哪怕到点时已解锁** ——
+  就是"按完起飞还按着不放会让飞机刚离地就降落"那个反例）、`WAIT_START` 里长按**一帧 `TRACK` 都不进**、
+  `WAIT_START` 里短按**松手**才进 `TRACK`；seam 1 再验一遍端到端：日志 `end_reason=land_pressed`、
+  setpoint 停发、`AUTO.LAND` 被请求，且在**松手之前**就已经决定（★ 分工的理由：时长要的是每帧读数
+  与时钟，那两样只有检测器有；资格要的是任务态与闩锁，那两样只有状态机有）。
 
-★ 上面说的 171 例 = `control` 自己的 **139**（`test_fsm.cpp` 72 + `test_rc_stick.cpp` 13 +
-`test_rc_switch.cpp` 12 + `test_control_standby.py` 10 + `test_control_failsafe.py` 17 +
-`test_control_takeoff.py` 8 + `test_control_track.py` 7）+ `bench` 夹具自检 **32**
+★ 上面说的 187 例 = `control` 自己的 **155**（`test_fsm.cpp` 79 + `test_rc_stick.cpp` 13 +
+`test_rc_switch.cpp` 19 + `test_control_standby.py` 10 + `test_control_failsafe.py` 17 +
+`test_control_takeoff.py` 8 + `test_control_track.py` 9）+ `bench` 夹具自检 **32**
 （`test_bench_selftest.py` **26** + `test_timeline.py` 6，**它自己的测试**，不是 `control` 的验收项）。
+⚠️ 数字里 `test_fsm.cpp` / `test_rc_switch.cpp` / `test_control_track.py` 三项是本文件写时**实测**的
+（2026-09-24 单跑，全绿）；其余几项沿用上一次整仓跑的数，**没有**在本轮重跑。
 ★ 逐文件数用 `grep -c '^TEST'`/`grep -cE '^(def test_|TEST)'` 现数，**别照抄本文** —— 它会漂。
 
 **`traj`（ticket 07）同样是两层**，`colcon test --packages-up-to traj` = **31 例**全绿

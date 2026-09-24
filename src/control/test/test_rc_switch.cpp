@@ -39,6 +39,13 @@ control::StartSwitchDetector make_detector()
   return control::StartSwitchDetector(0.75, 0.25, 0.2, kLowUs, kHighUs);
 }
 
+/// 带**长按**判据的那一个（ticket 07 的增补）。★ 默认构造（上面那个）的 `hold_s = 0`
+/// ⟹ 长按这条功能整个关掉，那也是"关掉它"的配置方式。
+control::StartSwitchDetector make_detector_with_hold(double hold_s)
+{
+  return control::StartSwitchDetector(0.75, 0.25, 0.2, kLowUs, kHighUs, hold_s);
+}
+
 /// 以 10 Hz 从 `t_s` 起喂 `frames` 帧同一读数；返回**喂完之后**的时刻。
 /// ★ 用"连喂 n 帧"而不是散着写时间，是因为这条判据的时间语义就是"连续保持多久"，
 ///   散写时辰极易把去抖窗算错一帧（而错一帧的后果是"按了没反应"，现场看不出来）。
@@ -248,4 +255,147 @@ TEST(StartSwitch, 越界读数不钳位)
   EXPECT_FALSE(det.take_edge()) << "上电即高位（越界也一样）不算边沿（H.5.2）";
   det.update(900.0, kDt);
   EXPECT_NEAR(det.normalized(), -0.1, 1e-12);
+}
+
+// ═════════ ticket 07 增补：**长按开始键 ≥ 1 s ⟹ 立即自动降落**（2026-09-24 用户裁定） ═════════
+//
+// ★ 为什么时长判据落在**这一层**（而不是状态机里）：它要的是"每一帧的原始读数 + 时钟"，
+//   而这两样只有本检测器手里有（`update(value_us, now_s)`，10 Hz，且它已经管着"确认/去抖"的时序）。
+//   状态机拿到的只有"一条边沿 / 一条长按"，它管的是**资格**（那条边沿当时落在哪个任务态上）。
+//   完整裁定与反例见 `.scratch/phase1/issues/07-traj-reference-trajectories.md` 的增补一节。
+
+/// 长按事件在电平**确认满 `hold_s`** 的那一帧产生，且只产生一次。
+/// ⚠️ 计时起点是**电平被确认**那一刻（去抖之后），不是"读数第一次越界"那一刻 ——
+///   与去抖同源：没确认过的电平不算"按着"（`high()` 的注释里那条真值语义）。
+TEST(StartSwitch, 长按事件在确认满hold_s那一帧产生一次)
+{
+  constexpr double kHoldS = 1.0;
+  control::StartSwitchDetector det = make_detector_with_hold(kHoldS);
+  double t = feed(det, kLow, 0.0, kDebounceFrames);      // 低位确认（H.5.2 的前提）
+  t = feed(det, kHigh, t, kDebounceFrames);              // 高位：第 3 帧确认
+  const double confirmed_at = t - kDt;
+  ASSERT_TRUE(det.take_edge());
+  EXPECT_FALSE(det.take_long_press()) << "刚确认就报长按 ⟹ 计时起点错了";
+
+  double fired_at = -1.0;
+  for (int i = 1; i <= 30; ++i) {
+    const double now = confirmed_at + i * kDt;
+    det.update(kHigh, now);
+    if (det.take_long_press()) {
+      fired_at = now;
+      break;
+    }
+  }
+  // ★ "恰好到点就算"（与去抖的 `kDebounceEpsilonS` 同一条容差惯例）。
+  //   差一帧都要指出来：现场表现为"按 1.2 s 没反应、按 1.3 s 才有"，而人会去怀疑遥控器。
+  EXPECT_NEAR(fired_at - confirmed_at, kHoldS, 1e-9) << "长按事件不在恰好到点那一帧";
+
+  for (int i = 0; i < 30; ++i) {   // 还按着（电平一直是高位）
+    det.update(kHigh, confirmed_at + (30 + i) * kDt);
+    EXPECT_FALSE(det.take_long_press()) << "第 " << i << " 帧又报了一次长按";
+  }
+}
+
+/// 按住**不到** `hold_s` 就松手 ⟹ 这一条长按作废，且松手要报一条事件（状态机靠它判"短按"）。
+TEST(StartSwitch, 按住不到hold_s就松手不产生长按事件)
+{
+  control::StartSwitchDetector det = make_detector_with_hold(1.0);
+  double t = feed(det, kLow, 0.0, kDebounceFrames);
+  t = feed(det, kHigh, t, kDebounceFrames);     // 确认
+  ASSERT_TRUE(det.take_edge());
+  t = feed(det, kHigh, t, 5);                   // 再按 0.5 s：离 1.0 s 还差一半
+  EXPECT_FALSE(det.take_long_press()) << "还没到 hold_s 就报了长按";
+  feed(det, kLow, t, kDebounceFrames);          // 松手
+  EXPECT_TRUE(det.take_release()) << "松手要报一条 —— 「短按松手才开轨迹」这条语义靠它";
+  EXPECT_FALSE(det.take_long_press()) << "松手之后那次按下仍在计时（作废没做）";
+}
+
+/// 松手之后再按 ⟹ **重新计时**（计时起点跟着新的边沿走，不是第一次按下的时刻）。
+TEST(StartSwitch, 松手后再按重新计时)
+{
+  control::StartSwitchDetector det = make_detector_with_hold(1.0);   // ← 这里用了 ticket 07 增补的构造参数
+  double t = feed(det, kLow, 0.0, kDebounceFrames);
+  t = feed(det, kHigh, t, kDebounceFrames);     // 第 1 次按下：只按 0.5 s
+  ASSERT_TRUE(det.take_edge());
+  t = feed(det, kHigh, t, 5);
+  EXPECT_FALSE(det.take_long_press());
+  t = feed(det, kLow, t, kDebounceFrames);
+  ASSERT_TRUE(det.take_release());
+
+  t = feed(det, kHigh, t, kDebounceFrames);     // 第 2 次按下
+  ASSERT_TRUE(det.take_edge());
+  const double confirmed_at = t - kDt;
+  EXPECT_FALSE(det.take_long_press()) << "刚确认就报长按 ⟹ 计时起点还留在上一次按下";
+  double fired_at = -1.0;
+  for (int i = 1; i <= 20; ++i) {
+    const double now = confirmed_at + i * kDt;
+    det.update(kHigh, now);
+    if (det.take_long_press()) {
+      fired_at = now;
+      break;
+    }
+  }
+  EXPECT_NEAR(fired_at - confirmed_at, 1.0, 1e-9) << "第 2 次按下的计时没有从这一次的确认时刻起算";
+  EXPECT_EQ(det.edge_count(), 2);
+}
+
+/// `hold_s <= 0` ⟹ 这条功能**整个关掉**（连边沿语义都不受影响）。
+TEST(StartSwitch, hold_s为零时长按功能整个关掉)
+{
+  control::StartSwitchDetector det = make_detector_with_hold(0.0);
+  double t = feed(det, kLow, 0.0, kDebounceFrames);
+  t = feed(det, kHigh, t, kDebounceFrames);
+  EXPECT_TRUE(det.take_edge()) << "边沿归边沿（两条语义互不影响）";
+  for (int i = 0; i < 50; ++i) {   // 一直按着 5 s
+    det.update(kHigh, t);
+    EXPECT_FALSE(det.take_long_press()) << "hold_s = 0 应当是「这条功能关掉」";
+    t += kDt;
+  }
+}
+
+/// ★★ **上电即在高位不算"按下"**（H.5.2 的同一条判据）：那种电平不产生边沿，也不起算长按。
+/// 少了这一条，开机时开关恰好停在上位 ⟹ 1 s 后凭空冒出一条"长按"⟹ 状态机打一条
+/// "按下时未解锁、已忽略"的 WARN —— 现场看到的是"没人动过它，程序却在说有人按了"。
+TEST(StartSwitch, 上电即在高位不产生长按事件)
+{
+  control::StartSwitchDetector det = make_detector_with_hold(1.0);
+  for (int i = 0; i < 50; ++i) {   // 5 s
+    det.update(kHigh, i * kDt);
+    EXPECT_FALSE(det.take_long_press()) << "第 " << i << " 帧：上电即高位不该起算长按";
+  }
+}
+
+/// ★ 死区读数（`release_threshold < x < start_threshold`）是"**没有信息**"：
+/// 它不产生边沿、不打断去抖窗（见 `死区读数不打断去抖计时`），也**不打断长按计时** ——
+/// 三条是同一条纪律。打断它的后果是"按满 1 s 时手指抖一下、这次就白按了"。
+TEST(StartSwitch, 死区读数不打断长按计时)
+{
+  control::StartSwitchDetector det = make_detector_with_hold(1.0);
+  double t = feed(det, kLow, 0.0, kDebounceFrames);
+  t = feed(det, kHigh, t, kDebounceFrames);
+  const double confirmed_at = t - kDt;
+  ASSERT_TRUE(det.take_edge());
+
+  for (int i = 1; i <= 8; ++i) {                 // 距确认 0.8 s
+    det.update(kHigh, confirmed_at + i * kDt);
+  }
+  det.update(kBand, confirmed_at + 9 * kDt);     // 0.9 s：经过中位
+  det.update(kHigh, confirmed_at + 10 * kDt);    // 1.0 s：到点
+  EXPECT_TRUE(det.take_long_press()) << "死区读数把长按计时打断了";
+}
+
+/// 松手事件是**事件**（取走一次就没），且它报的事实是"**确认了低位**"、不是"操作员刚松手"。
+/// ★ 后者是刻意的：上电时开关本来就在低位 ⟹ 开机后也有一条（谁该理它由调用方决定 ——
+///   状态机只在"自己记着一次按下"时才理）。
+TEST(StartSwitch, 松手事件取走一次就没)
+{
+  control::StartSwitchDetector det = make_detector_with_hold(1.0);
+  feed(det, kLow, 0.0, kDebounceFrames);
+  EXPECT_TRUE(det.take_release());
+  EXPECT_FALSE(det.take_release()) << "取走一次就没了";
+
+  const double t = feed(det, kHigh, 1.0, 5);     // 一直按着
+  EXPECT_FALSE(det.take_release()) << "按着的时候不该报「松手」";
+  feed(det, kLow, t, kDebounceFrames);
+  EXPECT_TRUE(det.take_release());
 }

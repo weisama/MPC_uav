@@ -7,6 +7,15 @@
    ⟹ 本文件的每条用例都必须**真的按键**（`set_rc_channel(9, ...)` 推两下），
      而不是调 `/control/takeoff` 服务 —— "按键能不能推进任务"正是本张要验的东西本身。
 
+★★ **ticket 07 增补（2026-09-24 用户裁定）改了同一把开关的第 3 种用法**：飞行中**长按 ≥1 s**
+   ⟹ 立即自动降落（`end_reason=land_pressed`）。它带来两处**语义改写**，本文件因此不是"补两条
+   用例"而是"改形"：
+     · 第 2 次按键进 `TRACK` 的动作从**按下**挪到了**松手**（否则"按住不动"这条命令无从表达）；
+     · §H.5.1 的"电平本身不携带含义"**收窄**为"*未在飞行态产生边沿的电平*不携带含义"
+       ⟹ "在 TRACK 里按着不放"现在**确实**是一条命令（按住够久就降落）。
+   两个数先记住：`start_land_hold_s = 1.0`（判据从**电平被确认**起算，即去抖 200 ms 之后）
+   ⟹ **物理按住 ≈1.2 s** 才算长按。⟹ 本文件里"短按"用 0.5 s、"长按"用 `LONG_PRESS_HOLD_S`。
+
 ★ 一半的夹具是假的 `traj`（`bench.FakeTraj`），另一半是假飞机（`bench.Plant`）：
   前者造"参考来 / 不来 / 断掉 / 跑完"这四种场面（**逐条对着 `traj_node.cpp` 抄**），
   后者让飞机真的跟着目标动。两者缺一，"目标 = 轨迹原点 + 参考"这句话就没有落点
@@ -26,6 +35,13 @@
   · 完成度到 1.0 ⟹ 任务走完（`end_reason=traj_done`）   → 完成度到 1
   · 上一轮留下的 1.0 不许把新一轮当场收口               → 第二个任务
   · 完成度转发到 /control/traj_progress（逐字）         → 转发完成度
+
+验收项 → 用例（ticket 07 的**增补**那一节，同上）：
+  · 第 2 次按键 = **松手**才进 `TRACK`                  → 两次上升沿（`_enter_track` 里的松手）
+  · `TRACK` 里短按（不到 1 s）什么都不发生              → 两次上升沿（末尾那一段）
+  · `TRACK` 里长按 ≥1 s ⟹ 立即降落、`land_pressed`      → TRACK 里长按开始键
+  · `WAIT_START` 里长按 ⟹ 直接降落、一帧 TRACK 都没进过  → WAIT_START 里长按开始键
+  · 起飞过程中一直按着 ⟹ 长按被忽略（资格看**按下那一刻**）→ `_reach_wait_start` 末尾两条断言
 
 ⚠️ 本文件**不**覆盖：遥控器上 ch9 到底分给了哪个开关（§H.4，EdgeTX 侧的事）、
    三条轨迹实飞、一键盘 bringup —— 那几条是台架外的验收项，工单里对应的小方框保持未勾。
@@ -58,6 +74,12 @@ START_LOW_US = 1000
 #   ⚠️ 这一条也是**给现场的数**：§H.1 的 200 ms 去抖 + 10 Hz 采样意味着开关要真的停住
 #     ≥0.3 s 才算一次（"弹一下"的拨法有相当概率什么都不发生）。
 START_HOLD_S = 0.5
+
+#: **长按**要按住的时长（s）—— `start_land_hold_s`（1.0）+ 去抖（0.2）再留一帧余量。
+#  ★ 为什么不能就按 1.2 s：判据从**电平被确认**那一帧起算，而确认落在"置高位之后的第 3 帧"
+#    （10 Hz ⟹ 首帧相位均匀落在 0~0.1 s）⟹ 物理按住时长最坏要 1.4 s 才能凑满 1.0 s 的计时。
+#    ★ 也不能取大：下面要用"松手之前就已经收口了"来钉"到点就执行"这条判据，按住越久越弱。
+LONG_PRESS_HOLD_S = 1.5
 
 #: 假 EKF 的初始位置。★ **两个轴都非零**，理由见文件头。
 INIT_X, INIT_Y = 0.3, -0.2
@@ -107,6 +129,9 @@ PARAMS = {
     #   抛 `InvalidParameterTypeException` **当场退进程**（症状是"接不上任何话题"）。
     "start_low_us": float(START_LOW_US),
     "start_high_us": float(START_HIGH_US),
+    # ★ ticket 07 增补：飞行中长按开始键满这么久 ⟹ 立即自动降落（`control.yaml` 的默认值）。
+    #   照原值写 1.0 —— 用例里的"短按"（0.5 s）与"长按"（`LONG_PRESS_HOLD_S`）都是按它定的。
+    "start_land_hold_s": 1.0,
     # —— ticket 08 的起飞/悬停判据（本文件要靠它走到 WAIT_START）——
     "takeoff_altitude_m": 1.0,
     "climb_speed_mps": 0.5,
@@ -146,10 +171,18 @@ def _target(sc):
     return (p.x, p.y, p.z)
 
 
-def _press_key(sc):
-    """把 ch9 拨到高位并按住 ⟹ 确认**一条**上升沿（§H.5：边沿，不是电平）。"""
+def _press_key(sc, hold_s=START_HOLD_S):
+    """把 ch9 拨到高位并按住 `hold_s` 秒 ⟹ 确认**一条**上升沿（§H.5：边沿，不是电平）。
+
+    ★ ticket 07 增补之后它有两个用法，差别**只在这个 `hold_s`**：
+      · 默认 0.5 s = **短按**：只产生边沿（长按门槛 1.0 s，见 `start_land_hold_s`）；
+      · `LONG_PRESS_HOLD_S` = **长按** ⟹ 到点就立即自动降落。
+    ⚠️ 本函数**不松手**（松手是 `_release_key` 的事），而长按计时**在按住期间一直走**
+      —— 短按用完如果迟迟不松手，1 s 之后照样会冒出一条长按事件。⟹ 短按的调用点后面
+      必须紧跟着松手，中间别插长动作（`test_两次上升沿` 末尾那一段就是这么写的）。
+    """
     sc.fake.set_rc_channel(START_CHANNEL, START_HIGH_US)
-    sc.hold(START_HOLD_S)
+    sc.hold(hold_s)
 
 
 def _release_key(sc):
@@ -195,18 +228,42 @@ def _reach_wait_start(sc, traj):
     assert "第 1 次上升沿" in sc.dut_log(), "开始键的第 1 次上升沿没有被节点认出来"
     assert len(sc.fake.arming_requests) == 1, (
         f"第 1 次按键该解锁**一次**，实际 {len(sc.fake.arming_requests)} 次")
+
+    # ★★ ticket 07 增补的**反例**，在这一步免费验掉了：第 1 次按键之后我们**一直没松手**
+    #   （整个爬升过程开关都停在高位），1 s 到点时长按事件**照样会**产生 —— 但这次按下发生在
+    #   **未解锁**的时候 ⟹ 状态机必须忽略它。若把资格判据写成"到点那一刻是否在飞"，
+    #   此刻飞机正爬升到 1 m ⟹ 它会当场请求 `AUTO.LAND`，**刚离地就自己往回坐**
+    #   （这条链的第一手记录见 ticket 07 增补的 Comments 第 1 条）。
+    assert not any(r.custom_mode == "AUTO.LAND" for r in sc.fake.mode_requests), (
+        "起飞过程中一直按着开始键，1 s 到点就把飞机判去降落了 —— 资格必须看**按下那一刻**")
+    assert "长按**被忽略**了 —— 这一次按下发生在" in sc.dut_log(), (
+        "那条长按事件连日志都没留下 —— 那一次按下确实产生了长按（开关一直停在高位），"
+        "证据留在日志里正是为了现场能分清「事件没产生」与「产生了但没资格」"
+        "（另一条同前缀的日志是夺权那条，所以这里连着后半句一起匹配）")
     return plant
 
 
 def _enter_track(sc, plant, traj, timeout_s=10.0):
-    """第 2 次上升沿 ⟹ `TRACK`。返回**按下那一刻**的场景时刻（给"start 是什么时候发的"用）。"""
+    """第 2 次**短按 + 松手** ⟹ `TRACK`。返回**松手那一刻**的场景时刻（给"start 什么时候发的"用）。
+
+    ★★ ticket 07 增补之后这里多了一步**松手**，而且它不是"顺手补的"：裁定 3 把"第 2 次按键
+      = 开始轨迹"的动作从**按下**挪到了**松手** —— 否则"按住不放"这条命令（长按降落）
+      在 `WAIT_START` 里无从表达（按下就已经开跑了轨迹，那 1 s 里飞机已经跟着参考飞了）。
+    ★ 返回**松手**时刻而不是按下时刻：`/traj/start` 现在紧跟着松手走，用按下时刻当基准
+      会把"按键到松手"这 0.5 s 白算进去（旧版那条 1 s 的窗会变得很紧）。
+    ⚠️ 那 0.5 s 的短按**远不到**长按门槛（1.0 s，且判据从电平确认起算）⟹ 不会误触发降落。
+    """
     _release_key(sc)
-    t_press = sc.t()
-    _press_key(sc)
+    _press_key(sc)     # 第 2 次上升沿 ⟹ `WAIT_START` 里只记下"欠一次开始轨迹"
+    t_release = sc.t()
+    _release_key(sc)   # ★ 松手 ⟹ 才真的进 `TRACK`
     fly_until(sc, plant, lambda: sc.control_state() == "AUTO/TRACK", timeout_s=timeout_s,
-              message="第 2 次上升沿没有进 TRACK")
+              message="第 2 次上升沿（短按后松手）没有进 TRACK")
     assert "第 2 次上升沿" in sc.dut_log(), "开始键的第 2 次上升沿没有被节点认出来"
-    return t_press
+    assert "松手** ⟹ 进入 TRACK" in sc.dut_log(), (
+        "松手那一刻没有留下「进入 TRACK」的日志（`control_node.cpp::log_start_release`）—— "
+        "现场读日志时，「按了没反应」与「松手才生效」就靠这条分辨")
+    return t_release
 
 
 def _land_and_disarm(sc, plant):
@@ -244,16 +301,22 @@ def _mission(reference_fn=lambda _t: REF_X, duration_s=10.0, selected=True):
         yield sc, traj, plant
 
 
-# ───────────────────────────── 开始键的两个边沿 ─────────────────────────────
+# ─────────────────────── 开始键的三条动作（两次短按 + 一次长按）───────────────────────
 
-def test_两次上升沿_第一次解锁起飞_第二次进_TRACK():
+def test_两次上升沿_第一次解锁起飞_第二次短按松手进_TRACK():
     """§H.5 的整条语义，一次按键走完：**第 1 次 = 解锁起飞，第 2 次 = 开始轨迹**。
 
     ★ 为什么一条用例管两次按键：它们的**分工**只有放在一起才看得见 ——
       第 1 次按键时飞机必须还没进 TRACK（否则"第 1 次解锁"这条语义是空的），
       第 2 次按键时飞机必须已经在天上且没解锁请求再发出去（否则第 2 次又解锁了一遍）。
-    ★ 附带验 §H.5 的另一半：**电平本身什么都不做**（按下去不松 ≠ 又按了一次），
-      以及**任务态不接受时的边沿被丢掉**（在 TRACK 里再按一下 ⟹ 什么都不该发生）。
+    ★ 附带验 ticket 07 增补之后**剩下**的那半边 §H.5.1：在 TRACK 里**短按**（不到 1 s）
+      什么都不发生 —— 它只锁存一条"降落资格"，而资格在**松手**那一刻就作废。
+      §H.5.1 的条文本身也被这次增补**收窄**了：原来说"电平本身不携带含义"，
+      现在正确的是"**未在飞行态产生边沿的电平**不携带含义"（产生过边沿、且持续为高
+      ≥ `start_land_hold_s` 的电平**确实**是一条命令 ⟹ 见下面两条长按用例）。
+    ★ 旧版这里最后一段写的是"边沿在 TRACK 里被**丢掉**"—— 增补之后那句话不再成立：
+      现在它给资格、并留一条日志。`kRequested`/`kDone` 里被丢掉的那一支由 `test_fsm.cpp`
+      直接钉住（seam 1 到不了那个瞬间：`kRequested` 是受理到解锁之间的几帧）。
     """
     with _mission() as (sc, traj, plant):
         # —— 第 1 次上升沿的后果在 `_reach_wait_start` 里已断言（解锁一次、进 WAIT_START）——
@@ -261,38 +324,122 @@ def test_两次上升沿_第一次解锁起飞_第二次进_TRACK():
         # ★ 到这一步为止 `/traj/start` 一帧都不能发过（工单"开始键之前不发控制指令"）。
         assert traj.starts == [], "第 2 次按键之前就发了 /traj/start"
 
-        t_press = _enter_track(sc, plant, traj)
+        t_release = _enter_track(sc, plant, traj)
         assert sc.control_state() == "AUTO/TRACK"
 
         # —— 进 TRACK 时发**一次** ——
         sc.hold(1.0)   # 留足时间让"多余的重发"暴露出来（闸门是 traj_stream_gap_s = 0.5）
         assert len(traj.starts) == 1, (
             f"进 TRACK 时 /traj/start 该发**一次**，实际 {len(traj.starts)} 次"
-            f"（时刻 {[round(t - t_press, 2) for t in traj.starts]}）—— 参考流是活的，"
+            f"（时刻 {[round(t - t_release, 2) for t in traj.starts]}）—— 参考流是活的，"
             "重发的闸门不该放行")
-        assert 0.0 <= traj.starts[0] - t_press <= 1.0, (
-            f"那一次 /traj/start 应当紧跟着按键发出，实际晚了 {traj.starts[0] - t_press:.2f} s")
+        assert 0.0 <= traj.starts[0] - t_release <= 1.0, (
+            f"那一次 /traj/start 应当紧跟着**松手**发出，实际晚了 "
+            f"{traj.starts[0] - t_release:.2f} s")
         assert len(sc.fake.arming_requests) == 1, "第 2 次按键不该再发一次解锁请求"
 
-        # —— §H.5.1：**按着不松 ≠ 又按了一次**（电平本身什么都不做）——
-        sc.fake.set_rc_channel(START_CHANNEL, START_HIGH_US)   # 仍然是高位，不松手
-        sc.hold(1.0)
-        assert sc.control_state() == "AUTO/TRACK", "开关停在高位被当成了新的边沿（§H.5.1）"
-        assert len(traj.starts) == 1, "开关停在高位却又发了一次 /traj/start"
-
-        # —— 边沿在 TRACK 里被**丢掉**（§H.5：只有 IDLE 与 WAIT_START 接受它）——
-        _release_key(sc)
+        # —— TRACK 里的**短按**：只锁存一条降落资格，松手即作废 ⟹ 什么都不发生 ——
+        #   ★ 这一段同时是"边沿必须留下日志"那条纪律的现场证据：TRACK 里的按下**不是**
+        #     "被丢掉"（它给了资格），但照样得有一句话说明它做了什么。
         n_before = len(traj.starts)
-        _press_key(sc)
+        _press_key(sc)     # 0.5 s 短按 ⟹ 边沿，远不到 start_land_hold_s = 1.0
+        assert "锁存降落资格" in sc.dut_log(), (
+            "TRACK 里的边沿没有留下日志 —— 「按了没反应」只有两种可能：没产生边沿，"
+            "或者产生了但当时拿不到资格，日志必须能分开这两者")
+        _release_key(sc)   # ★ 松手：这次按下的降落资格作废（长按计时也一清）
         sc.hold(1.0)
         assert sc.control_state() == "AUTO/TRACK", (
-            "已经在 TRACK 里了，再按一次开始键**什么都不该发生**（不该重发 start、"
-            "不该改任务态）")
+            "TRACK 里短按（不到 start_land_hold_s 就松手）不该改任务态 —— "
+            "它只锁存资格，资格在松手那一刻就作废了")
         assert len(traj.starts) == n_before, "被丢掉的那次边沿仍然触发了 /traj/start"
-        assert "**被丢掉**" in sc.dut_log(), (
-            "被丢掉的边沿必须留一条日志（「按了没反应」是现场最难查的一类问题，"
-            "而它只有两种可能：没产生边沿，或者产生了但任务态不接受）")
+        assert not any(r.custom_mode == "AUTO.LAND" for r in sc.fake.mode_requests), (
+            "短按松手之后飞机去降落了 —— 长按门槛（1 s）没有生效")
         assert len(sc.fake.arming_requests) == 1
+
+
+# ──────────────────── 长按开始键 ≥1 s ⟹ 立即自动降落（ticket 07 增补）────────────────────
+
+def test_TRACK里长按开始键_到点就立即降落():
+    """★★ ticket 07 增补的主验收：**飞行中长按开始键 ≥1 s** ⟹ 立即走"正常收口"那条出口。
+
+    ★ 三件事必须各有一条证据，缺一条都不算验过：
+      ① `end_reason=land_pressed` —— 与"飞完"（`traj_done`）/"超时"（`traj_timeout`）分开：
+         三条出口的**动作逐字相同**（停发 + `AUTO.LAND`），只有这句日志能分开它们；
+      ② setpoint **停发**（真收口，不是"还在流但飞机在降"）；
+      ③ **松手之前**就已经决定了 —— 裁定是"到点就执行"，不是"松手才执行"。用
+         "开关此刻仍停在高位"来钉（`rc_channels[8]` 就是 ch9 的当前值）。
+    ★ 还要钉住"它**不是一次降级**"：`degrade=` 一条都不许有 —— 长按是操作员要求的收口，
+      现场读到 `degrade=` 会去查故障，而真相是"我叫它停的"。
+    """
+    with _mission(reference_fn=lambda _t: REF_X, duration_s=30.0) as (sc, traj, plant):
+        _enter_track(sc, plant, traj)
+        fly(sc, plant, 1.0)   # 先在 TRACK 里真飞一会儿：证明停的是**正在飞**的那个任务
+        assert sc.control_state() == "AUTO/TRACK"
+        n_arm = len(sc.fake.arming_requests)
+        n_start = len(traj.starts)
+
+        _press_key(sc, hold_s=LONG_PRESS_HOLD_S)   # ★ 按住（判据从电平确认起算 ⟹ 物理 ≈1.2 s）
+        fly_until(sc, plant, lambda: sc.control_state() == "MANUAL/LAND", timeout_s=5.0,
+                  message="TRACK 里长按开始键 1 s 没有立即降落")
+
+        assert sc.fake.rc_channels[START_CHANNEL - 1] == START_HIGH_US, (
+            "开关此刻应当还停在高位 —— 这次收口必须是**按满时长到点**那一刻做的，"
+            "不是松手做的（裁定：到点就执行）")
+        assert "end_reason=land_pressed" in sc.dut_log(), (
+            "长按降落必须打出 `end_reason=land_pressed`（工单要的可 grep 证据）")
+        assert "end_reason=traj_done" not in sc.dut_log(), (
+            "长按降落被记成了「轨迹飞完」—— 现场会把一次人工叫停读成一次成功")
+        assert DEGRADE_TRAJ_TIMEOUT not in sc.dut_log(), (
+            "长按降落被记成了一次**失效**（降级）—— 它是操作员要求的收口，不是故障")
+        assert any(r.custom_mode == "AUTO.LAND" for r in sc.fake.mode_requests), (
+            "长按之后没有请求 AUTO.LAND（收口 = 停发 setpoint + 把降落交给 PX4）")
+
+        frozen = len(sc.setpoints())
+        sc.hold(1.0)
+        assert len(sc.setpoints()) == frozen, (
+            f"长按之后必须停止发 setpoint（冻结后又来了 {len(sc.setpoints()) - frozen} 帧）")
+        assert len(traj.starts) == n_start, "长按降落不该再发 /traj/start"
+        assert len(sc.fake.arming_requests) == n_arm, "长按降落不该再发解锁请求"
+
+        _release_key(sc)   # 事后松手：**不该改变任何结论**（决定早就做完了）
+        assert sc.control_state() == "MANUAL/LAND", "松手把已经决定的收口又改了"
+
+        # —— 收尾与另外两条出口逐字相同（复用同一个出口，不是新造一条）——
+        _land_and_disarm(sc, plant)
+
+
+def test_WAIT_START里长按开始键_一帧_TRACK_都没进就降落():
+    """`WAIT_START`（等第 2 次按键）里长按 ⟹ **直接**降落，一帧 `TRACK` 都没进过。
+
+    ★ 这条验的是裁定 3 的另一半：`WAIT_START` 里长按**算数**，因此"第 2 次按键 = 开始轨迹"
+      的动作必须从**按下**挪到**松手**（否则按下就已经开跑轨迹，那 1 s 里飞机已经跟着参考飞了，
+      "按住不动"这条命令在 `WAIT_START` 里就无从表达）。
+    ★ "没进过 TRACK"的可判据有两条，都用上：
+      ① `/traj/start` **一帧都没发过** —— 进 TRACK 的第一件事就是发它（`traj.starts`）；
+      ② `/control/state` 的**历史**里没有出现过 `AUTO/TRACK`（比"当前状态"强：
+         它能排除"进去过又出来了"这种一闪而过的场面）。
+    """
+    with _mission(reference_fn=lambda _t: REF_X, duration_s=30.0) as (sc, traj, plant):
+        assert sc.control_state() == "AUTO/WAIT_START"
+        # ★ 必须先松手：第 1 次按键之后开关一直停在高位（`_reach_wait_start` 按下去就没松），
+        #   而 §H.5.2 要求"只有确认过低位，高位才是一次边沿"—— 不松手就没有新边沿，
+        #   也就没有"这次按下有资格"这回事。现场纪律"拨完要拨回"在这一步是硬前提。
+        _release_key(sc)
+
+        _press_key(sc, hold_s=LONG_PRESS_HOLD_S)
+        fly_until(sc, plant, lambda: sc.control_state() == "MANUAL/LAND", timeout_s=5.0,
+                  message="WAIT_START 里长按开始键没有直接降落")
+
+        assert traj.starts == [], (
+            "长按降落之前发了 /traj/start —— 那是「进 TRACK」的动作（裁定 3 要求直接降落）")
+        assert all(state != "AUTO/TRACK" for _, state in sc.control_state_history()), (
+            "长按降落之前进过 TRACK —— WAIT_START 里的长按必须**直接**降落")
+        assert "end_reason=land_pressed" in sc.dut_log(), (
+            "WAIT_START 里的长按降落没打 `end_reason=land_pressed`")
+        _release_key(sc)
+        assert sc.control_state() == "MANUAL/LAND", (
+            "松手把飞机开跑轨迹了 —— 长按已经把「欠下的开始轨迹」清掉了")
+        _land_and_disarm(sc, plant)
 
 
 # ───────────────────────────── 目标 = 轨迹原点 + 参考 ─────────────────────────────
@@ -498,7 +645,10 @@ def test_第二个任务不会被上一轮留下的完成度_1_当场收口():
         _land_and_disarm(sc, plant)
         assert "end_reason=traj_done" in sc.dut_log(), "任务 1 没有正常收口（前提不成立）"
 
-        # —— 任务 2：★ 注意开始键此刻停在高位（TRACK 那次按下去就没松）——
+        # —— 任务 2：先松手回到低位 ——
+        #   ★ §H.5.2：**只有确认过低位之后，"高位"才是一次边沿**。`_enter_track` 那一步
+        #     已经松过手了，这里照旧再走一遍，是为了不让"低位"这个前提依赖于上一条用例的写法
+        #     （少一次它，第二个任务的第一次按键就会一个边沿都不产生）。
         _release_key(sc)
         n_arm = len(sc.fake.arming_requests)
         plant2 = Plant(sc)   # 任务 2 从地面重新起飞（`_land_and_disarm` 把假飞机放回去了）
