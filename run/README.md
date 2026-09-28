@@ -127,8 +127,9 @@ run/down.sh --dry-run    # 只扫一眼"会停谁"，**一个信号都不发**
    分别报"两个都杀不掉（10.1 s）"与"干净（5.2 s，忽略 INT 的那个死在 SIGTERM）"。
 
 ⚠️ **它不是降落，也不解锁、不切模式、不碰飞控**：setpoint 一停，PX4 在 `COM_OF_LOSS_T`（1.0 s）后
-自己退出 OFFBOARD，按 `COM_OBL_RC_ACT`（现值 `0`）落回 Position；**A1 未落实** ⟹ 遥控同时丢了
-`NAV_RCL_ACT = 2` 会**试图返航**（室内没有 GPS）。飞机还在空中时先按
+自己退出 OFFBOARD，按 `COM_OBL_RC_ACT`（现值 `0`）落回 Position；遥控同时丢了也不要紧 ——
+**A1 已落地**（`NAV_RCL_ACT = 1` Hold，★ 2026-09-28 第一手实测），PX4 **就地保持**。
+飞机还在空中时先按
 [`operation_manual.md`](../operation_manual.md) §1.2 处置。
 ⚠️ **按名字扫 ⟹ 别人会话 / 跑着的测试起的同类节点也在清单里**（现场只有一套飞机，这个代价是明说的）
 —— 动手前**看一眼命令行**，不是你这套的就答 n。

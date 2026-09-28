@@ -74,7 +74,8 @@ Type: grilling
 |---|---|
 | 在 EdgeTX 里给 **CH9 分配一个开关**（§H.4） | ★ **已立为 Phase 1 阻塞项第 5 条**（[`spec.md`](../spec.md)），人工/操作者做 |
 | 用 `/mavros/rc/in` 做**台架复核**（§H.8），验证 `channels[8]` 与"不触发模式切换" | [ticket 09](09-track-mission-script.md) 的对应勾选框**留空**（它是阻塞项第 5 条的下游） |
-| **解锁前遥控必须开机且链路已建立**；`NAV_RCL_ACT 2→1`（A1） | 首飞检查单 + A1（A1 本来就是 ★阻塞项，见 §H.7.1） |
+| **解锁前遥控必须开机且链路已建立** | 首飞检查单（§H.7.1 第 1 条）—— 仍是**纪律**，未落实项 |
+| ~~`NAV_RCL_ACT 2→1`（A1）~~ | ✅ **已落地**：★ 2026-09-28 第一手实测 `NAV_RCL_ACT = 1`（Hold） |
 | FSM 按 §H.5 的边沿语义实现（第 2 次边沿才开始、上电即高位不算边沿） | ticket [05](05-control-offboard-skeleton.md) / [09](09-track-mission-script.md) |
 | G6（Phase 2 的版本基准）等**被真身改判连带推翻**的表述 | [ticket 10](10-docs-1-14-sweep.md)（本张只就地加了 ☠️ 标记，不改 Phase 2 的决策） |
 

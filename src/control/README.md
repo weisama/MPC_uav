@@ -285,9 +285,21 @@ WAIT_START ──开始键第 2 次上升沿──▶ TRACK ──progress ≥ 1
 
 ⚠️ **拿不到 `AUTO.LAND` 时怎么办（诚实版）**：`AUTO.LAND` 需要 EKF2 的 local position
 （`mode_requirements.cpp:141`），位置真失效时 PX4 会**拒绝**它 —— 那时唯一兜底是 PX4 自己的失效保护
-（`NAV_RCL_ACT` / `COM_OBL_RC_ACT`）。而且 **z0 现值 `NAV_RCL_ACT = 2`（Return）**，
-室内无 GPS 会去返航，这是 `params-changes.md` **A1** 的阻塞项 ⟹ **A1 不落实，
-本节点的"RC 超时"路径后果就不是"就地悬停"而是"试图返航"**。
+（`NAV_RCL_ACT` / `COM_OBL_RC_ACT`）。★ **z0 现值 `NAV_RCL_ACT = 1`（Hold）** ——
+**2026-09-28 第一手实测**（`ros2 param get /mavros/param NAV_RCL_ACT` ⟹ `1`）
+⟹ 本节点的"RC 超时"路径后果是**就地保持**。☠️ 本文此前写"现值 `2`（Return）… A1 不落实"，
+**那句是错的**（同一时期 ticket 13/15 都记着"已生效"）。
+
+⚠️ **★ 2026-09-28：还有两处"现值 2 / A1 阻塞项"的旧话在源码里没改**（文档侧已全部清扫）：
+
+| 位置 | 是什么 | 为什么要紧 |
+|---|---|---|
+| [`control_node.cpp:1093`](src/control_node.cpp#L1093) | `Degrade::kRcTimeout` 的**人话说明串** | ☠️ **运行时打给现场看的**，且正出现在"遥控静默且已解锁"这个场景 —— 说的正好是反的 |
+| [`fsm.hpp:1285`](include/control/fsm.hpp#L1285) | 降落分支的注释 | 只是注释，但同属"引用了参数现值"这一类会腐坏的字面 |
+
+★ **2026-09-28 操作者裁定：留到下次动 `control` 时一并改**（改源码**必须重建才生效**：
+`colcon build --packages-select control` + 重跑 `colcon test`，否则改了个寂寞）。
+⟹ **在那之前，这两处仍会输出错话** —— 别当成"已修完"。
 
 ⚠️ **`state_timeout` 这条在真机上不是"请求 `AUTO.LAND` 直到结束"**（2026-09-22 复核补，第一手：
 mavros 2.15.1 @ `22ae5b7`）：真丢链路时 mavros 会在 `conn_timeout`（默认 10 s）之后**自己发一帧**
@@ -616,7 +628,7 @@ seam 2（`test/test_rc_switch.cpp`，19 例，ticket 09 + 07 增补）：开始�
 | 低压判据面对的是**真电池**读数 | 台架注入的是假 mavros 的电压，判据逻辑已覆盖；**真实读数可不可信**是 ticket 01 的 ADC 判定（⚠️ 判据本身只看电压、不依赖电流） |
 | ★ **ticket 09 的开始键台架核对**（`/mavros/rc/in` 的 `channels[8]`，验收项 6） | **两个前置不在位**：EdgeTX 的 CH9 分配是人工动作（§H.4）、本机遥控链路当前是断的（§H.9）⟹ 没得核。★ 上电时**先做这一条再做自由飞** —— 通道错了的话第 1 次上升沿会直接去解锁起飞 |
 | ★ **三条轨迹的自由飞**（悬停 / 正方形 / 八字）+ §5.3 的 60 s 定点 | **人的物理步骤**（装桨 + 空域）。代码侧已就绪；判读靠 `end_reason=` / `遥控器开始键：` / `TRACK 进行中：` 这几条固定形状的日志 |
-| ⚠️ **`NAV_RCL_ACT = 2`（Return）这条依赖** | 不是本包的实现项，是 `params-changes.md` **A1** 的阻塞项：A1 不落实，"RC 丢失超时 ⟹ LAND"之后 PX4 自己的 RC 失效保护仍会试图**返航** |
+| ~~**`NAV_RCL_ACT = 2`（Return）这条依赖**~~ | ✅ **A1 已落地**（2026-09-28 实测 `NAV_RCL_ACT = 1` Hold）⟹ "RC 丢失超时 ⟹ LAND"之后 PX4 自己那条 RC 失效保护是**就地保持**，不会返航 |
 | ~~**"EKF2 位置失效"的真载体**~~ | ☠️ **ticket 16 已定案（2026-09-22）**：载体找到了，就是 `ekf2_pos_lost`（`/mavros/estimator_status.pos_horiz_abs`），**台架上可注入可测**（`test_control_failsafe.py` 四条 + bench 自检两条）⟹ 这一行不再挂"待办" |
 
 做上面几项时 **必须在台架上拆桨**，并按 `docs/control/phase1-implementation.md` §7 的顺序来 ——

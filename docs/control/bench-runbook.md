@@ -20,6 +20,22 @@
 ⚠️ 那是**导航图**，**不替代本清单** —— 本清单是**拆桨台架**的判据与读数记录（要填表、要回勾票），
 那一页是**飞之前**该按的顺序与判读。
 
+## ★ 2026-09-28 操作者裁定：**下一次台架日 = 这张表全跑一遍**（含阶梯的处置）
+
+**背景**：2026-09-28 已经**自由飞过一次**（三条轨迹，目测正常，见 [`operation_manual.md`](../../operation_manual.md) §8.1），
+但**本清单的框一个都没勾过**（T1–T8 全是空的），[`04`](../../.scratch/phase1/issues/04-mocap-relative-pose.md)/
+[`05`](../../.scratch/phase1/issues/05-control-offboard-skeleton.md)/
+[`06`](../../.scratch/phase1/issues/06-control-failsafe-paths.md)/
+[`13`](../../.scratch/phase1/issues/13-mavros-bench-vision-pose.md) 里那批读数框也照旧空着。
+⟹ **裁定：这些读数要补，下一次台架日一次性全跑、逐条回勾。**
+
+| 项 | 裁定 | 备注 |
+|---|---|---|
+| **本清单 T1–T8** | ⏳ **要补，一次全做完**（这次会话就是它） | 含 **T4 的跳变量**（09-22 只观测到过"越阈值"那一次 `0.5738 m`，修法在 T4 正文）、**T5 断流**、**T6 打杆接管**、**T7 输入坏** |
+| **ticket 04 的两个框**（QGC 定位稳定 / 坐标系确认实验） | ⏳ **由 T1 + T2 承接** | 它们本来就是 T1/T2 的落点 |
+| **验收阶梯 1–3 级**（系绳 20 cm / 系绳悬停 30 s…） | ✅ **不再补做**（操作者原话：*"后续自由飞都测试过足以说明 1–3 已经实现，无需测试"*） | ⚠️ **是裁定，不是"做过了"** —— 1–3 级的读数**仍然没有**，别当证据用 |
+| **A1** | ✅ **已落地** | ★ 2026-09-28 实测 `NAV_RCL_ACT = 1`，P0 表里那行已经不用改 |
+
 ★ **一次会话尽量全做完**：起链、搬飞机、解锁这些准备工作占大头，下面 7 项共用同一次准备。
 （步骤顺序是刻意的：T1/T2/T3 必须在**解锁之前**做，T5/T6/T7 必须在**解锁之后**做。
 **T4 是全程唯一的解锁动作**（ticket 08 起解锁只能由**程序**发起 —— 现场按开始键（CH9 第 1 次
@@ -67,7 +83,7 @@
 
 | 参数 | 期望现值 | 与本清单的关系 | 实测值（填） |
 |---|---|---|---|
-| `NAV_RCL_ACT` | `2`（Return）→ **改成 `1`（Hold）** | ★ **A1 首飞阻塞项**：室内无 GPS，`2` 会去**返航**。不改的话 T7 那条"我们请求 `AUTO.LAND`"之后 PX4 仍可能试图返航 | |
+| `NAV_RCL_ACT` | ✅ **已是 `1`（Hold）** —— ★ 2026-09-28 实测（`ros2 param get`）⟹ **A1 已落地，本行不必再改** | 原为 **A1 首飞阻塞项**（室内无 GPS 时 `2` 会去**返航**）。☠️ 本行此前写"期望现值 `2` → 改成 `1`"，**那是过时的**：13/15 早在 09-22/23 就记着已生效 | `1`（2026-09-28） |
 | `COM_OBL_RC_ACT` | `0`（= Position 模式） | ★ **T6 判的就是它** | |
 | `COM_RC_OVERRIDE` | `3`（刻意放宽） | T6 的**另一条**机制（见 T6 的判别跑） | |
 | `COM_RC_STICK_OV` | `20`（= 归一化 `0.2/s`） | 与我们的 `rc_stick_ov_us_per_s = 100` **同源**（`config/control.yaml:68-73`） | |
@@ -138,7 +154,7 @@ ros2 topic hz /mocap/pose_enu                                #    有数
 |---|---|
 | **做** | 未解锁，QGC → MAVLink Inspector |
 | **判据** | `VISION_POSITION_ESTIMATE` **有数且不跳**；`LOCAL_POSITION_NED` **稳定**（不用解锁、不用飞） |
-| **记录** | 截图或读数区间；`EKF2_EVP_NOISE` 现值（已读过 `0.06096`，ticket 13） |
+| **记录** | 截图或读数区间；`EKF2_EVP_NOISE` 现值 —— ★ **2026-09-28 实测已是 PX4 默认 `0.1`**（09-21 读到的是 `0.06096`，操作者确认那次之后被人为改过，见 [`params-changes.md` §I.1′](../reference/params-changes.md)）。**照实读、照实记，别照抄 `0.061`** |
 | **卡住看哪** | `mocap` 节点日志 / `progress` 字段；数值跳 → 动捕 WiFi 或 `EKF2_EVP_NOISE` |
 
 ## T2. 坐标轴确认（勾 ticket 13 的 ⑥ = §7 步 1b/1c）
@@ -273,5 +289,5 @@ T5/T6/T7 的判据**全部在 PX4 里**：
 | T3 / T5 | [ticket 05](../../.scratch/phase1/issues/05-control-offboard-skeleton.md) 的两条遗留 |
 | T4（解锁 + 锁原点 + `TAKEOFF` 斜坡） | [ticket 08](../../.scratch/phase1/issues/08-takeoff-hover-land.md) 的**验收阶梯第 1 级**（阶梯第 2/3/4 级要装桨，不在本清单） |
 | T6 / T7 | [ticket 06](../../.scratch/phase1/issues/06-control-failsafe-paths.md) 的验收项 ① 后半（④ 见 ticket 16） |
-| A1（`NAV_RCL_ACT = 1`） | [`params-changes.md`](../reference/params-changes.md) §A 的首飞阻塞项 |
+| A1（`NAV_RCL_ACT = 1`） | ✅ **已落地**（2026-09-28 实测）—— [`params-changes.md`](../reference/params-changes.md) §A 的首飞阻塞项，**不必再做** |
 | **T1 / T2 / T4 的「记录」列里还没填的三处读数**（① 的"不跳"、⑥ 的三个 Δ、T4 的跳变量） | [ticket 13](../../.scratch/phase1/issues/13-mavros-bench-vision-pose.md) 的 **§残留读数** —— 13 已 `done`，这三处是**不藏在 `done` 下面**的残留（`done` 的语义见 [`triage-labels.md`](../agents/triage-labels.md)） |

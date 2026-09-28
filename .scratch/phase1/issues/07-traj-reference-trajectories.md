@@ -209,10 +209,16 @@ xunit 里的汇总节点也数了一遍，真实用例数是 31（两个 `grep -
       `bringup/README.md` 的两处"边沿"措辞。
       ✅ 2026-09-24 全部改到（`operation_manual.md` 的 §1.2 从"两条软路径"变"三条"，ch8 顺延成 (d)，
       交叉引用一并改；测试计数 171 → 187）。
-- [ ] 整仓 `colcon test --executor sequential` 全绿（域隔离见 `DELETED.md` 里 17 号墓碑）。
+- [x] 整仓 `colcon test --executor sequential` 全绿（域隔离见 `DELETED.md` 里 17 号墓碑）。
       ⚠️ **2026-09-24 没做**：用户当场要求"简单测试就行了" ⟹ 只单跑了本张碰到的三个文件
       （`test_rc_switch.cpp` 19/19、`test_fsm.cpp` 79/79、`test_control_track.py` 9/9，域 55），
-      **整仓那一次留空**。⟹ 这一格是本节唯一未勾的项，`colcon build --packages-up-to control` 干净。
+      **整仓那一次留空**。
+      → ✅ **2026-09-28 按"已知抖动"结案（操作者裁定：不开票）**：整仓跑过一次（09-23），
+      非全绿的两项**都已定性** —— `vrpn_listener` 的 4 条 vendored lint（`copyright`/
+      `cpplint`/`lint_cmake`/`uncrustify`，是 vendored 原样的代价），以及 `control` 的
+      `test_control_failsafe` **间歇抖动**。抖动的三条证据与症状读法写在
+      [`src/bench/README.md`](../../../src/bench/README.md) 的「已知的间歇抖动」一节，
+      这里不重复。⟹ **"全绿"这句在整仓并发下不成立，但每一项都有交代，不留悬案。**
 
 ### Comments
 

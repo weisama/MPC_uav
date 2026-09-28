@@ -690,8 +690,9 @@ z0 的链路跑在 `MAVLINK_MODE_ONBOARD`，该模式配 `ESTIMATOR_STATUS` **1.
 
 1. **打杆接管的最终执行是 PX4 的事**（`COM_OBL_RC_ACT`，z0 现值 `0` = 回 Position 模式），
    夹具不模拟 PX4 ⟹ 台架只能验到"我们停发了、退到 `RC_OVERRIDE`、不抢回"。
-   连带 ⚠️：**`NAV_RCL_ACT = 2`（Return）是 A1 阻塞项** —— A1 不落实，"RC 丢失 ⟹ 我们请求 LAND"
-   之后 PX4 自己的 RC 失效保护仍会试图**返航**（室内无 GPS）。
+   连带 ~~⚠️：**`NAV_RCL_ACT = 2`（Return）是 A1 阻塞项** —— A1 不落实，"RC 丢失 ⟹ 我们请求 LAND"
+   之后 PX4 自己的 RC 失效保护仍会试图**返航**（室内无 GPS）~~
+   —— ✅ **A1 已落地**（★ 2026-09-28 第一手实测 `NAV_RCL_ACT = 1` Hold）⟹ 是**就地保持**。
 2. ✅ **`/mavros/state` 超时这条在真机上不是"请求 `AUTO.LAND` 直到结束"**（2026-09-22 第二轮复核发现，
    第一手：mavros 2.15.1 `sys_status.cpp`）—— **已由 ticket 18 收口（2026-09-22）**，见上面那条 ★★
    「可信的落地上锁」。这里保留原始记录（它是那个风险的现场）：

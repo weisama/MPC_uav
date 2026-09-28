@@ -80,6 +80,31 @@
   ⚠️ 两处已知挡不住的场面：**同一包并发两轮**（两个会话）、以及**忘了加 `--executor sequential`** ——
   症状是随机假红/假绿，而 DUT 自己的日志完全正常（排查方向天然指错）。
 - **`ROS_LOCALHOST_ONLY=1`**（本机多网卡：动捕 WiFi + 校园网，别把测试组播漏出去）
+
+#### ★ 已知的间歇抖动：`test_control_failsafe`（**不阻塞，别再追**）
+
+**2026-09-23 的整仓 `colcon test --executor sequential` 里，`control` 挂过 1 例** ——
+`test_control_failsafe.py::test_动捕时间戳冻住会降级_而短促倒退不会` 的**后半**：
+`ASSERT wait_for_control_state("MANUAL/LAND", 6.0)` 超时，DUT 实际停在 `AUTO/TAKEOFF` 一动不动
+（`build/control/Testing/Temporary/LastTest_20260923-0346.log:409` 起）。
+
+**判定：整仓并发下的抖动，不是缺陷**（三条第一手证据）：
+
+1. **单独跑必过** —— 同文件 `ROS_DOMAIN_ID=73 pytest src/control/test/test_control_failsafe.py`
+   ⟹ `19 passed`；只跑那一条 ⟹ `1 passed`。
+2. **整包 ctest 也过** —— `ctest --test-dir build/control` ⟹ `7/7 全过`（含它自己的 172.61 s）
+   ⟹ 差异不在 ctest 路径，在"整仓并发"。
+3. **它在本票之前就在抖** —— `LastTestsFailed_*.log` 里 `test_control_failsafe` 在 **2026-09-22
+   出现过 8 次**（0338/0355/0357/0400/0654/0734/1106/1115），那时相关代码一行都还没写。
+   同一天 `test_control_standby` 4 次、`test_fsm` 8 次，也都是整仓跑时的抖动。
+
+**症状的读法**（供将来真出问题时定位）：DUT 在 6 s 内**既没降级也没超时**、
+停在 `AUTO/TAKEOFF` 不动 ⟹ 它看见的动捕戳**一直在前进** ⟹ 要么冻住那次注入没生效
+（timeline 事件没被触发/被推后），要么"历史最大戳"与冻结值的关系在负载下走了另一条分支。
+
+★ **2026-09-28 操作者裁定：不开独立票** —— 证据与读法就写在这里，
+[`07`](../../.scratch/phase1/issues/07-traj-reference-trajectories.md) 的那个"整仓全绿"框按本条勾。
+⚠️ 唯一**没做**的是"在无负载下复现"；`--executor sequential` + 单文件挑域号这两条约定照旧。
   ⚠️ 这一条**夹具与 DUT 必须取同一个值**。本机上 `ROS_LOCALHOST_ONLY=0` 是被人设过的；
   夹具若只 `setdefault`、DUT 却强设，两边就会用不同的 DDS 传输配置 ——
   表现为"两个进程都活着，但彼此发现不了"，且**没有任何报错**。所以两边都用常量 `LOCALHOST_ONLY` 硬写。
