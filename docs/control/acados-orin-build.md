@@ -170,7 +170,7 @@ FileNotFoundError: [Errno 2] No such file or directory: '/home/chen/acados/lib/l
 `max_rate = 0.5` **占位值**），`N = 50`，`Tf = 1 s`，ERK 4/3，`SQP_RTI` +
 `PARTIAL_CONDENSING_HPIPM`，每周期**一次** SQP 迭代。⚠️ **这不是 z0 的最终 OCP**（z0 版在 [ticket 04](../../.scratch/phase2/issues/04-offline-ocp.md)）。
 
-### 表 1 纯求解耗时（`ocp_solver.solve()`，各 1000 次）
+### 6.1 表 1 —— 纯求解耗时（`ocp_solver.solve()`，各 1000 次）
 
 | 变体 | 绑核 | median | p99 | **max** |
 |---|---|---|---|---|
@@ -199,7 +199,7 @@ FileNotFoundError: [Errno 2] No such file or directory: '/home/chen/acados/lib/l
   而**不绑核同一条命令拿到 median 3.06 / max 24.9 ms**（§6.3）。⟹
   **要复核这份文档的数，请一律用 `--cpu 4`**；不绑核的数只在空载窗口里可比。
 
-### 表 2 ★★ 求解**不是**瓶颈：参考实现的每周期开销是它的 4 倍
+### 6.2 表 2 —— ★★ 求解**不是**瓶颈：参考实现的每周期开销是它的 4 倍
 
 | 量 | median | max |
 |---|---|---|
@@ -215,7 +215,7 @@ FileNotFoundError: [Errno 2] No such file or directory: '/home/chen/acados/lib/l
 > 移植时必须把模型构建**提出循环**（挪到构造函数），`nx`/`nu` 从 `model.x.size()` 直接取；
 > 逐帧读取 `simX/simU` 也应改成"只在需要时读"。这不是优化项，是能不能跑 100 Hz 的前提。
 
-### ★ 6.3 读数的前提：**机器必须是空的**
+### 6.3 ★ 读数的前提：**机器必须是空的**（与绑核并列的第二个前提）
 
 **这台机器不是独占的。** 2026-09-28 复测时就撞上**另一个会话正在编译 PX4 SITL**
 （`~/refs/px4-v1.14.3-build/…`，4+ 个 `cc1plus` + `ninja`，**不是本票起的**），6 核上 load 5.8~8：
@@ -235,7 +235,7 @@ FileNotFoundError: [Errno 2] No such file or directory: '/home/chen/acados/lib/l
 > 4. 绑核（`--cpu 4`）**对负载的抗性明显更好**：同样的负载下，绑核那份仍然 median 2.82 / max 3.07 ms
 >    （独立复测），因为 4 号核是 1.98 GHz 那一簇、且躲开了编译进程。
 
-### 表 3 版本错配的告警（不阻塞，但要知道）
+### 6.4 表 3 —— 版本错配的告警（不阻塞，但要知道）
 
 `AcadosOcpDims.N has been migrated to AcadosOcpOptions.N_horizon` ——
 参考实现（2026-06）写 `ocp.dims.N = 50`，acados 0.6.0 已把它迁到 `ocp.solver_options.N_horizon`（自动迁移 + 告警，功能正常）。
