@@ -196,7 +196,7 @@ FileNotFoundError: [Errno 2] No such file or directory: '/home/chen/acados/lib/l
 - ⚠️ **别追第三位小数**：median 的散布有 ~0.05 ms（见上表）。**要盯的是 max 和 p99。**
 - ★ **绑核那一行对负载是有抗性的**，不绑核那一行没有：本次复核期间，另一会话在编译
   PX4 SITL / `px4_msgs`（load 5~8），**绑核仍稳定拿到 median 2.87 / max 3.10 ms**，
-  而**不绑核同一条命令拿到 median 3.06 / max 24.9 ms**（§6.3）。⟹
+  而**不绑核同一条命令拿到 median 3.06 ~ 3.20 / max 23.4 ~ 27.4 ms**（§6.3，3 次复测）。⟹
   **要复核这份文档的数，请一律用 `--cpu 4`**；不绑核的数只在空载窗口里可比。
 
 ### 6.2 表 2 —— ★★ 求解**不是**瓶颈：参考实现的每周期开销是它的 4 倍
@@ -223,7 +223,10 @@ FileNotFoundError: [Errno 2] No such file or directory: '/home/chen/acados/lib/l
 | 同一条命令（`--runs 1000`） | median | p99 | **max** | 脚本自己的判定行 |
 |---|---|---|---|---|
 | **空载**（采用的那份读数） | 3.96 | 4.08 | **4.39 ms** | 100 Hz 预算**够** |
-| 有编译负载（未绑核） | 3.20 | 19.5 | **23.4 ms** | 100 Hz 预算**不够** ❌ |
+| 有编译负载（未绑核） | 3.06 ~ 3.20 | 16.6 ~ 19.5 | **23.4 ~ 27.4 ms** | 100 Hz 预算**不够** ❌ |
+
+（负载下那一行是 **3 次独立复测**（load 5.1 / 5.8 / 6+）的区间，不是一次 —— median 几乎没变、
+**变的全是尾部**，这正是"多核并行把 median 拉平、把 max 拉爆"的另一个例子。）
 
 > ★ **差 5 倍以上，而且结论整个翻过来了。** 所以：
 > 1. **量之前先看 `uptime`**。load 高于核数的一半，数就不可信。
@@ -269,6 +272,6 @@ ACADOS_SOURCE_DIR=$HOME/acados-generic LD_LIBRARY_PATH=$HOME/acados-generic/lib:
 |---|---|---|
 | 1 | ★ ★ **「缺 Tera 报 `EOFError`」这句话还在 5 个文件里原样重复**（`hardware.md:278`、`code-inventory.md:239`、`PROJECT.md:408`、`PROJECT.md:453`、`open-source-survey.md:61`）。本张只改了 `phase2-implementation.md` §S2 与 `mpc-roadmap.md` §5（acados 部署的**直接出处**）—— 那几处**本张不越界改**。⚠️ 另：经 `grep` 核对，「`GENERIC` 掉一个量级」与「OpenMP 冲突」这两句**只存在于 `phase2-implementation.md:444` 一处**，已随本张改掉，**别处没有**（`hardware.md:276` 只写「没有 A78 目标 → 用 A76」，本来就是对的） | **已另开票点名**：[ticket 13](../../.scratch/phase2/issues/13-stale-acados-claims-sweep.md)（`done` 不允许靠"留给以后"掩盖未决事项，见 `docs/agents/triage-labels.md`）。⚠️ 其中 `hardware.md:278` 是「acados 要点」那一节，**是后来者最先看到的地方**，优先改 |
 | 2 | z0 自己的 OCP（`mass = 0.75`、`T_max` 按电池、角速率上限换实测值）的最坏耗时 —— §5 的 P3 仍是「待实测」 | ticket [04](../../.scratch/phase2/issues/04-offline-ocp.md) |
-| 3 | **频率定档（D6）必须带两个前提**：①**绑核**（不绑核 median 差 29%、max 差 33%）；②**机上负载**（有编译负载时 max 从 4.39 → 23.4 ms，差 5 倍以上、结论会反过来，见 §6.3） | ticket 04 / [09](../../.scratch/phase2/issues/09-sitl-tier-a-closed-loop.md) |
+| 3 | **频率定档（D6）必须带两个前提**：①**绑核**（不绑核 median 差 29%、max 差 33%）；②**机上负载**（有编译负载时 max 从 4.39 → 23.4~27.4 ms，差 5 倍以上、结论会反过来，见 §6.3） | ticket 04 / [09](../../.scratch/phase2/issues/09-sitl-tier-a-closed-loop.md) |
 | 4 | `~/acados-omp`、`~/acados-generic` 两个对照安装目录是本张的取证产物，**不是交付物**；`~/acados` 才是 | — |
 | 5 | 本机 `acados` 的 `git_commit_hash` = `00947ddc3`（第一手：`cat ~/acados/lib/git_commit_hash`）—— 与 `~/refs/acados` 的 HEAD 一致 | — |
