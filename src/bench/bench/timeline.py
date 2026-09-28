@@ -12,6 +12,7 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from typing import Callable, Iterable, List
 
@@ -158,6 +159,45 @@ def px4_preflight_checks(px4, at_s: float, ok: bool, label: str = "") -> List[Ev
     """改假 PX4 的 `pre_flight_checks_pass`（解锁前的门槛之一）。"""
     tag = label or f"假 PX4 pre_flight_checks_pass → {ok}"
     return [Event(at_s=at_s, action=lambda: px4.set_pre_flight_checks_pass(ok), label=tag)]
+
+
+def px4_state_silence(px4, at_s: float, duration_s: float,
+                      key: str = "local_position", label: str = "") -> List[Event]:
+    """假 PX4 的**一条状态话题**停止发布 `duration_s` 秒（`key`：`local_position` / `attitude`）。
+
+    ★ `key` 必须能单独选：位置与姿态是**两条消息**（实测 32.5 / 31.6 Hz，各判各的龄）——
+      "只掐姿态、位置照发"考的是"节点有没有把两条都当必需输入"，
+      而"一起掐"考的是 `px4_stale`。两条判据不同，配方也就不该合成一个。
+
+    ★ 时长按 `px4_timeout_s`（默认 0.5 s）选：这条流的周期只有 ~31 ms，
+      所以要**明显大于** 0.5 s 才跨得过闸门（与 `px4_status_silence` 同一条纪律）。
+    """
+    tag = label or f"假 PX4 状态 {key} 静默 {duration_s:g} s"
+    return [
+        Event(at_s=at_s, action=lambda: px4.mute(key), label=f"开始：{tag}"),
+        Event(at_s=at_s + duration_s, action=lambda: px4.unmute(key), label=f"恢复：{key}"),
+    ]
+
+
+def px4_state(px4, at_s: float, position_ned=(), velocity_ned=(), yaw_deg=None,
+              label: str = "") -> List[Event]:
+    """把假 PX4 注入的状态搬到某个**NED**位姿上（只给的那几样会变，其余保持）。
+
+    ★ 参数刻意用 NED 的**原始名字**（`position_ned=(北, 东, 下)`）：这里是"被测系统的输入"，
+      用 ENU 写会让人以为夹具替 DUT 做过转换（见 `fake_px4` 里那段 ★）。
+    ⚠️ `yaw_deg` 是**绕 NED 的 z 轴**（正 = 机头从北转向东），不是 ENU 的偏航角。
+    """
+    def action() -> None:
+        if position_ned:
+            px4.set_position_ned(*position_ned)
+        if velocity_ned:
+            px4.set_velocity_ned(*velocity_ned)
+        if yaw_deg is not None:
+            px4.set_yaw_ned(math.radians(float(yaw_deg)))
+
+    tag = label or (f"假 PX4 状态 → NED p={tuple(position_ned) or '不变'} "
+                    f"v={tuple(velocity_ned) or '不变'} yaw={yaw_deg if yaw_deg is not None else '不变'}")
+    return [Event(at_s=at_s, action=action, label=tag)]
 
 
 def hold_mocap_stamp(source, at_s: float, held: bool = True, label: str = "") -> List[Event]:

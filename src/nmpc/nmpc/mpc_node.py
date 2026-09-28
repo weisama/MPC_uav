@@ -14,14 +14,42 @@
 
 | 方向 | 话题 | QoS | 依据 |
 |---|---|---|---|
-| 订阅 | `/mocap/pose_enu`（**ENU/FLU**，按 M7 状态源改到动捕） | 可靠 / depth 10 | `mocap_rel_pose_node.cpp:93` `QoS(10)` |
+| 订阅 | `/mocap/pose_enu`（**ENU/FLU**，B 档；`state_source=mocap` 时才有这一条） | 可靠 / depth 10 | `mocap_rel_pose_node.cpp:93` `QoS(10)` |
+| 订阅 | `/fmu/out/vehicle_local_position` + `/fmu/out/vehicle_attitude`（**NED/FRD**，A 档；`state_source=px4` 时才有这两条） | **BEST_EFFORT** / depth 1 | 发布方实测 best_effort + TRANSIENT_LOCAL（2026-09-28，z0 SITL，A 档探针）⟹ 订阅侧写 RELIABLE 就**一个回调都不进** |
 | 订阅 | `/fmu/out/vehicle_status` | **BEST_EFFORT** / depth 1 | PX4 的 writer 是 best_effort（`utilities.hpp:59-63`）⟹ 订阅侧写 RELIABLE 就**一个回调都不进** |
 | 发布 | `/fmu/in/vehicle_rates_setpoint` | BEST_EFFORT + TRANSIENT_LOCAL / depth 1 | PX4 的 reader 是 best_effort（`utilities.hpp:114-119`）；TRANSIENT_LOCAL 让晚起的 reader 也能拿到最后一帧 |
 | 发布 | `/fmu/in/offboard_control_mode`（`body_rate = True`，其余 False） | 同上 | 同上 |
 | 发布 | `/mpc/predicted_path`、`/mpc/reference`（RViz 用，`nav_msgs/Path` / `Marker`） | 默认（可靠） | 本仓自己的观测面，不接飞控 |
 
+★★ **两档状态源**（`-p state_source:=mocap|px4`，ticket 09）：两档**只差"测量从哪里来"**，
+**控制器那一条路**（闸门、外推、参考、求解、映射、发布）完全共用。
+⚠️ 说"分岔**只有一处**"是把话说满了（2026-09-28 复核：`state_source` 的条件分支全仓实有
+9 处）—— 分岔的**内容**只有一处，但"这一档要订阅什么、要记什么"必然跟着分：
+① **测量本身**（`_measure_mocap` / `_measure_px4`，见 `node_core` 的 ★★ 表）；
+② **订阅**（`mocap` 建 `/mocap/pose_enu`，`px4` 建那两条 —— 且 QoS 不同）；
+③ **日志的 `state_source` / `age_*` 键**（谁给的、多旧，这是 A 档复盘的入口）；
+④ **参数校验**（`state_source` 不认识就启动即退；`px4` 档必须给话题名）。两档如下：
+
+| 档 | 测量 | 话题（**参数可换**） | 用在 |
+|---|---|---|---|
+| `mocap`（默认） | 动捕，**原生 ENU/FLU** | `/mocap/pose_enu`（上游定死，`mocap_rel_pose_node.cpp:93`） | B 档（动捕闭环）—— 默认档，不给参数就**不改变任何现有行为** |
+| `px4` | 飞控自己的估计，**NED/FRD** | `-p px4_position_topic` / `px4_attitude_topic` | A 档（ticket 09）—— 闭环第一次**只用了飞控自己给的东西** |
+
+★ 为什么 A 档**不订阅**动捕（而不是"订阅了但不看"）：票面验收项写着"本档**不使用动捕输入**"，
+  而"订阅了但不看"在话题边界上**不可证伪**（DDS 里那条订阅明明白白地在那儿）。
+  条件订阅让这条验收项变成一个**黑盒可断言的事实**：
+  `state_source=px4` 时 `/mocap/pose_enu` 的 `matched_subscribers() == 0`。
+
+⚠️ 话题名参数化（而不是写死）的理由 —— A 档真正要回答的是"**我们的约定与真 PX4 一致**"，
+  而这个问题的证据链只有一条：拿一条**已知真值**的 PX4 状态流喂进去，看指令方向对不对。
+  `vehicle_local_position_groundtruth` 是**同一个消息类型**（`VehicleLocalPosition`，见 msg 尾部的
+  `TOPICS` 行），所以"换成真值那条流"是**改一个参数**、不是改代码。
+  ⚠️ 但它默认**不在 DDS 上**：`dds_topics.yaml` → `dds_topics.h` 是**编译期**生成的
+  （ticket 08 第一手），要暴露它得重编一份 —— 所以这条参数化的另一个用处是：
+  那个决定可以**推迟到拿到读数之后**再做，而不必先把代码写死。
+
 **发不发**（两张表合成一条规则）：`offboard_control_mode` = **节点活着就发**；
-`vehicle_rates_setpoint` = **只有** armed + OFFBOARD + 动捕新鲜（闸门在 `node_core.cycle()`）。
+`vehicle_rates_setpoint` = **只有** armed + OFFBOARD + 状态新鲜（闸门在 `node_core.cycle()`）。
 两者的完整理由见下面那段 ★★。
 
 ★ **时间戳一律微秒**（`msg/*.msg` 逐字写 `(microseconds)`；PX4 侧还会做
@@ -134,17 +162,23 @@ from rclpy.qos import (DurabilityPolicy, HistoryPolicy, QoSProfile,  # noqa: E40
                        ReliabilityPolicy)
 from visualization_msgs.msg import Marker  # noqa: E402
 
-from px4_msgs.msg import (OffboardControlMode, VehicleRatesSetpoint,  # noqa: E402
+from px4_msgs.msg import (OffboardControlMode, VehicleAttitude,  # noqa: E402
+                          VehicleLocalPosition, VehicleRatesSetpoint,
                           VehicleStatus)
 
 from nmpc import NU, sign_map  # noqa: E402
-from nmpc.node_core import (FALLBACK_HOLD_FRAMES, ControlConfig, FallbackLadder,  # noqa: E402
-                            NodeCore, StopConfig, frame_is_finite, solution_usable)
+from nmpc.node_core import (FALLBACK_HOLD_FRAMES, STATE_SOURCE_PX4, STATE_SOURCES,  # noqa: E402
+                            ControlConfig, FallbackLadder, NodeCore, StopConfig,
+                            frame_is_finite, hold_feedforward, saturated_bounds,
+                            solution_usable)
 from nmpc.ocp import OfflineOcp  # noqa: E402
 from nmpc.params import Z0Params  # noqa: E402
 
 #: PX4 的 `/fmu/out/*` 是 **BEST_EFFORT**（`utilities.hpp:59-63`）⟹ 订阅侧写 RELIABLE
 #: （ROS 2 的默认值）就**一个回调都不进**，而话题照样列得出来。
+#: ★ A 档那两条状态话题（ticket 09）实测也是 best_effort + **TRANSIENT_LOCAL**（发布方
+#: reliability=2 / durability=1，2026-09-28 z0 SITL 探针）：durability 只要**订阅方不强于发布方**
+#: 就兼容，所以本 profile（VOLATILE）直接可用 —— 这一条是**量出来的**，不是推的。
 QOS_SUB_STATUS = QoSProfile(history=HistoryPolicy.KEEP_LAST, depth=1,
                             reliability=ReliabilityPolicy.BEST_EFFORT)
 #: 发布侧：PX4 的 reader 是 best_effort（`utilities.hpp:114-119`）+ TRANSIENT_LOCAL
@@ -159,6 +193,10 @@ QOS_MOCAP = QoSProfile(history=HistoryPolicy.KEEP_LAST, depth=10,
 
 TOPIC_MOCAP = "/mocap/pose_enu"
 TOPIC_STATUS = "/fmu/out/vehicle_status"
+#: A 档的状态话题（`state_source=px4`）。★ 默认值是**飞控自己的估计**（票面原文点名要的这两条），
+#: 而它们是可以换的 —— 换话题（真值 / 记录回放）是参数的事，见模块 docstring 的表。
+TOPIC_PX4_POS = "/fmu/out/vehicle_local_position"
+TOPIC_PX4_ATT = "/fmu/out/vehicle_attitude"
 TOPIC_RATES = "/fmu/in/vehicle_rates_setpoint"
 TOPIC_MODE = "/fmu/in/offboard_control_mode"
 TOPIC_PATH = "/mpc/predicted_path"
@@ -190,12 +228,22 @@ class NodeParams:
     hover_thrust: float = 0.6235
     #: 状态外推 τ [s]（票面 50 ms）
     tau_s: float = 0.05
-    #: 参考点相对测量位姿的偏移 [m]（ENU）
+    #: ★ **测量从哪里来**（ticket 09）：`mocap`（默认，B 档）或 `px4`（A 档）。
+    #: 两档的差别**只在**"测量"这一段，见模块 docstring 的表；校验在 `_validate`。
+    state_source: str = "mocap"
+    #: A 档：PX4 状态话题（默认是飞控自己的估计；换真值/回放只是改这两个参数）
+    px4_position_topic: str = TOPIC_PX4_POS
+    px4_attitude_topic: str = TOPIC_PX4_ATT
+    #: 参考点相对**位置保持锚点**的偏移 [m]（ENU）。
+    #: ★ 锚点 = 闸门第一次打开那一拍的测量，之后不再移动（ticket 09）⟹ 这是**绝对**目标；
+    #:   早期写成"相对当拍测量"的版本会让误差永远关不掉，见 `node_core.hold_reference` 的 ★★。
     hold_offset: tuple = (0.0, 0.0, 0.0)
     keep_yaw: bool = True
     hold_yaw_deg: float = 0.0
     #: 停机条件（**没有通道号**，理由见 `node_core`）
     mocap_timeout_s: float = 0.5
+    #: A 档：PX4 两条状态消息的龄上限 [s]（各判各的；实测 32.5 / 31.6 Hz ⟹ 0.5 s = 16 拍）
+    px4_timeout_s: float = 0.5
     status_timeout_s: float = 0.75
     stop_on_nav_state_exit: bool = True
     stop_on_armed_drop: bool = True
@@ -224,10 +272,12 @@ class NodeParams:
         yaw = None if self.keep_yaw else math.radians(self.hold_yaw_deg)
         return ControlConfig(
             tau_s=self.tau_s,
+            state_source=self.state_source,
             hold_offset=tuple(float(v) for v in self.hold_offset),
             hold_yaw=yaw,
             stop=StopConfig(
                 mocap_timeout_s=self.mocap_timeout_s,
+                px4_timeout_s=self.px4_timeout_s,
                 status_timeout_s=self.status_timeout_s,
                 stop_on_nav_state_exit=self.stop_on_nav_state_exit,
                 stop_on_armed_drop=self.stop_on_armed_drop,
@@ -243,16 +293,19 @@ class NodeParams:
         return Z0Params(mass=self.mass, hover_thrust=self.hover_thrust)
 
     def describe(self) -> str:
-        return ("rate=%g Hz 心跳=%g Hz viz=%g Hz | τ=%g s 参考偏移=%s yaw=%s"
+        return ("rate=%g Hz 心跳=%g Hz viz=%g Hz | ★状态源=%s（%s）"
+                " | τ=%g s 参考偏移=%s yaw=%s"
                 " | 模型 mass=%g kg hover_thrust=%g ⇒ T_max=%.4f N"
-                " | 停机(mocap>%g s / status>%g s / 离开 offboard=%s / 掉 armed=%s)"
+                " | 停机(mocap>%g s / px4>%g s / status>%g s / 离开 offboard=%s / 掉 armed=%s)"
                 " | 心跳%s"
                 " | 兜底：保持 %d 拍 → 安全悬停；位姿合理性上限 %g m/s / %g rad/s"
-                % (self.rate_hz, self.heartbeat_hz, self.viz_hz, self.tau_s,
+                % (self.rate_hz, self.heartbeat_hz, self.viz_hz,
+                   self.state_source, self.state_source_desc(),
+                   self.tau_s,
                    tuple(round(float(v), 3) for v in self.hold_offset),
                    "保持当前" if self.keep_yaw else f"{self.hold_yaw_deg:g}°",
                    self.mass, self.hover_thrust, self.z0_params().t_max,
-                   self.mocap_timeout_s, self.status_timeout_s,
+                   self.mocap_timeout_s, self.px4_timeout_s, self.status_timeout_s,
                    self.stop_on_nav_state_exit, self.stop_on_armed_drop,
                    "无条件发（闸门只管 setpoint）" if self.heartbeat_always
                    else "与 setpoint 同生死（交给 PX4 的 COM_OF_LOSS_T）",
@@ -261,6 +314,16 @@ class NodeParams:
                 + ("　⚠️ **故障注入已开**（已发 %d 帧之后每拍都换成坏解）—— 装桨前必须关"
                    % self.inject_solve_fail_after_frames
                    if int(self.inject_solve_fail_after_frames) > 0 else ""))
+
+    def state_source_desc(self) -> str:
+        """这一档**实际会订阅什么**（`ros2 node info` 与启动日志里的那一行）。
+
+        ★ 它是"本档不使用动捕输入"这条验收项在**日志里**的落点：A 档的启动日志里
+          不该出现 `/mocap/pose_enu` 这个词，而台架正是这么断言的。
+        """
+        if self.state_source == STATE_SOURCE_PX4:
+            return f"PX4 {self.px4_position_topic} + {self.px4_attitude_topic}（NED/FRD）"
+        return f"{TOPIC_MOCAP}（ENU/FLU）"
 
 
 class MpcNode(Node):
@@ -281,8 +344,21 @@ class MpcNode(Node):
         self.core = NodeCore(self.z0, self.config, self.ocp.config.N)
 
         # —— 上游 ——
-        self.sub_mocap = self.create_subscription(
-            PoseStamped, TOPIC_MOCAP, self._on_mocap, QOS_MOCAP)
+        # ★★ 按档**条件订阅**（ticket 09）：A 档不订阅动捕，于是"本档不使用动捕输入"这条
+        #    验收项在话题边界上**可断言**（`matched_subscribers() == 0`），而不是靠读代码相信。
+        #    两档各自的槽位都在（`node_core` 里），但只有这一档的那条会被填。
+        self.sub_mocap = None
+        self.sub_pos = None
+        self.sub_att = None
+        if params.state_source == STATE_SOURCE_PX4:
+            self.sub_pos = self.create_subscription(
+                VehicleLocalPosition, params.px4_position_topic, self._on_local_position,
+                QOS_SUB_STATUS)
+            self.sub_att = self.create_subscription(
+                VehicleAttitude, params.px4_attitude_topic, self._on_attitude, QOS_SUB_STATUS)
+        else:
+            self.sub_mocap = self.create_subscription(
+                PoseStamped, TOPIC_MOCAP, self._on_mocap, QOS_MOCAP)
         self.sub_status = self.create_subscription(
             VehicleStatus, TOPIC_STATUS, self._on_status, QOS_SUB_STATUS)
 
@@ -301,15 +377,25 @@ class MpcNode(Node):
         self.heartbeats = 0
         self.gated = {}                  # reason → 次数（停机原因统计，进证据）
         self.solve_ms_max = 0.0
+        #: 所有**有限**的求解耗时 [ms]（p50 / p99 用）。⚠️ 不设上限地留 —— 这是 SITL/台架上
+        #: 跑几十秒的短趟；一次 30 min 的实飞会攒到 1e5 个数（几十万个 float，无所谓）。
+        self.solve_ms_all: list = []
+        #: 约束饱和计数：`{"F_max": n, ...}` —— 与逐帧的 `sat` 字段互为汇总/明细
+        self.sat_count: dict = {}
+        self._last_sol = None
+        self._last_sat: tuple = ()
         self.degraded_count = 0
         self.rejected = 0
         self.first_publish_ns: Optional[int] = None
         self.last_publish_ns: Optional[int] = None
-        #: 喂给下一次 `solve(u_ref=…)` 的前馈。⚠️ 必须**一开始就有值**：`prediction=False`
-        #: 时 `u_ref` 不能省（`OfflineOcp.solve` 会 raise，见那边的 docstring），而热身拍
-        #: （`publish=False`）**也要解**。首帧用悬停前馈 —— 与 `OfflineOcp` 自己的首帧缺省同源。
-        self._u_ref: np.ndarray = np.tile(
-            np.array([self.z0.t_hover, 0.0, 0.0, 0.0]), (self.ocp.config.N, 1))
+        #: 喂给 `solve(u_ref=…)` 的前馈 = **参考自己的解析前馈**（静止锚点 ⟹ `[T_hover,0,0,0]`）。
+        #: ⚠️ 必须**一开始就有值**：`prediction=False` 时 `u_ref` 不能省（`OfflineOcp.solve`
+        #: 会 raise，见那边的 docstring），而热身拍（`publish=False`）**也要解**。
+        #: ★★ 它是**常量**（每拍都传同一个），这是 2026-09-28 那一场 runaway 之后定下来的：
+        #:   原来这里喂"上一帧解"，而那是一条正反馈（解偏 ⟹ 下一帧的参考量跟着偏），
+        #:   真 PX4 闭环里把 `u[3]` 从 0 爬到 +4.696 rad/s / EKF 帧转了 13.6 圈。
+        #:   依据与第一手读数见 `node_core.hold_feedforward` 的 ★ 两段。
+        self._u_ref: np.ndarray = hold_feedforward(self.z0, self.ocp.config.N)
 
         # —— 兜底（ticket 07 / M5）——
         # ★ 悬停帧在这里**建一次**：它是常量（悬停推力 + 零角速率），而且**不依赖任何状态**
@@ -333,9 +419,11 @@ class MpcNode(Node):
             f"{self._hover_sp.thrust_body_z:+.4f}"
             f"；CPU 亲和性={self._cpus_allowed()}")
         self.get_logger().info(
-            "接口：订阅 %s（可靠/depth 10）+ %s（**BEST_EFFORT**/depth 1）；"
+            "接口：订阅 %s（%s）+ %s（**BEST_EFFORT**/depth 1）；"
             "发布 %s 与 %s（BEST_EFFORT + TRANSIENT_LOCAL/depth 1）"
-            % (TOPIC_MOCAP, TOPIC_STATUS, TOPIC_RATES, TOPIC_MODE))
+            % (params.state_source_desc(),
+               "可靠/depth 10" if params.state_source != STATE_SOURCE_PX4 else "BEST_EFFORT/depth 1",
+               TOPIC_STATUS, TOPIC_RATES, TOPIC_MODE))
         if int(params.inject_solve_fail_after_frames) > 0:
             # ★ 用 **error** 级别、并且把"装桨前必须关"写在同一行：这一档一开，
             #   飞机收到的每一帧都是坏解兜底出来的 —— 它只该在台架/SITL 上出现。
@@ -392,6 +480,12 @@ class MpcNode(Node):
     def _on_mocap(self, msg: PoseStamped) -> None:
         self.core.on_mocap(msg, self._now_s())
 
+    def _on_local_position(self, msg: VehicleLocalPosition) -> None:
+        self.core.on_local_position(msg, self._now_s())
+
+    def _on_attitude(self, msg: VehicleAttitude) -> None:
+        self.core.on_attitude(msg, self._now_s())
+
     def _on_status(self, msg: VehicleStatus) -> None:
         self.core.on_status(msg, self._now_s())
 
@@ -444,11 +538,21 @@ class MpcNode(Node):
         self.solves += 1
         if self._inject_active():
             sol = _poisoned(sol)        # 故障注入（默认关）：见模块 docstring 的 ★ 那段
+        self._last_sol = sol            # ★ 日志面要读它（票面：求解耗时 / 内部状态 / 饱和标志）
+        #: ★ **约束饱和标志**（票面要的日志项）：这一拍 `u` 顶在哪几条 `lbu/ubu` 上。
+        #: 判据用**生产阈值**（`Z0Params` ⟹ 与 OCP 的 `lbu/ubu` 同源），带容差 —— 见
+        #: `node_core.saturated_bounds`。这里只算一次，日志与收尾摘要共用。
+        self._last_sat = saturated_bounds(sol.u, self.z0)
+        for name in self._last_sat:
+            self.sat_count[name] = self.sat_count.get(name, 0) + 1
         t_tot = float(sol.info.time_tot)
         if math.isfinite(t_tot):
             # ★ 只在有限时才更新最坏耗时：`max(nan, x)` 恒为 nan ⟹ 一次非有限的耗时会让
             #   收尾摘要里那一行**从那一刻起永久失去意义**（而它正是判"100 Hz 还够不够"的那个数）。
             self.solve_ms_max = max(self.solve_ms_max, 1e3 * t_tot)
+            #: ★ 全部耗时（`sliding window` 之外的那两个分位数要用）：**只有有限的才进来**，
+            #: 于是"注入的坏解"（耗时 NaN）不会把 p50/p99 变成 NaN。
+            self.solve_ms_all.append(1e3 * t_tot)
         if sol.info.degraded:
             self.degraded_count += 1
             if self.degraded_count in (1, 10) or self.degraded_count % 100 == 0:
@@ -457,16 +561,19 @@ class MpcNode(Node):
 
         # 这一拍的"正常帧"能不能用（三道判据收口在 `_normal_frame` 里，顺序就是判据的顺序）
         sp, reason = self._normal_frame(sol)
-        if reason is None:
-            # ★ 前馈**只在这一行**更新。若跟着 `sol` 无条件更新，一次非有限解就会污染后面
-            #   **每一拍**的 `yref`（求解器从此每次都失败 ⟹ 一次抖动变成永久失效）。
-            self._u_ref = np.tile(np.asarray(sol.u, dtype=float), (self.ocp.config.N, 1))
+        # ★★ 这里**故意什么都不更新**：`_u_ref` 是参考的解析前馈，是常量（理由见 `__init__`
+        #   那段 ★★ 与 `node_core.hold_feedforward`）。曾经这一行是
+        #   `self._u_ref = tile(sol.u)`（"上一帧解铺满时域"）⟹ 正反馈、单调上爬、runaway。
+        #   现在"这一拍`sol` 有多离谱"只走 `_normal_frame` 的判据，**不许**回流成下一拍的前馈。
 
         if not cycle.publish:
             # 热身拍：**求解但绝不发**（理由见 `WARMUP_CYCLES`：第 0 拍的解是出厂迭代点）。
             # ★ 档位跟着复位（这一拍根本不发，档位毫无意义）；累计量留着 —— 它们是病历。
             self.ladder.reset()
             self.gated["warmup"] = self.gated.get("warmup", 0) + 1
+            # ★ 热身拍**不发但照记**：它不进话题，却是"最坏求解耗时"里最容易漏掉的那几拍
+            #   （RTI 冷启动、代码页刚进 cache）。票面要的是**实测最坏**，不是稳态中位数。
+            self._log_frame(time.time_ns(), ts, sp, "warmup", reason or "")
             return
 
         frame, phase, note = sp, FallbackLadder.NORMAL, ""
@@ -505,7 +612,7 @@ class MpcNode(Node):
         if fresh or self.ticks % max(1, self.params.log_every) == 0:
             self.get_logger().info(
                 f"t={now_s:.2f}s 闸门关闭（{cycle.reason}）：status 龄 {cycle.age_status_s:.2f}s / "
-                f"mocap 龄 {cycle.age_mocap_s:.2f}s ⟹ 不发 setpoint"
+                f"状态龄 {cycle.age_state_s:.2f}s ⟹ 不发 setpoint"
                 + (f"；{cycle.detail}" if cycle.detail else "")
                 + ("（心跳照发）" if self.params.heartbeat_always else ""))
 
@@ -610,27 +717,88 @@ class MpcNode(Node):
         `thrust_body[2]` 是 ROS 的 **float32**、`nav_state` 是 **uint8**，`json.dumps` 两个都不认
         —— 而定时器回调里抛异常 = **整个 spin 挂掉**（症状是"节点起来一秒就没了、日志文件是空的"）。
         这条是 05 用一次真事故换来的（`offboard_smoke._tick` 里的同一段）。
+
+        ★★ **票面验收项「日志记录 MPC（模型预测控制）内部状态、求解耗时、约束饱和标志，
+        供飞行后复盘而不只依赖记忆」就落在这一行**。三样各自的读者：
+
+        | 字段 | 复盘时回答的问题 |
+        |---|---|
+        | `solve_ms` / `solve_ok` / `status` / `sqp_iter` / `qp_stat` / `degraded` | "这一拍的解是怎么来的、求解器当时什么状态"（**D6 那个数字**就从 `solve_ms` 上取） |
+        | `sat`（+ 收尾摘要的 `sat_count`） | "它有没有顶在约束上" —— 顶约束**不是错**，但漂移与顶约束同时出现就是归因线索 |
+        | `u` / `x0` / `x_ref0` | 把一帧从话题上**重算回去**：`u` 是求解器给的、`x0` 是喂进去的、`x_ref0` 是要它去哪 |
+        | `u_ref0` / `x_ref0_q` | 代价里的**控制参考**与**姿态参考**（`x_ref0` 只有位置分量）：判"棘轮"要看 `u` 与 `u_ref0` 的差，判"机头在追哪"要看 `x0[6:10]` 与 `x_ref0_q` 的差 |
+        | `ref_anchor` | "这个目标是哪一刻钉的、后来有没有被搬走"（`""` = 常态；见 `node_core._update_anchor`） |
+        | `state_source` / `age_*` / `ekf_*` | "这个数是**谁**给的、多旧"（A 档尤其重要，见 `node_core.describe_state`） |
+
+        ⚠️ 一帧里**同时**有 `u`（FLU/ENU 的内部量）与 `roll/pitch/yaw/thrust_body_z`（PX4 的
+        FRD/NED 量）：这不是重复，而是**符号映射的现场** —— 复盘时两边一对照，
+        "映射写错了"与"模型解错了"就能分开（这正是 `sign-map.md` 要的东西）。
         """
         if self._log is None:
             return
         cycle = self._last_cycle
-        self._log.write(json.dumps({
+        sol = self._last_sol
+        info = None if sol is None else sol.info
+        rec = {
             "wall_ns": now_ns, "ts": int(ts), "tick": int(self.ticks),
-            "roll": float(sp.roll), "pitch": float(sp.pitch), "yaw": float(sp.yaw),
-            "thrust_body_z": float(sp.thrust_body_z),
-            #: ★ 兜底档位（"normal" / "hold" / "hover"）—— 票面要的"这个事件在飞行日志里
-            #: **可检索**"就是这一列：`grep '"fallback": "hover"'` 能一次捞出全段。
+            "roll": _jnum(None if sp is None else sp.roll),
+            "pitch": _jnum(None if sp is None else sp.pitch),
+            "yaw": _jnum(None if sp is None else sp.yaw),
+            "thrust_body_z": _jnum(None if sp is None else sp.thrust_body_z),
+            #: ★ 兜底档位（"normal" / "hold" / "hover" / "warmup"）—— 票面要的"这个事件在飞行
+            #: 日志里**可检索**"就是这一列：`grep '"fallback": "hover"'` 能一次捞出全段。
             #: `fallback_note` 是**为什么**（求解器那一行读数 / 映射拒绝的原因）。
             "fallback": str(phase),
             "fallback_note": str(note),
+            # —— 求解耗时与求解器内部状态 ——
+            "solve_ms": None if info is None else _jnum(
+                1e3 * float(info.time_tot) if math.isfinite(float(info.time_tot)) else float("nan")),
+            "solve_cycle_ms": None if info is None else _jnum(
+                1e3 * float(getattr(info, "time_cycle", float("nan")))),
+            "solve_ok": None if info is None else bool(info.ok),
+            "degraded": None if info is None else bool(info.degraded),
+            "status": None if info is None else _jint(getattr(info, "status", None)),
+            "sqp_iter": None if info is None else _jint(getattr(info, "sqp_iter", None)),
+            "qp_stat": None if info is None else _jlist(getattr(info, "qp_stat", None)),
+            "u_viol": None if info is None else _jnum(getattr(info, "u_bound_violation", None)),
+            "quat_drift": None if info is None else _jnum(getattr(info, "quat_norm_drift", None)),
+            # —— 控的现场：给的是什么、要它去哪、解出来什么 ——
+            "u": None if sol is None else _jlist(sol.u),
+            "sat": list(self._last_sat),
+            "x0": None if cycle is None or cycle.x0 is None else _jlist(cycle.x0),
+            "x_ref0": None if cycle is None or cycle.x_ref is None else _jlist(cycle.x_ref[0][:3]),
+            #: ★★ 参考的**姿态**单独一列（`x_ref0` 只记了前 3 个位置分量）。
+            #:   为什么要它：判"控制器在追哪去"要的是 `x_ref0_q` 与 `x0[6:10]` 的**差**，
+            #:   而只有前者没进日志时，飞行后从 `x0` 那一列**推不出**参考机头
+            #:   （`x_ref0` 是锚点 + 偏移，锚点机头只出现在 `ref_anchor` 那一拍的
+            #:   `x0` 里 —— 2026-09-28 的偏航复盘就卡在这一格，只能再飞一场）。
+            "x_ref0_q": (None if cycle is None or cycle.x_ref is None
+                         else _jlist(cycle.x_ref[0][6:10])),
+            #: ★★ 喂给求解器的**前馈** `u_ref`（第一拍）。为什么要逐帧记：代价项 `R·(u − u_ref)`
+            #:   让 `u_ref` 也成了"控制器在追什么"的一部分，而它**只在日志里看得见** ——
+            #:   2026-09-28 的 runaway 复盘时手上只有 `u`（解出来的）与 `x_ref0`（状态参考），
+            #:   偏偏缺"控制参考"，于是"棘轮"这条结论只能靠离线复算才站得住。
+            #:   它现在是常量（`hold_feedforward`）⟹ 这一列恒等，但恒等本身就是要能一眼看出来。
+            "u_ref0": None if self._u_ref is None else _jlist(self._u_ref[0]),
+            #: 锚点机头 [rad]（没钉过 = `None`）。逐帧恒等 ⟹ 压缩后零成本，而它是"目标朝向"
+            #: 这个常量的**直接读数**：`x_ref0_q` 能从它和 `hold_yaw` 反推，反之不能。
+            "anchor_yaw": None if self.core.anchor_yaw() is None
+            else _jnum(self.core.anchor_yaw()),
+            #: ★ 位置保持**锚点**被钉/重钉的那一拍（`""` = 常态）。`x_ref0` 只有值、没有来历：
+            #: "这个目标是哪一刻定下来的、后来有没有被搬走"从数值上看不出来 —— 而它是复盘
+            #: 第一个要问的问题（ticket 09 首飞的爬升就是栽在"目标每拍都在跟着测量走"上）。
+            "ref_anchor": "" if cycle is None else str(cycle.anchor),
             "age_status_s": round(float(cycle.age_status_s), 4),
-            "age_mocap_s": round(float(cycle.age_mocap_s), 4),
+            "age_state_s": _jnum(cycle.age_state_s),
             "cycles_since_gate": int(cycle.cycles_since_gate),
             "nav_state": int(self.core.status.nav_state),
             "arming_state": int(self.core.status.arming_state),
             "status_cb": int(self.core.status_frames),
-            "mocap_cb": int(self.core.mocap_frames),
-        }) + "\n")
+        }
+        # ★ 状态源的取证面（谁给的、多旧、PX4 自己怎么说）—— 扁平键，直接并进来。
+        #   键名与上面不冲突（`describe_state` 给的是 `state_source` / `age_pos_s` / `ekf_*`）。
+        rec.update(self.core.describe_state(self._now_s()))
+        self._log.write(json.dumps(rec) + "\n")
         self._log.flush()
 
     # ─────────────────────────── RViz ───────────────────────────
@@ -690,13 +858,31 @@ class MpcNode(Node):
                 if self.first_publish_ns else 0.0)
         rate = (self.published - 1) / span if span > 0 else float("nan")
         return ("共发 %d 帧 setpoint（心跳 %d 个，%.0f Hz），跨 %.2fs ⟹ 实际 %.1f Hz；"
-                "定时器 %d 拍、求解 %d 次、最坏 time_tot %.3f ms、退化 %d 拍、拒绝 %d 拍；"
-                "闸门：%s；%s"
+                "定时器 %d 拍、求解 %d 次、%s、退化 %d 拍、拒绝 %d 拍；"
+                "约束饱和：%s；闸门：%s；%s"
                 % (self.published, self.heartbeats, self.heartbeats / span if span > 0 else float("nan"),
-                   span, rate, self.ticks, self.solves,
-                   self.solve_ms_max, self.degraded_count, self.rejected,
+                   span, rate, self.ticks, self.solves, self.solve_ms_desc(),
+                   self.degraded_count, self.rejected,
+                   ", ".join(f"{k}×{v}" for k, v in sorted(self.sat_count.items())) or "无",
                    ", ".join(f"{k}×{v}" for k, v in sorted(self.gated.items())) or "无",
                    self.ladder.describe()))
+
+    def solve_ms_desc(self) -> str:
+        """求解耗时的**分布**（p50 / p99 / 最坏）—— ★ **D6 那个数字**就从这里读。
+
+        ★ 为什么必须给分位数而不是只给最坏：最坏那一个是**你没法重复的那个数**（被抢占、
+          首次编译、别的进程刚好在写盘），而 p99 才是"这台机器在这个负载下能不能跑 100 Hz"的量。
+          ⚠️ 但也**不能只看 p50**（3.5 ms 的中位数会让 30 ms 的尾巴完全消失）——
+          票面的判据写的是"**实测最坏**求解耗时"，所以两个都打出来，读的人才知道差距有多大。
+        ★ 比例尺：≤10 ms ⟹ 100 Hz 有余；10–20 ms ⟹ 降 50 Hz；>20 ms ⟹ **停下优化，不硬上**。
+        """
+        n = len(self.solve_ms_all)
+        if n == 0:
+            return "求解耗时：无（一次都没解）"
+        arr = np.sort(np.asarray(self.solve_ms_all, dtype=float))
+        return ("求解耗时 p50 %.3f ms / p99 %.3f ms / 最坏 %.3f ms（%d 次）"
+                % (float(np.percentile(arr, 50)), float(np.percentile(arr, 99)),
+                   self.solve_ms_max, n))
 
     def close(self) -> None:
         if self._log is not None:
@@ -745,6 +931,37 @@ def _poisoned(sol):
     return replace(sol, u=np.full(NU, float("nan")), info=_InjectedInfo())
 
 
+# ─────────────────────────── JSON 安全（日志面）───────────────────────────
+#
+# ★ 为什么值得三个小函数：JSONL 是**飞行后复盘**的唯一逐帧记录，而它的两个杀手都不是逻辑错
+#   —— `json.dumps` 对 numpy 标量 / `float32` / `uint8` 直接抛（一次就够让定时器回调挂掉），
+#   而 `NaN` / `Infinity` 会被写成**非法 JSON**（`json.loads` 能读、别的解析器不能）。
+#   所以边界上只有一句话：**进 JSON 的每个数都要过这里**。
+#   ⚠️ 同一个取向在小写入端也有一份（`node_core._num_json`，管它自己的取证字段）；
+#      两处都只有三行、且各自守住自己那一侧的边界 —— 合并成一处反而会让"哪一侧漏了"看不出来。
+
+def _jnum(v, nd: Optional[int] = None) -> Optional[float]:
+    """数 → JSON 安全（非有限 / `None` ⟹ `None`；`nd` 给了就四舍五入到那么多位）。"""
+    if v is None:
+        return None
+    f = float(v)
+    if not math.isfinite(f):
+        return None
+    return f if nd is None else round(f, nd)
+
+
+def _jint(v) -> Optional[int]:
+    """整数 → JSON 安全（`None` ⟹ `None`）。"""
+    return None if v is None else int(v)
+
+
+def _jlist(arr, nd: int = 6) -> Optional[list]:
+    """数组 → JSON 安全（numpy 也认；非有限的元素写成 `None`）。"""
+    if arr is None:
+        return None
+    return [_jnum(v, nd) for v in np.asarray(arr, dtype=float).ravel()]
+
+
 # ─────────────────────────── 参数 ───────────────────────────
 
 #: `(参数名, 默认值, 类型)`。★ 默认值全部与 `NodeParams` 的字段一致 —— 两处一起改。
@@ -756,12 +973,16 @@ _PARAMS = (
     ("mass", 0.75, float),
     ("hover_thrust", 0.6235, float),
     ("tau_s", 0.05, float),
+    ("state_source", "mocap", str),
+    ("px4_position_topic", TOPIC_PX4_POS, str),
+    ("px4_attitude_topic", TOPIC_PX4_ATT, str),
     ("hold_offset_x", 0.0, float),
     ("hold_offset_y", 0.0, float),
     ("hold_offset_z", 0.0, float),
     ("keep_yaw", True, bool),
     ("hold_yaw_deg", 0.0, float),
     ("mocap_timeout_s", 0.5, float),
+    ("px4_timeout_s", 0.5, float),
     ("status_timeout_s", 0.75, float),
     ("stop_on_nav_state_exit", True, bool),
     ("stop_on_armed_drop", True, bool),
@@ -793,11 +1014,15 @@ def declare_params(node: Node) -> NodeParams:
         mass=get("mass").value,
         hover_thrust=get("hover_thrust").value,
         tau_s=get("tau_s").value,
+        state_source=get("state_source").value,
+        px4_position_topic=get("px4_position_topic").value,
+        px4_attitude_topic=get("px4_attitude_topic").value,
         hold_offset=(get("hold_offset_x").value, get("hold_offset_y").value,
                      get("hold_offset_z").value),
         keep_yaw=get("keep_yaw").value,
         hold_yaw_deg=get("hold_yaw_deg").value,
         mocap_timeout_s=get("mocap_timeout_s").value,
+        px4_timeout_s=get("px4_timeout_s").value,
         status_timeout_s=get("status_timeout_s").value,
         stop_on_nav_state_exit=get("stop_on_nav_state_exit").value,
         stop_on_armed_drop=get("stop_on_armed_drop").value,
@@ -864,7 +1089,7 @@ def _validate(p: NodeParams) -> None:
     而那时**节点已经起来了**（DDS 里也已经有话题了）⟹ 台架会把它读成"节点没发数据"。
     """
     for name in ("rate_hz", "heartbeat_hz", "viz_hz", "mass", "hover_thrust", "tau_s",
-                 "mocap_timeout_s", "status_timeout_s",
+                 "mocap_timeout_s", "px4_timeout_s", "status_timeout_s",
                  # 输入合理性那三条（ticket 07）：非有限会让判据**静默失效**
                  # （`nan > x` 恒假 ⟹ 跳变判据永远不触发，而"永远不触发"看起来像"没有跳变"）。
                  "mocap_stamp_regress_s", "mocap_jump_speed_max", "mocap_jump_rate_max"):
@@ -883,6 +1108,15 @@ def _validate(p: NodeParams) -> None:
             raise SystemExit(f"参数 {name} 不能为负，收到 {getattr(p, name)!r}")
     if not all(math.isfinite(v) for v in p.hold_offset):
         raise SystemExit(f"参考偏移必须是有限数，收到 {p.hold_offset!r}")
+    # ★ 状态源（ticket 09）：**现在**就拒，而不是等到第一拍才发现"这个档谁也不认识"。
+    #   默认值是 `mocap` ⟹ 不写这个参数的现有用法一个字都不变（默认档必须是老行为）。
+    if p.state_source not in STATE_SOURCES:
+        raise SystemExit(f"state_source={p.state_source!r} 不认识，只能是 {list(STATE_SOURCES)}"
+                         "（mocap = 动捕 ENU/FLU；px4 = 飞控自己的 NED/FRD，见模块 docstring）")
+    # 空话题名会让 `create_subscription` 抛在 **`MpcNode.__init__` 里**（那时 DDS 已经起了一半）
+    if p.state_source == STATE_SOURCE_PX4 and not (p.px4_position_topic and p.px4_attitude_topic):
+        raise SystemExit(f"A 档的两条状态话题都不能为空，收到 {p.px4_position_topic!r} / "
+                         f"{p.px4_attitude_topic!r}")
 
 
 def main(argv=None) -> int:

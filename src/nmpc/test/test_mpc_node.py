@@ -28,14 +28,25 @@
   两个进程同时判"要重新生成"会撞在一起，报一个与代码无关的
   `RuntimeError: Rendering of model.in.h failed!`（`t_renderer` 退出码非 0）。
   收工前 `pgrep -af mpc_node` 看一眼；`pytest -n`（xdist）也不要用在这个文件上。
+
+★★ **`pgrep -af mpc_node` 会把「别人的」DUT 一起列出来**（第一手，2026-09-28）：
+  这个仓库里常有两个会话同时干活，其中一个正在跑 `pytest test -q`，它的 DUT 与我的
+  **同一对固定话题**上发帧。看到的症状**不是**报错，而是**数字不对**：
+  一条本该 `pitch = +0.5572` 的用例量出了 `pitch = −0.0000, thrust_body_z = −0.6235`
+  —— 那是**默认配置（mocap 档、`hold_offset = 0`）那个 DUT 的悬停帧**混了进来。
+  ⟹ 判据：`ps -o ppid= -p <pid>` 看它的父进程 ——
+    · 父进程是**活着的** `pytest` ⟹ 那是别人的工作，**别杀**，等它跑完（或换个时间再量）；
+    · 父进程是 1（孤儿）⟹ 才是上头说的"上一次没杀干净"，该收掉。
 """
 
 from __future__ import annotations
 
+import json
 import math
 import os
 from pathlib import Path
 
+import numpy as np
 import pytest
 from px4_msgs.msg import VehicleStatus
 from rclpy.qos import DurabilityPolicy, ReliabilityPolicy
@@ -43,8 +54,8 @@ from rclpy.qos import DurabilityPolicy, ReliabilityPolicy
 from bench import Scenario
 from bench.fake_px4 import NAV_STATE_OFFBOARD
 from bench.timeline import (mocap_pose_jump, mocap_stamp_rewind, px4_arm, px4_nav_state,
-                            px4_status_silence)
-from nmpc.params import PITCH_RATE_MAX, Z0Params
+                            px4_state_silence, px4_status_silence)
+from nmpc.params import PITCH_RATE_MAX, ROLL_RATE_MAX, Z0Params
 
 #: session 级的 ROS 上下文（在 `test/conftest.py` 里）—— 本模块的每条用例都要起 DUT
 pytestmark = pytest.mark.usefixtures("ros_context")
@@ -453,7 +464,8 @@ def test_RViz_的预测轨迹与参考点():
       · `header.frame_id == "world"`（参数 `rviz_frame` 的默认值，写错在 RViz 里表现为整条不显示）
       · **点数 = N+1 = 51** ⟹ 画出来的是**整条时域**（N=50，见节点启动日志的
         `OCP：N=50 tf=1.0 s`），不是被谁截断的一小段；
-      · 轨迹**起点 ≈ 当前位置**、**终点朝目标方向** —— 参考点也落在"测量位置 + 偏移"上
+      · 轨迹**起点 ≈ 当前位置**、**终点朝目标方向** —— 参考点也落在"**锚点**位置 + 偏移"上
+        （锚点 = 交班那一拍的测量；本用例的夹具位置不动，所以它就是原点）
         （`hold_offset_x=5` ⟹ x ≈ 5）⟹ 偏移**符号**写反了这一条会红（那是肉眼最容易看漏的错）。
 
     ★ 本机实测（2026-09-28，`-p hold_offset_x:=5`）：51 点；起点
@@ -646,6 +658,486 @@ def test_位姿跳变时不发指令_回到原位之后恢复():
         assert "100.000" in log, f"跳变判据的读数（差多少米）没进日志：{log[-500:]!r}"
 
 
+# ─────────────────── A 档：状态源换成 PX4 自己那两条（ticket 09）───────────────────
+#
+# ★★ 本组换掉的是**状态源**，不是坐标系 —— 话题面一点没变（还是 `VehicleRatesSetpoint`），
+#   变的是"这个数是拿什么算出来的"：A 档从 `/fmu/out/vehicle_local_position` +
+#   `/fmu/out/vehicle_attitude` 拿的是 **NED/FRD**，得先换到模型要的 ENU/FLU。于是判据只剩
+#   两条**行为**：
+#     ① 该订的订、**不该订的一帧都不订**（票面："本档**不使用动捕输入**"）；
+#     ② 指令把机身**朝哪一边**拉 —— 而这一条在 NED 里想、在 ENU 里想会得到**不一样**的轴。
+#
+# ★ 期望值**不从 `node_core` import**（那是 DUT 内部，seam 1 的定义不许碰它）：本组照
+#   `docs/control/sign-map.md` §2 的定义**自己**把两个换标签矩阵写出来、独立算一遍。
+#   否则"转换写错了"与"断言抄了实现"就分不开 —— 这是本文件唯一一处"自己算一遍"的地方。
+
+# ⚠️ 下面这三个（`L` / `M` / `_rot_from_quat`）与 `test_node_core.py` 里那份是**各写一份**的
+#   —— 不是漏了复用：`colcon test` 一个文件一个进程、不保证两个测试模块能互相 import，
+#   而这一处要的恰恰是**自己独立算一遍**（理由见上）。两份**一样**是结论，不是前提：
+#   哪天对不上了，说明其中一份被改错了。
+#
+#: NED→ENU 的**世界换标签**：`p_enu = (y, x, −z)` 写成矩阵就是这个（`det = +1`，真旋转）。
+L_NED_TO_ENU = np.array([[0.0, 1.0, 0.0],
+                         [1.0, 0.0, 0.0],
+                         [0.0, 0.0, -1.0]])
+#: FRD→FLU 的**机体换标签**：绕 x 转 180°。
+M_FRD_TO_FLU = np.diag([1.0, -1.0, -1.0])
+
+
+def _rot_from_quat(q) -> np.ndarray:
+    """w-first 四元数 → 旋转矩阵（本组自己算，见上面那两段 ★：不与 `test_node_core.py` 共享，
+    也与 `model.q_to_rot_mat` 无关 —— 那个是 CasADi 符号表达式）。"""
+    w, x, y, z = (float(v) for v in q)
+    return np.array([
+        [1 - 2 * (y * y + z * z), 2 * (x * y - w * z), 2 * (x * z + w * y)],
+        [2 * (x * y + w * z), 1 - 2 * (x * x + z * z), 2 * (y * z - w * x)],
+        [2 * (x * z - w * y), 2 * (y * z + w * x), 1 - 2 * (x * x + y * y)]])
+
+
+def _flu_rot(q_ned_frd) -> np.ndarray:
+    """「FRD 机体 → NED 世界」的姿态 → 「FLU 机体 → ENU 世界」的旋转矩阵。"""
+    return L_NED_TO_ENU @ _rot_from_quat(q_ned_frd) @ M_FRD_TO_FLU
+
+
+def _ned_axis_quat(axis: str, deg: float):
+    """绕 **NED** 某一根轴转 `deg` 度的姿态（w-first）—— 注入用的。"""
+    half = math.radians(float(deg)) / 2.0
+    c, s = math.cos(half), math.sin(half)
+    return {"x": (c, s, 0.0, 0.0), "y": (c, 0.0, s, 0.0), "z": (c, 0.0, 0.0, s)}[axis]
+
+
+def _cmd_to_flu(msg) -> np.ndarray:
+    """话题上的三个角速率 → **FLU 机体系**角速率 `(ωx, ωy, ωz)`。
+
+    反的就是 `sign_map.px4_rates_setpoint`：`roll = ωx`、`pitch = −ωy`、`yaw = −ωz`。
+    ⟹ 这一行本身就是"两套约定是一回事"的断言：**日志里的 `u` 与话题上的 `roll/pitch/yaw`
+      必须只差这一个式子**（`test_A_档的逐帧日志…` 里对着 JSONL 再钉一遍）。
+    """
+    return np.array([float(msg.roll), -float(msg.pitch), -float(msg.yaw)])
+
+
+def _need_rate_toward(d_world, q_ned_frd=(1.0, 0.0, 0.0, 0.0)) -> np.ndarray:
+    """把**推力矢量**朝世界方向 `d`（ENU）倾，所需的 **FLU 机体系**角速率方向。
+
+    ★ 纯几何 + 一次符号映射，与 DUT 怎么算无关：`ω_world ∝ ẑ_body × d̂`（正转把机体 z 朝
+      `d̂` 拉），再旋进机体系 `ω_body = R_fluᵀ ω_world`。量纲/增益**不是**要断言的东西
+      （OCP 的增益由代价权重定），**方向**才是。
+    ★ 机体系里 `roll = ω_x`、`pitch = −ω_y` ⟹ 想让飞机朝 `d` 加速：`roll` 的期望值就是
+      `ω_body[0]`、`pitch` 的期望值是 `−ω_body[1]`。
+    """
+    R = _flu_rot(q_ned_frd)
+    zb = R @ np.array([0.0, 0.0, 1.0])
+    d = np.asarray(d_world, dtype=float).reshape(3)
+    return R.T @ np.cross(zb, d / float(np.linalg.norm(d)))
+
+
+def test_A_档只订_px4_那两条_动捕一帧都不订():
+    """票面验收项「状态源取 PX4 自己的 `/fmu/out/vehicle_local_position`
+    + `vehicle_attitude`」+「本档**不使用动捕输入**」。
+
+    ★★ 「不使用动捕」这一条**只有条件订阅才测得出**：两档都订、只是不看的那种写法，
+      在话题上**完全看不出来**（动捕帧照进、只是被丢掉）—— `matched_subscribers() == 0`
+      是唯一能把它与"根本没订"分开的地方。这也是 `NodeParams.state_source` 做成
+      **条件订阅**（而不是"都订、按参数挑一个"）的理由，见 `mpc_node` 的 ★★ 表。
+
+    ⚠️ 断言的**顺序**是判据的一部分：必须等发现跑完才能说"没有订阅者"。
+      屏障取"PX4 那两条都匹配上了"（⟹ 这个进程已经建完订阅），再加 `hold(1.0)` 让 DDS
+      把该发现的发现完 —— 节点是在 `__init__` 里**一次性**建订阅的，不会再冒出新的。
+      ⚠️ 反过来（先断言 == 0 再等）就是一条**永远绿**的假断言：那一刻谁都没匹配上。
+
+    ★ 正控别省：解锁 + OFFBOARD 之后必须**真的开始发 setpoint** —— 否则"一帧都不订"
+      与"节点压根没起来"在断言里长得一样。
+    """
+    with _scenario(state_source="px4") as sc:
+        _wait_dut_up(sc)
+        sc.wait_for(lambda: sc.px4.matched_subscribers("local_position") >= 1
+                    and sc.px4.matched_subscribers("attitude") >= 1,
+                    timeout_s=10.0,
+                    message="DUT 没订上 /fmu/out/vehicle_local_position 或 vehicle_attitude")
+        sc.hold(1.0)
+
+        assert sc.mocap_source.matched_subscribers() == 0, \
+            "A 档下 /mocap/pose_enu 上还有订阅者 —— 票面要求本档不使用动捕输入"
+
+        _arm_and_offboard(sc)
+        sc.wait_for(lambda: len(sc.px4.published_frames("rates")) >= 5, timeout_s=10.0,
+                    message="正控不成立：订上 PX4 两条之后并没有真的开始发 setpoint")
+
+
+@pytest.mark.parametrize("key,reason", [("local_position", "px4_stale"),
+                                        ("attitude", "px4_attitude_stale")])
+def test_A_档_两条状态各判各的龄(key, reason):
+    """票面验收项「状态源取 … `vehicle_local_position` + `vehicle_attitude`」的**判据面**。
+
+    ★ 两条消息是**两条独立的流**（z0 SITL 实测 32.5 / 31.6 Hz，2026-09-28）⟹ 各判各的龄。
+      所以本用例**按话题分别**掐断，且断言的是**哪一个理由**进了日志：
+        · 只掐 `local_position` ⟹ 理由必须是 `px4_stale`；
+        · 只掐 `attitude`      ⟹ 理由必须是 `px4_attitude_stale`。
+      只断言"停发了"是不够的 —— 合并成一条判据（"任一条旧了就算旧"）也满足"停发了"，
+      而它就丢掉了"姿态停在几秒前、节点却以为在闭环"这个唯一想抓的失效
+      （姿态变化慢，两个选择只差一个小倾角，话题上几乎看不出来）。
+    ★ 时间尺子：静默 3 s，判据是 `px4_timeout_s`（默认 0.5 s）、而这条流周期只有 ~31 ms
+      ⟹ 跨得过闸门（与 `px4_status_silence` 同一条纪律：时长要**明显大于**阈值）。
+    """
+    with _scenario(state_source="px4") as sc:
+        _wait_dut_up(sc)
+        _arm_and_offboard(sc)
+        sc.wait_for(lambda: sc.px4.published_frames("rates"), timeout_s=10.0,
+                    message="正控没成立：解锁之后就没发过 setpoint")
+
+        t0 = sc.t()
+        sc.timeline.extend(px4_state_silence(sc.px4, t0 + 0.2, duration_s=3.0, key=key))
+
+        sc.advance_to(t0 + 2.5)
+        n_sp = len(sc.px4.frames_between("rates", t0 + 1.2, t0 + 2.5))
+        n_hb = len(sc.px4.frames_between("mode", t0 + 1.2, t0 + 2.5))
+        assert n_sp == 0, f"只掐了 {key}，setpoint 却还在发（{n_sp} 帧）—— 那一条没被判据看着"
+        assert n_hb > 50, f"静默期间心跳掉了（{n_hb} 帧 / 1.3 s，期望 ~65）"
+        assert sc.dut_alive(), "DUT 在静默期间退出了"
+        log = sc.dut_log()
+        assert reason in log, \
+            f"停发的理由不是 {reason}（日志尾：{log[-500:]!r}）—— 两条状态被并成一条判据了？"
+
+        sc.advance_to(t0 + 6.5)
+        n_after = len(sc.px4.frames_between("rates", t0 + 4.5, t0 + 6.5))
+        assert n_after > 0, f"{key} 回来之后没有重新开始发（闸门没重开）"
+
+
+@pytest.mark.parametrize("offset, d_enu", [({"hold_offset_x": 10.0}, (1.0, 0.0, 0.0)),
+                                           ({"hold_offset_y": 10.0}, (0.0, 1.0, 0.0))])
+def test_A_档_同一条正前方任务_走哪一根轴由_NED_到_ENU_的换算决定(offset, d_enu):
+    """票面验收项「符号映射与推力标定在**真 PX4** 上最终确认 —— 判据是**行为符合预期**」
+    在话题层的落点：同一件事（"朝 ENU 的某个方向追 10 m"）在 A 档下必须走**换算出来**的那根轴。
+
+    ★★ 为什么这是一条**有牙齿**的断言（而不是"抄了实现"）：任务方向 `d_enu` 是**测试给的**
+      （`hold_offset` 就在 ENU 里），而机头朝向是**换算出来的** —— 两者之间那对关系由
+      NED→ENU/FRD→FLU 决定。初始姿态是 NED 单位四元数（= 机头朝**北**），换算到 ENU 之后
+      机头指 **ENU 的 +y** ⟹ 同一条 "ENU +x 追 10 m" 必须靠**绕机体 x 转**（`roll`）做到：
+
+        mocap 档（同一张票面上的同一条任务）：初始姿态是 ENU 单位四元数（机头 = +x）
+          ⟹ `pitch < 0`（见 `test_目标在正前方时_pitch_为负_且顶约束表现为打满`，实测 −3.84）
+        A 档（本用例）：机头 = ENU +y ⟹ 主项必须是 **`roll`**（实测 +3.8400 = `ROLL_RATE_MAX`）
+
+      ⟹ 任何"忘了转姿态"或"只翻了一半符号"的实现都会以为机头还在 +x、于是发 `pitch`
+        （或者两根轴都发）—— 这条用例就会红。
+
+    ★ 期望值走 `_need_rate_toward`（本组自己算的几何），**不写死"roll/pitch"**：
+      10 m 在 1 s 的时域里不可行 ⟹ 主项必然**打满**，所以断言的是"顶在 `*_RATE_MAX` 上"
+      （等号附近，容差 0.05），而不是"小于上限" —— 后者对"被谁悄悄按比例缩回去"也是绿的。
+
+    ⚠️ 位置换算（`(y, x, −z)`）**在这条里没有被考**：本用例的夹具**位置不动**，而参考钉在
+      交班那一拍的测量上（锚点）⟹ 位置**误差**恒等于 `hold_offset`，与怎么换无关。
+      ★ 它**不是**"位置换算量不到"（那句话在锚点之前成立、之后就不成立了）：让夹具的位置
+      动起来就能考到 —— 那是 `test_A_档_锚点让位置换算在话题层可观测` 的事。
+    """
+    with _scenario(state_source="px4", **offset) as sc:
+        _wait_dut_up(sc)
+        _arm_and_offboard(sc)
+        sc.wait_for(lambda: len(sc.px4.published_frames("rates")) >= 10, timeout_s=10.0,
+                    message="解锁后没攒到 10 帧 setpoint")
+
+        w_need = _need_rate_toward(d_enu)      # 初始姿态 = NED 单位四元数（机头朝北）
+        if abs(float(w_need[0])) >= abs(float(w_need[1])):
+            main, other, want, rate_max = "roll", "pitch", float(w_need[0]), ROLL_RATE_MAX
+        else:
+            main, other, want, rate_max = "pitch", "roll", -float(w_need[1]), PITCH_RATE_MAX
+
+        last = sc.px4.published_frames("rates")[-1].msg
+        got = float(getattr(last, main))
+        other_v = float(getattr(last, other))
+        assert got * want > 0.0, \
+            f"{offset}（朝 ENU {d_enu} 追 10 m）：主项该是 {main} 的" \
+            f"{'+' if want > 0 else '−'} 号，实测 {got:+.4f}（换算把机头方向弄反了？）"
+        assert abs(abs(got) - rate_max) < 0.05, \
+            f"{main} = {got:+.4f}，没顶在 {rate_max} 上 —— 10 m 在 1 s 时域里不可行，该打满"
+        assert abs(other_v) < 0.2, \
+            f"{other} = {other_v:+.4f} 不该有动作（纯 {main} 的任务被换成了斜的？）"
+
+
+def test_A_档_锚点让位置换算在话题层可观测():
+    """★ **锚点改动的第二个后果**：位置换算第一次**在话题层**就能考（ticket 09 之前量不到）。
+
+    交班之后把夹具的**位置**挪走 0.3 m（NED 北 ⟹ ENU 的 +y），锚点仍在原点 ⟹ 位置误差的
+    **世界方向**是"从当前点指回锚点" = ENU 的 **−y**。于是节点该发的是一条朝 −y 倾转的角速率
+    —— 方向由 `_need_rate_toward`（本组自己算的几何）给出，**不写死 roll/pitch**。
+
+    ★★ 有牙齿的地方：`.3 m` 是**从 NED 报进去的**，而锚点与当前点都在 ENU 里比较 ——
+      "忘了换轴"（把 NED 的 north 当 ENU +x）会让期望方向整整转 90°，投影当场变负。
+    ★ 位移取 **0.3 m**：位姿跳变闸门的上限是 `20 m/s × dt`（dt ≈ 一帧 31 ms ⟹ 0.6 m），
+      1 m 会先被判成 `pose_jump`，看到的就不是本用例要考的那件事。
+    ★ 位置项在 0.3 m 上**不饱和**（不像上面那条 10 m 会打满）⟹ 判据是"投影增益为正、
+      残差小"，不是"顶在 `*_RATE_MAX` 上"。
+    ★ 本机实测（2026-09-28，本机 SITL 夹具）：`ω_cmd = [1.0e-04, −0.1456, −2.2e-03]`、
+      需要的方向 `(0, −1, 0)` ⟹ 投影 `k = **+0.1456**`、落在期望方向之外的只剩 0.0022 rad/s。
+      判据取 `k > 0.05`（实测的 1/3）与"残差 < 0.3·|ω_cmd|"（实测的 ~1/60）。
+    """
+    with _scenario(state_source="px4") as sc:
+        _wait_dut_up(sc)
+        _arm_and_offboard(sc)
+        sc.wait_for(lambda: len(sc.px4.published_frames("rates")) >= 10, timeout_s=10.0,
+                    message="解锁后没攒到 10 帧 setpoint")
+
+        # 锚点已经在原点钉住了（交班那一拍）—— 现在把飞机挪走
+        sc.px4.set_position_ned(0.3, 0.0, 0.0)          # NED 北 0.3 m ⟹ ENU (0, +0.3, 0)
+        n0 = len(sc.px4.published_frames("rates"))
+        sc.wait_for(lambda: len(sc.px4.published_frames("rates")) >= n0 + 8, timeout_s=10.0,
+                    message="注入位置偏移之后不再发 setpoint（撞上跳变闸门？）")
+        last = sc.px4.published_frames("rates")[-1].msg
+
+        w_need = _need_rate_toward((0.0, -1.0, 0.0))     # 从 ENU +y 回到锚点（原点）
+        assert float(np.linalg.norm(w_need)) > 0.1, "这条场景本身没造出方向，用例写错了"
+        w_cmd = _cmd_to_flu(last)
+        k = float(w_cmd @ w_need) / float(w_need @ w_need)
+        assert k > 0.05, \
+            f"位置误差（0.3 m，世界 −y）在话题上没产生朝那个方向的倾转：k = {k:+.4f}、" \
+            f"ω_cmd = {np.round(w_cmd, 4)}、需要 = {np.round(w_need, 4)}" \
+            f"（位置换算把北当成了 +x？锚点没钉住？）"
+        assert float(np.linalg.norm(w_cmd - k * w_need)) < 0.3 * float(np.linalg.norm(w_cmd)), \
+            f"指令里有 {np.linalg.norm(w_cmd - k * w_need):.4f} rad/s 落在期望方向之外"
+
+
+@pytest.mark.parametrize("axis, deg, expect_flat", [("y", 10.0, False),
+                                                   ("x", 10.0, False),
+                                                   ("z", 90.0, True)])
+def test_A_档_注入的倾斜_指令方向是把机身拉平的那一边(axis, deg, expect_flat):
+    """票面验收项「符号映射 … 在真 PX4 上最终确认」的姿态面：**注入一个倾斜，看它往哪边修**。
+
+    ★ 参考姿态是**水平**的（`hold_reference`：位置 = **锚点** + 偏移、速度 0、姿态水平），
+      而代价只罚**倾斜**（`OcpConfig.q_diag` 的 `qw` 权重是 0）⟹ 一个倾斜的测量姿态
+      必然换出一条**朝水平修**的角速率，方向由换算决定（希望值走 `_need_rate_toward`）。
+
+    ★★ 这条能抓住什么、抓不住什么（第一手，2026-09-28 本机，四种错法各算了一遍）：
+      · 抓得住：**完全不转**（`q_enu = q_ned`）—— 它把倾斜轴换成另一根（NED-y 倾斜本该走
+        `pitch`，它会走 `roll`），投影测试直接红；
+      · **抓不住**："只翻 pitch/yaw"与"只换世界标签"这两种错法：对**单轴**倾斜，机体系里
+        所需的转速轴与整体 90° 偏航**无关** ⟹ 投影仍是正的。它们要靠
+        `test_A_档_同一条正前方任务…`（那条考的是机头朝向）与 SITL 闭环才是红的。
+      ⟹ 本用例的价值是"姿态误差被修的方向是对的"，**不是**"转换完全正确"。
+
+    ★ `deg=10` 是**按跳变闸门选的**，不是随手给的：`_pose_jump` 的上限是
+      `mocap_jump_rate_max (12.6 rad/s) × dt`，而 `dt` 取源自己的 stamp 差（这条流 ~31 ms）
+      ⟹ 允许的单拍转角 ≈ 12.6 × 0.031 = **22.4°**。10° 留了一倍余量；给到 30° 就会先撞上
+      **跳变闸门**（停发），看到的是"什么都不发"而不是"往哪边修"。
+    ★ `axis="z"`（纯偏航）是**负控**：偏航不产生倾斜 ⟹ 三轴角速率与推力都该是悬停值。
+      它同时证明"上面那些非零读数**是**倾斜带来的"，而不是"节点一被注入就乱发"。
+    """
+    z0 = Z0Params()
+    q_ned = _ned_axis_quat(axis, deg)
+    with _scenario(state_source="px4") as sc:
+        _wait_dut_up(sc)
+        _arm_and_offboard(sc)
+        sc.wait_for(lambda: len(sc.px4.published_frames("rates")) >= 10, timeout_s=10.0,
+                    message="解锁后没攒到 10 帧 setpoint")
+
+        n0 = len(sc.px4.published_frames("rates"))
+        sc.px4.set_attitude_quat(q_ned)
+        # 注入之后**至少 8 帧**再看：状态流 ~32 Hz、节点 100 Hz ⟹ 8 帧足以让新姿态进闭环
+        sc.wait_for(lambda: len(sc.px4.published_frames("rates")) >= n0 + 8, timeout_s=10.0,
+                    message=f"注入 NED {axis} {deg:g}° 之后就不再发 setpoint 了（撞上跳变闸门？）")
+        last = sc.px4.published_frames("rates")[-1].msg
+
+        if expect_flat:
+            w = _cmd_to_flu(last)
+            assert float(np.linalg.norm(w)) < 0.02, \
+                f"纯偏航（NED {axis} {deg:g}°）不该产生任何倾斜修正，实测 ω = {np.round(w, 4)}"
+            hover = -z0.t_hover / z0.t_max
+            assert abs(float(last.thrust_body[2]) - hover) < 0.02, \
+                f"纯偏航下推力该是悬停值 {hover:+.4f}，实测 {float(last.thrust_body[2]):+.4f}"
+            return
+
+        w_need = _need_rate_toward((0.0, 0.0, 1.0), q_ned)   # 水平参考 ⟹ 朝「上」修
+        assert float(np.linalg.norm(w_need)) > 0.1, "这条注入本身没造出倾斜，用例写错了"
+        w_cmd = _cmd_to_flu(last)
+        k = float(w_cmd @ w_need) / float(w_need @ w_need)
+        assert k > 0.5, \
+            f"指令在「把机身拉平」方向上的增益是 {k:+.3f}（该是正的、可观的）—— " \
+            f"ω_cmd = {np.round(w_cmd, 4)}、需要 = {np.round(w_need, 4)}"
+        assert float(np.linalg.norm(w_cmd - k * w_need)) < 0.1, \
+            f"指令里有 {np.linalg.norm(w_cmd - k * w_need):.3f} rad/s 落在拉平之外的方向上"
+
+
+def test_A_档_有速度之后_tau_第一次在话题上可观测_配对差分():
+    """A 档的**新能力**：外推 `x + v·τ` 第一次能被黑盒考到 —— 因为这条源**有速度**。
+
+    ★★ 为什么 A 档之前测不出来（见 `test_动捕那条话题没有速度字段_所以拍不出_tau_的黑盒测试`）：
+      `/mocap/pose_enu` 是 `PoseStamped`，**没有** `twist` ⟹ `v ≡ 0` ⟹ `x + v·τ` 恒等变换
+      ⟹ 话题上**任何** τ 都长得一样。A 档的 `vehicle_local_position` 带 `vx/vy/vz`。
+
+    ★★ 为什么判据是**两次跑程的差**、而不是"有/没有动作"（第一手，2026-09-28 本机——
+      这一条是**被实测推翻过一次**的判据，别改回去）：
+      当初按"τ=0.05 有动作、τ≈0 没动作"写，靠的是一个"τ≈0 ⟹ 全零悬停帧"的观测 ——
+      而那次观测是**别的会话的 DUT** 发在同一对话题上的（模块 docstring 的 ★★ 记了这次事故）。
+      真实的机理是：`v ≠ 0` 时，参考的速度是 0 而状态的速度是 v ⟹ OCP 要**刹住**它，
+      这一项**与 τ 无关**；τ 只通过位置那一项进来（`x_ref − x0 = hold_offset − v·τ`）。
+      所以 τ 的效果是**幅度上的一点差**，不是"有/无"。实测（`hold_offset_z=0`、
+      `v = NED (1,0,0)` 北向 1 m/s、末帧，2026-09-28 本机）：
+
+          τ = 0.05  ⟹ ω_FLU = [3.0e-04, −0.5572, −2.2e-03]
+          τ = 1e-6  ⟹ ω_FLU = [3.0e-04, −0.5340, −2.1e-03]
+          差        = [0, −0.0232, −2e-04] ⟹ 投影到期望方向 k = **+0.0232**
+
+      即灵敏度 ≈ 0.46 (rad/s) / s 的 τ（在 v = 1 m/s 下）。判据取 k > 0.004
+      （离实测 6 倍）与"残差 < 0.3·|差|"（实测 0.009）。
+      ⚠️ τ 的**方向**与"刹住速度"的方向是同一个（都是 −v̂）⟹ 方向判据分辨不出 τ，
+        能分辨的只有**幅度**。这是本用例唯一的、也是诚实的判据。
+
+    ★ 负控那一路**不能写 `tau_s=0.0`**（第一手，同日）：节点自己在参数校验里就拒了它 ——
+      启动日志原文 `[mpc_node] 启动失败：参数 tau_s 要是正的有限数，收到 0.0`、
+      `returncode=2`、一帧都不发（`_wait_dut_up` 空等满 120 s 才红）。**这本身是对的**：
+      零阶外推在数值上就是没外推，与其让一个无意义的参数悄悄跑，不如在启动时拦住。
+      ⟹ 负控用 `tau_s=1e-6`（外推量只有正例的 2e-5 倍）。
+    ★ `hold_offset_z=0` 是**设计意图**（让两跑之间只剩速度相关项），不是"不这样就测不出来"：
+      实测 `hold_offset_z` 取 0 与取默认 1.0 时，角速率读数到小数第三位都一样 ——
+      "保持 1 m"那一项进的是**推力**（`u[0]`），不是横向角速率。
+    """
+    def run(tau_s: float) -> np.ndarray:
+        with _scenario(state_source="px4", hold_offset_z=0.0, tau_s=tau_s) as sc:
+            _wait_dut_up(sc)
+            _arm_and_offboard(sc)
+            sc.px4.set_velocity_ned(1.0, 0.0, 0.0)
+            sc.wait_for(lambda: len(sc.px4.published_frames("rates")) >= 15, timeout_s=10.0,
+                        message="注入速度后没攒到 15 帧 setpoint")
+            return _cmd_to_flu(sc.px4.published_frames("rates")[-1].msg)
+
+    w_big, w_tiny = run(0.05), run(1e-6)
+    d = w_big - w_tiny
+    w_need = _need_rate_toward((0.0, -1.0, 0.0))     # ENU：NED 北 +1 m/s ⟹ ENU 东 +1 ⟹ 该朝南
+    k = float(d @ w_need) / float(w_need @ w_need)
+    print(f"\nτ=0.05 ⟹ ω={np.round(w_big, 4)}；τ=1e-6 ⟹ ω={np.round(w_tiny, 4)}；"
+          f"差 {np.round(d, 4)}（k={k:+.4f}，期望方向 {np.round(w_need, 4)}）")
+
+    assert k > 0.004, \
+        f"两种 τ 的差没有落在外推该有的方向上：差 {np.round(d, 4)}、" \
+        f"期望方向 {np.round(w_need, 4)}（k={k:+.5f}）—— 外推项没进指令？"
+    assert float(np.linalg.norm(d - k * w_need)) < 0.3 * float(np.linalg.norm(d)), \
+        f"两种 τ 的差不在一个方向上：差 {np.round(d, 4)}、k·w_need = {np.round(k * w_need, 4)}"
+
+
+def test_A_档_垂直速度的外推_表现是推力低于悬停():
+    """A 档外推的**另一面**：垂直方向的速度差改的是**推力**，不是角速率（纯几何上 `ẑ × ẑ = 0`）。
+
+    ★ 这条顺手把**速度**的 z 符号钉住（`v_enu_z = −v_ned_z`）：注入 NED `vz = −1`（**上升** 1 m/s），
+      τ = 0.05 ⟹ `x0` 比参考高 5 cm ⟹ 该**减推力**。符号如果反了，节点会以为在下降、于是加推力
+      —— 而"加/减推力"在话题上就是 `thrust_body[2]` 的两个方向，一眼分得开。
+    ★ 与上一条配对：一个考速度进**角速率**，一个考速度进**推力**；两条的期望符号都由
+      "参考比外推点低/高"推出来，不抄实现。实测（2026-09-28 本机）：
+        `vz = −1` ⟹ `thrust_body[2] = −0.3974`（悬停是 −0.6235 ⟹ 确实**低于**悬停）
+    """
+    z0 = Z0Params()
+    hover = -z0.t_hover / z0.t_max
+    with _scenario(state_source="px4") as sc:
+        _wait_dut_up(sc)
+        _arm_and_offboard(sc)
+        sc.px4.set_velocity_ned(0.0, 0.0, -1.0)
+        sc.wait_for(lambda: len(sc.px4.published_frames("rates")) >= 15, timeout_s=10.0,
+                    message="注入垂直速度后没攒到 15 帧 setpoint")
+        last = sc.px4.published_frames("rates")[-1].msg
+
+        fz = float(last.thrust_body[2])
+        assert fz > hover + 0.05, \
+            f"向上 1 m/s ⟹ 外推点比参考高 ⟹ 该减推力，实测 {fz:+.4f}（悬停 {hover:+.4f}）——" \
+            "速度的 z 符号反了？"
+        assert abs(float(last.roll)) < 0.02 and abs(float(last.pitch)) < 0.02, \
+            "垂直方向的速度差不该产生角速率（ẑ × ẑ = 0）"
+
+
+def test_A_档的逐帧日志把状态源_求解耗时_饱和标志都记下来了(tmp_path):
+    """票面验收项「日志记录 MPC（模型预测控制）内部状态、**求解耗时**、**约束饱和标志**，
+    供飞行后复盘而不只依赖记忆」—— 这条验收项以前**没有任何用例**，而它的失效方式是静默的：
+    键名写错、值不能 JSON 序列化（`float32` / `uint8`）、某一档忘了合并进去，
+    症状都是"飞行之后打开日志发现少了一列"，那时已经晚了。
+
+    ★ 判据分三层，**都对着文件读**（不读节点内部）：
+      · **结构**：每行都是合法 JSON、`u` 是 4 维、`x0` 是 10 维（`u` 是求解器给的、
+        `x0` 是喂进去的、`x_ref0` 是要它去哪 —— 复盘时靠这三列把一帧重算回去）；
+      · **A 档的取证面**：`state_source` 与两条状态的**分龄**（`age_pos_s` / `age_att_s`）
+        以及 EKF 自报的有效性标志 —— 这正是票面要的"谁给的、多旧"；
+      · **与话题的一致性**（最要紧的一条）：同一帧里 `u` 是 FLU/ENU 的内部量、`roll/pitch` 是
+        PX4 的 FRD/NED 量，两者**必须只差 `sign_map` 那一式**。这一条把"映射写错了"与
+        "模型解错了"分开，也正是 `docs/control/sign-map.md` 要的东西。
+
+    ★ 热身拍也**照记**（`fallback == "warmup"`）：那几拍不发，却是"最坏求解耗时"里最容易漏掉的
+      （RTI 冷启动、代码页刚进 cache）—— 实测最坏耗时是票面 D6 那个数字的来源，
+      漏掉冷启动那几拍就等于把最坏情况藏起来。
+    ★ 饱和标志用 `hold_offset_x=10` 那条任务来造（roll 必然打满）⟹ `sat` 里要有 `"wx"`。
+    """
+    log_path = tmp_path / "mpc.jsonl"
+    with _scenario(state_source="px4", hold_offset_x=10.0, log_file=str(log_path)) as sc:
+        _wait_dut_up(sc)
+        _arm_and_offboard(sc)
+        sc.wait_for(lambda: len(sc.px4.published_frames("rates")) >= 15, timeout_s=10.0,
+                    message="解锁后没攒到 15 帧 setpoint")
+
+    # ★ 摘要在**进程退出时**才打（`mpc_node.main` 的 `finally`）⟹ 必须在 `with` 之外读：
+    #   块内读到的只是"到这一刻为止"的输出，收尾那一行还没出生。台架 `__exit__` 会发 SIGINT、
+    #   等进程退出、再 join 读线程，所以这里读到的是完整输出。
+    summary = sc.dut_log()
+
+    recs = [json.loads(line) for line in log_path.read_text(encoding="utf-8").splitlines()
+            if line.strip()]
+    assert recs, "逐帧日志一行都没有"
+    assert {r["fallback"] for r in recs} >= {"warmup", "normal"}, \
+        f"日志里的档位只有 {sorted({r['fallback'] for r in recs})} —— 热身拍没记？"
+
+    for r in recs:
+        assert r["state_source"] == "px4", f"状态源记成了 {r['state_source']!r}"
+        assert isinstance(r["age_pos_s"], (int, float)), "位置分龄没进日志"
+        assert isinstance(r["age_att_s"], (int, float)), "姿态分龄没进日志"
+        assert len(r["u"]) == 4 and len(r["x0"]) == 10, "u/x0 的维度不对（求解器接口变了？）"
+
+    normal = [r for r in recs if r["fallback"] == "normal"]
+    assert normal, "一行正常帧都没有"
+    assert all(r["solve_ok"] and r["solve_ms"] > 0.0 for r in normal), \
+        "正常帧里没有求解耗时（票面 D6 那个数字就从这一列来）"
+    assert any("wx" in r["sat"] for r in normal), \
+        "hold_offset_x=10 该把 roll 顶满 ⟹ 饱和标志里要有 'wx'"
+
+    last = normal[-1]
+    z0 = Z0Params()
+    assert abs(last["u"][1] - last["roll"]) < 1e-4, \
+        f"日志内部量 u[1]={last['u'][1]} 与话题上的 roll={last['roll']} 不符（符号映射只差这一式）"
+    assert abs(last["thrust_body_z"] + last["u"][0] / z0.t_max) < 1e-4, \
+        "thrust_body_z 与 −F/T_max 不符（归一化改了？）"
+
+    # 收尾摘要：D6 那个数字与饱和计数必须能被**人**读到（不只是进了 JSONL）
+    assert "求解耗时 p50" in summary and "最坏" in summary, \
+        f"收尾摘要里没有求解耗时的分布（D6 要读它）：{summary[-300:]!r}"
+    assert "约束饱和" in summary and "wx" in summary, \
+        f"收尾摘要里没有饱和计数：{summary[-300:]!r}"
+
+
+def test_前馈取参考的解析前馈_不跟着解爬(tmp_path):
+    """★★ 2026-09-28 的 runaway 回归：`u_ref` **不许**是"上一帧解"。
+
+    `R·(u − u_ref)` 里，`u_ref` 取上一帧解 ⟹ 解出一点偏、下一帧的参考量就跟着偏 ——
+    一条**正反馈**。`offline-ocp.md` §4.4 离线记过"单调上爬、不收敛"；SITL 闭环里它放大成
+    runaway（`u[3]` 从 0 爬到 **+4.696 rad/s**、EKF 帧转了 **13.6 圈**）。判据用**日志**读，
+    不读节点内部：`u_ref0`（控制参考）逐帧恒为 `[t_hover, 0, 0, 0]`，而同段 `u` 是**在动的**。
+
+    ★ 任务用 `hold_offset_x = 10 m`：位置误差大到把 roll 顶满 ⟹ 解明显非零。
+      少了"同一段里 `u` 真的在动"这半条，测试就没有鉴别力（静态悬停时旧代码也看不出爬）。
+    """
+    log_path = tmp_path / "mpc.jsonl"
+    with _scenario(state_source="px4", hold_offset_x=10.0, log_file=str(log_path)) as sc:
+        _wait_dut_up(sc)
+        _arm_and_offboard(sc)
+        sc.wait_for(lambda: len(sc.px4.published_frames("rates")) >= 15, timeout_s=10.0,
+                    message="解锁后没攒到 15 帧 setpoint")
+
+    recs = [json.loads(line) for line in log_path.read_text(encoding="utf-8").splitlines()
+            if line.strip()]
+    normal = [r for r in recs if r["fallback"] == "normal"]
+    assert len(normal) >= 10, f"正常帧只有 {len(normal)} 拍，测不出「爬不爬」"
+
+    z0 = Z0Params()
+    want = [z0.t_hover, 0.0, 0.0, 0.0]
+    for r in normal:
+        assert r["u_ref0"] == pytest.approx(want), \
+            f"第 {r['tick']} 拍的控制参考变成了 {r['u_ref0']}（该恒为参考的解析前馈 {want}）"
+    assert max(abs(r["u"][1]) for r in normal) > 1.0, \
+        "同段的解没动过 ⟹ 这条测试证明不了「前馈没跟着解爬」（任务参数失效？）"
+
+
 # ───────────────────────────── 在这一层量不了的那几条（不写假测试）─────────────────────────────
 
 def test_发现信息里的_depth_读不回来_所以票面那条只能靠读常量():
@@ -689,9 +1181,59 @@ def test_动捕那条话题没有速度字段_所以拍不出_tau_的黑盒测�
     ⇒ 所以 τ 只有 **`test_node_core.py` 里那两条**（给定 `v` 时外推正确 + 缺 `v` 时不崩）
       加上"从哪拿 `v`"这张票（15）解决之后，才可能有端到端的验证。
       本条断言把**前提**钉住：哪天上游换成带 twist 的类型，它会红，提醒来改这张票。
+
+    ★★ ticket 09（A 档）之后，上面这条结论**只对动捕这一档成立**：
+      `vehicle_local_position` **带** `vx/vy/vz` ⟹ 换到 A 档之后 τ 变成话题上
+      **可观测**的量（实测 `v = 北向 1 m/s`：τ = 0.05 与 τ = 1e-6 的读数差 0.0232 rad/s，
+      **是幅度上的差、不是"有/无"** —— 为什么只能这么判，见那条用例的 ★★）。
+      黑盒用例见 `test_A_档_有速度之后_tau_第一次在话题上可观测_配对差分`。
+      ⚠️ 两档的差别**只在有没有速度**，不在坐标系 —— 所以"τ 量不了"这句话本身
+        一点都不该外推（它从来不是"节点不做外推"，而是"输入里没有 v"）。
     """
     from geometry_msgs.msg import PoseStamped
 
     assert not hasattr(PoseStamped(), "twist"), \
         "PoseStamped 有 twist 了 ⟹ issue 15 可能已经解决，本文件该补一条 τ 的黑盒测试"
     assert not hasattr(PoseStamped(), "velocity")
+
+
+def test_位置保持锚点让位置换算第一次在话题层可观测():
+    """★★ 这条是**结论被推翻过一次**的用例，别看错：ticket 09 的锚点改动把它反过来了。
+
+    **锚点之前**（`hold_reference(x_meas, …)`，每拍用当拍测量重建参考）：参考与初值都从
+    同一个测量点出发 ⟹ 位置差恒为 `hold_offset − v·τ`，与"位置是怎么换算出来的"无关
+    （位置换错只是把两个点一起平移）⟹ 位置换算的**任何**错法在话题上都看不出动作差别，
+    只能靠 SITL 闭环回答。这正是 ticket 09 存在的理由，也是当时那版用例的名字。
+
+    **锚点之后**（ticket 09，2026-09-28 首飞暴露出来的事）：参考钉在**交班那一拍**测量上，
+    与当拍测量无关 ⟹
+
+        `x_ref − x0 = (p_anchor + hold_offset) − (p_meas + v·τ)`
+
+    差里出现了 `p_meas − p_anchor` —— 它**取决于位置是怎么算出来的**。下面用两个相隔 7 m 的
+    位置把这条演示出来：同一套 `hold_offset`/`v`/`τ`，位置不同 ⟹ 差**不同**。
+
+    ⇒ 结论：位置那一半约定现在**在话题层与闭环里都能被考**（飞机往错误的方向飞、或者误差
+      收敛到一个平移过的点）。闭环仍然是最终判据 —— 但不再是**唯一**的判据。
+    ⚠️ 姿态那一半**一直**能在话题层量到（参考姿态取**水平**、而机头朝向与 `hold_offset`
+      的方向是一对关系）—— 见 `test_A_档_同一条正前方任务_走哪一根轴由_NED_到_ENU_的换算决定`。
+    """
+    from nmpc.node_core import ControlConfig, extrapolate_state, hold_reference
+
+    cfg = ControlConfig(hold_offset=(3.0, 4.0, 5.0), tau_s=0.05)
+    v_enu = np.array([1.0, -2.0, 0.5])
+    p_anchor = np.array([0.0, 0.0, 0.0])
+    x_anchor = np.concatenate([p_anchor, np.zeros(3), [1.0, 0.0, 0.0, 0.0]])
+    x_ref = hold_reference(x_anchor, cfg, 2)[0][:3]
+
+    gaps = []
+    for pos_enu in (np.array([0.0, 0.0, 0.0]), np.array([-7.0, 2.5, -3.0])):
+        x = np.concatenate([pos_enu, v_enu, [1.0, 0.0, 0.0, 0.0]])
+        gap = x_ref - extrapolate_state(x, cfg.tau_s)[:3]
+        # 差里现在同时有"锚点 − 当前"与"偏移 − 外推"两项（旧版只有后一项）
+        assert np.allclose(gap, (p_anchor + np.asarray(cfg.hold_offset))
+                           - (pos_enu + cfg.tau_s * v_enu)), \
+            f"参考与初值的位置差不再是 (锚点+偏移) − (测量+v·τ)：{gap}"
+        gaps.append(gap)
+    assert not np.allclose(gaps[0], gaps[1]), \
+        "两个相隔 7 m 的位置给出了同一个差 ⟹ 位置换算又被抵消掉了（锚点丢了？）"

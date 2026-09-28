@@ -266,8 +266,8 @@ ros2 run nmpc preflight_check.py -p mass:=0.82 -p hover_thrust:=0.55   # 与节�
 | 事项 | 归哪 |
 |---|---|
 | 求解失败 / 非有限值的**兜底动作**（谁接管、怎么降级） | ✅ **2026-09-28 已由 [ticket 07](../../.scratch/phase2/issues/07-solver-failure-fallback.md) 关闭** —— 三档阶梯（`hold` 10 拍 → 安全悬停）、发布前全量校验、失败事件的 `error` 上报 + JSONL `fallback` 列，见 [`mpc-node-fallback.md`](mpc-node-fallback.md)。★ 那条交接的措辞（"`heartbeat_always` 是留给它的接缝"）**已作废**：心跳照旧无条件发，兜底换的是 **rates setpoint 的内容**（"不发"在飞控侧 = 沿用陈旧命令，见该文 §1.1） |
-| 真正的轨迹接口 `/traj/reference`（本票只有参数化参考点偏移） | [ticket 09](../../.scratch/phase2/issues/09-sitl-tier-a-closed-loop.md) |
-| 100 Hz 要不要降档（实测最坏耗时 → D6/回填） | ticket 09/11 |
+| 真正的轨迹接口 `/traj/reference`（本票只有参数化参考点偏移） | ⚠️ **2026-09-28：ticket 09 走的是最小锚点路径，没有做它** —— A 档只要"稳定悬停"一个工况，且 A 档的原则是"每次只有一个新变量"，引入一条新话题链会让第 6/8 场那组对照不再干净。**这条交接仍然挂着**，见 [ticket 09](../../.scratch/phase2/issues/09-sitl-tier-a-closed-loop.md) Comments #7，等操作者裁定归哪张票 |
+| 100 Hz 要不要降档（实测最坏耗时 → D6/回填） | ✅ **2026-09-28 已由 [ticket 09](../../.scratch/phase2/issues/09-sitl-tier-a-closed-loop.md) 回答**：空机稳态最坏 **3.995 ms** ⟹ **100 Hz 保档**（冷启动 15.956 ms 落在 `warmup` 闸门里）。⚠️ 新加一条前置条件"**机上别跑别的东西**"（同二进制多几个进程 ⟹ 11.297 ms ⟹ 50 Hz 档）。读数见 [`tier-a-sitl-hover.md`](tier-a-sitl-hover.md) §5，**整周期**（含订阅/发布、状态转换、日志）仍归 ticket 11 |
 | 绑核 + 可选实时优先级的**实测**（实现已在节点里：`cpu` / `rt_priority`） | ticket 11 |
 | 动捕速度源（`v` 从哪来 ⟹ τ 才可能端到端验证） | [issue 15](../../.scratch/phase2/issues/15-mocap-velocity-source.md) |
 | 05 那个 stub 的**取证开关**（`--break` / `--timestamp-unit` / `--qos`） | **刻意没动** `offboard_smoke.py`：那些开关在 05 里是"没有夹具时的取证手段"，夹具到位之后**故障注入归夹具侧**（夹具是"外部世界"：`mute` / `set_armed` / `set_nav_state` / 脚本化动捕）。DUT 自带故障注入器是"为了被测而改被测"，不该继续留着 —— 但**删它是 05 的事**，本票只点名交接 |
@@ -280,3 +280,10 @@ ros2 run nmpc preflight_check.py -p mass:=0.82 -p hover_thrust:=0.55   # 与节�
 **不能证明**：`thrust_body` 的符号在**真 PX4** 上会被怎么解释（那是 SITL 闭环 / seam 3 的事，
 本票的符号判据只对着 `sign-map.md` 那张权威表）；`depth` / `history`（§3）；
 τ 的端到端正确性（§5）；**飞起来之后**的任何动态品质（那是 S5 之后的事）。
+
+★ **2026-09-28 补（ticket 09）**：这里面**有一条已经被回答了**，引用时请引对地方 ——
+"`thrust_body` 的符号在真 PX4 上会被怎么解释"：A 档闭环已用姿态真值锚出**方向正确**
+（⑨a 残差 +0.082 rad），见 [`tier-a-sitl-hover.md`](tier-a-sitl-hover.md) §6。
+本页自己的界限**一条没变**（它仍是"离线 + 假 PX4"的证据）。另，**节点侧有一处已改**：
+本票当时喂 `u_ref = 上一帧解`（走 M6 §3.2 的缺省），在闭环里是正反馈，ticket 09 改喂
+**参考自己的解析前馈** —— 同一票 Comments #3。

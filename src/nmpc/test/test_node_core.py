@@ -25,8 +25,11 @@ from nmpc.model import NX, quat_angle, yaw_quat
 from nmpc.node_core import (ARMING_STATE_ARMED, FALLBACK_HOLD_FRAMES, JUMP_DT_FLOOR_S,
                             NAV_STATE_OFFBOARD, TAU_DEFAULT_S, WARMUP_CYCLES,
                             ControlConfig, FallbackLadder, NodeCore, StopConfig,
-                            extrapolate_state, frame_is_finite, hold_reference,
-                            mocap_stamp_s, pose_to_state, solution_usable, yaw_from_quat)
+                            extrapolate_state, frame_is_finite, hold_feedforward,
+                            hold_reference, mocap_stamp_s, pose_to_state, px4_pose_to_enu,
+                            px4_quat_to_enu,
+                            px4_stamp_s, px4_vector_to_enu, saturated_bounds, solution_usable,
+                            yaw_from_quat)
 from nmpc.ocp import OcpConfig
 from nmpc.params import DEFAULT as P
 from nmpc.sign_map import Px4RatesSetpoint
@@ -150,18 +153,50 @@ def test_外推的_tau_为_0_就是原值():
     assert extrapolate_state(x, 0.0).tolist() == x.tolist()
 
 
-def test_参考是测量位置加偏移_且姿态水平():
-    """参考构造的三条：位置带偏移、速度为零、姿态是**水平 + 当前机头**（不是照抄测量姿态）。"""
+def test_参考是锚点位置加偏移_且姿态水平():
+    """参考构造的三条：位置 = **锚点** + 偏移、速度为零、姿态是**水平 + 锚点机头**。
+
+    ⚠️ 参数是**锚点**（ticket 09），不是当拍测量 —— "传测量进来"那种写法不报错、
+      只让飞机追一个追不上的点，见 `hold_reference` 的 ★★ 与下面那一组锚点用例。
+    """
     yaw = 0.7
-    x_meas = pose_to_state((1.0, -2.0, 3.0),
-                           yaw_quat(yaw), (0.0, 0.0, 0.0))
+    x_anchor = pose_to_state((1.0, -2.0, 3.0),
+                             yaw_quat(yaw), (0.0, 0.0, 0.0))
     cfg = ControlConfig(hold_offset=(0.5, -0.25, 0.0))
-    ref = hold_reference(x_meas, cfg, N)
+    ref = hold_reference(x_anchor, cfg, N)
     assert ref.shape == (N + 1, NX)
     assert ref[0][:3].tolist() == pytest.approx([1.5, -2.25, 3.0])
     assert ref[0][3:6].tolist() == [0.0, 0.0, 0.0]
     assert yaw_from_quat(ref[0][6:10]) == pytest.approx(yaw, abs=1e-9)
     assert (ref == ref[0]).all(), "整条时域必须是同一个点（位置保持）"
+
+
+def test_保持前馈是参考自己的平衡点_也就是解析前馈的定义():
+    """★★ `hold_feedforward` = 静止参考的**解析前馈**：`f(x_ref, u_ref) = 0`。
+
+    判据直接取定义：把 `u_ref` 喂给**模型**，参考点**不动**（RK4 走一步还是它自己）。
+    这条比"推力 == 悬停油门"强 —— 后者只是一个数，前者说明这一对 `(x_ref, u_ref)`
+    真的是模型的一条解，与姿态怎么取（本用例故意给一个非零机头）无关。
+
+    ★ 为什么这条重要到要单独测：`u_ref` 在代价里是 `R·(u − u_ref)`，喂错的后果不是报错
+      而是**控制目标整体偏掉** —— 2026-09-28 那场 runaway 就是喂了"上一帧解"
+      （自我强化：解偏 ⟹ 下一帧参考量跟着偏），`offline-ocp.md` §4.4 与
+      `hold_feedforward` 的 ★ 两段有第一手读数。
+    """
+    yaw = 0.4
+    cfg = ControlConfig(hold_offset=(0.0, 0.0, 1.0), hold_yaw=yaw)
+    x_ref = hold_reference(pose_to_state((1.0, 2.0, 3.0), yaw_quat(yaw)), cfg, N)
+    u_ref = hold_feedforward(P, N)
+    assert u_ref.shape == (N, 4)
+    assert u_ref[0].tolist() == pytest.approx([P.t_hover, 0.0, 0.0, 0.0])
+    assert (u_ref == u_ref[0]).all(), "解析前馈在时域上必须处处一样（参考是静止的）"
+
+    from nmpc.model import Z0MultirotorRateModel
+    model = Z0MultirotorRateModel(P)
+    for x, u in ((x_ref[0], u_ref[0]), (x_ref[-1], u_ref[-1])):
+        nxt = model.step_rk4(np.asarray(x, float), np.asarray(u, float), 0.02)
+        assert nxt == pytest.approx(np.asarray(x, float), abs=1e-12), \
+            "参考 + 解析前馈不是模型的平衡点 ⟹ 前馈算错了（飞机一定会被它推着走）"
 
 
 def test_参考的姿态是水平的而不是照抄测量姿态():
@@ -178,6 +213,97 @@ def quat_tilted(roll: float, pitch: float) -> np.ndarray:
     cr, sr = math.cos(roll / 2), math.sin(roll / 2)
     cp, sp = math.cos(pitch / 2), math.sin(pitch / 2)
     return np.array([cr * cp, sr * cp, cr * sp, -sr * sp])
+
+
+# ───────────────────────── 位置保持的**锚点**（ticket 09）─────────────────────────
+#
+# 这一组盯的是 ticket 09 首飞暴露出来的那件事：参考若每拍用**当拍测量**重建，位置误差就
+# 恒等于 `hold_offset`、**永远不收敛**。实测（z0 同构 SITL，`hold_offset_z = 1 m`，见
+# `docs/control/tier-a-sitl-hover.md`）：飞机以 0.9 m/s 稳定爬升 37 s（EKF 帧抬升 30.9 m），
+# 日志里 `x0[2] − x_ref0[2]` 从第 0 帧到第 3740 帧一次没关小，停在 `v·τ − 1 = −0.955 m`。
+#
+# 锚点 = 闸门第一次打开那一拍的测量（位置与机头分开记），之后**不随测量移动**。
+
+def test_参考锚在闸门第一次打开那一拍_不跟着测量走():
+    """★ 这是本组的主用例：位置误差必须真的**关得掉**（否则位置环等于没在工作）。
+
+    ★ 时间刻意拉开到 0.3 s：位姿跳变闸门的上限是 `20 m/s × dt`，dt 太小时"飞机爬了 3 m"
+      会先被判成 `pose_jump`，看到的就不是本用例要考的那件事（那种假红最费时间）。
+    """
+    cfg = ControlConfig(hold_offset=(0.0, 0.0, 1.0), stop=StopConfig(warmup_cycles=0))
+    core = _core(cfg)
+    core.on_status(_Status(), at_s=0.0)
+    core.on_mocap(_Mocap(position=(0.0, 0.0, 0.0)), at_s=0.0)
+    c1 = core.cycle(0.01)
+    assert c1.anchor == "anchor", "闸门第一次打开就把锚点钉住"
+    assert c1.x_ref[0][:3].tolist() == pytest.approx([0.0, 0.0, 1.0])
+
+    # 飞机爬到 3 m：参考**一动不动**（锚点 + 偏移），位置误差因此从 +1 m 变成 −2 m
+    core.on_mocap(_Mocap(position=(0.0, 0.0, 3.0)), at_s=0.3)
+    c2 = core.cycle(0.31)
+    assert c2.reason == "ok" and c2.publish
+    assert c2.x_ref[0][:3].tolist() == pytest.approx([0.0, 0.0, 1.0]), \
+        "参考跟着测量走了 ⟹ 位置误差永远关不掉（首飞爬升 37 s 的机理）"
+    assert (c2.x0[:3] - c2.x_ref[0][:3]).tolist() == pytest.approx([0.0, 0.0, 2.0]), \
+        "参考在 1 m、飞机在 3 m ⟹ 误差该是 −2 m（节点要往下压）"
+    assert c2.anchor == "", "只有钉/重钉的那一拍才该带事件"
+
+
+def test_重开闸门不重钉锚点():
+    """一次离闸（打杆接管 / 掉出 OFFBOARD）之后，目标该是**原来那个点** ——
+    不是"在恢复的那一刻就近认一个新目标"（那等于把飞机飘到哪就当哪儿是家）。"""
+    core = _core(ControlConfig(stop=StopConfig(warmup_cycles=0)))
+    core.on_status(_Status(), at_s=0.0)
+    core.on_mocap(_Mocap(position=(0.0, 0.0, 0.0)), at_s=0.0)
+    assert core.cycle(0.01).anchor == "anchor"
+
+    # 关闸：退出 OFFBOARD（这一拍不给初值/参考），期间飞机自己飘到 2 m 外
+    core.on_status(_Status(nav_state=0), at_s=0.1)
+    core.on_mocap(_Mocap(position=(2.0, 0.0, 0.0)), at_s=0.1)
+    c = core.cycle(0.11)
+    assert c.reason == "not_offboard" and c.x_ref is None
+
+    core.on_status(_Status(), at_s=0.4)
+    core.on_mocap(_Mocap(position=(2.0, 0.0, 0.0)), at_s=0.4)
+    c2 = core.cycle(0.41)
+    assert c2.anchor == "", "重开闸门不重钉锚点（目标仍是原来那个点）"
+    assert c2.x_ref[0][:3].tolist() == [0.0, 0.0, 0.0]
+
+
+def test_px4_位置帧复位重钉位置目标_偏航复位只重钉机头():
+    """★ 两个 reset 计数器各自对应一件事，**必须分开判**：`xy_reset_counter` 变了 ⟹ 位置帧
+    换了（锚点里那个绝对点在新帧里已无意义，重钉到当前测量）；`quat_reset_counter` 变了 ⟹
+    只是机头/姿态帧换了，**位置目标不该跟着搬**（混用一个 token 就会搬走）。
+    """
+    core = _core(_px4_config(warmup_cycles=0))
+    core.on_status(_Status(), at_s=0.0)
+    core.on_local_position(_LocalPosition(x=0.0, y=0.0, z=0.0, xy_reset_counter=0), at_s=0.0)
+    core.on_attitude(_Attitude(quat_reset_counter=0), at_s=0.0)
+    c0 = core.cycle(0.01)
+    assert c0.anchor == "anchor" and c0.x_ref[0][:3].tolist() == [0.0, 0.0, 0.0]
+
+    # 纯偏航复位（同一时刻的姿态消息带新的 quat_reset_counter）
+    core.on_attitude(_Attitude(q=yaw_quat(0.0), quat_reset_counter=1), at_s=0.02)
+    c1 = core.cycle(0.03)
+    assert c1.anchor == "reanchor_quat", f"偏航复位该重钉机头，实测事件 {c1.anchor!r}"
+    assert c1.x_ref[0][:3].tolist() == [0.0, 0.0, 0.0], "偏航复位把**位置**目标也搬走了"
+
+    # 位置帧复位：NED (−5, 0, 0) ⟹ ENU (0, −5, 0)
+    core.on_local_position(_LocalPosition(x=-5.0, y=0.0, z=0.0, xy_reset_counter=1), at_s=0.35)
+    c2 = core.cycle(0.36)
+    assert c2.anchor == "reanchor_xy", f"位置帧复位该重钉位置，实测事件 {c2.anchor!r}"
+    assert c2.x_ref[0][:3].tolist() == pytest.approx([0.0, -5.0, 0.0]), \
+        "重钉之后参考该落在**新的**测量上（帧换了，追旧点等于朝一个不存在的坐标飞）"
+
+
+def test_锚点事件只在发生的那些拍出现():
+    """逐帧日志里那列 `anchor` 的意义是"目标什么时候被搬过"—— 常态必须为空。
+    ★ 没有这条，一个"每拍都写 `anchor`"的实现会让上面三条断言照样全绿。"""
+    core = _core(ControlConfig(stop=StopConfig(warmup_cycles=0)))
+    core.on_status(_Status(), at_s=0.0)
+    core.on_mocap(_Mocap(), at_s=0.0)
+    events = [core.cycle(0.01 * i).anchor for i in range(1, 6)]
+    assert events == ["anchor", "", "", "", ""], f"事件列不对：{events}"
 
 
 # ───────────────────────────── 闸门 ─────────────────────────────
@@ -641,6 +767,289 @@ def test_四元数测地角对符号不敏感():
     assert quat_angle(q, q) == pytest.approx(0.0, abs=1e-12)
     assert quat_angle(q, -q) == pytest.approx(0.0, abs=1e-12)
     assert quat_angle([1.0, 0, 0, 0], [0.0, 1.0, 0.0, 0.0]) == pytest.approx(math.pi)
+
+
+# ─────────────────── PX4 作为状态源（ticket 09 / A 档闭环）───────────────────
+#
+# ★ 这一组的理由（票面原文）："这是**我们的约定与真 PX4 一致**这个问题第一次被真正回答"。
+#   04 只能验自洽性、06 只能验"映射表被正确实现了" —— 状态**从 PX4 那头进来**之后，
+#   整条链（NED/FRD → ENU/FLU → 模型 → 符号映射 → 话题）才第一次闭合。
+#   ⚠️ 转换那两条用**旋转矩阵恒等式**对账，不用手推的分量式子：手推错一个号，
+#   症状是"飞机一进 OFFBOARD 就朝一边歪"，而符号表看着完全正确。
+
+def _rot(q) -> np.ndarray:
+    """四元数（w-first）→ 旋转矩阵。**本文件自己写一份**（不复用 `model.q_to_rot_mat`：
+    那个是 CasADi 的符号表达式）—— 两份独立实现对账才有意义。"""
+    w, x, y, z = (float(v) for v in q)
+    return np.array([
+        [1 - 2 * (y * y + z * z), 2 * (x * y - w * z), 2 * (x * z + w * y)],
+        [2 * (x * y + w * z), 1 - 2 * (x * x + z * z), 2 * (y * z - w * x)],
+        [2 * (x * z - w * y), 2 * (y * z + w * x), 1 - 2 * (x * x + y * y)]])
+
+
+#: 两个"换标签"的定义（**照抄各自的 msg 与坐标系定义**，不照抄实现的写法）：
+#:   · `L`：世界系 NED→ENU。NED 的 north=+x、east=+y、down=+z；ENU 的 east=+x、north=+y、up=+z
+#:     ⟹ 把 NED 坐标读成 ENU 坐标就是 `(x, y, z) → (y, x, −z)`。
+#:   · `M`：机体系 FRD→FLU。FRD 的 y 向右、z 向下；FLU 的 y 向左、z 向上 ⟹ `(x, y, z) → (x, −y, −z)`。
+#:     ★ `sign_map` 对**角速率**做的就是 `M`（`roll=ωx, pitch=−ωy, yaw=−ωz`）—— 同一个换标签。
+L_NED_TO_ENU = np.array([[0.0, 1.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, -1.0]])
+M_FRD_TO_FLU = np.diag([1.0, -1.0, -1.0])
+
+
+class _LocalPosition:
+    """`px4_msgs/VehicleLocalPosition` 的替身（**只带节点真读的那些字段**，与夹具同一条纪律）。"""
+
+    def __init__(self, x=0.0, y=0.0, z=0.0, vx=0.0, vy=0.0, vz=0.0, timestamp_us=0,
+                 xy_valid=True, z_valid=True, v_xy_valid=True, v_z_valid=True,
+                 dead_reckoning=False, eph=0.0, epv=0.0, xy_reset_counter=0):
+        self.x, self.y, self.z = float(x), float(y), float(z)
+        self.vx, self.vy, self.vz = float(vx), float(vy), float(vz)
+        self.timestamp = int(timestamp_us)
+        self.xy_valid, self.z_valid = bool(xy_valid), bool(z_valid)
+        self.v_xy_valid, self.v_z_valid = bool(v_xy_valid), bool(v_z_valid)
+        self.dead_reckoning = bool(dead_reckoning)
+        self.eph, self.epv = float(eph), float(epv)
+        self.xy_reset_counter = int(xy_reset_counter)
+
+
+class _Attitude:
+    """`px4_msgs/VehicleAttitude` 的替身 —— `q` 是「FRD 机体 → NED 世界」（msg 里逐字写着）。"""
+
+    def __init__(self, q=(1.0, 0.0, 0.0, 0.0), timestamp_us=0, quat_reset_counter=0):
+        self.q = [float(v) for v in q]
+        self.timestamp = int(timestamp_us)
+        self.quat_reset_counter = int(quat_reset_counter)
+
+
+#: `ControlConfig` 自己的字段名（`state_source` 与 `stop` 由 `_px4_config` 显式给）
+_CC_FIELDS = {f.name for f in dataclasses.fields(ControlConfig)} - {"state_source", "stop"}
+
+
+def _px4_config(**kw) -> ControlConfig:
+    """`state_source=px4` 的一档配置。
+
+    关键字按**字段名**分派：`ControlConfig` 有的给它（`tau_s`…）、其余给 `StopConfig`
+    （`px4_timeout_s`、`warmup_cycles`…）—— 测试里只写关心的那几个，不必记住谁属于谁。
+    """
+    cc = {k: v for k, v in kw.items() if k in _CC_FIELDS}
+    stop = {k: v for k, v in kw.items() if k not in _CC_FIELDS}
+    return ControlConfig(state_source="px4", stop=StopConfig(**stop), **cc)
+
+
+def test_px4_姿态转换满足旋转矩阵恒等式():
+    """`R(q_enu_flu) == L · R(q_ned_frd) · M` —— **对任意姿态**都要成立。
+
+    ★ 这条恒等式就是"ENU/FLU 约定与 PX4 的 NED/FRD 约定一致"的**完整定义**：
+      把它写成断言之后，"某个分量少了一个负号"这类错**当场**就红，而且与符号无关
+      （`q` 与 `−q` 是同一姿态，所以恒等式只谈旋转矩阵）。
+    """
+    rng = np.random.default_rng(20260928)
+    quats = [np.array([1.0, 0.0, 0.0, 0.0]), np.array([0.0, 1.0, 0.0, 0.0])]
+    for _ in range(20):
+        q = rng.normal(size=4)
+        quats.append(q / np.linalg.norm(q))
+    for q in quats:
+        q_enu = px4_quat_to_enu(q)
+        assert np.dot(q_enu, q_enu) == pytest.approx(1.0, abs=1e-12), "转换后不再是单位四元数"
+        assert _rot(q_enu) == pytest.approx(L_NED_TO_ENU @ _rot(q) @ M_FRD_TO_FLU, abs=1e-12), \
+            f"q={q} 的转换不满足 R(q_enu) = L·R(q_ned)·M"
+
+
+def test_px4_姿态转换与参考实现的手写公式一致_差一个整体符号():
+    """与**参考实现的手写分量式**逐分量对账 —— 这是本仓对"外部来源"的既定做法
+    （[`sign-map.md`](../../docs/control/sign-map.md) §4 就是拿参考实现逐行对的）。
+
+    参考实现 `mpc_quadrotor.py` 的写法（引用见
+    [`phase2-implementation.md`](../../docs/control/phase2-implementation.md) §2.3(a)）：
+
+        q_enu = 1/√2 · [q0+q3, q1+q2, q1−q2, q0−q3]      # (w, x, y, z)
+
+    ★ 两边**只差一个整体符号**：`q` 与 `−q` 是同一个旋转（双重覆盖），所以这不构成分歧，
+      但它正好把"这个符号从哪来"钉在纸面上 —— 手写式的取号与"两个 180° 旋转复合"的取号
+      不是同一套，而**旋转矩阵那一侧必须完全相等**（上面那条恒等式管的正是这件事）。
+    """
+    def ref(q):                      # 参考实现的手写式（照抄，只补归一化常数）
+        return np.array([q[0] + q[3], q[1] + q[2], q[1] - q[2], q[0] - q[3]]) / math.sqrt(2)
+
+    rng = np.random.default_rng(20260928)
+    for _ in range(200):
+        q = rng.normal(size=4)
+        q /= np.linalg.norm(q)
+        ours = px4_quat_to_enu(q)
+        r = ref(q)
+        same = min(np.abs(ours - r).max(), np.abs(ours + r).max())
+        assert same < 1e-12, f"q={q}：我们的转换与参考实现的手写式不是同一个旋转"
+        # 而"同一个旋转"这件事由矩阵恒等式独立确认（符号不影响它）
+        assert _rot(ours) == pytest.approx(_rot(r), abs=1e-12)
+
+
+def test_px4_位置与速度的_NED_到_ENU():
+    """位置与速度**同一套**换标签（x/y 互换、z 取反），速度不许走另一条路。"""
+    assert px4_vector_to_enu((1.0, 2.0, 3.0)) == pytest.approx((2.0, 1.0, -3.0))
+    # 物理锚点：NED 的 (1,0,0) 是"北"，在 ENU 里是 +y
+    assert px4_vector_to_enu((1.0, 0.0, 0.0)) == pytest.approx((0.0, 1.0, 0.0))
+    # 反例（"每个分量取反"那种写法）：它会给出 (−1,0,0)，方向完全不对
+    assert px4_vector_to_enu((1.0, 0.0, 0.0))[1] > 0
+
+
+def test_px4_姿态转换在两个物理特例上对得上():
+    """两个可以**用一句话说清**的特例 —— 手推错了这两条必红。
+
+    ① NED/FRD 下的**单位姿态**（`q=(1,0,0,0)`）= 机头朝北、水平。ENU 里"北"是 +y
+       ⟹ 换过去必须是**偏航 +90°**；
+    ② NED/FRD 下**偏航 +90°**（绕 NED 的 +z，即朝下）⟹ 机头朝东。ENU 里"东"是 +x
+       ⟹ 换过去必须是**单位姿态**。
+    """
+    q_enu_unit = px4_quat_to_enu(np.array([1.0, 0.0, 0.0, 0.0]))
+    nose = _rot(q_enu_unit) @ np.array([1.0, 0.0, 0.0])
+    assert nose == pytest.approx([0.0, 1.0, 0.0], abs=1e-12), "单位姿态换到 ENU 之后机头该朝北（+y）"
+    assert yaw_from_quat(q_enu_unit) == pytest.approx(math.pi / 2, abs=1e-12)
+
+    q_ned_yaw90 = yaw_quat(math.pi / 2)          # NED 的 yaw 与 ENU 的 yaw 差一个号，但这里
+    q_enu = px4_quat_to_enu(q_ned_yaw90)         # 只需要"机头朝东"这一个事实
+    assert _rot(q_enu) @ np.array([1.0, 0.0, 0.0]) == pytest.approx([1.0, 0.0, 0.0], abs=1e-12), \
+        "NED 下偏航 +90°（朝东）换到 ENU 之后该是单位姿态"
+
+
+def test_px4_源_没收到状态时不发():
+    """闸门：`state_source=px4` 时**动捕完全不参与** —— 状态没到之前一帧都不发。"""
+    core = _core(_px4_config())
+    core.on_status(_Status(), at_s=0.0)
+    core.on_mocap(_Mocap(), at_s=0.0)          # ★ 送进来也不该被用
+    assert core.cycle(0.1).reason == "no_px4_state"
+
+
+def test_px4_源_只看_px4_的龄_而不是动捕的():
+    """`px4_timeout_s` 到点就停；★ 同时证明动捕那条路在这档里**根本没被判据读**：
+    动捕一直在送，闸门照样关。"""
+    cfg = _px4_config(px4_timeout_s=0.5, mocap_timeout_s=0.1, warmup_cycles=0)
+    core = _core(cfg)
+    core.on_status(_Status(), at_s=0.0)
+    core.on_local_position(_LocalPosition(), at_s=0.0)
+    core.on_attitude(_Attitude(), at_s=0.0)
+    for i in range(20):                        # 动捕一直在送（且"新鲜"）
+        core.on_mocap(_Mocap(), at_s=0.0 + 0.01 * i)
+    assert core.cycle(0.1).publish, "px4 的状态是新鲜的，闸门该开"
+    core.on_status(_Status(), at_s=0.6)        # 状态那条也得新鲜（否则先撞 status_stale）
+    assert core.cycle(0.6).reason == "px4_stale", "px4 状态超时了还在发"
+
+
+def test_px4_源_姿态单独超时也要停():
+    """位置与姿态是**两条消息**（32 Hz 各自到）⟹ 两条各自的龄都要判。
+
+    ★ 只判位置那一条的后果：姿态停在几秒前，节点却以为自己在闭环 —— 四元数过期在
+      话题上**看不出来**（姿态变化慢，两个选择只差一个小的倾角）。所以这一条单独钉。
+    """
+    cfg = _px4_config(px4_timeout_s=0.5, warmup_cycles=1)
+    core = _core(cfg)
+    core.on_status(_Status(), at_s=0.0)
+    core.on_local_position(_LocalPosition(), at_s=0.9)      # 位置很新
+    core.on_attitude(_Attitude(), at_s=0.0)                 # 姿态是旧的
+    core.on_status(_Status(), at_s=0.9)
+    assert core.cycle(0.9).reason == "px4_attitude_stale"
+
+
+def test_px4_源_坏四元数不发():
+    """姿态非有限 / 近零 ⟹ 当拍不发（理由与动捕那条一致：NaN 进了求解器就是整条轨迹烂掉）。"""
+    core = _core(_px4_config())
+    core.on_status(_Status(), at_s=0.0)
+    core.on_local_position(_LocalPosition(), at_s=0.0)
+    core.on_attitude(_Attitude(q=(0.0, 0.0, 0.0, 0.0)), at_s=0.0)
+    assert core.cycle(0.1).reason == "bad_px4_quat"
+
+    core.on_attitude(_Attitude(q=(float("nan"), 0.0, 0.0, 1.0)), at_s=0.1)
+    assert core.cycle(0.2).reason == "bad_px4_quat"
+
+
+def test_px4_源_速度真的进了外推():
+    """★ PX4 这条源**有速度**（`vx/vy/vz`）—— 而动捕那条没有（issue 15）。
+
+    ⟹ 外推 `x + v·τ` 在这一档里第一次**真的在动**：喂一个非零速度，`x0[:3]` 必须
+      等于 `p + v·τ` 而不是 `p`（`tau_s=0` 时两者相等，这条也是那个参数的负控）。
+    """
+    cfg = _px4_config(tau_s=0.05, warmup_cycles=0)
+    core = _core(cfg)
+    core.on_status(_Status(), at_s=0.0)
+    # NED 速度 (vx=1, vy=0, vz=0) = 向北 1 m/s ⟹ ENU 速度 (0, 1, 0)
+    core.on_local_position(_LocalPosition(x=0.0, y=0.0, z=0.0, vx=1.0, vy=0.0, vz=0.0), at_s=0.0)
+    core.on_attitude(_Attitude(), at_s=0.0)
+    c = core.cycle(0.01)
+    assert c.x0[:3] == pytest.approx([0.0, 0.05, 0.0], abs=1e-12), \
+        f"外推没把速度算进去：{c.x0[:3]}"
+    assert c.x0[3:6] == pytest.approx([0.0, 1.0, 0.0], abs=1e-12), "ENU 速度该是 (0, 1, 0)"
+
+    # 负控：同一个输入、`τ = 0` ⟹ 外推退化成恒等（这就是 D9 那一档 `-p tau_s:=0`）
+    zero = _core(_px4_config(tau_s=0.0, warmup_cycles=0))
+    zero.on_status(_Status(), at_s=0.0)
+    zero.on_local_position(_LocalPosition(vx=1.0), at_s=0.0)
+    zero.on_attitude(_Attitude(), at_s=0.0)
+    z = zero.cycle(0.01)
+    assert z.x0[:3] == pytest.approx([0.0, 0.0, 0.0], abs=1e-12)
+    assert z.x0[3:6] == pytest.approx([0.0, 1.0, 0.0], abs=1e-12), \
+        "速度本身照样进状态，只是不参与外推"
+
+
+def test_px4_源_位姿跳变照样被拦():
+    """输入合理性那两条判据**与源无关**（换成 PX4 之后仍然要在）：EKF 复位/认错给出的瞬移
+    同样只关闸门、不发错指令。"""
+    core = _core(_px4_config(warmup_cycles=0))
+    core.on_status(_Status(), at_s=0.0)
+    core.on_local_position(_LocalPosition(x=0.0, y=0.0, z=0.0), at_s=0.0)
+    core.on_attitude(_Attitude(), at_s=0.0)
+    assert core.cycle(0.01).publish
+
+    core.on_local_position(_LocalPosition(x=100.0, y=0.0, z=0.0), at_s=0.02)
+    core.on_attitude(_Attitude(), at_s=0.02)
+    c = core.cycle(0.03)
+    assert c.reason == "pose_jump" and not c.publish
+    assert "位移" in c.detail, "跳变判据的读数要进日志（调阈值的人第一个要问它）"
+
+
+def test_px4_源_状态龄与回调计数进取证():
+    """`describe_state()` 是**取证面**：日志里要能回答"这一拍的状态有多旧、PX4 自己怎么说"。
+
+    ★ 为什么连 `xy_valid` / `dead_reckoning` 这些标志也留下来：第一手（2026-09-28，
+      z0 SITL 地面静息、真值恒为 0）：EKF 报 x≈−0.45 m、z 在 −0.18…−0.64 m 之间游走、
+      速度到 0.58 m/s，而**这四个标志全是 1、`dead_reckoning=0`、`eph/epv≈0.33 m`**
+      ⟹ 它们**不是**可用性判据（拿它当闸门 = 一个恒假的保证），但它们是复盘时
+      "这个数到底是谁给的"那一条线索。所以：**记录，但不闸**。
+    """
+    core = _core(_px4_config())
+    core.on_status(_Status(), at_s=0.0)
+    core.on_local_position(_LocalPosition(x=-0.45, y=0.1, z=-0.5, eph=0.33, epv=0.34),
+                           at_s=0.0)
+    core.on_attitude(_Attitude(), at_s=0.02)
+    d = core.describe_state(0.5)
+    assert d["state_source"] == "px4"
+    assert d["age_pos_s"] == pytest.approx(0.5) and d["age_att_s"] == pytest.approx(0.48)
+    assert d["pos_cb"] == 1 and d["att_cb"] == 1
+    assert d["ekf_xy_valid"] == 1 and d["ekf_dead_reckoning"] == 0
+    assert d["ekf_eph"] == pytest.approx(0.33)
+
+    mocap_core = _core()
+    mocap_core.on_status(_Status(), at_s=0.0)
+    mocap_core.on_mocap(_Mocap(), at_s=0.0)
+    d2 = mocap_core.describe_state(0.25)
+    assert d2["state_source"] == "mocap" and d2["age_state_s"] == pytest.approx(0.25)
+
+
+def test_饱和标志认得出顶在约束上_且不把擦边当饱和():
+    """「约束饱和标志」是票面要的日志项 —— 判据必须**用生产阈值**（与 OCP 的 `lbu/ubu` 同源），
+    且要有容差。
+
+    ★ 容差不是洁癖：两条第一手教训叠在一起 ——
+      ① 求解器给出的"打满"是 `3.8399998` 而不是 `3.84`（QP 解从来不是整数）；
+      ② 本仓已经出过一次"`== 0.0` 假绿"（见 `test_ocp_*.py` 的容差纪律）
+      ⟹ 用等号判饱和会**漏报**，而漏报的标志比没有标志更坏（复盘时会以为"没打满"）。
+    """
+    p = P
+    # 顶在四条约束上（推力上限 + 三轴角速率上限，符号按 lbu/ubu）
+    sat = saturated_bounds([p.t_max, -p.roll_rate_max, p.pitch_rate_max, -p.yaw_rate_max], p)
+    assert set(sat) == {"F_max", "wx", "wy", "wz"}, sat
+    # 擦边（差 1‰ 以上）不算饱和
+    assert saturated_bounds([0.99 * p.t_max, 0.9, 0.9, 0.9], p) == ()
+    # 零推力 = 顶在下界（FLU 下推力非负，下界就是 0）
+    assert saturated_bounds([0.0, 0.0, 0.0, 0.0], p) == ("F_min",)
 
 
 # ───────────────────────────── 小工具 ─────────────────────────────

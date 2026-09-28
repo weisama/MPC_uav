@@ -11,9 +11,16 @@
    | 假 | 不假 |
    |---|---|
    | `/fmu/out/vehicle_status` 的**话题名、QoS、字段语义、2 Hz 定频 + 变化即刻发** | `COM_OF_LOSS_T` 超时退出 OFFBOARD（**真 PX4 / SITL 的行为**，已在 ticket 05 的 SITL 验证里实测过） |
+   | `/fmu/out/vehicle_local_position` + `vehicle_attitude` 的**话题名、QoS、定频、字段单位与坐标系（NED/FRD）** | **EKF2 怎么估出那些数**（A 档的夹具给的是**我们指定的**状态：位置/速度/四元数都是注入的，不是估的） |
    | `/fmu/in/*` 的**订阅侧 QoS**（决定 DUT 的发布方能不能匹配上） | EKF2 怎么融合动捕、模式需求检查、prearm 的**具体**检查项 |
    | PX4 反序列化器对 `timestamp` 的读法（`recorded_age_s`，**只报告、不据此行动**） | 时钟同步的真实滞后 Δ（见 `recorded_age_s` 的说明） |
    | armed / nav_state / pre_flight_checks_pass 的**注入** | `vehicle_command` 的处理（MPC（模型预测控制）节点是纯控制器，不发命令 ⟹ 夹具也不处理）|
+
+★ **为什么状态话题要"注入"而不是"仿真"**（ticket 09）：A 档那一侧要回答的是
+  "**我们的约定与真 PX4 一致**"——即"给定一个**已知**的 NED/FRD 状态，节点发出的指令方向对不对"。
+  仿真一个会自己动的被控对象，会让"指令错了"与"飞机真的朝那边动了"搅在一起
+  （闭环里两者互相掩盖）；注入一个已知状态 ⟹ 预期指令**可以手算出来**。
+  真闭环（"稳定悬停在 1 m"）是 SITL 的活，不在这一层。
 
   ⟹ "杀节点 → PX4 自行退出 OFFBOARD"这类**依赖 PX4 侧行为**的验收项不在这里做（SITL 的活）。
 
@@ -22,12 +29,14 @@
 
 from __future__ import annotations
 
+import math
 import statistics
 import time
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Sequence, Tuple
 
-from px4_msgs.msg import OffboardControlMode, VehicleRatesSetpoint, VehicleStatus
+from px4_msgs.msg import (OffboardControlMode, VehicleAttitude,  # noqa: F401
+                          VehicleLocalPosition, VehicleRatesSetpoint, VehicleStatus)
 from rclpy.node import Node
 from rclpy.qos import (DurabilityPolicy, HistoryPolicy, QoSProfile,
                        ReliabilityPolicy)
@@ -52,6 +61,16 @@ COMMANDER_LOOP_HZ = 100.0
 #: ★ 两条都要照抄：只抄 2 Hz 会让"注入 arm ⟹ 最多等 500 ms"变成夹具的假象（真机是 ≤10 ms），
 #:   而 DUT 里任何"等状态变化"的判据都会被那个假象拖慢。
 STATUS_PERIOD_S = 0.5
+
+#: A 档那两条状态话题的发布频率 [Hz]。★ 第一手（2026-09-28，z0 SITL：
+#: `vehicle_local_position` **32.5 Hz**、`vehicle_attitude` **31.6 Hz**）——
+#: 两条是**各自独立**的流（EKF2 各按自己的更新节奏发），但频率只差 3 %，
+#: 夹具用**同一个**定时器发两条并不掩盖任何被测行为：
+#: DUT 必须**各自**判新鲜度这件事，由"单独静默其中一条"来考（`mute("attitude")`），
+#: 而不是靠"两条频率不一样"。
+#: ⚠️ 别把它设成 ~2 Hz（那会撞上 `status` 的节奏）：真 PX4 上这两条是**几十 Hz**，
+#:   而 `px4_timeout_s = 0.5` 这个默认值（16 拍）正是按它取的。
+STATE_HZ = 32.0
 
 
 # ───────────────────────────── QoS：与 PX4 的 uXRCE-DDS 端点逐字对齐 ─────────────────────────────
@@ -108,6 +127,19 @@ class StatusFrame:
 
 
 @dataclass
+class StateFrame:
+    """夹具**发出**的一帧状态（`vehicle_local_position` / `vehicle_attitude`）。
+
+    `topic_key` 是 `"local_position"` / `"attitude"`（与 `OUT_TOPICS` 同一套键，
+    和 `mute()` / `matched_subscribers()` 用法一致）。
+    """
+    at_s: float
+    timestamp_us: int
+    topic_key: str
+    msg: object
+
+
+@dataclass
 class DutFrame:
     """DUT 发来的一帧 `/fmu/in/*`。`at_s` 是**到达时刻**，不是 `msg.timestamp`。
 
@@ -134,10 +166,16 @@ class FakePx4:
     `set_pre_flight_checks_pass` / `mute` / `unmute`。
     """
 
-    SILENCEABLE = ("status",)
+    SILENCEABLE = ("status", "local_position", "attitude")
 
-    #: 夹具**发**的话题（DUT 订阅它们）
-    OUT_TOPICS = {"status": "/fmu/out/vehicle_status"}
+    #: 夹具**发**的话题（DUT 订阅它们）。★ A 档那两条（`state_source=px4`）**默认就在发**：
+    #: 夹具不是被测对象，"多一条没人订的话题"在 DDS 上什么也不影响（订阅方为 0 而已），
+    #: 而"按档决定夹具发不发"会让**场景与档位耦合** —— 那正是这类夹具最容易长歪的地方。
+    OUT_TOPICS = {
+        "status": "/fmu/out/vehicle_status",
+        "local_position": "/fmu/out/vehicle_local_position",
+        "attitude": "/fmu/out/vehicle_attitude",
+    }
     #: 夹具**收**的话题（DUT 发布它们）
     IN_TOPICS = {
         "rates": "/fmu/in/vehicle_rates_setpoint",
@@ -172,15 +210,35 @@ class FakePx4:
         self.pre_flight_checks_pass = bool(pre_flight_checks_pass)
         self.vehicle_type = int(vehicle_type)
 
+        # —— A 档的状态（NED/FRD，**注入**不是仿真，见文件头 ★）——
+        # ★ 初始值 = "地面静息、机头朝北、水平"：NED 原点、零速度、单位四元数。
+        #   它**不代表真值**（真机上这是 EKF 的输出），但它是最容易手算指令方向的起点。
+        self.position_ned: Tuple[float, float, float] = (0.0, 0.0, 0.0)
+        self.velocity_ned: Tuple[float, float, float] = (0.0, 0.0, 0.0)
+        self.quat_ned_frd: Tuple[float, float, float, float] = (1.0, 0.0, 0.0, 0.0)
+        #: `xy_valid` / `z_valid` / `v_xy_valid` / `v_z_valid`（每帧照发；见 `describe_state`）
+        self.state_valid: bool = True
+        self.dead_reckoning: bool = False
+        self.eph: float = 0.0
+        self.epv: float = 0.0
+
         # —— 记录 ——
         self.status_frames: List[StatusFrame] = []
+        self.state_frames: List[StateFrame] = []
         self.frames: List[DutFrame] = []
         self._last_status_at_s: Optional[float] = None
+        self._last_state_at_s: Optional[float] = None
 
         # —— 上游（与真 PX4 同名同 QoS）——
         self._status_pub = node.create_publisher(
             VehicleStatus, t["status"], px4_out_qos())
-        self._pubs = {"status": self._status_pub}
+        self._pos_pub = node.create_publisher(
+            VehicleLocalPosition, t["local_position"], px4_out_qos())
+        self._att_pub = node.create_publisher(
+            VehicleAttitude, t["attitude"], px4_out_qos())
+        self._pubs = {"status": self._status_pub,
+                      "local_position": self._pos_pub,
+                      "attitude": self._att_pub}
 
         # —— 下游（PX4 是订阅方，QoS 照抄 `utilities.hpp:114-119`）——
         self._rates_frames: List[DutFrame] = []
@@ -197,6 +255,9 @@ class FakePx4:
         #   的说明 —— "变化即刻发"这条只有在上限足够高时才复刻得出来。
         self._timer = node.create_timer(
             1.0 / COMMANDER_LOOP_HZ, self._tick_status)
+        # ★ 状态那两条**定频照发**（不搞"变了才发"）：真 PX4 上它们是 EKF2 的更新节奏，
+        #   与"值变没变"无关（悬停时数值几乎不变，但流一刻也不停）。
+        self._state_timer = node.create_timer(1.0 / STATE_HZ, self._tick_state)
 
     # ─────────────────── 时间 ───────────────────
 
@@ -246,6 +307,50 @@ class FakePx4:
         self._last_status_at_s = now_s
         self.status_frames.append(StatusFrame(
             at_s=now_s, timestamp_us=int(msg.timestamp), msg=msg))
+
+    def _tick_state(self) -> None:
+        """A 档那两条状态话题的出版节奏：**定频**（`STATE_HZ`），静默按话题单独生效。"""
+        now_s = self.t()
+        emitted = False
+        for key, build in (("local_position", self._build_local_position),
+                           ("attitude", self._build_attitude)):
+            if key in self._muted:
+                continue
+            msg = build()
+            self._pubs[key].publish(msg)
+            self.state_frames.append(StateFrame(
+                at_s=now_s, timestamp_us=int(msg.timestamp), topic_key=key, msg=msg))
+            emitted = True
+        if emitted:
+            self._last_state_at_s = now_s
+
+    def _build_local_position(self) -> VehicleLocalPosition:
+        """`VehicleLocalPosition.msg` 里**只有 DUT 真读的那些字段**（与 `_publish_status` 同纪律）。
+
+        DUT 读的（`node_core._measure_px4` + `describe_state`）：`x/y/z`（**NED**，m）、
+        `vx/vy/vz`（**NED**，m/s）、四个有效性标志、`dead_reckoning`、`eph` / `epv`、
+        `xy_reset_counter`、`timestamp`。
+        ⚠️ 其余四十来个字段**留零**（`dist_bottom` / `heading` / `ref_alt`…）：它们是"以后有人
+        改成读另一列"时该在这层露馅的地方 —— 填满"正常值"会让那种改动照样绿。
+        """
+        m = VehicleLocalPosition()
+        m.timestamp = self.hrt_us()
+        m.x, m.y, m.z = (float(v) for v in self.position_ned)
+        m.vx, m.vy, m.vz = (float(v) for v in self.velocity_ned)
+        m.xy_valid = m.z_valid = m.v_xy_valid = m.v_z_valid = bool(self.state_valid)
+        m.dead_reckoning = bool(self.dead_reckoning)
+        m.eph = float(self.eph)
+        m.epv = float(self.epv)
+        m.xy_reset_counter = 0
+        return m
+
+    def _build_attitude(self) -> VehicleAttitude:
+        """`q` 是「**FRD 机体 → NED 世界**」（`VehicleAttitude.msg` 里逐字写着），w-first。"""
+        m = VehicleAttitude()
+        m.timestamp = self.hrt_us()
+        m.q = [float(v) for v in self.quat_ned_frd]
+        m.quat_reset_counter = 0
+        return m
 
     # ─────────────────── 收 DUT 的帧 ───────────────────
 
@@ -353,6 +458,51 @@ class FakePx4:
         self.pre_flight_checks_pass = bool(ok)
         self._status_dirty = True
 
+    # ─────────────────── A 档状态的注入（主线程调用）───────────────────
+    #
+    # ★ 参数一律是 **NED/FRD**（与真 PX4 的消息同坐标系）：夹具**不提供** ENU 侧的口子。
+    #   理由与 `node_core.px4_pose_to_enu` 那条"转换只许有一处"是同一个：
+    #   夹具里再写一遍 NED↔ENU，就等于把"到底谁换错了"变成不可回答的问题。
+    #   ⟹ 写场景的人要**在 NED 里想**（"机头朝东"= 绕 NED 的 z 转 +90°），
+    #     而这正是 A 档要考的那件事。
+
+    def set_position_ned(self, x: float, y: float, z: float) -> None:
+        """位置（**NED**，m）：`x` 北、`y` 东、`z` 下（高度 = `−z`）。"""
+        self.position_ned = (float(x), float(y), float(z))
+
+    def set_velocity_ned(self, vx: float, vy: float, vz: float) -> None:
+        """速度（**NED**，m/s）。★ 这是**动捕那条源没有**的量（issue 15）—— A 档的外推真的在动。"""
+        self.velocity_ned = (float(vx), float(vy), float(vz))
+
+    def set_attitude_quat(self, q) -> None:
+        """姿态四元数（**w-first**，「FRD 机体 → NED 世界」）。"""
+        q = tuple(float(v) for v in q)
+        if len(q) != 4:
+            raise ValueError(f"四元数要四个分量（w, x, y, z），收到 {q!r}")
+        self.quat_ned_frd = q
+
+    def set_yaw_ned(self, yaw_rad: float) -> None:
+        """只改**偏航**（绕 NED 的 z 轴，正 = 机头从北转向东），保持水平。
+
+        ★ 它是"机头朝东/朝南"这类场景的**唯一**入口：手写 `(cos, 0, 0, sin)` 很容易写成
+          绕错轴，而"姿态错了"在闭环里表现为"飞机朝一边歪"，看着像符号映射错了。
+        """
+        half = 0.5 * float(yaw_rad)
+        self.quat_ned_frd = (math.cos(half), 0.0, 0.0, math.sin(half))
+
+    def set_state_valid(self, ok: bool = True, dead_reckoning: bool = False,
+                        eph: float = 0.0, epv: float = 0.0) -> None:
+        """改那几个**有效性标志**（`xy_valid` / `z_valid` / `v_*_valid` 一起动）。
+
+        ★ 它存在的理由不是"DUT 会据此停止发布"（**不会**：A 档只判"龄"，第一手证据见
+          `node_core.describe_state`）——而是**取证**：这些位要原样进 JSONL，
+          好让复盘时能把"EKF 自认为如何"与"它实际差多少"摆在一起看。
+        """
+        self.state_valid = bool(ok)
+        self.dead_reckoning = bool(dead_reckoning)
+        self.eph = float(eph)
+        self.epv = float(epv)
+
     # ─────────────────── 取记录 ───────────────────
 
     def frames_between(self, topic_key: str, from_s: float, to_s: float) -> List[DutFrame]:
@@ -380,6 +530,17 @@ class FakePx4:
                        to_s: Optional[float] = None) -> float:
         """夹具**自己**发状态的频率（默认应为 ~2 Hz —— 那是真 PX4 的定频）。"""
         frames = self.status_frames
+        if len(frames) < 2:
+            return 0.0
+        a = frames[0].at_s if from_s is None else from_s
+        b = frames[-1].at_s if to_s is None else to_s
+        n = sum(1 for f in frames if a <= f.at_s <= b)
+        return (n / (b - a)) if b > a else 0.0
+
+    def state_rate_hz(self, topic_key: str, from_s: Optional[float] = None,
+                      to_s: Optional[float] = None) -> float:
+        """夹具自己发某条状态话题的频率（默认应为 ~`STATE_HZ` —— 真 PX4 是 32.5 / 31.6 Hz）。"""
+        frames = [f for f in self.state_frames if f.topic_key == topic_key]
         if len(frames) < 2:
             return 0.0
         a = frames[0].at_s if from_s is None else from_s
@@ -466,6 +627,12 @@ class FakePx4:
             f"- `{self.topics['status']}`（夹具发）：{len(self.status_frames)} 帧，"
             f"{self.status_rate_hz():.2f} Hz；匹配到的 DUT 订阅者 "
             f"{self.matched_subscribers('status')} 个",
+            f"- A 档状态（夹具发）：" + "；".join(
+                f"`{self.topics[k]}` {self.state_rate_hz(k):.1f} Hz"
+                f"（订阅者 {self.matched_subscribers(k)} 个）"
+                for k in ("local_position", "attitude"))
+            + f"；注入的位姿 NED={tuple(round(v, 3) for v in self.position_ned)}、"
+              f"v_NED={tuple(round(v, 3) for v in self.velocity_ned)}",
             _describe("rates"),
             _describe("mode"),
         ])
