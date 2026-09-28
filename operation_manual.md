@@ -8,19 +8,20 @@
 >
 > | 想知道 | 权威在哪 |
 > |---|---|
-> | 起链的命令 / 每步核对 / 现场排障 | [`run/README.md`](../../run/README.md)（★ **命令的唯一出处**是 `run/z0.py` 的 `ACTIONS`） |
-> | 遥控通道的裁定与依据（ch5/6/8/9、阈值、现场动作要点） | [`../reference/params-changes.md`](../reference/params-changes.md) **§H** |
-> | 拆桨台架那 8 项（判据、读数、勾哪张票） | [`bench-runbook.md`](bench-runbook.md) |
-> | 状态机 / 判据 / 降级 / 日志 token | [`../../src/control/README.md`](../../src/control/README.md) |
-> | 参数（起飞高度、判稳阈值、超时） | [`../../src/control/config/control.yaml`](../../src/control/config/control.yaml) |
-> | 术语（控制权、任务态、轨迹原点…） | [`CONTEXT.md`](../../CONTEXT.md) |
+> | 起链的命令 / 每步核对 / 现场排障 | [`run/README.md`](run/README.md)（★ **命令的唯一出处**是 `run/z0.py` 的 `ACTIONS`） |
+> | 遥控通道的裁定与依据（ch5/6/8/9、阈值、现场动作要点） | [`docs/reference/params-changes.md`](docs/reference/params-changes.md) **§H** |
+> | 拆桨台架那 8 项（判据、读数、勾哪张票） | [`docs/control/bench-runbook.md`](docs/control/bench-runbook.md) |
+> | 状态机 / 判据 / 降级 / 日志 token | [`src/control/README.md`](src/control/README.md) |
+> | 参数（起飞高度、判稳阈值、超时） | [`src/control/config/control.yaml`](src/control/config/control.yaml) |
+> | 术语（控制权、任务态、轨迹原点…） | [`CONTEXT.md`](CONTEXT.md) |
 >
-> ⚠️ **诚实交代（截至 2026-09-23）**：验收阶梯的第 **1–4** 级（无桨台架 / 系绳离地 20 cm /
-> 系绳悬停 30 s / 自由飞）**一次都没做过**；**EdgeTX 侧给 ch9 分配开关（§H.4）还没做**、
-> ch9 的台架核对（§H.8，验收项 6）**还没做** ⟹ **第一次上电先做 §5.2 那条核对**：
+> ⚠️ **诚实交代（截至 2026-09-28）**：**2026-09-28 已经飞过一次**（定点定高 + 各按键 + 三条轨迹，
+> **目测一切正常，但没有量任何数值**，见 **§8.1**）—— 下面这几件**仍然没做**：
+> 验收阶梯的 **1–3** 级（无桨台架 / 系绳离地 20 cm / 系绳悬停 30 s）**一次都没做过**；
+> ch9 的核对**只看过功能、没记读数**（§5.2 / §H.8，验收项 6）⟹ **第一次上电仍要先做 §5.2 那条核对**：
 > 通道错了的话，**第 1 次上升沿会直接去解锁起飞**。
-> ⚠️ **首飞阻塞项 A1**（`NAV_RCL_ACT` `2` → `1`）未落实：`2` = 返航，室内无 GPS
-> ⟹ 遥控一丢 PX4 会**试图返航**（[`params-changes.md`](../reference/params-changes.md) §A1 / §H.7.1）。
+> ⚠️ **首飞阻塞项 A1**（`NAV_RCL_ACT` `2` → `1`）**仍未落实**：`2` = 返航，室内无 GPS
+> ⟹ 遥控一丢 PX4 会**试图返航**（[`params-changes.md`](docs/reference/params-changes.md) §A1 / §H.7.1）。
 
 ---
 
@@ -54,9 +55,9 @@
 
 ## 1. 遥控器：四条摇杆 + 四个开关
 
-`RC_MAP_*` 的占用是逐条第一手核过的（[`params-changes.md`](../reference/params-changes.md) §H.2）：
+`RC_MAP_*` 的占用是逐条第一手核过的（[`params-changes.md`](docs/reference/params-changes.md) §H.2）：
 **非 0 的只有 7 条** —— `RC_MAP_ROLL/PITCH/THROTTLE/YAW` + `ARM_SW`/`FLTMODE`/`KILL_SW`
-（= ch1–4、ch5、ch6、ch8；与 [`z0.params`](../assets/z0.params) 逐行核对一致）
+（= ch1–4、ch5、ch6、ch8；与 [`z0.params`](docs/assets/z0.params) 逐行核对一致）
 ⟹ 其余通道（含 **ch9**）**拨了不会切模式、不会解锁、不会杀车**。
 
 | 通道 | 是什么 | 谁读它 | 现场怎么用它 |
@@ -69,7 +70,7 @@
 
 ★ ch6 那两行的依据（逐字，不是印象）：`z0.params` 的 `COM_FLTMODE1/4/6 = 2/1/7` + 固件
 `src/modules/commander/commander_params.c:361-374` 的 `@value` 清单（枚举是 **0 起**：
-`2 = Position`、`1 = Altitude`、`7 = Offboard`）—— 见 [`params-analysis.md`](../reference/params-analysis.md) §(b)。
+`2 = Position`、`1 = Altitude`、`7 = Offboard`）—— 见 [`params-analysis.md`](docs/reference/params-analysis.md) §(b)。
 
 ### 1.1 ★ 开始键的现场动作要点（两次上升沿 + 一次长按）
 
@@ -204,7 +205,7 @@ AUTO/TAKEOFF ──爬到 原点+1.0 m，≤0.5 m/s──▶ AUTO/HOVER ──�
 `degrade=<token>（持续 N s…）—— …` 的 ERROR（`control_node.cpp:911-918`），
 而"参考断了"那条是 WARN、`degrade=` 出现在**句子中间**。
 ★ 判据细节（阈值、为什么是 2.5 s、"连续不是累计"、可信的落地上锁）**不要凭这张表猜**，
-见 [`../../src/control/README.md`](../../src/control/README.md) 的「失效降级」一节。
+见 [`src/control/README.md`](src/control/README.md) 的「失效降级」一节。
 
 ### 2.5 降级之后想复位，只有两条路（**都不要去"帮它一把"**）
 
@@ -282,7 +283,7 @@ ros2 launch control control.launch.py
 | 菜单 **10= 清除后台节点（扫 mavros/vrpn/mocap/traj/control 并停掉）** | 停掉在跑的节点（**按名字扫**，见 §3.5） | ⚠️ 它是**停进程、不是降落**；清单会先把"要停谁"摊开，问一句 y/N 才动手 |
 
 ★ **两项不再占菜单号**（2026-09-23 起）：**起 bringup 一键**（`z0.launch.py` 仍可按
-[`bringup/README.md`](../../src/bringup/README.md) 手打，菜单里不占号了）与**操作台 `fly.py`**
+[`bringup/README.md`](src/bringup/README.md) 手打，菜单里不占号了）与**操作台 `fly.py`**
 （它成了第 9 项里"把终端让出去"的那一步）。两条命令仍在 `z0.py` 的 `ACTIONS` 里
 ⟹ 上面 §3.4 那条不变式一条没松。
 
@@ -300,12 +301,12 @@ ros2 launch control control.launch.py
 ### 3.4 这条链里**没有**什么（安全边界）
 
 **没有任何"让飞机动"的入口**：解锁 / 起飞 / 切模式 / 改参数 / 发帧，一个都没有。
-理由是仓库里写死的设计：**"开始键之前不发控制指令"**（[`z0.launch.py`](../../src/bringup/launch/z0.launch.py)
-头注释逐字；同一句也写在 [`fly.py`](../../src/bringup/scripts/fly.py) 与
-[`bringup/README.md`](../../src/bringup/README.md) 里）⟹ 给一个程序起飞入口等于在墙上开一扇后门。
+理由是仓库里写死的设计：**"开始键之前不发控制指令"**（[`z0.launch.py`](src/bringup/launch/z0.launch.py)
+头注释逐字；同一句也写在 [`fly.py`](src/bringup/scripts/fly.py) 与
+[`bringup/README.md`](src/bringup/README.md) 里）⟹ 给一个程序起飞入口等于在墙上开一扇后门。
 台架上那条 `ros2 service call /control/takeoff …` **照旧手打**（**不是**给现场的入口：
 台上没有遥控接收机，"RC 在线"这条起飞前置本身就过不了），原文在
-[`bench-runbook.md`](bench-runbook.md) **T4**。
+[`docs/control/bench-runbook.md`](docs/control/bench-runbook.md) **T4**。
 
 ### 3.5 收链的另一头：`run/down.sh` = 菜单 **10= 清除后台节点（扫 mavros/vrpn/mocap/traj/control 并停掉）**
 
@@ -320,7 +321,7 @@ run/down.sh --dry-run  # 只扫一眼"会停谁"，一个信号都不发
 
 | 它做什么 | 具体 |
 |---|---|
-| **按名字扫** | 白名单在 [`z0.py`](../../run/z0.py) 的 `DOWN_TARGETS`：mavros / vrpn_listener / mocap / traj / control / bringup。**不是**"停 `up` 起的那些" |
+| **按名字扫** | 白名单在 [`z0.py`](run/z0.py) 的 `DOWN_TARGETS`：mavros / vrpn_listener / mocap / traj / control / bringup。**不是**"停 `up` 起的那些" |
 | 先给清单、再问一句 | 每条都印出 **pid + 完整命令行**；你答 y 才动手（答 n 一个信号都不发） |
 | 顺序（先礼后兵） | **SIGINT → 等 5 s → SIGTERM → 等 3 s → SIGKILL**，与台架 `stop_dut` 同一纪律；只对**单个 pid** 发，不发进程组（别人终端的 shell 可能与它同组） |
 | 收尾 | **再扫一遍**并报串口状态（`/dev/ttyTHS1` 是否空出来）；还有剩的 ⟹ 如实报出来、退出码非零 |
@@ -332,7 +333,7 @@ run/down.sh --dry-run  # 只扫一眼"会停谁"，一个信号都不发
    而 **A1 未落实** ⟹ 遥控同时丢了 `NAV_RCL_ACT = 2` 会**试图返航**（室内没有 GPS）。
    **飞机还在空中时先走 §1.2 的三条软路径**（★ 首选 (a) 长按开始键：仍由程序自主降落），别指望这一条。
 2. **按名字扫 ⟹ 别人会话、跑着的测试起的同类节点也会在清单里。** 现场只有一套飞机，这个代价是
-   *明说的*（[ticket 22 §八](../../.scratch/phase1/issues/22-run-menu-script.md) 的三个选择题之一）。
+   *明说的*（[ticket 22 §八](.scratch/phase1/issues/22-run-menu-script.md) 的三个选择题之一）。
    所以**动手前看一眼命令行**：不是你这套的就答 n。
 
 ---
@@ -371,7 +372,7 @@ ros2 run bringup fly.py     # 选轨迹 + 实时看状态与完成度
 | 话题 | 正常读数 | 不正常先看 |
 |---|---|---|
 | `/mavros/state` | **1 Hz**、`connected=True`、`armed=False`、`mode=POSCTL`（ch6 在第 1 档时；已拨到第 6 档就是 `OFFBOARD`） | ★ **有帧 ≠ 连上飞控** —— 它报的是连接心跳 |
-| `/mavros/local_position/pose` | ~30 Hz（EKF2 位置，控制律的位置来源） | 没有 ⟹ 动捕没进 EKF2（那是**视觉链路**的事：[`mocap-setup.md`](../reference/mocap-setup.md) + [`bench-runbook.md`](bench-runbook.md) 的 **T1** 动捕链路目视 / **T2** 坐标轴确认） |
+| `/mavros/local_position/pose` | ~30 Hz（EKF2 位置，控制律的位置来源） | 没有 ⟹ 动捕没进 EKF2（那是**视觉链路**的事：[`mocap-setup.md`](docs/reference/mocap-setup.md) + [`docs/control/bench-runbook.md`](docs/control/bench-runbook.md) 的 **T1** 动捕链路目视 / **T2** 坐标轴确认） |
 | `/mavros/vision_pose/pose` | 有帧、不跳 | 跳 ⟹ 动捕 WiFi / `EKF2_EVP_NOISE` |
 | `/mocap/pose_enu` | 有帧（动捕实测 ~200 Hz） | `·` ⟹ `vrpn_listener` 或 `mocap` 没起、或 QoS 不兼容 |
 | `/control/state` | `MANUAL/INIT`（刚起）、`MANUAL/STANDBY`（守卫齐） | 一直 `INIT` ⟹ 诊断日志里逐条写着缺什么 |
@@ -394,6 +395,11 @@ ros2 topic echo /mavros/rc/in     # 看 channels[8]
 - ⚠️ **要在解锁之前做**：通道错了的话，第 1 次上升沿会直接去解锁起飞。
 - ⚠️ **要试 ch8 杀车必须先拆桨**。
 - 不符就**回 ticket 02 / §H 改裁定**（原文要求），不要就地改代码。
+
+> ⏳ **2026-09-28 状态**：ch9 **功能这一半过了**（实飞时两次上升沿都受理了 ⟹ EdgeTX 的分配
+> 事实上做过，§H.4）；**这条核对本身仍然没做** —— 也就是说**读数从来没被记下来过**
+> （操作者裁定**不补量、目测为准**）。⟹ 下次上电**照旧先做这一步**，顺手把低/高读数记一行，
+> 那一格就关了。
 
 ### 5.3 日志 token（都是固定形状，可 grep）
 
@@ -433,7 +439,7 @@ ros2 topic echo /mavros/rc/in     # 看 channels[8]
 | **清完了串口还占着** | `run/down.sh` 的收尾会报串口状态；还占着多半是**清单里那条不是你的**（按名字扫 ⟹ 别人的也在）⟹ 看一眼命令行，用 `lsof /dev/ttyTHS1` 认出是谁（别急着 `kill -9`） |
 | 遥控器链路断了 | 只剩 offboard 断流保护（`COM_OF_LOSS_T=1.0 s` → `COM_OBL_RC_ACT`）；⚠️ A1 未改之前会**试图返航** |
 
-★ **排障表更全的一版**在 [`run/README.md`](../../run/README.md)（daemon 坑 / 半拉子环境 / 刚体名大小写 /
+★ **排障表更全的一版**在 [`run/README.md`](run/README.md)（daemon 坑 / 半拉子环境 / 刚体名大小写 /
 串口占用 / "在图里但没帧"的两种成因）。
 
 ---
@@ -450,13 +456,33 @@ ros2 topic echo /mavros/rc/in     # 看 channels[8]
 
 ---
 
-## 8. ⏳ 还没做的（诚实交代，别把这张表当成"已经飞过"）
+## 8. 飞过什么 / 还没做什么（诚实交代，别把这张表当成"已经飞过"）
 
-| 项 | 为什么还没做 |
+### 8.1 ✅ 实飞记录：2026-09-28（动捕环境，**目测，未量数**）
+
+一次人工实飞，做了三件事，**目测一切正常**（操作者的原话：*"1 定点定高飞行、2 各个按键的功能、
+3 三种轨迹飞行，收工。都没有测试具体的数值，目测一切正常"*）：
+
+| 做了什么 | 对应哪一条 | 留档强度 |
+|---|---|---|
+| **定点定高飞行** | §5.3 的验收（水平误差 ≤15 cm、持续 60 s） | ⚠️ **只有目测** —— 那两个数**都没量**（没录 bag） |
+| **各个按键的功能** | 本页 §5.2 / `params-changes.md` §H.8 的 ch9 核对 | ⚠️ **功能正常**；**读数没记** ⟹ §5.2 那一格仍未勾 |
+| **三种轨迹飞行**（1 悬停 / 2 正方形 / 3 八字） | 验收阶梯的**第 4 级（自由飞）** | 目测正常；**阶梯 1–3 未做** |
+
+★★ **这三条都是"目测过"，不是"量过"** —— 本页别处若引用它们，**别当成数字证据**。
+将来要数字，得**重飞 + 录动捕**（`ros2 bag record`），不是回头补一句话。
+
+★ 它关掉了 **ticket 09**（操作者 2026-09-28 裁定收 `done`，口径 = **目测为准、不补量**），
+并把 **EdgeTX 的 ch9 分配（§H.4）事实上做掉了** —— 依据是"按键生效了"。
+⚠️ 后半句是**推断，不是读数**：**没有一条通道读数、没有一条 `MAV_RESULT` 被留档**。
+
+### 8.2 ⏳ 还没做的
+
+| 项 | 状态与原因 |
 |---|---|
-| ★ **验收阶梯 1–4 级**（无桨台架 / 系绳离地 20 cm / 系绳悬停 30 s / 自由飞） | 每一步都是人的物理动作（拆桨、系绳、扶飞机） |
-| **EdgeTX 里给 ch9 分配开关**（§H.4） | 人工动作，是 §5.2 核对的前置 |
-| **§5.2 的通道核对**（验收项 6） | 被上一条与遥控链路状态阻塞 ⟹ ticket 09 的勾选框**留空** |
-| **起链那几个动作没在真飞控上跑过**（菜单 3–7 与一键那两条 8/9） | 要占串口、要人在场摆飞机（ticket 22 §五） |
-| **A1**（`NAV_RCL_ACT` `2 → 1`）等 4 条"已裁定、待写入"的参数 | 见 [`params-changes.md`](../reference/params-changes.md) §I.1 |
-| 真 PX4 的 `MAV_RESULT` 码、`COM_DISARM_LAND` 真实上锁、1 Hz 状态延迟 | 夹具不模拟 PX4 ⟹ 只有真飞控能给（`control/README.md` 末节） |
+| **验收阶梯 1–3 级**（无桨台架 / 系绳离地 20 cm / 系绳悬停 30 s） | ⏳ **仍未做**（第 4 级自由飞已于 2026-09-28 做过，见 8.1）—— 每一步都是人的物理动作（拆桨、系绳、扶飞机） |
+| **EdgeTX 里给 ch9 分配开关**（§H.4） | ✅ **2026-09-28 事实上已做**（按键生效 ⟹ 分配过了，**推断**） |
+| **§5.2 的通道核对**（验收项 6） | ⏳ **有意留空** —— 功能那一半 2026-09-28 过了；**读数那一半按操作者裁定不补量**（要勾只有一条路：拨一次 ch9 记下 `channels[8]`） |
+| **起链那几个动作没在真飞控上跑过**（菜单 3–7 与一键那两条 8/9） | 🔶 **推定跑过了**（三种轨迹飞完必然经过起链），但菜单 3–7 的**逐项单独核对**没做过（要占串口、要人在场摆飞机，ticket 22 §五） |
+| **A1**（`NAV_RCL_ACT` `2 → 1`）等 4 条"已裁定、待写入"的参数 | 见 [`params-changes.md`](docs/reference/params-changes.md) §I.1 |
+| 真 PX4 的 `MAV_RESULT` 码、`COM_DISARM_LAND` 真实上锁、1 Hz 状态延迟 | 🔶 2026-09-28 实飞时**必然出现过**（解锁被接受、落地自动上锁），**但一条读数都没留** ⟹ 仍要专门取一次（夹具不模拟 PX4，`control/README.md` 末节） |

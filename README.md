@@ -12,7 +12,7 @@
 
 | 阶段 | 做什么 | 控制接口 | 状态 |
 |---|---|---|---|
-| **Phase 1** | **offboard 位置定点飞行** —— 用动捕让 z0 稳定悬停并跟踪简单轨迹，**PX4 跑全部内环 PID** | **(A) 级**：`/mavros/setpoint_raw/local`（位置 + yaw） | 🟨 **代码与台架测试已就绪**（六个包可 build、`colcon test` 通过；台架跑通"起飞→悬停→等开始键→跟踪→自动降落"）· **真机阶梯（拆桨 → 系绳 → 自由飞）未开始** · [`spec`](.scratch/phase1/spec.md) `ready-for-agent` |
+| **Phase 1** | **offboard 位置定点飞行** —— 用动捕让 z0 稳定悬停并跟踪简单轨迹，**PX4 跑全部内环 PID** | **(A) 级**：`/mavros/setpoint_raw/local`（位置 + yaw） | 🟨 **代码与台架测试已就绪** + **2026-09-28 真机自由飞一次成**（定点定高 + 各按键 + 三条轨迹，**目测一切正常、数值未量** ⟹ ticket 09 收 `done`）· **阶梯 1–3 级（拆桨 / 系绳 20 cm / 系绳悬停 30 s）未做** · [`spec`](.scratch/phase1/spec.md) `ready-for-agent` |
 | **Phase 2** | **MPC 接管 PID —— SITL 验证**：MPC 输出角速率 + 推力，PX4 只跑角速率环；被控对象**从上游 v1.14.3 构建的 z0 同构机**（**不是 `gz_x500`**；☠️ 原写"从 fork 构建"，该 fork 与 z0 无关） | **(C) 级**：`/fmu/in/vehicle_rates_setpoint` | ⬜ 未开始 · [`spec`](.scratch/phase2/spec.md) `ready-for-agent` |
 | **Phase 3** | **MPC 上实机**：四项前置测量 + 一次固件重编（~~ADC 一行修复~~ ☠️ **修法要重定 —— 那条缺陷不在 z0 的固件里**），然后拆桨 → 系绳 → 自由飞四级阶梯 | 同 Phase 2（**(C) 级**） | ⬜ 未开始 · [`spec`](.scratch/phase3/spec.md) `ready-for-human` |
 
@@ -62,7 +62,7 @@
     ├── mocap/                        ✅ 相对位姿（两阶段原点 + 仅归零 yaw）→ `/mavros/vision_pose/pose` → EKF2
     ├── traj/                         ✅ 参考轨迹（三条解析轨迹，50 Hz，**相对轨迹原点**；不发 setpoint）
     ├── bench/                        ✅ 台架夹具（**测试基础设施，不是飞行代码**）：假 mavros + 脚本化动捕 + 假 traj + 故障注入
-    ├── control/                      ✅ 自主飞行控制节点（ticket 05/06/08/09：起飞 → 悬停判稳 → **等开始键** → 跟踪轨迹 → 自动降落；**阶梯第 1–4 级待上真台架**）
+    ├── control/                      ✅ 自主飞行控制节点（ticket 05/06/08/09：起飞 → 悬停判稳 → **等开始键** → 跟踪轨迹 → 自动降落；**2026-09-28 真机自由飞一次成**，阶梯 1–3 级待做）
     └── bringup/                      ✅ launch + 操作台（ticket 09）：`z0.launch.py` 一键起 mocap+traj+control(+mavros)、`fly.py` 选轨迹看状态
 ```
 
