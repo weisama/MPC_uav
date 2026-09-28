@@ -207,7 +207,7 @@ q̇ = ½·q ⊗ [0, ω_des]                    ← 用 ω_des 代替真实 ω
 |---|---|---|---|
 | **推力上下限** | `T_min ≤ T ≤ T_max` | ⚠️ **`T_max` 按电池设，不按电机设！** | [`hardware.md`](../reference/hardware.md) 6.2 |
 | 角速率上限 | `|ω_des,i| ≤ ω_max,i` | 横滚/俯仰 **3.84 rad/s**，偏航 **6.28 rad/s** | `MC_*RATE_MAX` |
-| 倾角上限 | `R(q)·e_z · e_z ≥ cos(θ_max)` | ⚠️ **从 45° 收到 30°**（45° 需 10.4 N = 电池上限的 88 %） | 已定，见 [`phase2-implementation.md`](phase2-implementation.md) §3.3 |
+| 倾角上限 | `R(q)·e_z · e_z ≥ cos(θ_max)` | **`θ_max = 45°`**（= z0 现值 = PX4 默认）。⚠️ **不是 30°** —— 那版 2026-09-28 被操作者裁定作废（「两边都回 45」）。⚠️ **且本约束尚未实现**：OCP 现在只有 `lbu/ubu = [F ∈ [0, T_max]] × [ω ∈ ±ω_max]` | 见 [`phase2-implementation.md`](phase2-implementation.md) **§3.3.4**（量纲依据：`hover_thrust = 1/(T/W)` ⟹ 当前推重比下物理天花板 51.3°）|
 | 位置/速度（软） | 代价项而非硬约束 | 最大 **2.0 m/s**（★ 2026-09-22 更正，原写 12） | `MPC_XY_VEL_MAX` |
 
 > ★ **2026-09-22 更正上表最后一行**：原文抄的是飞控现值 `MPC_XY_VEL_MAX = 12.0`，

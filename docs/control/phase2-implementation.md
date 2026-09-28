@@ -406,43 +406,112 @@ ubu = np.array([+Fmax,     wmax,       wmax,      +0.5*wmax])
 `Sun2022` 的 NMPC 状态是 `x = [ξ, ξ̇, q, Ω^B]`；`Foehn2022` 的状态是 `x = [p, q, v, ω, a, τ, s, b_ω, b_a, f_d, f]`。
 → **本文 §2.1 的「步骤 1 用 10 状态（ω 不作状态）」是简化，不是论文的标准做法。** 这不改变结论（先抄 px4-mpc 跑通、再上 13 状态），但**说明步骤 1→步骤 2 的升级方向与论文一致**，不是我们在自创。
 
-### 3.3 ★ 推力上限：为什么必须按电池
+### 3.3 ★ 推力上限：为什么必须按电池，以及它怎么与 `hover_thrust` 自洽
 
-**第一手证据**：PX4 `v1.14.3` 的 `MulticopterRateControl.cpp` offboard 分支**对 `thrust_body` 不做任何 hover-thrust 重标定**，直接透传：
+> **本节 2026-09-28 由 [phase2/10](../../.scratch/phase2/issues/10-param-measure-backfill.md) 重写**
+> （原"倾角收到 30°"那版已被操作者裁定作废，见 §3.3.4）。
 
-```cpp
-} else if (_vehicle_rates_setpoint_sub.update(&vehicle_rates_setpoint)) {
-    ...
-    _thrust_setpoint = Vector3f(vehicle_rates_setpoint.thrust_body);   // 原样使用
-}
+#### 3.3.1 第一手证据：推力通路在三处都不重标定
+
+PX4 `v1.14.3`：
+
+1. **角速率环原样透传** —— `MulticopterRateControl.cpp:182` offboard 分支：
+   ```cpp
+   _thrust_setpoint = Vector3f(vehicle_rates_setpoint.thrust_body);   // 原样使用
+   ```
+2. **分配器只在"归一化推力"这个域里做线性混合** —— `ControlAllocation/ControlAllocationPseudoInverse.cpp:134`：
+   ```cpp
+   _control_allocation_scale(3 + axis_idx) = norm_sum / num_non_zero_thrust;
+   ```
+   推力轴按**各执行器 `ct` 的均值**归一化 ⟹ **`thrust_body = 1.0` ≡ 所有执行器满输出**。
+   （`lib/mixer_module/functions/FunctionMotors.hpp:77-101` 那条 `THR_MDL_FAC` 曲线只改
+   「归一化推力 ↔ 电机信号」的**映射形状**，端点不动（`x = 1 → 1`），也**不涉及悬停推力** ——
+   分配器与我们的模型工作在**同一个域**里。）
+3. **没有电池电压缩放** —— `MC_BAT_SCALE_EN = 0`（z0 实测值，保持默认），`thrust_body` 不被缩放。
+
+→ **模型预测控制输出的归一化推力直接就是混控器的输入。** 所以 `F/N → thrust_body` 的换算常数（= `1/T_max`）**必须反映飞机真实能出的最大推力**，否则模型与真实被控对象不符。
+
+#### 3.3.2 ★ 自洽条件（本张的硬要求）
+
+`hover_thrust` 与 `1/T_max` 必须**出自同一次测量**，因为它们本来就是同一条等式的两端：
+
+```
+hover_thrust ≡ T_hover / T_max = m·g / T_max   ⟺   T_max = m·g / hover_thrust
 ```
 
-→ **MPC 输出的归一化推力直接就是混控器的输入。** 所以 `F/N → thrust_body` 的换算常数（= `1/T_max`）**必须反映飞机真实能出的最大推力**，否则 MPC 的模型与真实被控对象不符。
+右边就是 `Z0Params.t_max` 那条 property（`params.py`）；左边的当场换算在
+[`tools/hover-thrust`](../../tools/hover-thrust/README.md) 的 `t_max_for()`。
+**两边不能各自独立取数**：一边填实测的 `hover_thrust`、一边填理论 `T_max`，推力标度就错了。
 
-**z0 的数**（质量 750 g 实测）：
+★ **反例（不要这么写）**：把模型里的 `hover_thrust` 填成 `MPC_THR_HOVER = 0.5`。
+那是 **PX4 位置控制器**自己的增益（缩写撞脸，与模型预测控制无关），z0 上它是 `0.5`；
+而真值约 `0.62` —— 两者无关，填错就是 §6.3 那类"静默的推力标度错误"。
+
+#### 3.3.3 z0 的数（质量 750 g 实测）
 
 | 量 | 值 | 来源 |
 |---|---|---|
-| 悬停推力 `T_hover` | 0.75 × 9.81 = **7.36 N** | 质量实测 |
+| 悬停推力 `T_hover` | 0.75 × 9.81 = **7.36 N** | 质量实测（工具侧用 9.80665 ⟹ 7.355 N，差 0.03%，各自内部自洽） |
 | **电池限制** `T_max` | 1.60 × 7.36 ~ 2.54 × 7.36 = **11.8 ~ 18.7 N** | [`hardware.md`](../reference/hardware.md) §6.2，T/W 1.60–2.54 |
 | 电机限制 `T_max` | 5.44 × 7.36 = **40.0 N** | 同上 |
+| `hover_thrust`（P1） | ⏳ **待实测**（占位 `0.6235` ⟹ 隐含 T/W 1.604） | z0 悬停日志；方法与工具见 §5 与 [`tools/hover-thrust`](../../tools/hover-thrust/README.md) |
 
 **★ 按电池取 `T_max = 11.8 N`（保守端）的三个后果**：
 
-1. `thrust_scale = 1/11.8 = 0.0847`；**悬停归一化推力 = −7.36/11.8 = −0.624**。
+1. `thrust_scale = 1/11.8 = 0.0847`；**悬停归一化推力 = −7.36/11.8 = −0.624**（= 占位 `hover_thrust`）。
 2. **可用上行裕度只剩 0.376** → 净上行加速度 `(11.8 − 7.36)/0.75 = 5.9 m/s² ≈ 0.6 g`。
-3. **⚠️ 45° 倾角下所需推力 = 7.36/cos45° = 10.4 N，已是 11.8 N 的 88 %。**
-   → **「`MPC_TILTMAX_AIR = 45°`」与「电池限制的 T_max」几乎是冲突的**：在电量偏低时做 45° 倾斜机动会逼近饱和。
+3. **45° 倾角下所需推力 = 7.36/cos45° = 10.4 N，已是 11.8 N 的 88 %** —— 见下一节。
 
-**若按电机 `T_max = 40 N` 归一化**（即抄 px4-mpc 的推导方式），悬停值变成 −0.184，**MPC 会以为自己有大量剩余推力，而电池给不出来** → 期望加速度与实际严重不符，表现为"指令下去飞机不动"甚至振荡。
+**若按电机 `T_max = 40 N` 归一化**（即抄 px4-mpc 的推导方式），悬停值变成 −0.184，**模型预测控制会以为自己有大量剩余推力，而电池给不出来** → 期望加速度与实际严重不符，表现为"指令下去飞机不动"甚至振荡。
 
-> **✅ 决议（已确认）：`T_max` 按电池（11.8 N）设**；~~`MPC_TILTMAX_AIR` 从 45° 收到 30°~~
-> ☠️ **后半句 2026-09-28 被操作者推翻**：裁定「**两边都回 45**」（SITL 侧原计划的 30° 也一并作废）——
-> 见 [`sitl-z0-plant.md`](sitl-z0-plant.md) §5.3 与 `params-changes.md` §E6.4。
-> ⚠️ **本节结论的正文与 §8 的 O2 应由本节作者 / [phase2/10](../../.scratch/phase2/issues/10-param-measure-backfill.md) 重写，
-> ticket 08 只加注、不改其结论**：倾角保持 45° 后「45° 需 10.4 N = 88 %、只剩 12 % 姿态余量」
-> 这条张力**仍然成立**，只是不再靠收倾角解决。
-> **D5 的后续问题**：换高 C 电池能把 T/W 提到 2.54（`T_max` = 18.7 N），倾角就能放回 40°+。**但换电池是硬件改动，不影响本文件的实施步骤** —— 参数化即可。
+#### 3.3.4 ★ 倾角的量纲依据（`hover_thrust` 就是 `1/(T/W)`）
+
+因为 `hover_thrust = T_hover/T_max = m·g/T_max = 1/(T/W)`，倾角问题可以完全在量纲上算清楚：
+**悬停倾角 θ 需推力 `m·g/cos θ ≤ T_max`**（两边同除以 `T_max/cos θ`）⟹
+
+```
+cos θ ≥ hover_thrust   ⟹   物理最大可持续倾角 = acos(hover_thrust)
+```
+
+★ **方向不能写反**：倾角越大 `cos θ` 越小、越难满足。45° 时 `cos45° = 0.707 ≥ 0.623` 成立 ⟹ 撑得住；
+60° 时 `0.500 < 0.623` ⟹ 撑不住。这与 [`mpc-roadmap.md`](mpc-roadmap.md) 里那条
+`R(q)·e_z · e_z ≥ cos(θ_max)` **同向**（那里的 `R(q)·e_z · e_z` 就是 `cos θ`）。
+
+| 可用 `T/W` | `T_max` | `hover_thrust` | **物理天花板 `acos(1/TW)`** | 30° 占用 | **45° 占用** | 60° |
+|---|---|---|---|---|---|---|
+| **1.60**（电池保守端，当前） | 11.8 N | 0.625 | **51.3°** | 8.50 N = 72.2 % | **10.40 N = 88.4 %**（余量 **11.6 %**） | 14.71 N = **125 %** ⟹ 撑不住 |
+| 2.54（换高 C 电池后） | 18.7 N | 0.394 | **66.8°** | 8.50 N = 45.5 % | 10.40 N = **55.7 %**（余量 44.3 %） | 14.71 N = 78.7 % |
+
+> 表格按 `T/W` **整值**（1.60 / 2.54）与 `m·g = 7.36 N` 算，行内自洽（如 45°：`1/(1.60·cos45°) = 88.4 %`）。
+> ⚠️ 由占位 `hover_thrust = 0.6235` 反推的比值是 **1.604**（§5 的 P1 行），与 1.60 的差是**四舍五入**：
+> 用它重算只会把 51.3° → 51.4°、72.2 % → 72.0 %、88.4 % → 88.1 %（**< 0.3 个百分点**，不改变任何结论）。
+> 写在这里是因为这张表的数字会被反复引用，**口径要能当场复算**。
+
+★ **这张表就是"最大倾角"的量纲依据**，也是换电池那件事的量化收益：
+
+- 当前 `T/W = 1.60` 的**物理天花板是 51.3°，不是 45°**。取 45° 用掉 88.4%，
+  **留给姿态控制/扰动的余量只有 11.6%** —— 这条张力是**真的**，
+  但它的根源是**这架飞机的推重比本来就低**（电池限制），不是某个参数的取值问题。
+- 曾想收到 **30°**（占用降到 72.2%、余量 27.8%）来缓解它。
+  ☠️ **2026-09-28 操作者裁定「两边都回 45」**（SITL 侧原计划的 30° 一并作废）——
+  见 [`sitl-z0-plant.md`](sitl-z0-plant.md) §5.3 与 [`params-changes.md`](../reference/params-changes.md) §E6.4。
+  **本节按裁定改写；30° 那版作废。**
+- **换高 C 电池（D5 / O6）**：把 `T/W` 提到 2.54 ⟹ `hover_thrust` 变 0.394、天花板变 66.8°、
+  45° 的推力占用从 88.4% 降到 55.7%。**这是硬件决策，与实施步骤无关 —— 参数化隔离即可**：
+  改动只落在 `Z0Params.mass / hover_thrust`（⟹ `t_max`）以及将来若加的倾角约束，其余代码不动。
+
+⚠️ **两点必须说清楚（否则上面那张表会被误用）**：
+
+1. **`MPC_TILTMAX_AIR` 不在本项目的通路上。** 它是 PX4 **位置控制器**的参数（缩写撞脸，
+   与模型预测控制无关）。本项目的节点发的是 `offboard_control_mode.body_rate = True`（`mpc_node.py`），
+   按 `commander/ModeUtil/control_mode.cpp:144-146` 只置 `flag_control_rates_enabled`，
+   于是 `:169-175` 把 `flag_multicopter_position_control_enabled` 判为 **false**
+   ⟹ **位置控制器（含它的倾角限幅）根本不参与**。所以 45° 这个数**不代表**模型预测控制被限制在 45°。
+2. ⚠️ **而且模型侧目前没有任何倾角约束。** OCP 的约束只有
+   `lbu/ubu = [F ∈ [0, T_max]] × [ω ∈ ±ω_max]`（`ocp.py`）。
+   [`mpc-roadmap.md`](mpc-roadmap.md) 里那条 `R(q)·e_z · e_z ≥ cos(θ_max)` **是计划，不是实现**。
+   ⟹ 当前**唯一**的实际天花板就是 `F ≤ T_max`（= 上表的 51.3°）。
+   **要不要把倾角约束真的加进 OCP 是另一张票的事**：本张只把量纲关系写清楚，**不趁机加约束**（那会改模型）。
 
 ### 3.4 控制流总览
 
@@ -684,8 +753,8 @@ ROS 侧：  ros2 interface show px4_msgs/msg/VehicleRatesSetpoint
 
 | # | 参数 | 怎么测 | 卡住谁 | 有没有替代 |
 |---|---|---|---|---|
-| P1 | **`hover_thrust`**（模型里） | Phase 1 悬停日志反推 | S6 全部 | 无。**测不准飞不起来** |
-| P2 | **`T_max`**（按电池） | 拉力台，或从悬停油门裕度估 | M4、§3.3 | 理论值 11.8 N 可**先顶用** |
+| P1 | **`hover_thrust`**（模型里） | Phase 1 悬停日志反推 —— ★ **工具已就绪**：[`tools/hover-thrust`](../../tools/hover-thrust/README.md)，一条命令；已在 SITL 同构机上端到端验证（偏差 2.6 × 10⁻⁸） | S6 全部 | 无。**测不准飞不起来**。当前占位 `0.6235` |
+| P2 | **`T_max`**（按电池） | 拉力台，或从悬停油门裕度估 —— ⚠️ **不必单独测**：它由 P1 与 §3.3.2 的自洽条件 `T_max = m·g/hover_thrust` 唯一确定（`t_max_for()`） | M4、§3.3 | 理论值 11.8 N 可**先顶用**（= 占位 `hover_thrust` 0.6235） |
 | P3 | **最坏求解耗时** | ✅ **已实测（离线）** 1000 次取 max，见下 | **D6（频率）** | ✅ 已回填，D6 定 **100 Hz** |
 | P4 | **`k_ω`** | 角速率阶跃 + IMU 拟合 | S7 | 步骤 1 完全不需要 |
 | P5 | **动捕实测延迟 τ** | ✅ **已在 z0 上实测 ≈ 50 ms**（2026-09-28，飞控 ulog × 交叉相关） | D9 | 出处与方法：[`../reference/mocap-setup.md`](../reference/mocap-setup.md) **§6.3**。⚠️ 旧机那个"50 ms"只有一句结论、无方法，**对 z0 只是参照** |
@@ -709,6 +778,20 @@ ROS 侧：  ros2 interface show px4_msgs/msg/VehicleRatesSetpoint
 > 方法与原始输出：[`offline-ocp.md`](offline-ocp.md) §5；命令 `python3 -m nmpc.timing --runs 1000 --cpu 4`。
 > 结论、依据与连带要求见 [`../reference/params-changes.md`](../reference/params-changes.md) **§H**；
 > 约束与完整占用表见 [`../reference/params-analysis.md`](../reference/params-analysis.md) §3.15（其中「只剩 ch7」已更正）。
+
+> ★ **P1/P2 回填（2026-09-28，[ticket 10](../../.scratch/phase2/issues/10-param-measure-backfill.md)）**
+> —— 这两条**绑在一起**，不能各测各的（§3.3.2）。做法：
+>
+> 1. 取一段**悬停**日志（只读取日志，不涉及解锁/起飞）；
+> 2. `python3 tools/hover-thrust/hover_thrust_from_ulog.py <悬停日志.ulg> --model-hover 0.6235`
+>    ⟹ 直接给出 `hover_thrust`，并当场算出它对应的 `T_max`；
+> 3. 若两者与占位值（0.6235 / 11.8 N）差得远，**改的是参数，不是判据** ——
+>    工具只回答"日志里的悬停推力是多少"。
+>
+> ⚠️ **一条待裁定的口径问题（见 §9 的 O8）**：`hover_thrust` 与 `T_max` 是**同一个电池状态**
+> 下的两个侧面（自洽条件把两者绑死），而这个电池状态**必须选**（满电？低压？），
+> 因为模型里没有电池状态这个输入、`MC_BAT_SCALE_EN` 又是 0。
+> **本张只把问题写清楚，不替操作者拍板**（见 O8）。
 
 **⚠️ P1 是唯一真正的阻塞项。** 其余都有可用的初值。
 
@@ -870,12 +953,13 @@ S1 环境 ──> S2 acados ──> S3 离线 OCP ──> S4 节点 ──> S5 S
 | # | 开放项 | 本文主张 | 谁来定 |
 |---|---|---|---|
 | ~~O1~~ | ~~D7：内部坐标系~~ | ✅ **已关闭** —— **ENU/FLU**，用户选定「参考论文里的坐标系」，`Sun2022` + `Foehn2022` 一致（§3.2） | 已定 |
-| ~~O2~~ | ~~`MPC_TILTMAX_AIR` 45°→30°~~ | ☠️ **2026-09-28 操作者推翻**：**两边都回 45**（§3.3 的划线处作废；88 % 的张力仍在，归 §3.3 与 phase2/10 重写） | 已定 |
+| ~~O2~~ | ~~`MPC_TILTMAX_AIR` 45°→30°~~ | ☠️ **2026-09-28 操作者推翻**：**两边都回 45**。✅ **正文已按裁定重写**（§3.3.4，2026-09-28 ticket 10）：量纲依据 = `hover_thrust = 1/(T/W)` ⟹ 当前推重比（1.60）下的**物理天花板是 51.3°、不是 45°**，45° 用掉 88.4%、余量 11.6 %；换高 C 电池（2.54）后天花板 66.8°、45° 只占 55.7 %。⚠️ 顺带查清：`MPC_TILTMAX_AIR` **不在本项目通路上**（我们发 `body_rate`，`flag_multicopter_position_control_enabled = false`），且**模型侧目前没有倾角约束** | 已定 |
 | ~~O3~~ | ~~D6：MPC 频率~~ | ✅ **已关闭** —— **100 Hz**（P3 实测：纯求解 max 3.58 ms；见 D6 行与 [`offline-ocp.md`](offline-ocp.md) §5）。⚠️ 附带条件：节点侧要处理墙钟尾延迟（1/1000 次 52–56 ms 抢占） | 已定 |
 | O4 | D9：延迟补偿 | 步骤 1 只用一行状态外推；完整补偿留第二版 | 用户 |
 | ~~O5~~ | ~~`R` 改罚 `u − u_ref`（M6）的具体参考量~~ | ✅ **已关闭（2026-09-28，ticket 04）**：约定写死在 [`offline-ocp.md`](offline-ocp.md) **§3.2** —— 缺省 = **上一帧解平移一拍**（首帧用悬停前馈）；调用方可给解析前馈；`prediction=False` 时**必须显式给**（缺省直接报错，不许悄悄退回悬停前馈）。行为证据见同文 §3.3 | 已定 |
 | O6 | D5：是否换高 C 电池 | 与本文实施步骤无关，参数化即可 | 用户（硬件决策） |
 | **O7** | **长时段"不信任"期间该发什么** | 票面（ticket 07）对时间戳倒退 / 位姿跳变的要求是**只关闸门、一帧不发** —— 已照做。但由 §2.5 的第一手，**不发 = 飞控无限期锁存最后一帧**（可能是几秒前的、带满角速率的命令）；"一直沉默"与"主动切安全悬停"哪个更安全**本票没有拍板**（票面没要求，就没自作主张改）。⚠️ 触发条件苛刻（动捕要连续坏 ≥ 闸门重开的时间）但**真实存在**：遮挡、上游重放、VRPN 时钟回拨都会造成 | SITL/实测定；结论进 ticket 11 |
+| **O8** | **P1/P2 的电池口径**（满电 vs 低压） | `hover_thrust` 与 `T_max` 被 §3.3.2 的自洽条件绑成**同一个电池状态的两个侧面**，而模型里没有电池状态这个输入、`MC_BAT_SCALE_EN` 又是 0 ⟹ **必须选一个口径**。⚠️ 最坏情况是**混用**（一边满电、一边低压）：推力标度直接错，且看起来一切正常。**建议满电口径** —— 把模型锚在"每次飞行都从这儿开始"的那个状态；误差随电量下降朝"模型高估能力"漂，而这一侧**有可观测信号**（`sat` 约束饱和标志 + 位置环会自己补），反方向没有。⚠️ 测 P1 时**同时记录电压/电流**，将来若要做电池降额才有依据 | 操作者（测 P1 时一并定）|
 
 ---
 
@@ -890,6 +974,11 @@ S1 环境 ──> S2 acados ──> S3 离线 OCP ──> S4 节点 ──> S5 S
 | `R` 罚绝对角速率 | `multirotor_rate_mpc.py` `yref` 的 u 部分全零 + `R_mat` |
 | `lbu/ubu` 的 yaw 取半 | `multirotor_rate_mpc.py` `-0.5*wmax` / `+0.5*wmax` |
 | `thrust_body` 原样透传、不受 `MPC_THR_HOVER` 影响 | PX4 `v1.14.3` `src/modules/mc_rate_control/MulticopterRateControl.cpp`，offboard 分支 `_thrust_setpoint = Vector3f(vehicle_rates_setpoint.thrust_body);` |
+| **推力轴按各执行器 `ct` 的均值归一化** ⟹ `thrust_body = 1.0` ≡ 所有执行器满输出 | PX4 `v1.14.3` `src/modules/control_allocator/ControlAllocation/ControlAllocationPseudoInverse.cpp:134`：`_control_allocation_scale(3 + axis_idx) = norm_sum / num_non_zero_thrust;`（`:116-141` 整段；`norm_sum` 是 `fabsf(_mix(i, 3 + axis_idx))` 之和） |
+| `THR_MDL_FAC` 曲线**不涉及悬停推力**（只改「归一化推力 ↔ 电机信号」的形状，端点不动） | 同上 `src/lib/mixer_module/functions/FunctionMotors.hpp:77-101`：`rel_thrust = factor*x² + (1-factor)*x`，`x=1 → 1`；定义在 `src/lib/mixer_module/motor_params.c:73`（默认 `0.0f`） |
+| **`_hover_thrust` 在「加速度 → 推力」里只是个增益**，稳态推力由积分器逼到 `m·g` ⟹ 读数反映被控对象、不反映该参数 | PX4 `v1.14.3` `src/modules/mc_pos_control/PositionControl/PositionControl.cpp:210`：`collective_thrust = _acc_sp(2) * (_hover_thrust / CONSTANTS_ONE_G) - _hover_thrust;`；积分项 `:87`（累积）/`:143`（限幅 ±g） |
+| `MPC_USE_HTE = 1` 时位置控制器用的是 HTE ⟹ 它**不是独立口径**（且仅 `hte.valid` 时生效） | 同上 `src/modules/mc_pos_control/MulticopterPositionControl.cpp:361-368`：`if (_param_mpc_use_hte.get()) { ... if (hte.valid) { _control.updateHoverThrust(hte.hover_thrust); } }` |
+| 我们发 `body_rate` ⟹ PX4 **位置控制器（含倾角限幅）不在通路上** | `src/nmpc/nmpc/mpc_node.py` 设 `offboard_control_mode.body_rate = True`（其余 False）；PX4 `src/modules/commander/ModeUtil/control_mode.cpp:144-146`（`body_rate` ⟹ 只置 `flag_control_rates_enabled`）+ `:169-175`（只有 altitude/climb_rate/position/velocity/acceleration 之一才置 `flag_multicopter_position_control_enabled`）|
 | 角速率有 NaN 回退、推力没有 | 同上，`PX4_ISFINITE(...)` 只出现在三行角速率上 |
 | `MC_BAT_SCALE_EN` 默认 **0（关闭）** | PX4 `v1.14.3` `src/modules/mc_rate_control/mc_rate_control_params.c`，`PARAM_DEFINE_INT32(MC_BAT_SCALE_EN, 0);` |
 | `gz_x500` 在 v1.14.3 存在 | `git ls-tree v1.14.3:ROMFS/px4fmu_common/init.d-posix/airframes` → `4001_gz_x500`（★ 但**存在 ≠ 本机可用**，见 §S1） |
