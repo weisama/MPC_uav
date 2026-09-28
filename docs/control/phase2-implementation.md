@@ -305,8 +305,8 @@ ubu = np.array([+Fmax,     wmax,       wmax,      +0.5*wmax])
 >
 > | 编号 | 落地位置 | 一手依据 |
 > |---|---|---|
-> | **M7** | `mpc_node.py:244-247` 只订阅 `/mocap/pose_enu`（`geometry_msgs/PoseStamped`）+ `/fmu/out/vehicle_status`；状态由 `node_core.pose_to_state` 直接组装，**没有一行坐标系转换** | `/mocap/pose_enu` 是 `mocap_rel_pose_node.cpp:93` 用 `QoS(10)` 发的 **ENU/FLU**（节点里的引文见 `mpc_node.py:134-139`）⟹ §2.3(a) 那段手写 NED→ENU 四元数变换**整段删掉**。测试：`test_mpc_node.py::test_接口与_QoS_与票面一致`（夹具的动捕源上有订阅者）、`test_node_core.py::test_pose_to_state_不做任何坐标系转换` |
-> | **M8** | `mpc_node.py:246` 只有**一个** `VehicleStatus` 订阅（`TOPIC_STATUS`），全仓没有 `_v1` 后缀话题 | z0 真身的 `msg/` 与**上游 v1.14.3 逐字节相同**，而 `_v1` / `msg/versioned/` 是 **v1.16 才有**的机制 ⟹ 那段兼容代码在我们这里是死代码（[`refs-manifest.md`](../reference/refs-manifest.md) §2.6）。测试：`test_接口与_QoS_与票面一致` 里的 `matched_subscribers("status") == 1` —— **恰好一个**订阅者，多一个 `_v1` 变体这条就红 |
+> | **M7** | `mpc_node.py:284-287` 只订阅 `/mocap/pose_enu`（`geometry_msgs/PoseStamped`）+ `/fmu/out/vehicle_status`；状态由 `node_core.pose_to_state` 直接组装，**没有一行坐标系转换** | `/mocap/pose_enu` 是 `mocap_rel_pose_node.cpp:93` 用 `QoS(10)` 发的 **ENU/FLU**（节点里的引文见 `mpc_node.py:155-158`）⟹ §2.3(a) 那段手写 NED→ENU 四元数变换**整段删掉**。测试：`test_mpc_node.py::test_接口与_QoS_与票面一致`（夹具的动捕源上有订阅者）、`test_node_core.py::test_pose_to_state_不做任何坐标系转换` |
+> | **M8** | `mpc_node.py:286-287` 只有**一个** `VehicleStatus` 订阅（`TOPIC_STATUS`），全仓没有 `_v1` 后缀话题 | z0 真身的 `msg/` 与**上游 v1.14.3 逐字节相同**，而 `_v1` / `msg/versioned/` 是 **v1.16 才有**的机制 ⟹ 那段兼容代码在我们这里是死代码（[`refs-manifest.md`](../reference/refs-manifest.md) §2.6）。测试：`test_接口与_QoS_与票面一致` 里的 `matched_subscribers("status") == 1` —— **恰好一个**订阅者，多一个 `_v1` 变体这条就红 |
 > | **M9** | 全仓**没有**定义了却不用的 horizon 常量：`OcpConfig.N = 50`（`ocp.py:51`）在 `ocp.py:225/256/281-283`（内步长、`N_horizon`、参考的 reshape）与节点侧的 RViz 点数上**都在用** | 参考实现那个死变量：`mpc_quadrotor.py:142` 的 `MPC_HORIZON = 15` —— 它只被**注释掉**的那段代码（`:149` `N=MPC_HORIZON,`）引用，真正 spawn 的控制器（`:145`）用的是自己的缺省 horizon ⟹ 定义了却不起作用。测试：`test_mpc_node.py::test_RViz_的预测轨迹与参考点` 断言的 51 点 = `N+1`，把"用了没用的 N"这件事钉在话题上 |
 >
 > ⚠️ **M5 的兜底路径本票只做到"如实回报"** —— 而且**"发不发"分三类**，别当成一件事
@@ -320,6 +320,22 @@ ubu = np.array([+Fmax,     wmax,       wmax,      +0.5*wmax])
 > 而代码里**退化求解照样发** —— 07 照着错的描述接手，会以为"已经不发"了。
 
 > 📌 **M7 顺带干掉了一整类 bug**：既然动捕原生就是 ENU/FLU，MPC 内部也用 ENU/FLU，那么 §2.3(a) 那段手写四元数转换（`1/√2·[w+z, x+y, x−y, w−z]`，**整个文件里最容易写错的一行**）**可以直接删掉**。详见 §3.2。
+
+> ✅ **落地状态（2026-09-28，ticket 07 —— M5 的兜底路径）** —— 设计、第一手依据与配方全在
+> **[`mpc-node-fallback.md`](mpc-node-fallback.md)**；这里只记 **M5 的编号与落地位置**（票面判据 7 要的就是这一行）：
+>
+> | 编号 | 落地位置 | 一手依据 |
+> |---|---|---|
+> | **M5-①** 分级兜底 | `node_core.FallbackLadder`（`normal` / `hold` / `hover`，零 ROS）；`mpc_node._normal_frame` + `_fallback_frame` 收口 | **"不发 ≠ 松手"**：`MulticopterRateControl.cpp:177-184` 把最后一帧存在**成员**里（`.hpp:124,127`）⟹ 不发 = 飞控无限期沿用陈旧命令；且 `_thrust_setpoint{}` **零初始化** ⟹ 从未发过 = 零推力（`_rates_setpoint` 三个分量有 `PX4_ISFINITE` 回退，**推力没有**） |
+> | **M5-②** 发布前全量校验 | `node_core.frame_is_finite`（写进那一帧的四个数）+ `node_core.solution_usable`（状态码 / `u` 形状 / `u` 有限） | 坑 3；`u` 全 NaN 与帧非有限的注入见 `mpc_node._poisoned` |
+> | **M5-③** 连续失败阈值 + 可检索上报 | `FALLBACK_HOLD_FRAMES = 10`（100 ms ≈ 28 个求解预算）；`error` 级日志 + JSONL `fallback` 列 + 收尾摘要 | 求解实测 max 3.58 ms（[`offline-ocp.md`](offline-ocp.md) §5） |
+> | **M5-④** 输入合理性（时间戳倒退 / 位姿跳变 ⟹ 不发） | `node_core.NodeCore` 的两条判据 + `StopConfig` 的 `mocap_stamp_regress_s` / `mocap_jump_speed_max` / `mocap_jump_rate_max` | 阈值按飞控的 `MPC_XY_VEL_MAX = 12 m/s` 与模型的 `YAW_RATE_MAX = 6.28 rad/s` 放宽（[`params-analysis.md`](../reference/params-analysis.md):477 与消歧见 [`CONTEXT.md`](../../CONTEXT.md) §0）；★ 取向是**宁可漏判不可误判** |
+>
+> ⭐ **对上面那条 ⚠️ 的收口**：06 记录的"三类行为"里，**只有"求解失败（状态码非零）"这一类进兜底阶梯**；
+> **退化求解（`degraded` 但 `ok`）照样发** —— 分界线定在 `SolveInfo.ok`，由
+> `test_node_core.py::test_解可用吗_退化与不可用是两件事` 逐格钉住（07 没有改这条现行行为）。
+> ⚠️ **新开一条开放项**：按票面，时间戳倒退 / 位姿跳变是**只关闸门、一帧不发**；
+> 长时段不信任下飞控最终仍落在"锁存最后一帧"上 —— 见 §9 的 **O7**。
 
 ### 2.6 可以直接抄的部分
 
@@ -560,13 +576,17 @@ ROS 侧：  ros2 interface show px4_msgs/msg/VehicleRatesSetpoint
 > ✅ **落地状态（2026-09-28，ticket 06）** —— 逐条勾选 + 依据。**逐条的读法、第一手数字与
 > 交接项在** [`mpc-node-seam1.md`](mpc-node-seam1.md)（节点与 seam 1 的交付文档），这里只留索引。
 >
-> - [x] 订阅 `/mocap/pose_enu`（**不是** NED）—— `mpc_node.py:244`；`test_接口与_QoS_与票面一致`
-> - [x] 订阅 `/fmu/out/vehicle_status` —— `mpc_node.py:246`；同一条用例里的 `matched_subscribers("status") == 1`
+> - [x] 订阅 `/mocap/pose_enu`（**不是** NED）—— `mpc_node.py:284`；`test_接口与_QoS_与票面一致`
+> - [x] 订阅 `/fmu/out/vehicle_status` —— `mpc_node.py:286`；同一条用例里的 `matched_subscribers("status") == 1`
+>       （⚠️ 这两行的行号**2026-09-28 被 ticket 07 的改动下移了 ~40 行**：07 在 `NodeParams` / `__init__` / `_tick` 里都加了东西，订阅那几行的位置跟着走）
 > - [x] 发布 `/fmu/in/offboard_control_mode`（`body_rate = True`，其余 False），**≥ 2 Hz，实做 50 Hz** —— `test_闸门关闭时只发心跳_一帧_setpoint_都没有`（≥2 Hz）+ `test_实做频率_心跳_50_Hz_setpoint_100_Hz`（实测 50.0 Hz）
 > - [x] 发布 `/fmu/in/vehicle_rates_setpoint` —— 同两条用例；`test_解锁切_OFFBOARD_之后立刻开始发`
 > - [x] QoS：pub `BEST_EFFORT + TRANSIENT_LOCAL + depth 1`，**sub 也必须 `BEST_EFFORT`** —— `test_接口与_QoS_与票面一致`（⚠️ `depth` 黑盒读不回来，守法见 seam 1 文档 §3）
 > - [x] `timestamp` 用微秒 —— `test_时间戳是墙钟微秒`（夹具按"相对墙钟的比值"把 µs/ms/ns 分开）
-> - [x] 求解失败 / 非有限值的兜底路径（M5）—— **只做到"如实回报"**；⚠️ "发不发"分三类、**退化求解照样发**（见 §2.5 那条警示）；谁接管归 ticket 07
+> - [x] 求解失败 / 非有限值的兜底路径（M5）—— ✅ **2026-09-28 由 ticket 07 补齐**：三档兜底阶梯
+>       （`hold` 10 拍 → 安全悬停）、发布前全量校验、连续失败的可检索上报、两条输入合理性判据。
+>       设计与第一手依据全在 [`mpc-node-fallback.md`](mpc-node-fallback.md)；M5 的编号落点见 §2.5 的 07 那段。
+>       ⚠️ **票面拒掉的那一类不动**："退化求解照样发"仍是现行行为（分界线 = `SolveInfo.ok`）
 > - [x] 100 Hz 定时器（D6 待实测后调）—— 实测落在 100.0 Hz；**降档决定归 ticket 09/11**
 > - [x] RViz：预测轨迹 `Path` + 参考 `Marker` —— `test_RViz_的预测轨迹与参考点`（51 点、起点≈当前位置、终点朝目标、参考点落位）
 > - [x] 另外三项票面要求：**饱和表现为打满**（`test_目标在正前方时_pitch_为负_且顶约束表现为打满`）、
@@ -651,8 +671,9 @@ ROS 侧：  ros2 interface show px4_msgs/msg/VehicleRatesSetpoint
 | **遥控器夺权** | RC 任一杆动 → PX4 自动退出 offboard。**这是最后一道防线，飞前必须实测有效** |
 | **失效保护** | offboard 心跳丢失 → PX4 触发 `COM_OBL_RC_ACT` / failsafe。**确认参数已配且测得** |
 | **软急停** | 遥控器按键（用户 Q22 第 8 条）→ 节点停发指令。★ **2026-09-21：Phase 1 已定案 —— 没有"软急停通道"这回事**（急停 = **ch8 高值 = PX4 硬件杀车**，程序不读急停通道）⟹ "节点停发"只能走**两条既有路径**：打杆接管（`COM_RC_OVERRIDE=3` → PX4 退 offboard）或 ch6 模式开关。☠️ 原先那句「只剩 ch7 空闲」**已作废**（未映射通道有 9 个）。完整结论见 [`../reference/params-changes.md`](../reference/params-changes.md) **§H.7** |
-| **求解器兜底** | 连续 N 次求解失败 → 切悬停推力 + 零角速率，并置标志 |
-| **数值守卫** | 发布前 `np.isfinite()` 全量校验（坑 3） |
+| **求解器兜底** | ✅ 连续 N 次求解失败 → 切悬停推力 + 零角速率，并置标志。**2026-09-28（ticket 07）**：N = `fallback_hold_frames`（默认 10 拍 = 100 ms）；N 拍之内是 `hold`（保持上一帧可行指令、时间戳换新），超过才切 `hover`。依据与第一手见 [`mpc-node-fallback.md`](mpc-node-fallback.md) §2 |
+| **数值守卫** | ✅ 发布前 `np.isfinite()` 全量校验（坑 3）。**2026-09-28（ticket 07）**：`node_core.frame_is_finite` 只看写进那一帧的四个数；`u` 的非有限由 `solution_usable` 在映射前拦一次；任一项非有限 ⟹ **整帧丢弃**走兜底 |
+| **输入合理性**（ticket 07 新增） | 超时判据拦的是"没有数据"，拦不住"数据是错的"：`stamp_regress`（源自己的 stamp 往回走，容差 0.01 s）/ `pose_jump` / `attitude_jump` ⟹ **只关闸门、一帧不发**。见 [`mpc-node-fallback.md`](mpc-node-fallback.md) §4 |
 | **回退到 Phase 1** | **两个节点都在跑，只是不发布** —— 一个 `ros2 param set` 就能切回 `(A)` 级 |
 
 ---
@@ -854,6 +875,7 @@ S1 环境 ──> S2 acados ──> S3 离线 OCP ──> S4 节点 ──> S5 S
 | O4 | D9：延迟补偿 | 步骤 1 只用一行状态外推；完整补偿留第二版 | 用户 |
 | ~~O5~~ | ~~`R` 改罚 `u − u_ref`（M6）的具体参考量~~ | ✅ **已关闭（2026-09-28，ticket 04）**：约定写死在 [`offline-ocp.md`](offline-ocp.md) **§3.2** —— 缺省 = **上一帧解平移一拍**（首帧用悬停前馈）；调用方可给解析前馈；`prediction=False` 时**必须显式给**（缺省直接报错，不许悄悄退回悬停前馈）。行为证据见同文 §3.3 | 已定 |
 | O6 | D5：是否换高 C 电池 | 与本文实施步骤无关，参数化即可 | 用户（硬件决策） |
+| **O7** | **长时段"不信任"期间该发什么** | 票面（ticket 07）对时间戳倒退 / 位姿跳变的要求是**只关闸门、一帧不发** —— 已照做。但由 §2.5 的第一手，**不发 = 飞控无限期锁存最后一帧**（可能是几秒前的、带满角速率的命令）；"一直沉默"与"主动切安全悬停"哪个更安全**本票没有拍板**（票面没要求，就没自作主张改）。⚠️ 触发条件苛刻（动捕要连续坏 ≥ 闸门重开的时间）但**真实存在**：遮挡、上游重放、VRPN 时钟回拨都会造成 | SITL/实测定；结论进 ticket 11 |
 
 ---
 

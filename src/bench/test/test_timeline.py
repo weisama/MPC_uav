@@ -8,6 +8,8 @@ from bench.timeline import (
     Event,
     Timeline,
     hold_mocap_stamp,
+    mocap_pose_jump,
+    mocap_stamp_rewind,
     pause_mocap,
     rc_change,
     silence_for,
@@ -45,6 +47,12 @@ class _Fake:
 
     def resume(self):
         self.calls.append(("resume",))
+
+    def set_pose(self, position=None, orientation=None):
+        self.calls.append(("set_pose", position, orientation))
+
+    def rewind(self, seconds, hold_s=0.5):
+        self.calls.append(("rewind", seconds, hold_s))
 
 
 def test_due_按时刻顺序取出且只取一次():
@@ -113,6 +121,7 @@ def test_配方真的调到替身上():
     接线错了的表现是"注入了一条看上去毫无效果的故障"，而这在集成测试里极难看出来。
     """
     fake = _Fake()
+    fake.position, fake.orientation = (0.0, 0.0, 0.0), (1.0, 0.0, 0.0, 0.0)
     batch = []
     for events in (
         state_change(fake, 1.0, connected=False),
@@ -120,6 +129,8 @@ def test_配方真的调到替身上():
         rc_change(fake, 3.0, channel=9, value=2000),
         hold_mocap_stamp(fake, 4.0),
         pause_mocap(fake, 5.0, duration_s=1.0),
+        mocap_pose_jump(fake, 6.0, position=(100.0, 0.0, 0.0), hold_s=0.5),
+        mocap_stamp_rewind(fake, 8.0, seconds=5.0, hold_s=0.5),
     ):
         assert len(events) in (1, 2)
         batch += events
@@ -135,4 +146,21 @@ def test_配方真的调到替身上():
         ("hold_stamp", True),
         ("pause",),
         ("resume",),
+        # 跳变：先搬到 100 m 外（姿态不动），0.5 s 后回到**记下来的**原位姿
+        ("set_pose", (100.0, 0.0, 0.0), None),
+        ("set_pose", (0.0, 0.0, 0.0), (1.0, 0.0, 0.0, 0.0)),
+        # 倒退：一条事件（`rewind` 自己带回跳的时钟，见 `VrpnSource.rewind`）
+        ("rewind", 5.0, 0.5),
     ]
+
+
+def test_跳变配方恢复的是原来的位姿_不是硬编码原点():
+    """★ 场景可以把初始位姿挪到别处（`VrpnSource(position=…)`）⟹ 恢复值必须**记下来**，
+    否则夹具会把飞机"恢复"到原点 —— 那本身就是一次新的跳变，而症状是"闸门再也开不了"。"""
+    fake = _Fake()
+    fake.position, fake.orientation = (3.0, -2.0, 0.5), (0.707, 0.0, 0.0, 0.707)
+    events = mocap_pose_jump(fake, at_s=1.0, position=(100.0, 0.0, 0.0), hold_s=0.25)
+    assert [e.at_s for e in events] == [1.0, 1.25]
+    for e in events:
+        e.action()
+    assert fake.calls[-1] == ("set_pose", (3.0, -2.0, 0.5), (0.707, 0.0, 0.0, 0.707))

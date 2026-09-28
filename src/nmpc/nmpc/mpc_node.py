@@ -68,11 +68,32 @@ OFFBOARD ⟹ 闸门永远不开 ⟹ 永远不发。**真机与 SITL 上都会表
   把 `offboard_control_signal_lost` 清掉（这正是我们要的）。
 - ⚠️ **"不发 setpoint" ≠ "飞机松手"**：`COM_OF_LOSS_T` 那条判据看的是**心跳**，不是 setpoint。
   所以闸门关掉 `vehicle_rates_setpoint` 之后，只要心跳还在，PX4 会**继续沿用最后一帧命令**
-  （`mc_rate_control` 没有新消息时不会清零 —— 见 ticket 07 的失效路径分析）。
-  这正是"兜底该怎么做"必须由 [ticket 07](../../../.scratch/phase2/issues/07-solver-failure-fallback.md)
-  给出真结论的原因；本票只把**接缝**留清楚：`-p heartbeat_always:=false` 会把心跳一起闸掉
-  （= 交给 PX4 自己的失效保护，它在 `COM_OF_LOSS_T` 之后自己退出 OFFBOARD），
-  **默认 True**，因为"进不去 OFFBOARD"是当场就飞不了的错，而"该松手时没松手"是 07 的活。
+  —— 那个结构体订阅不到新消息时**原样留着**上一帧的值（`MulticopterRateControl.cpp:177-184`：
+  三个角速率分量还有 `PX4_ISFINITE` 回退，**推力没有**）。
+  ★ 这条性质就是下面 ★★★ 那段「兜底阶梯」的**全部理由**。
+  `-p heartbeat_always:=false` 是**另一档**（把心跳一起闸掉 = 交给 PX4 自己的失效保护，
+  它在 `COM_OF_LOSS_T` 之后自己退出 OFFBOARD）；**默认 True**，因为"进不去 OFFBOARD"
+  是当场就飞不了的错。
+
+★★★ **兜底阶梯（ticket 07 / M5）**：`求解不可用 → 保持上一帧可行指令 → 安全悬停`。
+为什么是这样一个阶梯，而不是"一路保持"或"一失败就悬停"（完整推导见
+[`docs/control/mpc-node-fallback.md`](../../../docs/control/mpc-node-fallback.md)）：
+
+- **不发 ≠ 松手**（上一条）：PX4 会把最后一帧**无限期锁存**下去 ⟹ 一直不发的净效果是
+  **让飞机继续执行一条陈旧的命令**（可能正打着满角速率）。所以"不可用"必须由我们
+  **主动换成**一条安全的帧，不能靠沉默。
+- 一拍的解刚不可用时，上一条命令还是**可行**的（几毫秒前算出来的）⟹ 先 `hold`
+  （**内容原样、时间戳换新**，于是"在保持"这件事在话题上可观测、可断言）；
+  连续失败超过 `fallback_hold_frames`（默认 10 拍 = 100 ms ≈ 28 个求解预算）才切 `hover`
+  —— **悬停推力 + 零角速率**，★ 它**不依赖任何状态**，所以在"状态不可信"时仍然可用。
+- 进入 `hover` 那一次**置标志并上报**（`get_logger().error` + JSONL 的 `fallback` 字段 +
+  收尾摘要）⟹ 这个事件在飞行日志里**可检索**；"持续了多少拍"由累计量回答。
+
+★ **故障注入**（`-p inject_solve_fail_after_frames:=N`，默认 0 = 关）：已发布 ≥ N 帧之后，
+  每一拍的求解结果都被换成"状态码非零 + `u` 全 NaN + 耗时 NaN"的坏解。它存在的**唯一**理由
+  是**夹具造不出来**：话题面上只看得到帧，而"求解失败"发生在**这个进程内部**；
+  而 SITL 上"注入故障之后飞机不撒手"那条判据（ticket 11）只能靠它。
+  ⟹ 启动时显著告警，且 `preflight_check` 把它列为**装桨前必须关**的项。
 
 ★ **状态外推** `x + v·τ`（τ = 50 ms）与**首拍不发**（`WARMUP_CYCLES`）都在 `node_core` 里，
 理由见那边的 docstring（后者是第一手的：`SQP_RTI` 的第 0 次 `solve()` 只是"从出厂迭代点走一步"）。
@@ -93,9 +114,9 @@ import math
 import os
 import sys
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Tuple
 
 if __package__ in (None, ""):  # 直接 `python3 …/mpc_node.py` 时把包目录挂上
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -116,8 +137,9 @@ from visualization_msgs.msg import Marker  # noqa: E402
 from px4_msgs.msg import (OffboardControlMode, VehicleRatesSetpoint,  # noqa: E402
                           VehicleStatus)
 
-from nmpc import sign_map  # noqa: E402
-from nmpc.node_core import ControlConfig, NodeCore, StopConfig  # noqa: E402
+from nmpc import NU, sign_map  # noqa: E402
+from nmpc.node_core import (FALLBACK_HOLD_FRAMES, ControlConfig, FallbackLadder,  # noqa: E402
+                            NodeCore, StopConfig, frame_is_finite, solution_usable)
 from nmpc.ocp import OfflineOcp  # noqa: E402
 from nmpc.params import Z0Params  # noqa: E402
 
@@ -178,6 +200,15 @@ class NodeParams:
     stop_on_nav_state_exit: bool = True
     stop_on_armed_drop: bool = True
     warmup_cycles: int = 5
+    #: 动捕输入合理性（ticket 07 / M5）—— 三条判据的取法在 `node_core.StopConfig` 里
+    mocap_stamp_regress_s: float = 0.01
+    mocap_jump_speed_max: float = 20.0
+    mocap_jump_rate_max: float = 12.6
+    #: 求解不可用之后**先保持几拍**上一帧可行指令，再切安全悬停（`FallbackLadder`）
+    fallback_hold_frames: int = FALLBACK_HOLD_FRAMES
+    #: ★ **故障注入**（默认 0 = 关）：已发布 ≥ N 帧之后，每一拍的求解结果都被换成一个坏解。
+    #: 为什么必须在 DUT 里开这个口子（而不是靠夹具）：见模块 docstring 的 ★ 那段。
+    inject_solve_fail_after_frames: int = 0
     #: 绑核（-1 = 不绑）。★ D6 的实测结论：绑核把最坏周期从 5.9 ms 压到 4.0 ms
     #: （`docs/control/offline-ocp.md` §5），而**整周期墙钟**的 54 ms 那一拍是被抢占 ⟹
     #: 节点侧必须有绑核这一档，否则 100 Hz 在有人编译的机器上是假的。
@@ -201,7 +232,11 @@ class NodeParams:
                 stop_on_nav_state_exit=self.stop_on_nav_state_exit,
                 stop_on_armed_drop=self.stop_on_armed_drop,
                 warmup_cycles=self.warmup_cycles,
+                mocap_stamp_regress_s=self.mocap_stamp_regress_s,
+                mocap_jump_speed_max=self.mocap_jump_speed_max,
+                mocap_jump_rate_max=self.mocap_jump_rate_max,
             ),
+            fallback_hold_frames=int(self.fallback_hold_frames),
         )
 
     def z0_params(self) -> Z0Params:
@@ -212,6 +247,7 @@ class NodeParams:
                 " | 模型 mass=%g kg hover_thrust=%g ⇒ T_max=%.4f N"
                 " | 停机(mocap>%g s / status>%g s / 离开 offboard=%s / 掉 armed=%s)"
                 " | 心跳%s"
+                " | 兜底：保持 %d 拍 → 安全悬停；位姿合理性上限 %g m/s / %g rad/s"
                 % (self.rate_hz, self.heartbeat_hz, self.viz_hz, self.tau_s,
                    tuple(round(float(v), 3) for v in self.hold_offset),
                    "保持当前" if self.keep_yaw else f"{self.hold_yaw_deg:g}°",
@@ -219,7 +255,12 @@ class NodeParams:
                    self.mocap_timeout_s, self.status_timeout_s,
                    self.stop_on_nav_state_exit, self.stop_on_armed_drop,
                    "无条件发（闸门只管 setpoint）" if self.heartbeat_always
-                   else "与 setpoint 同生死（交给 PX4 的 COM_OF_LOSS_T）"))
+                   else "与 setpoint 同生死（交给 PX4 的 COM_OF_LOSS_T）",
+                   self.fallback_hold_frames, self.mocap_jump_speed_max,
+                   self.mocap_jump_rate_max)
+                + ("　⚠️ **故障注入已开**（已发 %d 帧之后每拍都换成坏解）—— 装桨前必须关"
+                   % self.inject_solve_fail_after_frames
+                   if int(self.inject_solve_fail_after_frames) > 0 else ""))
 
 
 class MpcNode(Node):
@@ -269,6 +310,16 @@ class MpcNode(Node):
         #: （`publish=False`）**也要解**。首帧用悬停前馈 —— 与 `OfflineOcp` 自己的首帧缺省同源。
         self._u_ref: np.ndarray = np.tile(
             np.array([self.z0.t_hover, 0.0, 0.0, 0.0]), (self.ocp.config.N, 1))
+
+        # —— 兜底（ticket 07 / M5）——
+        # ★ 悬停帧在这里**建一次**：它是常量（悬停推力 + 零角速率），而且**不依赖任何状态**
+        #   —— 这正是"状态不可信时它仍然可用"的原因，也是它必须在 `__init__` 就备好的原因。
+        self._hover_sp = sign_map.px4_rates_setpoint((0.0, 0.0, 0.0), self.z0.t_hover, self.z0.t_max)
+        self.ladder = FallbackLadder(self.config.fallback_hold_frames)
+        #: 「上一帧**可行**指令」（`hold` 档发的就是它，只由正常帧更新）
+        self._last_sp = None
+        #: 上一拍的闸门原因（用来判断"闸门刚关上"，那一拍要立刻打日志）
+        self._last_gate_reason = ""
         self._last_cycle = None
         self._log = open(params.log_file, "w", encoding="utf-8") if params.log_file else None
 
@@ -279,12 +330,20 @@ class MpcNode(Node):
             f"MPC（模型预测控制）节点启动：{params.describe()}\n"
             f"  OCP：N={self.ocp.config.N} tf={self.ocp.config.tf} s（内部步长 {self.ocp.dt * 1e3:.1f} ms）"
             f"；T_max={self.z0.t_max:.4f} N ⟹ 悬停归一化推力 "
-            f"{sign_map.px4_rates_setpoint((0, 0, 0), self.z0.t_hover, self.z0.t_max).thrust_body_z:+.4f}"
+            f"{self._hover_sp.thrust_body_z:+.4f}"
             f"；CPU 亲和性={self._cpus_allowed()}")
         self.get_logger().info(
             "接口：订阅 %s（可靠/depth 10）+ %s（**BEST_EFFORT**/depth 1）；"
             "发布 %s 与 %s（BEST_EFFORT + TRANSIENT_LOCAL/depth 1）"
             % (TOPIC_MOCAP, TOPIC_STATUS, TOPIC_RATES, TOPIC_MODE))
+        if int(params.inject_solve_fail_after_frames) > 0:
+            # ★ 用 **error** 级别、并且把"装桨前必须关"写在同一行：这一档一开，
+            #   飞机收到的每一帧都是坏解兜底出来的 —— 它只该在台架/SITL 上出现。
+            self.get_logger().error(
+                "⚠️ **故障注入已开**：`inject_solve_fail_after_frames="
+                f"{params.inject_solve_fail_after_frames}` ⟹ 已发布 ≥ {params.inject_solve_fail_after_frames} "
+                "帧之后，每一拍的求解结果都会被换成坏解（走兜底阶梯）。"
+                "**装桨前必须设回 0**（`preflight_check` 会拦这一条）。")
 
         self.create_timer(1.0 / params.rate_hz, self._tick)
         self.create_timer(1.0 / max(1e-3, params.viz_hz), self._viz_tick)
@@ -373,14 +432,9 @@ class MpcNode(Node):
             self._publish_mode(ts)
 
         if cycle.x0 is None:
-            # 闸门关着：**不求解**（没有可信状态就没有意义的解），记住原因，日志限频
-            self.gated[cycle.reason] = self.gated.get(cycle.reason, 0) + 1
-            if self.ticks % max(1, self.params.log_every) == 0:
-                self.get_logger().info(
-                    f"t={now_s:.2f}s 闸门关闭（{cycle.reason}）：status 龄 {cycle.age_status_s:.2f}s / "
-                    f"mocap 龄 {cycle.age_mocap_s:.2f}s ⟹ 不发 setpoint"
-                    + ("（心跳照发）" if self.params.heartbeat_always else ""))
+            self._gate_closed(now_s, cycle)
             return
+        self._last_gate_reason = ""
 
         # ★ `prediction=False`：每周期只取第一拍 `u`（省 ~1.1 ms/周期，实测，见本包 README）。
         #   它要求**显式**传 `u_ref`（缺省那条"上一帧解平移一拍"是从预测轨迹里来的）
@@ -388,32 +442,118 @@ class MpcNode(Node):
         #   （看不到后 N−1 拍），但它不依赖读轨迹；RViz 那条预测路径是另外取出来的（见 `_viz_tick`）。
         sol = self.ocp.solve(cycle.x0, cycle.x_ref, u_ref=self._u_ref, prediction=False)
         self.solves += 1
-        self.solve_ms_max = max(self.solve_ms_max, 1e3 * sol.info.time_tot)
-        self._u_ref = np.tile(np.asarray(sol.u, dtype=float), (self.ocp.config.N, 1))
+        if self._inject_active():
+            sol = _poisoned(sol)        # 故障注入（默认关）：见模块 docstring 的 ★ 那段
+        t_tot = float(sol.info.time_tot)
+        if math.isfinite(t_tot):
+            # ★ 只在有限时才更新最坏耗时：`max(nan, x)` 恒为 nan ⟹ 一次非有限的耗时会让
+            #   收尾摘要里那一行**从那一刻起永久失去意义**（而它正是判"100 Hz 还够不够"的那个数）。
+            self.solve_ms_max = max(self.solve_ms_max, 1e3 * t_tot)
         if sol.info.degraded:
             self.degraded_count += 1
             if self.degraded_count in (1, 10) or self.degraded_count % 100 == 0:
                 self.get_logger().warn(
                     f"求解退化（第 {self.degraded_count} 次）：{sol.info.line()}")
 
+        # 这一拍的"正常帧"能不能用（三道判据收口在 `_normal_frame` 里，顺序就是判据的顺序）
+        sp, reason = self._normal_frame(sol)
+        if reason is None:
+            # ★ 前馈**只在这一行**更新。若跟着 `sol` 无条件更新，一次非有限解就会污染后面
+            #   **每一拍**的 `yref`（求解器从此每次都失败 ⟹ 一次抖动变成永久失效）。
+            self._u_ref = np.tile(np.asarray(sol.u, dtype=float), (self.ocp.config.N, 1))
+
         if not cycle.publish:
-            # 热身拍：**求解但绝不发**（理由见 `WARMUP_CYCLES`：第 0 拍的解是出厂迭代点）
+            # 热身拍：**求解但绝不发**（理由见 `WARMUP_CYCLES`：第 0 拍的解是出厂迭代点）。
+            # ★ 档位跟着复位（这一拍根本不发，档位毫无意义）；累计量留着 —— 它们是病历。
+            self.ladder.reset()
             self.gated["warmup"] = self.gated.get("warmup", 0) + 1
             return
 
-        try:
-            sp = sign_map.px4_rates_setpoint(sol.u[1:], sol.u[0], self.z0.t_max)
-        except ValueError as exc:
-            # 非有限值 / 负推力：**这一拍不发**（上一拍的值留在 PX4 侧，由它自己的
-            # `COM_OF_LOSS_T` 兜底）。兜底策略的完整设计归 ticket 07。
+        frame, phase, note = sp, FallbackLadder.NORMAL, ""
+        if reason is None:
+            report = self.ladder.on_ok()
+            if report:
+                self.get_logger().warn(report)
+        else:
+            # ★★ 解不可用 ⟹ 走兜底阶梯（判据 1/2）。`report` 就是票面说的
+            #    「置标志并上报」，只在**进入安全悬停那一次**非空（每拍重复会把日志淹掉）。
+            phase, report = self.ladder.on_fail(reason, can_hold=self._last_sp is not None)
+            frame, phase = self._fallback_frame(phase)
+            note = reason
             self.rejected += 1
-            self.get_logger().warn(f"这一拍拒绝下发：{exc}")
-            return
+            if report:
+                self.get_logger().error(report)
 
         if not self.params.heartbeat_always and heartbeat_due:
             # 另一档：心跳与 setpoint 同生死（`heartbeat_always=False`）
             self._publish_mode(ts)
-        self._publish_rates(ts, sp)
+        self._publish_rates(ts, frame, phase, note)
+
+    # ─────────────────────────── 这一拍发什么 ───────────────────────────
+
+    def _gate_closed(self, now_s: float, cycle) -> None:
+        """闸门关着的一拍：**不求解也不发 setpoint**（心跳照发，见模块 docstring）。
+
+        ★ 闸门**刚**关上的那一拍立刻打一行日志（不必等 `log_every` 的抽帧）：输入合理性
+          那两条判据给出的读数（"位移 100.000 m > 允许 0.200 m"）是调阈值的人第一个要问的数，
+          而它可能只出现一两拍 —— 被抽帧抽掉就等于没有。
+        """
+        self.ladder.reset()
+        self.gated[cycle.reason] = self.gated.get(cycle.reason, 0) + 1
+        fresh = cycle.reason != self._last_gate_reason
+        self._last_gate_reason = cycle.reason
+        if fresh or self.ticks % max(1, self.params.log_every) == 0:
+            self.get_logger().info(
+                f"t={now_s:.2f}s 闸门关闭（{cycle.reason}）：status 龄 {cycle.age_status_s:.2f}s / "
+                f"mocap 龄 {cycle.age_mocap_s:.2f}s ⟹ 不发 setpoint"
+                + (f"；{cycle.detail}" if cycle.detail else "")
+                + ("（心跳照发）" if self.params.heartbeat_always else ""))
+
+    def _normal_frame(self, sol) -> Tuple[Optional[object], Optional[str]]:
+        """把这一拍的解变成一个**可发布的帧** → `(帧, None)`，或 `(None, 原因)`。
+
+        三道判据在**唯一**发布点收口（顺序就是票面那两条的顺序，别打乱）：
+
+        ① `solution_usable`：求解器的状态码 / `u` 的形状与有限性（判据 1、判据 2 的解这一半）；
+        ② `sign_map.px4_rates_setpoint`：映射这条路自己的入参检查（非有限 / 负推力）；
+        ③ `frame_is_finite`：**发布前整帧校验**（判据 2）—— ①② 各自只看一部分
+           （① 看 `u`、② 看 `ω`/`F`/`T_max`），而"凡是要写进那一帧的数"只有在这里才说得清。
+        """
+        reason = solution_usable(sol)
+        if reason is not None:
+            return None, reason
+        try:
+            sp = sign_map.px4_rates_setpoint(sol.u[1:], sol.u[0], self.z0.t_max)
+        except ValueError as exc:
+            return None, f"映射拒绝：{exc}"
+        if not frame_is_finite(sp):
+            return None, ("整帧校验不通过：roll/pitch/yaw/thrust_body_z 里有非有限值"
+                          f"（{sp.roll!r} / {sp.pitch!r} / {sp.yaw!r} / {sp.thrust_body_z!r}）")
+        return sp, None
+
+    def _fallback_frame(self, phase: str):
+        """按档位取这一拍要发的帧 → `(帧, 实际档位)`。
+
+        ★ `hold` 需要"上一帧**可行**指令"，而它可能**不存在**（第一拍就不可用 —— 此前一直在
+          热身或闸门关着）。那时退回到安全悬停：悬停帧**不依赖任何状态**（推力沿机体系 z +
+          零角速率），而"不发"会把飞机留在 PX4 **锁存**的那一帧上（上电初值就是零推力）。
+          ⚠️ 这个判断**归阶梯**（`on_fail(…, can_hold=)`，见 `test_兜底阶梯_没有可保持的帧时
+          直接进悬停_且算一次事件`）：档位与实际发出的帧必须**同源**，否则 JSONL 打 `hover`、
+          收尾摘要却说"此刻仍在 hold"，两边互相打脸；`holds` 也会把悬停帧记成保持帧。
+        ★ `_last_sp` **只由正常帧更新** —— 否则兜底自身发的帧会把"上一帧可行指令"越推越旧，
+          `hold` 就名存实亡（而它正是"别一抖动就换姿态"那一档）。
+        """
+        if phase == FallbackLadder.HOLD and self._last_sp is not None:
+            return self._last_sp, FallbackLadder.HOLD
+        # ⚠️ 走到这里有两种情形，**都必须回悬停**：① 档位本来就是 `hover`；② 档位说 `hold`
+        #   却没有可保持的帧 —— 那只能是调用方漏传 `can_hold`（`on_fail` 的契约）。
+        #   回落成安全悬停而不是发 `None`：帧的内容**永远**是安全的，不会因为簿记打错而改变。
+        return self._hover_sp, FallbackLadder.HOVER
+
+    def _inject_active(self) -> bool:
+        """故障注入是否生效（默认关；语义见 `NodeParams.inject_solve_fail_after_frames`）。"""
+        n = int(self.params.inject_solve_fail_after_frames)
+        return n > 0 and self.published >= n
 
     def _publish_mode(self, ts: int) -> None:
         """offboard 心跳（`body_rate = True`，其余 False）。**抽帧发** ⟹ 默认 50 Hz。"""
@@ -428,7 +568,14 @@ class MpcNode(Node):
         self.pub_mode.publish(msg)
         self.heartbeats += 1
 
-    def _publish_rates(self, ts: int, sp) -> None:
+    def _publish_rates(self, ts: int, sp, phase: str = FallbackLadder.NORMAL,
+                       note: str = "") -> None:
+        """发布一帧 setpoint。★ **兜底帧与正常帧走的是同一条路**（同一个话题、同样的字段）。
+
+        这**是刻意的**：`hold` 的语义是"内容原样、**时间戳换新**"——于是"它在保持"这件事
+        在话题上可观测（同一个 `roll/pitch/yaw/thrust_body[2]` 连着出现 N 次，而 `timestamp`
+        每次都在前进）。若兜底另走一条"不发"的路，PX4 那边照样在飞，而**我们这边什么都看不见**。
+        """
         msg = VehicleRatesSetpoint()
         msg.timestamp = ts
         msg.roll = float(sp.roll)
@@ -437,24 +584,27 @@ class MpcNode(Node):
         msg.thrust_body[0] = 0.0
         msg.thrust_body[1] = 0.0
         msg.thrust_body[2] = float(sp.thrust_body_z)
+        if phase == FallbackLadder.NORMAL:
+            self._last_sp = sp        # 「上一帧可行指令」只由正常帧更新（见 `_fallback_frame`）
         self.pub_rates.publish(msg)
 
         now_ns = time.time_ns()
         self.published += 1
         self.first_publish_ns = self.first_publish_ns or now_ns
         self.last_publish_ns = now_ns
-        self._log_frame(now_ns, ts, sp)
+        self._log_frame(now_ns, ts, sp, phase, note)
 
         if self.ticks % max(1, self.params.log_every) == 0:
             self.get_logger().info(
                 "t=%.2fs 第 %d 帧 | roll=%+.3f pitch=%+.3f yaw=%+.3f thrust_body[2]=%+.4f"
-                " | 解 %d 次、闸门 %s、退化 %d"
+                " | 解 %d 次、闸门 %s、退化 %d、%s"
                 % (self._now_s(), self.published, msg.roll, msg.pitch, msg.yaw,
                    msg.thrust_body[2], self.ticks,
                    ",".join(f"{k}×{v}" for k, v in sorted(self.gated.items())) or "无",
-                   self.degraded_count))
+                   self.degraded_count, self.ladder.describe()))
 
-    def _log_frame(self, now_ns: int, ts: int, sp) -> None:
+    def _log_frame(self, now_ns: int, ts: int, sp, phase: str = FallbackLadder.NORMAL,
+                   note: str = "") -> None:
         """逐帧 JSONL（取证用）。⚠️ 每个字段都要显式 `float()` / `int()`：
 
         `thrust_body[2]` 是 ROS 的 **float32**、`nav_state` 是 **uint8**，`json.dumps` 两个都不认
@@ -468,6 +618,11 @@ class MpcNode(Node):
             "wall_ns": now_ns, "ts": int(ts), "tick": int(self.ticks),
             "roll": float(sp.roll), "pitch": float(sp.pitch), "yaw": float(sp.yaw),
             "thrust_body_z": float(sp.thrust_body_z),
+            #: ★ 兜底档位（"normal" / "hold" / "hover"）—— 票面要的"这个事件在飞行日志里
+            #: **可检索**"就是这一列：`grep '"fallback": "hover"'` 能一次捞出全段。
+            #: `fallback_note` 是**为什么**（求解器那一行读数 / 映射拒绝的原因）。
+            "fallback": str(phase),
+            "fallback_note": str(note),
             "age_status_s": round(float(cycle.age_status_s), 4),
             "age_mocap_s": round(float(cycle.age_mocap_s), 4),
             "cycles_since_gate": int(cycle.cycles_since_gate),
@@ -536,11 +691,12 @@ class MpcNode(Node):
         rate = (self.published - 1) / span if span > 0 else float("nan")
         return ("共发 %d 帧 setpoint（心跳 %d 个，%.0f Hz），跨 %.2fs ⟹ 实际 %.1f Hz；"
                 "定时器 %d 拍、求解 %d 次、最坏 time_tot %.3f ms、退化 %d 拍、拒绝 %d 拍；"
-                "闸门：%s"
+                "闸门：%s；%s"
                 % (self.published, self.heartbeats, self.heartbeats / span if span > 0 else float("nan"),
                    span, rate, self.ticks, self.solves,
                    self.solve_ms_max, self.degraded_count, self.rejected,
-                   ", ".join(f"{k}×{v}" for k, v in sorted(self.gated.items())) or "无"))
+                   ", ".join(f"{k}×{v}" for k, v in sorted(self.gated.items())) or "无",
+                   self.ladder.describe()))
 
     def close(self) -> None:
         if self._log is not None:
@@ -551,6 +707,42 @@ class MpcNode(Node):
     def _last_ref(self):
         cycle = self._last_cycle
         return None if cycle is None or cycle.x_ref is None else cycle.x_ref[0][:3]
+
+
+# ─────────────────────────── 故障注入（ticket 07 / M5）───────────────────────────
+
+class _InjectedInfo:
+    """注入用的假 `SolveInfo`（只带调用方**真的读到**的那几样：`ok` / `degraded` / `line()` / `time_tot`）。
+
+    ★ 刻意**不做** `SolveInfo` 的完整替身（没有 `status` / `sqp_iter` / `qp_stat`）：
+      "状态码非零"这件事在本节点里的**唯一**表现就是 `ok=False`（`solution_usable` 只看它，
+      不读 `status`），多摆几个没人读的属性只会让"到底哪条判据在起作用"变模糊。
+    """
+
+    time_tot = float("nan")
+
+    @property
+    def ok(self) -> bool:
+        return False
+
+    @property
+    def degraded(self) -> bool:
+        return True
+
+    def line(self) -> str:
+        return ("注入的坏解：`-p inject_solve_fail_after_frames:=…` 在生效"
+                "（台架/SITL 专用，不是求解器真的失败了）")
+
+
+def _poisoned(sol):
+    """把一个**好解**换成一个"什么都不告诉我们"的坏解（故障注入用）。
+
+    ★ 三样一起换，**不是**为了保险：它们各自考的是不同的路径 ——
+      `u` 全 NaN 走的是判据 2（非有限 ⟹ 整帧丢弃），`ok=False`（= 状态码非零）走的是判据 1 的
+      "求解失败"那一支，耗时 NaN 走的是簿记里的污染防护（`solve_ms_max`）。
+      只换一样，另两条路径就永远没被夹具覆盖过。
+    """
+    return replace(sol, u=np.full(NU, float("nan")), info=_InjectedInfo())
 
 
 # ─────────────────────────── 参数 ───────────────────────────
@@ -574,6 +766,11 @@ _PARAMS = (
     ("stop_on_nav_state_exit", True, bool),
     ("stop_on_armed_drop", True, bool),
     ("warmup_cycles", 5, int),
+    ("mocap_stamp_regress_s", 0.01, float),
+    ("mocap_jump_speed_max", 20.0, float),
+    ("mocap_jump_rate_max", 12.6, float),
+    ("fallback_hold_frames", FALLBACK_HOLD_FRAMES, int),
+    ("inject_solve_fail_after_frames", 0, int),
     ("cpu", -1, int),
     ("rt_priority", 0, int),
     ("rviz_frame", "world", str),
@@ -605,6 +802,11 @@ def declare_params(node: Node) -> NodeParams:
         stop_on_nav_state_exit=get("stop_on_nav_state_exit").value,
         stop_on_armed_drop=get("stop_on_armed_drop").value,
         warmup_cycles=int(get("warmup_cycles").value),
+        mocap_stamp_regress_s=get("mocap_stamp_regress_s").value,
+        mocap_jump_speed_max=get("mocap_jump_speed_max").value,
+        mocap_jump_rate_max=get("mocap_jump_rate_max").value,
+        fallback_hold_frames=int(get("fallback_hold_frames").value),
+        inject_solve_fail_after_frames=int(get("inject_solve_fail_after_frames").value),
         cpu=int(get("cpu").value),
         rt_priority=int(get("rt_priority").value),
         rviz_frame=get("rviz_frame").value,
@@ -662,7 +864,10 @@ def _validate(p: NodeParams) -> None:
     而那时**节点已经起来了**（DDS 里也已经有话题了）⟹ 台架会把它读成"节点没发数据"。
     """
     for name in ("rate_hz", "heartbeat_hz", "viz_hz", "mass", "hover_thrust", "tau_s",
-                 "mocap_timeout_s", "status_timeout_s"):
+                 "mocap_timeout_s", "status_timeout_s",
+                 # 输入合理性那三条（ticket 07）：非有限会让判据**静默失效**
+                 # （`nan > x` 恒假 ⟹ 跳变判据永远不触发，而"永远不触发"看起来像"没有跳变"）。
+                 "mocap_stamp_regress_s", "mocap_jump_speed_max", "mocap_jump_rate_max"):
         val = getattr(p, name)
         if not math.isfinite(val) or val <= 0:
             raise SystemExit(f"参数 {name} 要是正的有限数，收到 {val!r}")
@@ -672,7 +877,8 @@ def _validate(p: NodeParams) -> None:
             "心跳是从求解节拍上抽帧发的（见 `_heartbeat_every`），比它快没有意义。")
     if p.tau_s > 0.2:
         raise SystemExit(f"tau_s={p.tau_s} 太大（这是执行延迟的量级，默认 0.05 s）")
-    for name in ("warmup_cycles", "log_every"):
+    for name in ("warmup_cycles", "log_every", "fallback_hold_frames",
+                 "inject_solve_fail_after_frames"):
         if int(getattr(p, name)) < 0:
             raise SystemExit(f"参数 {name} 不能为负，收到 {getattr(p, name)!r}")
     if not all(math.isfinite(v) for v in p.hold_offset):

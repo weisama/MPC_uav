@@ -173,3 +173,39 @@ def pause_mocap(source, at_s: float, duration_s: float, label: str = "") -> List
         Event(at_s=at_s, action=lambda: source.pause(), label=f"开始：{tag}"),
         Event(at_s=at_s + duration_s, action=lambda: source.resume(), label="恢复：动捕发布"),
     ]
+
+
+def mocap_pose_jump(source, at_s: float, position=(), orientation=None,
+                    hold_s: float = 0.5, label: str = "") -> List[Event]:
+    """动捕**瞬移** `hold_s` 秒再回到原位 —— 造"刚体认错 / 遮挡恢复"那一类坏帧。
+
+    ★ 与 `rewind` 是两种不同的失效，`NodeCore` 也是两条判据：这里位置/姿态**跳**了
+      （`pose_jump` / `attitude_jump`），stamp 是**正常前进**的；rewind 反过来。
+      两条都发的话，"判据是哪一条在起作用"就分不出来了 —— 所以本配方**只动位姿**。
+    ★ `hold_s` 默认 0.5 s：动捕 200 Hz ⟹ 100 帧都停在被拒的那一档，够节点跑完
+      `warmup_cycles` 之外的判据；太短（比如 5 ms）会让"恢复"与"跳变"混在同一拍里。
+    ★ 回归原位用的是**当初记下的**位姿（不是硬编码原点）：夹具的初始位姿可以被场景改过。
+    """
+    pos0, quat0 = source.position, source.orientation
+    tag = label or f"动捕位姿跳变 {tuple(position) if position else ''}，持续 {hold_s:g} s"
+    return [
+        Event(at_s=at_s,
+              action=lambda: source.set_pose(position=position or None,
+                                             orientation=orientation),
+              label=f"开始：{tag}"),
+        Event(at_s=at_s + hold_s,
+              action=lambda: source.set_pose(position=pos0, orientation=quat0),
+              label="恢复：动捕位姿回到跳变前"),
+    ]
+
+
+def mocap_stamp_rewind(source, at_s: float, seconds: float, hold_s: float = 0.5,
+                       label: str = "") -> List[Event]:
+    """动捕的 **stamp 往回走** `seconds` 秒，`hold_s` 之后一次性跳回来。
+
+    ★ 这是 `VrpnSource.rewind` 的时序化：上游重放 / VRPN 时钟回拨在话题上就是这个形状
+      （向后的跳变 + 一段时间后向前的跳变），而 `NodeCore` 的 `stamp_regress` 判据
+      拦的正是它。**位置不动** —— 于是"闸门关了"只可能是 stamp 那条判据干的。
+    """
+    tag = label or f"动捕 stamp 倒退 {seconds:g} s，持续 {hold_s:g} s"
+    return [Event(at_s=at_s, action=lambda: source.rewind(seconds, hold_s=hold_s), label=tag)]

@@ -16,6 +16,17 @@
   **打杆接管**（RC 一动，PX4 自己离开 OFFBOARD）与 **ch6 模式开关**（切模式）。
   两者在节点这一侧**长得一样** —— 都表现为 `vehicle_status.nav_state` 不再是 OFFBOARD
   ⟹ 本模块只认状态，不认通道。
+
+★ 本模块还负责**失败路径**（ticket 07 / M5）的三块纯逻辑，各有第一手理由：
+  1. **输入合理性**（`stamp_regress` / `pose_jump` / `attitude_jump`）：动捕会给出**不可信但看着正常**
+     的一帧（重放、刚体认错、遮挡恢复）⟹ 这一拍**不发**比发一条错的强（`_hold()` 那侧的闸门）。
+  2. **求解失败的兜底阶梯**（`FallbackLadder`）：一拍的解不可用时，先**保持上一帧可行指令**，
+     连续失败到阈值再切**安全悬停**（悬停推力 + 零角速率）。★ 之所以不能一直"保持"：
+     PX4 会**无限期锁存**最后收到的 setpoint（`MulticopterRateControl.cpp:177-184`，见
+     `docs/control/mpc-node-fallback.md` 的第一手引用）——"不发"与"一直沿用最后一帧"在飞控侧
+     是同一件事，所以陈旧命令必须由**我们**主动换掉。
+  3. **发布前的整帧有限性校验**（`frame_is_finite`）：PX4 对三个角速率分量有 NaN 回退
+     （退回实测角速率），**推力没有** —— 一个 NaN 推力会直达混控器。
 """
 
 from __future__ import annotations
@@ -26,13 +37,15 @@ from typing import Optional, Tuple
 
 import numpy as np
 
-from .model import NX, normalize_quat, yaw_quat
+from .model import NX, NU, normalize_quat, quat_angle, yaw_quat
 from .params import Z0Params
 
 __all__ = [
-    "TAU_DEFAULT_S", "WARMUP_CYCLES", "ARMING_STATE_ARMED", "NAV_STATE_OFFBOARD",
-    "StopConfig", "ControlConfig", "Cycle", "NodeCore",
+    "TAU_DEFAULT_S", "WARMUP_CYCLES", "FALLBACK_HOLD_FRAMES", "JUMP_DT_FLOOR_S",
+    "ARMING_STATE_ARMED", "NAV_STATE_OFFBOARD",
+    "StopConfig", "ControlConfig", "Cycle", "NodeCore", "FallbackLadder",
     "extrapolate_state", "hold_reference", "yaw_from_quat", "pose_to_state",
+    "mocap_stamp_s", "frame_is_finite", "solution_usable",
 ]
 
 #: 状态外推的时间常数 τ [s] —— 票面 [06](../../../.scratch/phase2/issues/06-mpc-node-fake-px4-fixture.md)
@@ -51,6 +64,20 @@ TAU_DEFAULT_S = 0.05
 #: 目标 +x 10 m 时第 0 次 `ω_y = 0.0000、F = 7.8111`（与悬停一模一样），第 1 次才 `ω_y` 打满。
 #: 节点若把第 0 拍发出去，等于**第一帧朝悬停姿态走**（在最需要它动的时刻）。
 WARMUP_CYCLES = 5
+
+#: 求解失败之后先"保持上一帧可行指令"几拍，再切安全悬停（ticket 07 / M5）。
+#: ★ 这个数的量级不是随手取的：一次求解的预算是 3.5 ms（ticket 04 实测），100 Hz 下一拍 10 ms
+#:   ⟹ **10 拍 = 100 ms ≈ 28 个求解预算**。比它短，"偶发一次抖动就换姿态"太敏感；
+#:   比它长，等于任由一条**陈旧命令**（可能是打满的角速率）继续作用在飞机上 ——
+#:   而这条命令在飞控侧是**不会被超时清掉**的（见模块 docstring 第 2 条）。
+#: ⚠️ 参数化（`ControlConfig.fallback_hold_frames`）：0 = 不保持、第一次失败就直接切安全悬停。
+FALLBACK_HOLD_FRAMES = 10
+
+#: 位姿合理性判据里 `dt` 的**下限** [s]。★ 它不是"保险余量"，是把判据变成**频率无关**的那一步：
+#:   动捕 200 Hz 时两帧只隔 5 ms，而 DDS 投递抖动会让**到达时刻**差出好几毫秒 ⟹ 直接用实测
+#:   `dt` 会让"允许位移"在抖动的那一帧缩到 1/5，把 12 m/s 的真实机动误判成跳变（一个**会让
+#:   飞机无故停发**的假阳性）。取一个 100 Hz 控制周期做下限，等价于"至少按 10 ms 的机动量算"。
+JUMP_DT_FLOOR_S = 0.01
 
 #: PX4 的枚举（`px4_msgs/msg/VehicleStatus.msg` 逐字一致）。
 #: ⚠️ 这里**故意只抄两个**（节点只用这两个）：把整张表抄进来就会有两份枚举，
@@ -82,6 +109,21 @@ class StopConfig:
     #: 收到 armed + OFFBOARD 之后先解这么多次，**不发**（见 `WARMUP_CYCLES`）
     warmup_cycles: int = WARMUP_CYCLES
 
+    # ── 输入合理性（ticket 07 / M5）：这三条拦的是"**看着正常**的一帧" ——
+    #    超时那几条（上面两个）拦的是"没有数据"，拦不住"数据是错的"。
+    #: 允许的动捕 stamp **倒退**量 [s]（超过它 ⟹ `stamp_regress`）。
+    #: ★ 不为 0 是因为"相等/抖动"必须放行：节点 100 Hz 取一拍而动捕 200 Hz，
+    #:   同一个 stamp 会被读到两次；DDS 也真的会给出非单调的到达顺序。
+    mocap_stamp_regress_s: float = 0.01
+    #: 位姿跳变判据：两个**相邻接受帧**之间允许的位移速度 / 角速度上限。
+    #: ★ 默认值的依据：`MPC_XY_VEL_MAX = 12 m/s`（[`params-analysis.md`](../../../docs/reference/params-analysis.md)，
+    #:   z0 飞控现状）⟹ 位移上限取 **20 m/s**（1.7×，给真实机动留出余量 —— 判据宁可漏判，
+    #:   也不能把一次正常机动当成跳变而**无故停发**）；角速度上限取 **2× `YAW_RATE_MAX`**
+    #:   （6.28 ⟹ 12.6 rad/s），同理。
+    #: ⚠️ 想临时关掉这两条判据（SITL 排查用）：给一个极大的值即可，不必加开关。
+    mocap_jump_speed_max: float = 20.0
+    mocap_jump_rate_max: float = 12.6
+
 
 @dataclass(frozen=True)
 class ControlConfig:
@@ -95,6 +137,8 @@ class ControlConfig:
     hold_offset: Tuple[float, float, float] = (0.0, 0.0, 0.0)
     #: 参考的机头（rad，ENU 从 +x 逆时针）。`None` = 保持当前机头（位置保持的正确默认）。
     hold_yaw: Optional[float] = None
+    #: 求解不可用之后**先保持几拍**上一帧可行指令，再切安全悬停（`FallbackLadder`，见常量）。
+    fallback_hold_frames: int = FALLBACK_HOLD_FRAMES
     stop: StopConfig = field(default_factory=StopConfig)
 
 
@@ -122,6 +166,67 @@ def pose_to_state(position, orientation, velocity=(0.0, 0.0, 0.0)) -> np.ndarray
     q = normalize_quat(np.asarray(orientation, dtype=float).reshape(4))
     return np.concatenate([np.asarray(position, dtype=float).reshape(3),
                            np.asarray(velocity, dtype=float).reshape(3), q])
+
+
+def mocap_stamp_s(msg) -> Optional[float]:
+    """从 `/mocap/pose_enu` 的 `header.stamp` 取**秒**（float）；读不出来 ⟹ `None`。
+
+    ★ 三种"读不出来"都返回 `None`，**都不报错**（与 `twist` 那条同一条纪律：缺字段不许崩）：
+      · 没有 `header`（本仓的纯逻辑测试替身就是这种形状）；· `stamp` 的 `sec/nanosec` 不齐；
+      · `stamp` 是 0（**源没填**，不是"1970 年"）—— `0 ≤ 基线` 会被读成"倒退"，那是误判。
+    ⚠️ 与 `mpc_node._now_s()` 那条纪律**不冲突**：新鲜度仍然用**到达时刻**（PX4 的
+      `hrt_absolute_time()` 从飞控上电起算，跨纪元相减无意义）；这里用 stamp 只做一件事 ——
+      **同一路源的前后两帧自比**，比的是"这一路源自己说的话是不是在往回走"。
+    """
+    header = getattr(msg, "header", None)
+    stamp = getattr(header, "stamp", None)
+    sec = getattr(stamp, "sec", None)
+    nanosec = getattr(stamp, "nanosec", None)
+    if sec is None or nanosec is None:
+        return None
+    s = float(sec) + float(nanosec) * 1e-9
+    return s if s > 0.0 else None
+
+
+def frame_is_finite(sp) -> bool:
+    """**整帧**有限性校验（票面验收项，第一手理由见模块 docstring 第 3 条）。
+
+    ★ 校验的是会变的那**四个**数：`roll / pitch / yaw / thrust_body_z`。
+      消息里另外两个分量（`thrust_body[0..2]` 的横向两个）是 `mpc_node._rates_msg` 里
+      **写死 0.0 的字面量** —— "全量"这两个字容易被读成"包括那两个 0"，故在此写明。
+    ⚠️ 它与 `sign_map.px4_rates_setpoint` 的入参检查**故意重复**：`sign_map` 守的是
+      "**映射这条路**上的量"（`ω` / `F` / `T_max`），这里守的是"**凡是要写进那一帧的数**"。
+      判据 2 的字面要求是**发布前**过一遍，而发布点只有一个 —— 这一道跟着那个点走，
+      将来谁在帧里加了字段（比如换个话题），它仍然挡在前面。
+    """
+    try:
+        values = [sp.roll, sp.pitch, sp.yaw, sp.thrust_body_z]
+    except AttributeError:  # pragma: no cover - 形状不对时**拒发**，不猜
+        return False
+    return all(math.isfinite(float(v)) for v in values)
+
+
+def solution_usable(sol) -> Optional[str]:
+    """一次求解是否**可用**：`None` = 可用；否则返回一句人话原因（进日志）。
+
+    ★ "可用"与"退化"（`SolveInfo.degraded`）**不是一件事**，这一条是 ticket 06 交接时
+      点名的陷阱，别合并：
+      · **退化**（状态码非零 / `u` 越出约束 / 代价或耗时非有限）⟹ **解仍然有限**，
+        06 的裁定是**照样发** + `warn` + 计数；
+      · **不可用**（下面两条）⟹ 解不能进话题，走 `FallbackLadder` 的兜底。
+    ⚠️ 形状那一条不是洁癖：`u` 的排布是 `[F, ωx, ωy, ωz]`，若哪天它变成 3 维，
+      `u[1:]`/`u[0]` 仍然"能跑"而**发出去的东西是错的**（`sign_map` 那边也拦不住）。
+    """
+    info = getattr(sol, "info", None)
+    if info is None or not getattr(info, "ok", False):
+        line = info.line() if hasattr(info, "line") else str(info)
+        return f"求解器状态码异常（{line}）"
+    u = np.asarray(sol.u, dtype=float)
+    if u.shape != (NU,):
+        return f"解的形状不是 ({NU},)：{u.shape}"
+    if not np.isfinite(u).all():
+        return "解里含非有限值（NaN/Inf）"
+    return None
 
 
 def extrapolate_state(x: np.ndarray, tau_s: float = TAU_DEFAULT_S) -> np.ndarray:
@@ -178,6 +283,10 @@ class Cycle:
     age_mocap_s: float
     #: 闸门打开之后已经解了几拍（`warmup_cycles` 那一段的进度，给日志用）
     cycles_since_gate: int
+    #: 拦下这一拍的那条判据的**读数**（如"位移 100.0 m > 允许 0.20 m"），只进日志。
+    #: ★ 单有 `reason` 时，"pose_jump" 这四个字没法回答"差多少才算跳变"——而调这一档
+    #:   阈值的人第一个要问的就是这个数。
+    detail: str = ""
 
 
 class NodeCore:
@@ -204,6 +313,16 @@ class NodeCore:
         self.mocap_frames = 0
         self._gate_open = False         # 上一拍闸门是不是开着的（用来数 warmup）
         self._cycles_since_gate = 0     # 闸门打开后已经解了几拍
+
+        # —— 输入合理性判据的基准（ticket 07 / M5）——
+        # ★ 只有**被接受**的帧才更新它们：被拒的那一帧若把基准搬走，"跳变来的那一帧"立刻
+        #   变成新基准、闸门下一拍就开了 ⟹ 判据等于不存在。
+        # ★ 反过来，它们**不随闸门关闭清零**：一次持续的重放/认错要拒绝到底，直到源自己
+        #   追平（实测：`VrpnSource.rewind` 的倒退窗口结束后 stamp 一次性向前跳回来 ⟹ 放行）。
+        self._stamp_hi_s: Optional[float] = None
+        self._last_pose: Optional[Tuple[np.ndarray, np.ndarray]] = None
+        self._last_pose_at_s: Optional[float] = None
+        self._last_pose_stamp_s: Optional[float] = None
 
     # ── 输入 ──
     def on_status(self, msg, at_s: float) -> None:
@@ -266,8 +385,31 @@ class NodeCore:
         if not np.isfinite(x_meas).all():
             return self._hold("non_finite_mocap", now_s, age_status, age_mocap)
 
+        # ★ 输入合理性（ticket 07 / M5）：这一帧**数值上都正常**，但可能"不是这一秒的"。
+        #   两条判据各有第一手的场景：重放/时间戳回退（`stamp_regress`）、刚体认错或遮挡恢复
+        #   造成的瞬移（`pose_jump` / `attitude_jump`）。两者的取向都是**宁可漏判，不可误判** ——
+        #   误判的代价是**无故停发**（阈值默认值的取法见 `StopConfig.mocap_jump_*`）。
+        stamp_s = mocap_stamp_s(self.mocap)
+        if stamp_s is not None and self._stamp_hi_s is not None:
+            back = self._stamp_hi_s - stamp_s
+            if back > stop.mocap_stamp_regress_s:
+                return self._hold(
+                    "stamp_regress", now_s, age_status, age_mocap,
+                    detail=f"stamp 倒退 {back:.4f} s > 容差 {stop.mocap_stamp_regress_s:g} s"
+                           f"（此前最高 {self._stamp_hi_s:.3f} s，本帧 {stamp_s:.3f} s）")
+        jump = self._pose_jump(x_meas, now_s, stamp_s)
+        if jump is not None:
+            return self._hold(jump[0], now_s, age_status, age_mocap, detail=jump[1])
+
         x0 = extrapolate_state(x_meas, self.config.tau_s)
         x_ref = hold_reference(x_meas, self.config, self.horizon)
+
+        # 这一帧被接受了 ⟹ 它成为下一拍的基准（位置/姿态/时间戳一起搬）
+        self._last_pose = (x_meas[:3].copy(), x_meas[6:10].copy())
+        self._last_pose_at_s = float(now_s)
+        self._last_pose_stamp_s = stamp_s
+        if stamp_s is not None:
+            self._stamp_hi_s = stamp_s if self._stamp_hi_s is None else max(self._stamp_hi_s, stamp_s)
 
         cycles = (self._cycles_since_gate + 1) if self._gate_open else 1
         self._gate_open = True
@@ -278,14 +420,147 @@ class NodeCore:
                      age_status_s=age_status, age_mocap_s=age_mocap,
                      cycles_since_gate=cycles)
 
-    def _hold(self, reason: str, now_s: float, age_status: float, age_mocap: float) -> Cycle:
+    def _pose_jump(self, x_meas: np.ndarray, now_s: float,
+                   stamp_s: Optional[float]) -> Optional[Tuple[str, str]]:
+        """位姿跳变判据 → `(原因, 读数)`，或 `None`（这一帧看着可能）。
+
+        ★ 判据是"**这两帧之间能不能走完这段位移/转过这个角**"：`上限 = 速率 × dt`，
+          速率默认取 1.7× 真实机动上限（见 `StopConfig`），`dt` 有 `JUMP_DT_FLOOR_S` 的下限。
+        ★ 没有基准（刚起来、或源刚被接受过第一帧）时**判不了**，返回 `None` —— 判据不猜。
+        ★ 它**不是**闭锁：源只要回到基准附近（或持续足够久让 `dt` 把上限撑开），下一帧就被接受。
+        """
+        if self._last_pose is None or self._last_pose_at_s is None:
+            return None
+        last_p, last_q = self._last_pose
+        stop = self.config.stop
+
+        # `dt` 优先用**这一路源自己的** stamp 差（它才是"这两帧之间过了多久"）——
+        # 读不出来时才退回到达时刻差（`mocap_stamp_s` 返回 None 的三种情形见那里）。
+        dt = None
+        if stamp_s is not None and self._last_pose_stamp_s is not None:
+            dt = stamp_s - self._last_pose_stamp_s
+        if dt is None or dt < 0.0:
+            dt = now_s - self._last_pose_at_s
+        dt = max(float(dt), JUMP_DT_FLOOR_S)
+
+        moved = float(np.linalg.norm(np.asarray(x_meas[:3], dtype=float) - last_p))
+        allowed_m = stop.mocap_jump_speed_max * dt
+        if moved > allowed_m:
+            return ("pose_jump",
+                    f"位移 {moved:.3f} m > 允许 {allowed_m:.3f} m（dt={dt * 1e3:.1f} ms、"
+                    f"上限 {stop.mocap_jump_speed_max:g} m/s）")
+        turned = quat_angle(x_meas[6:10], last_q)
+        allowed_rad = stop.mocap_jump_rate_max * dt
+        if turned > allowed_rad:
+            return ("attitude_jump",
+                    f"转角 {math.degrees(turned):.1f}° > 允许 {math.degrees(allowed_rad):.1f}°"
+                    f"（dt={dt * 1e3:.1f} ms、上限 {stop.mocap_jump_rate_max:g} rad/s）")
+        return None
+
+    def _hold(self, reason: str, now_s: float, age_status: float, age_mocap: float,
+              detail: str = "") -> Cycle:
         """闸门关着的一拍：不发布，也**不给初值/参考**（没有可信的状态就不该喂求解器）。
 
         ★ 关闸门时把 warmup 计数清零：闸门再开时又要重新热（`WARMUP_CYCLES` 说的是
           "从可信状态出发的连续迭代"，断开之后上一帧的解已经不是这条轨迹的起点了）。
+        ⚠️ 但**输入合理性的基准不在这里清零**（见 `__init__`）：那是"源自己说过什么"的
+          高水位，与"我们发了没有"无关；清零会让一次持续的重放在下一拍就被当成正常帧。
         """
         self._gate_open = False
         self._cycles_since_gate = 0
         return Cycle(publish=False, reason=reason, x0=None, x_ref=None,
                      age_status_s=age_status, age_mocap_s=age_mocap,
-                     cycles_since_gate=0)
+                     cycles_since_gate=0, detail=detail)
+
+
+# ───────────────────────────── 兜底阶梯 ─────────────────────────────
+
+class FallbackLadder:
+    """求解**不可用**时的兜底阶梯（ticket 07 / M5）：保持上一帧 → 安全悬停 → 解除。
+
+    | 档位 | 什么时候 | 发什么 |
+    |---|---|---|
+    | `normal` | 求解可用 | 它的解 |
+    | `hold` | 连续不可用 ≤ `hold_frames` | **上一帧可行指令**（原样，只换时间戳） |
+    | `hover` | 连续不可用 > `hold_frames` | **安全悬停**（悬停推力 + 零角速率），并**置标志** |
+
+    ★ 为什么不是"一路保持到底"：PX4 会**无限期锁存**最后收到的 `vehicle_rates_setpoint`
+      （`MulticopterRateControl.cpp:177-184`，第一手引用见 `docs/control/mpc-node-fallback.md`）
+      ⟹ "我们不发"与"飞控一直沿用最后一帧"在飞控侧**是同一件事**。一拍的解刚不可用时，
+      上一条命令还是**可行**的（几毫秒前算出来的），所以先保持；但一直不可用的话，被沿用的
+      就成了一条**陈旧**命令（可能正打满角速率）—— 必须由我们主动换成安全悬停。
+    ★ 为什么不是"一失败就悬停"：一次抖动就换姿态，比保持一条 10 ms 前的可行命令更糟。
+      两条合起来给出 `hold_frames` 的量级（见 `FALLBACK_HOLD_FRAMES`）。
+    ★ 安全悬停**不依赖任何状态**（推力沿机体系 z、角速率置零）—— 这正是它在"状态不可信"
+      之外仍然可用的原因：它不需要知道飞机现在是什么姿态。
+
+    ★ 纯逻辑、零 ROS、**不认识消息类型**：调用方按 `phase` 自己取帧（提交给它的那些帧长什么样
+      归 `sign_map`）。于是"第几拍换档、置标志、解除、二次触发"能在一毫秒内被单测钉死。
+    """
+
+    NORMAL = "normal"
+    HOLD = "hold"
+    HOVER = "hover"
+
+    def __init__(self, hold_frames: int = FALLBACK_HOLD_FRAMES):
+        self.hold_frames = int(hold_frames)
+        self.phase = self.NORMAL
+        self.streak = 0         # **连续**不可用的拍数（可用时清零 —— 判据是"连续"不是"累计"）
+        self.reason = ""        # 当前这段连续的不可用是为什么（进日志/解除报告）
+        self.holds = 0          # 累计"保持"拍数
+        self.hovers = 0         # 累计"安全悬停"拍数
+        self.events = 0         # 进入安全悬停的**次数**（= 置标志的次数，每次都要能上报）
+
+    def on_ok(self) -> Optional[str]:
+        """求解可用的一拍 → 解除报告（此前不是 `normal` 时给出，否则 `None`）。"""
+        if self.phase == self.NORMAL:
+            self.streak = 0
+            self.reason = ""
+            return None
+        # ⚠️ 先取再清：报告里要写"此前是哪一档、持续了多少拍、为什么"
+        report = (f"兜底解除：此前{'保持' if self.phase == self.HOLD else '安全悬停'}"
+                  f"连续 {self.streak} 拍（原因：{self.reason}）")
+        self.phase = self.NORMAL
+        self.streak = 0
+        self.reason = ""
+        return report
+
+    def on_fail(self, reason: str, can_hold: bool = True) -> Tuple[str, Optional[str]]:
+        """求解不可用的一拍 → `(档位, 上报语)`；`上报语` 非空时调用方**必须**把它打出去。
+
+        ★ `can_hold=False` = **没有可保持的上一帧**（第一拍就不可用 —— 此前一直在热身或闸门关着）
+          ⟹ **跳过 `hold` 档直接进安全悬停**，并且**照样算一次"进入安全悬停"事件**。
+          `hold` 的前提是"上一条命令还是可行的"，而那一拍它根本不存在（PX4 侧的初值是零推力）。
+          ⚠️ 这一档必须由**调用方**告诉阶梯：阶梯不认识帧，只有节点知道 `_last_sp` 在不在。
+        ★ "置标志并上报"落在**进入安全悬停那一次**（不是每一拍）：票面要的是"这个事件在日志里
+          可检索"，每拍重复反而把日志淹掉；持续多少拍由累计量（`hovers`）回答。
+        """
+        self.streak += 1
+        self.reason = str(reason)
+        if can_hold and self.streak <= self.hold_frames:
+            self.phase = self.HOLD
+            self.holds += 1
+            return self.HOLD, None
+        new_event = self.phase != self.HOVER
+        self.phase = self.HOVER
+        self.hovers += 1
+        if not new_event:
+            return self.HOVER, None
+        self.events += 1
+        return self.HOVER, (f"兜底：连续 {self.streak} 拍没有可用解 ⟹ 切安全悬停"
+                            f"（第 {self.events} 次），原因：{self.reason}"
+                            + ("" if can_hold else "；★ 此前没有可保持的上一帧（第一拍就不可用）"))
+
+    def reset(self) -> None:
+        """闸门关闭时调用：档位与连续计数清零。
+
+        ⚠️ 与 `on_ok` 的区别：`on_ok` 是"求解恢复可用"（要打解除报告），`reset` 是"我们这一拍
+          根本不发"（闸门关了，档位毫无意义）。累计量（`holds`/`hovers`/`events`）**都不清零**。
+        """
+        self.phase = self.NORMAL
+        self.streak = 0
+        self.reason = ""
+
+    def describe(self) -> str:
+        return (f"兜底：保持 {self.holds} 拍 / 安全悬停 {self.hovers} 拍 / 触发 {self.events} 次"
+                + (f"（此刻仍在 {self.phase}）" if self.phase != self.NORMAL else ""))

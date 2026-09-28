@@ -32,6 +32,7 @@
 
 from __future__ import annotations
 
+import math
 import os
 from pathlib import Path
 
@@ -41,7 +42,8 @@ from rclpy.qos import DurabilityPolicy, ReliabilityPolicy
 
 from bench import Scenario
 from bench.fake_px4 import NAV_STATE_OFFBOARD
-from bench.timeline import px4_arm, px4_nav_state, px4_status_silence
+from bench.timeline import (mocap_pose_jump, mocap_stamp_rewind, px4_arm, px4_nav_state,
+                            px4_status_silence)
 from nmpc.params import PITCH_RATE_MAX, Z0Params
 
 #: session 级的 ROS 上下文（在 `test/conftest.py` 里）—— 本模块的每条用例都要起 DUT
@@ -488,6 +490,160 @@ def test_RViz_的预测轨迹与参考点():
         assert ref.header.frame_id == "world"
         assert abs(float(ref.pose.position.x) - 5.0) < 0.5, \
             f"参考点 x = {float(ref.pose.position.x):+.3f}，偏移参数写的 +5 m（符号反了？）"
+
+
+# ───────────────────────────── 兜底与输入合理性（ticket 07 / M5）─────────────────────────────
+#
+# ★ 这一组**唯一**的"求解失败"注入面是 DUT 侧参数 `-p inject_solve_fail_after_frames:=N`。
+#   理由（第一手）：夹具站在**话题边界**上，而"求解失败"发生在 DUT **进程内部** ——
+#   话题面上只看得到帧，造不出"这一拍没解出来"。完整推导见 `mpc_node` 模块 docstring
+#   的 ★ 那段与 `docs/control/mpc-node-fallback.md`。
+
+def _hover_norm() -> float:
+    """悬停归一化推力 —— **从模型算**（不是 0.6235 这个字面量，见归一化那条验收项）。"""
+    z0 = Z0Params()
+    return -z0.t_hover / z0.t_max
+
+
+def _quad(f) -> tuple:
+    """一帧 setpoint 里**会变的那四个数**（与 `node_core.frame_is_finite` 同一组）。"""
+    m = f.msg
+    return (float(m.roll), float(m.pitch), float(m.yaw), float(m.thrust_body[2]))
+
+
+def _is_hover_frame(f) -> bool:
+    return (max(abs(v) for v in _quad(f)[:3]) < 1e-6
+            and abs(_quad(f)[3] - _hover_norm()) < 1e-3)
+
+
+def _finite(f) -> bool:
+    return all(math.isfinite(v) for v in _quad(f))
+
+
+def test_求解失败时先保持上一帧_再切安全悬停_且一帧都不带非有限值():
+    """票面判据 1/2/3：**绝不 raise** → `hold`（保持上一帧可行指令）→ `hover`（悬停推力 +
+    零角速率），且**任何一帧都不许带非有限值**（判据 2 的端到端形式）。
+
+    ★ 注入在"已发布 ≥ 20 帧之后"生效 ⟹ **同一条流上两个阶段**：注入前是正常解、注入后是
+      兜底。不必去猜时刻，也不会有"注入有没有赶上"的含糊。
+    ★ 两个阶段的形状**刻意拉开**：`hold_offset_x=10` 让正常解把 pitch 打满（−3.84），
+      而悬停帧是 `(0, 0, 0, −0.6235)` —— 差三个量级，不会"看起来差不多"。
+    ★ `hold` 的判据是"**内容原样、时间戳换新**"：PX4 会把最后一帧**锁存**下去
+      （`MulticopterRateControl.cpp:177-184`）⟹ "我们不发了"与"飞控沿用旧帧"在飞控侧
+      是同一件事，所以"在保持"必须是**发出去**的（否则它在话题上根本不可观测）。
+
+    ★ 本票的"非有限值"那一条**与"求解失败"共用同一次注入**（坏解同时带：状态码非零 +
+      `u` 全 NaN + 耗时 NaN，见 `mpc_node._poisoned`）。这一层能验的是"非有限值绝不到达
+      话题"（下面那条扫描全帧的断言）；至于"是状态码先拦下的还是 NaN 先拦下的"，
+      `solution_usable` 的判据顺序在 `test_node_core.py` 里逐条钉死 —— 两者在话题上
+      **行为完全相同**，多写一条端到端用例只是重复。
+    """
+    hold_frames = 5
+    with _scenario(hold_offset_x=10.0, fallback_hold_frames=hold_frames,
+                   inject_solve_fail_after_frames=20) as sc:
+        _wait_dut_up(sc)
+        _arm_and_offboard(sc)
+        sc.wait_for(lambda: len(sc.px4.published_frames("rates")) >= 20 + hold_frames + 3,
+                    timeout_s=10.0,
+                    message="注入生效之后没有继续发帧（兜底把发布停掉了？那飞机就撒手了）")
+        sc.hold(0.3)                       # 再攒几拍悬停，让"切过去了"这件事确定下来
+        frames = sc.px4.published_frames("rates")
+        assert sc.dut_alive(), "一个坏解就把节点搞崩了 —— 判据 1 要的是**绝不 raise**"
+        assert all(_finite(f) for f in frames), \
+            f"话题上出现了非有限值：{[_quad(f) for f in frames if not _finite(f)][:3]}"
+
+        # 以"**第一帧安全悬停**"为锚点往前数（而不是按绝对帧号）：DDS 掉一两帧不该让用例变红，
+        # 而"保持了几拍、保持的是不是上一帧的内容"这两件事都能从这个锚点相对地读出来。
+        hovers_at = [i for i, f in enumerate(frames) if _is_hover_frame(f)]
+        assert hovers_at, "注入之后一帧安全悬停都没有（兜底没切过去？）"
+        i = hovers_at[0]
+        assert i >= hold_frames + 1, f"第一帧悬停出现在第 {i} 帧，前面没有留出保持的空间"
+        holds = frames[i - hold_frames:i]
+        prev = frames[i - hold_frames - 1]
+
+        assert abs(float(prev.msg.pitch)) > 3.0 and not _is_hover_frame(prev), \
+            f"保持开始之前的那一帧不是打满的正常解：{_quad(prev)} ⟹ 正控不成立"
+        assert not _is_hover_frame(holds[0]), \
+            "『保持』发的是悬停帧 ⟹ 这一档根本没生效（下面几条断言会跟着变成废话）"
+        for j, h in enumerate(holds):
+            assert _quad(h) == _quad(prev), \
+                f"第 {j + 1} 拍保持的**内容**变了：{_quad(h)} ≠ 上一帧可行指令 {_quad(prev)}"
+        ts = [int(f.msg.timestamp) for f in holds]
+        assert len(set(ts)) == len(ts) and ts[0] > int(prev.msg.timestamp), \
+            f"保持帧的时间戳没有严格前进：{ts}（复用旧时间戳会让这一帧被读成陈旧的）"
+
+        bad = [_quad(f) for f in frames[i:] if not _is_hover_frame(f)]
+        assert not bad, f"切到安全悬停之后又出现了不是悬停的帧：{bad[:3]}"
+
+        # 判据 3：这件事要在日志里**可检索**（"置标志并上报"落在进入悬停的那一次）
+        sc.stop_dut()
+        log = sc.dut_log()
+        assert "兜底：连续" in log and "安全悬停" in log, \
+            f"切安全悬停时没有上报（日志尾：{log[-500:]!r}）"
+        assert "触发 1 次" in log, "收尾摘要里没有兜底的累计量（本次事件数）"
+        assert "Traceback" not in log, f"兜底路径打出了 traceback\n{log[-1500:]}"
+
+
+def test_动捕时间戳倒退时不发指令_追平之后恢复():
+    """票面判据 4 的第一半：**不发指令**（而不是发一条错指令）。
+
+    ★ 造法见 `bench.timeline.mocap_stamp_rewind`（`VrpnSource.rewind`）：**位置不动**，
+      只有 stamp 往回走 2 s ⟹ 闸门关掉只可能是 `stamp_regress` 这一条判据干的
+      （位姿判据看不见任何位移，超时判据也看不见"没数据"）。
+    ★ 两半都要断言：停发**和**恢复。只断"停发"的话，"节点自己死了"也满足它。
+    """
+    with _scenario() as sc:
+        _wait_dut_up(sc)
+        _arm_and_offboard(sc)
+        sc.wait_for(lambda: len(sc.px4.published_frames("rates")) >= 10, timeout_s=10.0,
+                    message="解锁后没攒到 10 帧 setpoint，闸门那条的正控不成立")
+
+        t0 = sc.t()
+        sc.timeline.extend(mocap_stamp_rewind(sc.mocap_source, t0 + 0.2, seconds=2.0, hold_s=1.0))
+
+        sc.advance_to(t0 + 1.4)                     # 倒退中（0.2 → 1.2 是倒退窗口）
+        n = len(sc.px4.frames_between("rates", t0 + 0.6, t0 + 1.2))
+        assert n == 0, f"stamp 倒退期间还发了 {n} 帧 setpoint（判据 4：这种时候宁可不发）"
+        assert sc.dut_alive(), "stamp 倒退把节点搞崩了"
+
+        sc.advance_to(t0 + 2.5)                     # 追平：stamp 一次性跳回来
+        n_after = len(sc.px4.frames_between("rates", t0 + 1.6, t0 + 2.5))
+        assert n_after > 0, "stamp 追平之后没有重新开始发（闸门锁死了？）"
+
+        assert "stamp_regress" in sc.dut_log(), \
+            f"闸门原因没进日志（日志尾：{sc.dut_log()[-500:]!r}）"
+
+
+def test_位姿跳变时不发指令_回到原位之后恢复():
+    """票面判据 4 的第二半：刚体认错 / 遮挡恢复给出的**瞬移**同样只关闸门、不发错指令。
+
+    ★ 100 m 的瞬移是 `hold_offset_x`（0）的 1000 倍，而默认判据的上限是 0.2 m
+      （20 m/s × `JUMP_DT_FLOOR_S`）⟹ 拦下的余量极大，不受投递抖动影响。
+    ★ 断言里带上读数（"位移 100.000 m"）：判据的**阈值**是给人调的，
+      日志里没有这个数就无从调起（`Cycle.detail` 那条注释说的就是这件事）。
+    """
+    with _scenario() as sc:
+        _wait_dut_up(sc)
+        _arm_and_offboard(sc)
+        sc.wait_for(lambda: len(sc.px4.published_frames("rates")) >= 10, timeout_s=10.0,
+                    message="解锁后没攒到 10 帧 setpoint，闸门那条的正控不成立")
+
+        t0 = sc.t()
+        sc.timeline.extend(mocap_pose_jump(sc.mocap_source, t0 + 0.2,
+                                           position=(100.0, 0.0, 0.0), hold_s=1.0))
+
+        sc.advance_to(t0 + 1.4)
+        n = len(sc.px4.frames_between("rates", t0 + 0.6, t0 + 1.2))
+        assert n == 0, f"位姿跳变期间还发了 {n} 帧 setpoint（那正是『发错指令』）"
+        assert sc.dut_alive(), "位姿跳变把节点搞崩了"
+
+        sc.advance_to(t0 + 2.5)
+        n_after = len(sc.px4.frames_between("rates", t0 + 1.6, t0 + 2.5))
+        assert n_after > 0, "源回到原位之后没有重新开始发（判据把自己锁死了？）"
+
+        log = sc.dut_log()
+        assert "pose_jump" in log, f"闸门原因没进日志（日志尾：{log[-500:]!r}）"
+        assert "100.000" in log, f"跳变判据的读数（差多少米）没进日志：{log[-500:]!r}"
 
 
 # ───────────────────────────── 在这一层量不了的那几条（不写假测试）─────────────────────────────

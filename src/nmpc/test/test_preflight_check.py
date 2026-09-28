@@ -22,9 +22,11 @@ from nmpc.params import Z0Params
 from nmpc.preflight_check import (
     Check,
     _channel_identifiers,
+    _param_table,
     build_node_params,
     check_normalization,
     check_params,
+    check_fallback,
     check_signs,
     check_stop_conditions,
     find_repo_root,
@@ -128,6 +130,87 @@ def test_停机条件的字段名会被对账():
     assert all(c.ok for c in checks), _failing(checks)
     assert "warmup_cycles" in checks[0].detail, \
         "多出来的闸门字段要被列出来（`warmup_cycles` 是首拍不发，不是停机条件）"
+
+
+# ───────────────────────────── 负控：兜底与故障注入（ticket 07 / M5）─────────────────────────────
+
+def test_兜底那组默认全绿():
+    """正控：负控要能说明问题，前提是真实参数下这一组本来就绿。"""
+    checks = check_fallback(NodeParams())
+    assert all(c.ok for c in checks), _failing(checks)
+    assert len(checks) == 3, f"这一组应当是 3 条，实际 {len(checks)}"
+
+
+def test_参数表与_NodeParams_的默认值不许漂移():
+    """★★ `_PARAMS`（节点**真正声明**的默认值）与 `NodeParams`（测试与自检读的那一份）
+    是同一个参数面的两份写法，而**没有任何东西**看着它们一致（源码里那句
+    "两处一起改"只是一句注释）。漂了不会报错：节点按 `_PARAMS` 飞、测试按 `NodeParams` 断言
+    ⟹ 这正是本仓库最怕的那种"假绿"。本条是它的守卫（mypy/pytest 都抓不到这个形状）。
+    """
+    p = NodeParams()
+    by_name = {f.name: f for f in dataclasses.fields(p)}
+    table = dict((n, (d, t)) for n, d, t in _param_table())
+    composed = {"hold_offset_x": 0, "hold_offset_y": 1, "hold_offset_z": 2}
+    for name, (default, typ) in table.items():
+        if name in composed:                       # 三个参数合成一个字段，单独取
+            got = p.hold_offset[composed[name]]
+        else:
+            assert name in by_name, f"`_PARAMS` 里的 {name} 在 `NodeParams` 里没有对应字段"
+            got = getattr(p, name)
+        assert got == default and isinstance(got, typ), \
+            f"{name}：`_PARAMS` 说 {default!r}（{typ.__name__}），`NodeParams` 说 {got!r}"
+    # 反方向：`NodeParams` 的字段要么在参数表里，要么在"由多个参数合成"的名单里
+    derived = {"hold_offset"}          # = hold_offset_x/y/z 三个参数
+    extra = set(by_name) - set(table) - derived
+    assert not extra, f"`NodeParams` 里有参数表之外的字段：{sorted(extra)}（要么补进 `_PARAMS`，要么列进 derived）"
+
+
+def test_NodeParams_到配置对象的接线不许串位():
+    """★ `control_config()` / `z0_params()` 是"参数 → 判据"的**接线板**（节点与自检各读一遍）。
+
+    串位（比如把位移上限与转角上限对调）在台架上的表现与正确接线**一模一样**：
+    同一条判据、同一个原因词（`pose_jump`），只有细节里的数值不同 ——
+    也就是说**只有这条用例**看得见它。顺带钉住"三个数值在 `NodeParams` 与 `StopConfig`
+    里各写一份"这件事（第三份在 `_PARAMS`，由上面那条对账管）。
+    """
+    p = NodeParams()
+    c, z = p.control_config(), p.z0_params()
+    assert (c.stop.mocap_jump_speed_max, c.stop.mocap_jump_rate_max) == \
+        (p.mocap_jump_speed_max, p.mocap_jump_rate_max), "位姿跳变的两条上限串位了"
+    assert c.stop.mocap_stamp_regress_s == p.mocap_stamp_regress_s
+    assert c.fallback_hold_frames == p.fallback_hold_frames
+    assert c.tau_s == p.tau_s and c.hold_offset == tuple(p.hold_offset)
+    assert (c.stop.mocap_timeout_s, c.stop.status_timeout_s) == \
+        (p.mocap_timeout_s, p.status_timeout_s)
+    assert (z.mass, z.hover_thrust) == (p.mass, p.hover_thrust)
+
+
+def test_兜底保持拍数为负会被抓到():
+    p = dataclasses.replace(NodeParams(), fallback_hold_frames=-1)
+    assert "兜底保持拍数 ≥0" in _failing(check_fallback(p)), \
+        "负的保持拍数没被拦下 —— 它会让 `FallbackLadder` 的档位判断失去意义"
+
+
+def test_位姿合理性阈值收得比真机动还紧会被抓到():
+    """★ 这条负控指向的是**无故停发**：阈值比真机动还紧 ⟹ 一次正常机动就被读成跳变。
+
+    两个方向各喂一次（位移 / 转角），因为它们拦的是两种不同的误判。
+    """
+    slow = dataclasses.replace(NodeParams(), mocap_jump_speed_max=2.0)
+    assert "位姿合理性阈值比真机动宽" in _failing(check_fallback(slow)), \
+        "位移上限 2 m/s（比飞控的 12 m/s 还小）没被拦下"
+
+    tight = dataclasses.replace(NodeParams(), mocap_jump_rate_max=1.0)
+    assert "位姿合理性阈值比真机动宽" in _failing(check_fallback(tight)), \
+        "转角上限 1 rad/s（比模型的 6.28 rad/s 还小）没被拦下"
+
+
+def test_故障注入开着会被拦在装桨之前():
+    """★ 这一档一开，飞机收到的**每一帧**都是兜底帧 —— 它只该在台架/SITL 上出现。"""
+    p = dataclasses.replace(NodeParams(), inject_solve_fail_after_frames=200)
+    failed = _failing(check_fallback(p))
+    assert "故障注入关着" in failed, "开着故障注入还能过自检 ⟹ 装桨前那道闸门形同虚设"
+    assert "装桨前必须设回 0" in check_fallback(p)[2].detail, "细节里要写清怎么处置"
 
 
 # ───────────────────────────── CLI 的边界 ─────────────────────────────

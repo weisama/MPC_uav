@@ -265,7 +265,7 @@ ros2 run nmpc preflight_check.py -p mass:=0.82 -p hover_thrust:=0.55   # 与节�
 
 | 事项 | 归哪 |
 |---|---|
-| 求解失败 / 非有限值的**兜底动作**（谁接管、怎么降级） | [ticket 07](../../.scratch/phase2/issues/07-solver-failure-fallback.md)（`heartbeat_always` 是留给它的接缝） |
+| 求解失败 / 非有限值的**兜底动作**（谁接管、怎么降级） | ✅ **2026-09-28 已由 [ticket 07](../../.scratch/phase2/issues/07-solver-failure-fallback.md) 关闭** —— 三档阶梯（`hold` 10 拍 → 安全悬停）、发布前全量校验、失败事件的 `error` 上报 + JSONL `fallback` 列，见 [`mpc-node-fallback.md`](mpc-node-fallback.md)。★ 那条交接的措辞（"`heartbeat_always` 是留给它的接缝"）**已作废**：心跳照旧无条件发，兜底换的是 **rates setpoint 的内容**（"不发"在飞控侧 = 沿用陈旧命令，见该文 §1.1） |
 | 真正的轨迹接口 `/traj/reference`（本票只有参数化参考点偏移） | [ticket 09](../../.scratch/phase2/issues/09-sitl-tier-a-closed-loop.md) |
 | 100 Hz 要不要降档（实测最坏耗时 → D6/回填） | ticket 09/11 |
 | 绑核 + 可选实时优先级的**实测**（实现已在节点里：`cpu` / `rt_priority`） | ticket 11 |

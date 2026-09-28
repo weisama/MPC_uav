@@ -12,20 +12,24 @@
 
 from __future__ import annotations
 
+import dataclasses
 import math
 import subprocess
 import sys
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
 
-from nmpc.model import NX, yaw_quat
-from nmpc.node_core import (ARMING_STATE_ARMED, NAV_STATE_OFFBOARD, TAU_DEFAULT_S,
-                            WARMUP_CYCLES, ControlConfig, NodeCore, StopConfig,
-                            extrapolate_state, hold_reference, pose_to_state,
-                            yaw_from_quat)
+from nmpc.model import NX, quat_angle, yaw_quat
+from nmpc.node_core import (ARMING_STATE_ARMED, FALLBACK_HOLD_FRAMES, JUMP_DT_FLOOR_S,
+                            NAV_STATE_OFFBOARD, TAU_DEFAULT_S, WARMUP_CYCLES,
+                            ControlConfig, FallbackLadder, NodeCore, StopConfig,
+                            extrapolate_state, frame_is_finite, hold_reference,
+                            mocap_stamp_s, pose_to_state, solution_usable, yaw_from_quat)
 from nmpc.ocp import OcpConfig
 from nmpc.params import DEFAULT as P
+from nmpc.sign_map import Px4RatesSetpoint
 
 N = OcpConfig().N
 
@@ -48,14 +52,27 @@ class _Pose:
         self.orientation = _Quat(*orientation)
 
 
+def _stamp(s: float):
+    """`builtin_interfaces/Time` 的形状（`sec` + `nanosec`），两种字段都要齐才算"有时间戳"。"""
+    sec = int(s)
+    nanosec = int(round((s - sec) * 1e9))
+    if nanosec >= 1_000_000_000:      # 四舍五入顶到下一秒（浮点的边界）
+        sec, nanosec = sec + 1, nanosec - 1_000_000_000
+    return type("_Stamp", (), {"sec": sec, "nanosec": nanosec})()
+
+
 class _Mocap:
     def __init__(self, position=(0.0, 0.0, 0.0), orientation=(1.0, 0.0, 0.0, 0.0),
-                 velocity=None):
+                 velocity=None, stamp_s=None):
         self.pose = _Pose(position, orientation)
         # `/mocap/pose_enu` 的 twist 是**可选**的（上游差分节点给了才有）——
         # 缺字段时节点必须退化成"不外推"，而不是崩掉。
         if velocity is not None:
             self.twist = type("_Twist", (), {"linear": _Vec(*velocity)})()
+        # 时间戳也是**可选**的：没有 `header` 时那两条判据（倒退 / 跳变）**不存在**，
+        # 而不是"判成坏帧"（ticket 07 的 `mocap_stamp_s` 三种"读不出来"都返回 None）。
+        if stamp_s is not None:
+            self.header = type("_Header", (), {"stamp": _stamp(stamp_s)})()
 
 
 class _Status:
@@ -284,6 +301,346 @@ def test_动捕缺_twist_时退化成不外推():
     core.on_mocap(_Mocap(), at_s=0.0)          # 无 velocity ⟹ 没有 twist 字段
     assert core.cycle(0.1).x0[:3].tolist() == [0.0, 0.0, 0.0]
     assert core.cycle(0.1).x0[3:6].tolist() == [0.0, 0.0, 0.0]
+
+
+# ───────────────────────────── 输入合理性（ticket 07 / M5）─────────────────────────────
+#
+# 这一组拦的是"数值上都正常、但**不是这一秒的**"那一帧。★ 判据的取向是**宁可漏判**：
+# 误判的代价是**无故停发**（飞机在飞，我们却因为一次正常机动停了指令流）。
+
+def _fed_core(config: ControlConfig | None = None) -> NodeCore:
+    """已经"解锁 + OFFBOARD + 动捕新鲜"的核心，用来把新判据单独夹出来。"""
+    cfg = config or ControlConfig(stop=StopConfig(warmup_cycles=0))
+    core = _core(cfg)
+    core.on_status(_Status(), at_s=0.0)
+    return core
+
+
+def test_真实机动不会被当成跳变():
+    """★ 负控（判据**不许**误伤）：12 m/s 的水平机动逐帧喂进去，一帧都不该被拦。
+
+    12 m/s 是 `MPC_XY_VEL_MAX`（z0 飞控现状）；动捕 200 Hz ⟹ 每帧 0.06 m。
+    """
+    core = _fed_core()
+    for i, t in enumerate([0.0, 0.005, 0.010, 0.015]):
+        core.on_mocap(_Mocap(position=(0.06 * i, 0.0, 0.0), stamp_s=100.0 + t), at_s=t)
+        assert core.cycle(t).publish, f"第 {i} 帧（0.06 m/5 ms = 12 m/s）被误判成跳变了"
+
+
+def test_位姿跳变会被拦下且读数进日志():
+    """刚体认错 / 遮挡恢复给出的**瞬移**（这里 100 m）⟹ 这一拍不发，且要说清差多少。"""
+    core = _fed_core()
+    core.on_mocap(_Mocap(stamp_s=100.0), at_s=0.0)
+    assert core.cycle(0.0).publish
+    core.on_mocap(_Mocap(position=(100.0, 0.0, 0.0), stamp_s=100.005), at_s=0.005)
+    c = core.cycle(0.005)
+    assert c.reason == "pose_jump" and not c.publish
+    assert "100.000" in c.detail and "0.200" in c.detail, f"读数没进日志：{c.detail!r}"
+
+
+def test_姿态翻转会被拦下():
+    """位置没动、姿态翻了 180°（另一个刚体的朝向被认成它了）—— 位置那条拦不住，这条能。"""
+    core = _fed_core()
+    core.on_mocap(_Mocap(stamp_s=100.0), at_s=0.0)
+    assert core.cycle(0.0).publish
+    core.on_mocap(_Mocap(orientation=(0.0, 1.0, 0.0, 0.0), stamp_s=100.005), at_s=0.005)
+    c = core.cycle(0.005)
+    assert c.reason == "attitude_jump" and not c.publish
+    assert "180.0°" in c.detail
+
+
+def test_小转角的真实姿态变化不会被拦():
+    """负控：1°/帧（≈3.5 rad/s，比 `YAW_RATE_MAX` 小的机动态）必须放行。"""
+    tilt = (math.cos(0.5 * math.radians(1.0)), math.sin(0.5 * math.radians(1.0)), 0.0, 0.0)
+    core = _fed_core()
+    core.on_mocap(_Mocap(stamp_s=100.0), at_s=0.0)
+    assert core.cycle(0.0).publish
+    core.on_mocap(_Mocap(orientation=tilt, stamp_s=100.005), at_s=0.005)
+    assert core.cycle(0.005).publish, "1° 的转角被判成了姿态跳变"
+
+
+def test_被拒的那一帧不许把基准搬走():
+    """★ 这条是判据成立的前提：拒绝时若更新基准，"跳变来的那一帧"立刻成为新基准 ⟹
+    闸门下一拍就开，判据等于不存在。"""
+    core = _fed_core()
+    core.on_mocap(_Mocap(stamp_s=100.0), at_s=0.0)
+    assert core.cycle(0.0).publish
+    core.on_mocap(_Mocap(position=(100.0, 0.0, 0.0), stamp_s=100.005), at_s=0.005)
+    assert core.cycle(0.005).reason == "pose_jump"
+    # 源仍然停在那个位置上 ⟹ **继续**拒（基准还是原点）
+    core.on_mocap(_Mocap(position=(100.0, 0.0, 0.0), stamp_s=100.010), at_s=0.010)
+    assert core.cycle(0.010).reason == "pose_jump"
+
+
+def test_源回到基准附近就恢复而不是锁死():
+    """★ 判据是"比较"，不是"闭锁"：一次性的跳变过去之后，流要能自己回来。
+
+    （真实场景：刚体被短暂遮挡后回到原位；`VrpnSource` 的 `rewind` 窗口结束后同理。）
+    """
+    core = _fed_core()
+    core.on_mocap(_Mocap(stamp_s=100.0), at_s=0.0)
+    assert core.cycle(0.0).publish
+    core.on_mocap(_Mocap(position=(100.0, 0.0, 0.0), stamp_s=100.005), at_s=0.005)
+    assert not core.cycle(0.005).publish
+    core.on_mocap(_Mocap(position=(0.0, 0.0, 0.0), stamp_s=100.010), at_s=0.010)
+    assert core.cycle(0.010).publish, "源回来了却不放行 —— 判据把自己锁死了"
+
+
+def test_动捕时间戳倒退会停_追平之后恢复():
+    """`VrpnSource.rewind` / 上游重放：stamp 往回走 ⟹ 这一拍（以及倒退期间每一拍）都不发。"""
+    core = _fed_core()
+    core.on_mocap(_Mocap(stamp_s=100.0), at_s=0.0)
+    assert core.cycle(0.0).publish
+
+    core.on_mocap(_Mocap(stamp_s=95.0), at_s=0.1)          # 倒退 5 s
+    c = core.cycle(0.1)
+    assert c.reason == "stamp_regress" and not c.publish
+    assert "5.0000" in c.detail, f"倒退量没进日志：{c.detail!r}"
+
+    core.on_mocap(_Mocap(stamp_s=95.005), at_s=0.105)      # 还倒退着 ⟹ 继续停
+    assert not core.cycle(0.105).publish
+
+    core.on_mocap(_Mocap(stamp_s=100.1), at_s=0.11)        # 追平（向前跳回来）⟹ 放行
+    assert core.cycle(0.11).publish, "stamp 追平之后不放行 —— 判据把自己锁死了"
+
+
+def test_时间戳相等或小幅抖动不判倒退():
+    """★ 容差不是保险余量，是**必需**：节点 100 Hz 取一拍而动捕 200 Hz ⟹ 同一个 stamp
+    会被读到两次；DDS 的到达顺序也不保证单调。两者都不该被读成"源在重放"。"""
+    core = _fed_core()
+    core.on_mocap(_Mocap(stamp_s=100.0), at_s=0.0)
+    assert core.cycle(0.0).publish
+    core.on_mocap(_Mocap(stamp_s=100.0), at_s=0.005)                   # 完全相等
+    assert core.cycle(0.005).publish
+    core.on_mocap(_Mocap(stamp_s=100.0 - 0.005), at_s=0.010)           # 小于默认容差 0.01 s
+    assert core.cycle(0.010).publish
+
+
+def test_读不出_stamp_时判据不存在_而不是判成坏帧():
+    """三种"读不出来"（无 `header` / 字段不齐 / 值为 0）都返回 `None` ⟹ 这两条判据不参与。
+
+    ★ 取向：**不许因为源没填时间戳就把飞机停在空中** —— 那是"判据不存在"，不是"源不可信"。
+    """
+    core = _fed_core()
+    core.on_mocap(_Mocap(), at_s=0.0)
+    assert mocap_stamp_s(core.mocap) is None
+    assert core.cycle(0.0).publish
+    assert mocap_stamp_s(_Mocap(stamp_s=0.0)) is None, "stamp=0 是『源没填』，不是 1970 年"
+    assert mocap_stamp_s(type("_M", (), {"header": type("_H", (), {"stamp": None})()})()) is None
+
+
+def test_位姿判据的_dt_下限把频率与抖动挡在外面():
+    """★ `JUMP_DT_FLOOR_S` 的作用：`允许 = 速率 × max(dt, 下限)`。
+
+    dt 被 DDS 抖动压到 1 ms 时，若照 dt 算，允许位移只剩 0.02 m —— 一次正常机动就被误判。
+    这里把同一个 0.15 m 的步进在两把不同的尺子下比一遍（都在下限之上/之下）。
+    """
+    core = _fed_core()
+    core.on_mocap(_Mocap(stamp_s=100.0), at_s=0.0)
+    assert core.cycle(0.0).publish
+    assert JUMP_DT_FLOOR_S * StopConfig().mocap_jump_speed_max == pytest.approx(0.2)
+    # 0.15 m：小于"下限给的 0.20 m" ⟹ 即便 stamp 只差 1 ms 也放行
+    core.on_mocap(_Mocap(position=(0.15, 0.0, 0.0), stamp_s=100.001), at_s=0.020)
+    assert core.cycle(0.020).publish, "dt 的下限没起作用（被投递抖动坑成假阳性）"
+
+
+# ───────────────────────────── 整帧校验与"解可用吗"（ticket 07 / M5）─────────────────────
+
+class _Info:
+    """`SolveInfo` 的鸭子类型替身。
+
+    ★ `ok` 与 `degraded` **照原样分开给**（`ocp.SolveInfo` 里就是两个独立的属性）：
+      `ok` 只管状态码；`degraded` 还会因 `u` 越界等**数值**理由为真。判据只看前者 ——
+      这正是"退化照发、状态码异常才兜底"这条分界线能在这层被钉死的原因。
+    """
+
+    def __init__(self, status: int = 0, ok: bool | None = None, degraded: bool | None = None,
+                 line: str = ""):
+        self.status = int(status)
+        self._ok = (self.status == 0) if ok is None else bool(ok)
+        self._degraded = (not self._ok) if degraded is None else bool(degraded)
+        self._line = line or f"status={self.status}"
+
+    @property
+    def ok(self) -> bool:
+        return self._ok
+
+    @property
+    def degraded(self) -> bool:
+        return self._degraded
+
+    def line(self) -> str:
+        return self._line
+
+
+class _Sol:
+    def __init__(self, u=(7.3, 0.0, 0.0, 0.0), info=None):
+        self.u = np.array(u, dtype=float)
+        self.info = info if info is not None else _Info()
+
+
+def test_整帧校验认得非有限值():
+    """判据 2 的单元面：四个数里**任一个**非有限都算整帧不可发。
+
+    ★★ 用**真帧类型**（`sign_map.Px4RatesSetpoint`）+ `dataclasses.replace` 造坏帧。
+      本用例原先用 `type("_Sp", (), {...})()` 造替身 —— 那样四个字段全在**类**上，
+      `vars(sp) == {}`，于是 `{**vars(sp), field: bad}` 造出的对象**只有那一个字段**，
+      四次循环全部走 `frame_is_finite` 的 `except AttributeError` 分支，
+      **`math.isfinite` 一次都没被调用过**（换成"只查 `sp.roll`"的假实现，本用例照样全绿）。
+      换成真类型之后，"非有限"与"形状不对"这两条才真的是两件事。
+    """
+    sp = Px4RatesSetpoint(roll=0.0, pitch=0.0, yaw=0.0, thrust_body_z=-0.6235)
+    assert frame_is_finite(sp)
+    for field in ("roll", "pitch", "yaw", "thrust_body_z"):
+        for bad in (float("nan"), float("inf"), float("-inf")):
+            broken = dataclasses.replace(sp, **{field: bad})
+            assert all(hasattr(broken, f) for f in ("roll", "pitch", "yaw", "thrust_body_z")), \
+                "★ 四个字段必须都在 —— 缺字段是**另一条**判据（形状不对），会盖住这一条"
+            assert not frame_is_finite(broken), f"{field}={bad} 没被整帧校验拦下"
+    # 形状不对（少一个字段）⟹ 拒，不猜（这一条才是 AttributeError 那一支）
+    assert not frame_is_finite(SimpleNamespace(roll=0.0, pitch=0.0, yaw=0.0))
+
+
+def test_解可用吗_退化与不可用是两件事():
+    """★ 这条是**兜底触发的分界线**，06 与 07 的交叉点，别合并：
+
+    | 情形 | 判据 | 这一拍 |
+    |---|---|---|
+    | `ok=True`、`degraded=False` | 可用 | 发它的解 |
+    | `ok=True`、`degraded=True`（如 `u` 越界 1e-3 N） | **仍然可用** | 照发 + `warn` + 计数（06 记录的现行行为） |
+    | `ok=False`（状态码非零） | **不可用** | 走 `FallbackLadder` |
+    | `u` 非有限 / 形状不对 | **不可用** | 走 `FallbackLadder`（判据 2） |
+    """
+    assert solution_usable(_Sol()) is None, "正常解必须是可用的"
+    # 退化但状态码正常、解有限：**照发**（把它读成"失败"会让兜底在良性越界上乱触发）
+    degraded_only = _Info(status=0, ok=True, degraded=True, line="u_viol=1.0e-3")
+    assert solution_usable(_Sol(info=degraded_only)) is None, "只退化（如小量越界）不该走兜底"
+    # 状态码非零 ⟹ 不可用，且原因里带上 acados 的那一行读数（日志里要能直接看到）
+    reason = solution_usable(_Sol(info=_Info(status=2, line="status=2 qp_stat=[3, 0]")))
+    assert reason and "status=2" in reason and "qp_stat" in reason, reason
+    # 非有限的 u（本票的注入打的就是这一条）
+    assert "非有限" in (solution_usable(_Sol(u=(float("nan"), 0.0, 0.0, 0.0))) or "")
+    # 形状不对：[F, ωx, ωy] 也"能跑"（u[1:]/u[0] 都取得到）但发出去的东西是错的
+    assert "形状" in (solution_usable(_Sol(u=(7.3, 0.0, 0.0))) or "")
+    assert "形状" in (solution_usable(_Sol(u=(7.3, 0.0, 0.0, 0.0, 0.0))) or "")
+
+
+# ───────────────────────────── 兜底阶梯（ticket 07 / M5）─────────────────────────────
+
+def test_兜底阶梯先保持再悬停():
+    """判据 1/3 的心跳：连续不可用 ≤ N 拍保持，第 N+1 拍起切安全悬停，**只上报一次**。"""
+    ladder = FallbackLadder(hold_frames=3)
+    for i in range(1, 4):
+        phase, report = ladder.on_fail(f"第 {i} 次失败")
+        assert phase == FallbackLadder.HOLD and report is None
+    phase, report = ladder.on_fail("第 4 次失败")
+    assert phase == FallbackLadder.HOVER
+    assert report and "连续 4 拍" in report and "第 1 次" in report, f"上报语不对：{report!r}"
+    # 继续失败：还是 hover，但**不再重复上报**（每拍重复会把日志淹掉）
+    phase, report = ladder.on_fail("第 5 次失败")
+    assert phase == FallbackLadder.HOVER and report is None
+    assert (ladder.holds, ladder.hovers, ladder.events) == (3, 2, 1)
+
+
+def test_兜底阶梯判据是连续不是累计():
+    """★ 中间成功过一拍 ⟹ 计数清零（票面写的是"**连续**求解失败达阈值"）。
+
+    这里累计失败 4 拍、阈值 2 拍：若判据写成"累计"，第 3 拍就该悬停了。
+    """
+    ladder = FallbackLadder(hold_frames=2)
+    for _ in range(2):
+        ladder.on_fail("x"); ladder.on_fail("x")
+        assert ladder.phase == FallbackLadder.HOLD
+        assert ladder.on_ok() is not None, "此前是 hold 档 ⟹ 恢复必须给出解除报告"
+    assert (ladder.holds, ladder.hovers, ladder.events) == (4, 0, 0), \
+        f"累计 4 拍失败被当成了『连续达阈值』：{ladder.describe()}"
+
+
+def test_兜底阶梯解除时给出报告且计数清零():
+    ladder = FallbackLadder(hold_frames=1)
+    ladder.on_fail("求解器状态码异常")
+    phase, report = ladder.on_fail("求解器状态码异常")
+    assert phase == FallbackLadder.HOVER and report
+    report = ladder.on_ok()
+    assert report and "安全悬停" in report and "2 拍" in report, f"解除报告不对：{report!r}"
+    assert ladder.streak == 0 and ladder.phase == FallbackLadder.NORMAL
+    assert ladder.on_ok() is None, "本来就没在兜底 ⟹ 不该有报告"
+    # 二次触发是**新的一次事件**（要能分别检索到）
+    ladder.on_fail("x"); ladder.on_fail("x")
+    assert ladder.events == 2
+
+
+def test_兜底阶梯_hold_frames_为_0_就是第一次失败直接悬停():
+    """参数化的边界：0 = 不保持（档位里 `hold` 一拍都不经过）。"""
+    ladder = FallbackLadder(hold_frames=0)
+    phase, report = ladder.on_fail("x")
+    assert phase == FallbackLadder.HOVER and report and ladder.holds == 0
+
+
+def test_兜底阶梯_没有可保持的帧时直接进悬停_且算一次事件():
+    """★ 边界：**第一拍就不可用**（此前一直在热身或闸门关着）——`hold` 这一档不存在。
+
+    这一条盯的是**簿记与实际发出的帧同源**：若阶梯还把档位判成 `hold`，就会出现
+    "JSONL 打 `hover`、收尾摘要说'此刻仍在 hold'"以及"悬停帧被记成保持帧"（`holds` 虚高），
+    而**这一次事件也不会被上报**（要等 streak 超过 `hold_frames`）—— 判据 3 要的正是它可检索。
+    ⟹ 判据由**调用方**通过 `can_hold` 告诉阶梯（阶梯不认识帧，只有节点知道 `_last_sp` 在不在）。
+    """
+    ladder = FallbackLadder(hold_frames=10)          # 阈值给得很宽，好让"跳过 hold"这件事显形
+    phase, report = ladder.on_fail("第一拍就没解", can_hold=False)
+    assert (phase, ladder.phase) == (FallbackLadder.HOVER, FallbackLadder.HOVER), \
+        "档位与实际发出的帧必须同源（不能返回 hover 而内部还停在 hold）"
+    assert report and "安全悬停" in report and "第 1 次" in report, \
+        "第一拍就进悬停，**这一次事件必须立刻上报**（判据 3）"
+    assert "没有可保持的上一帧" in report, "上报里要说清为什么跳过了 hold 档"
+    assert (ladder.holds, ladder.hovers, ladder.events) == (0, 1, 1), \
+        f"悬停帧不许记成保持帧，实际 (holds, hovers, events)={ladder.holds, ladder.hovers, ladder.events}"
+    assert ladder.streak == 1, "连续计数照记 —— '连续 N 拍没有可用解'这一点与能不能 hold 无关"
+    # 对比：同样的输入，有可保持的帧时就该老老实实走 hold
+    other = FallbackLadder(hold_frames=10)
+    assert other.on_fail("有上一帧", can_hold=True) == (FallbackLadder.HOLD, None)
+    assert (other.holds, other.hovers, other.events) == (1, 0, 0)
+
+
+def test_闸门关闭时_reset_清档位但不清累计量():
+    ladder = FallbackLadder(hold_frames=1)
+    ladder.on_fail("x")                     # → 保持 1 拍
+    ladder.on_fail("x")                     # → 安全悬停（第 1 次）
+    assert (ladder.phase, ladder.hovers, ladder.events) == (FallbackLadder.HOVER, 1, 1)
+    ladder.reset()                          # 闸门关了 ⟹ 档位毫无意义
+    assert ladder.phase == FallbackLadder.NORMAL and ladder.streak == 0
+    assert (ladder.holds, ladder.hovers, ladder.events) == (1, 1, 1), \
+        "累计量（进收尾摘要的那三个）不许被清零 —— 那是这一趟飞行的病历"
+    assert ladder.describe().startswith("兜底：保持 1 拍 / 安全悬停 1 拍 / 触发 1 次")
+
+
+def test_默认阈值不是随手取的数():
+    """★ 把"为什么是 10"钉在测试里 —— 要**换算成时间**才算钉住。
+
+    （原先这里只断言 `>= 1`，把它改成 3 也全绿 ⟹ 那条断言其实什么都没钉。）
+    100 Hz 一拍 10 ms（D6），两头都要卡住：
+
+    · **下界**：给得起好几个求解预算 —— 实测最坏纯求解 3.58 ms（`offline-ocp.md` §5），
+      比它短就变成"偶发一次慢拍就换姿态"；
+    · **上界**：保持的是"上一帧**可行**指令"，越旧越不可信 ⟹ 保持时长的量级必须是 **0.1 s**
+      而不是几秒。
+    """
+    tick_s = 1.0 / 100.0          # 100 Hz ⟹ 每拍 10 ms
+    worst_solve_s = 3.58e-3       # 实测最坏纯求解（`offline-ocp.md` §5）
+    held_s = FALLBACK_HOLD_FRAMES * tick_s
+    assert held_s >= 20 * worst_solve_s, \
+        f"阈值 {FALLBACK_HOLD_FRAMES} 拍 = {held_s * 1e3:.0f} ms 给不起 20 个求解预算"
+    assert held_s <= 0.5, f"阈值 {held_s:.2f} s 太长 —— 保持的是一条越来越旧的指令"
+    assert FALLBACK_HOLD_FRAMES >= 5, "太小 ⟹ `hold` 档名存实亡（一抖动就换姿态）"
+    assert FALLBACK_HOLD_FRAMES == ControlConfig().fallback_hold_frames, \
+        "`ControlConfig` 的默认值必须与常量同源（节点真正读的是它）"
+
+
+def test_四元数测地角对符号不敏感():
+    """`q` 与 `−q` 是同一个姿态 ⟹ 角度必须是 0，不是 2π（这条错了会把"没动"读成"翻了"）。"""
+    q = np.array([0.6, -0.8, 0.0, 0.0])
+    assert quat_angle(q, q) == pytest.approx(0.0, abs=1e-12)
+    assert quat_angle(q, -q) == pytest.approx(0.0, abs=1e-12)
+    assert quat_angle([1.0, 0, 0, 0], [0.0, 1.0, 0.0, 0.0]) == pytest.approx(math.pi)
 
 
 # ───────────────────────────── 小工具 ─────────────────────────────

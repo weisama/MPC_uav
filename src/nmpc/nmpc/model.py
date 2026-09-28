@@ -113,6 +113,20 @@ def normalize_quat(q: np.ndarray) -> np.ndarray:
     return q / np.linalg.norm(q)
 
 
+def quat_angle(a: np.ndarray, b: np.ndarray) -> float:
+    """两个姿态之间的**测地角** [rad]（0…π）—— "这两个姿态差多少"，与朝向参数化无关。
+
+    ★ `|a·b|`：四元数 `q` 与 `−q` 是**同一个姿态**，不取绝对值的话"姿态没变"会被算成 2π。
+    ★ 用 `acos` 而不是逐分量比差：分量差在 `q ≈ −q` 附近会给出 2 的量级（"翻转了"），
+      而实际姿态一模一样。
+    用在**位姿合理性判据**里（`node_core.NodeCore._pose_jump`）：动捕刚体认错/遮挡恢复时
+    会给出一个"瞬移"的姿态，判据要能把它与真实机动分开。
+    """
+    a = normalize_quat(np.asarray(a, dtype=float).reshape(4))
+    b = normalize_quat(np.asarray(b, dtype=float).reshape(4))
+    return float(2.0 * np.arccos(np.clip(abs(float(np.dot(a, b))), 0.0, 1.0)))
+
+
 class Z0MultirotorRateModel:
     """z0 的 10 状态模型 —— 负责给出 `AcadosModel` 与一个可调用的动力学函数。
 

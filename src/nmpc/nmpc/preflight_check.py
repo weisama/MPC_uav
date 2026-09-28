@@ -17,6 +17,7 @@
 | 符号 | **三方对账**：实现 / `docs/control/sign-map.md` 的 canonical 块 / `tools/sign-map` 的独立推导 | 飞机、ROS |
 | 归一化 | 推力归一化是不是**从模型导出**的（`−F/T_max`、悬停值 = `−hover_thrust`） | 飞机、ROS |
 | 停机条件 | 四个条件**参数化**、且程序里**没有通道号**（`ast` 扫标识符，注释里的引用不算） | 飞机、ROS |
+| 兜底 | 兜底保持拍数可解释、位姿合理性阈值比真机动**宽**、**故障注入关着** | 飞机、ROS |
 
 `--solve` 那一档才需要 acados：它把"模型 + 代价 + 符号 + 归一化"合成**一个数** ——
 在悬停点解出来的 `u` 归一化之后必须等于 `−hover_thrust`。
@@ -207,6 +208,42 @@ def check_normalization(z0: Z0Params, impl: Callable = px4_rates_setpoint) -> Li
     hard = impl((0.0, 0.0, 0.0), z0.t_hover, 2.0 * z0.t_max)
     out.append(Check(g, "换 T_max 归一化跟着走", math.isclose(hard.thrust_body_z, want / 2.0, rel_tol=1e-12),
                      f"同一个物理推力、T_max 翻倍 ⟹ {hard.thrust_body_z:+.6f}（= 悬停值的一半）"))
+    return out
+
+
+# ───────────────────────── ③′ 兜底与输入合理性（ticket 07 / M5）─────────────────────────
+
+#: z0 飞控现状里的**最大水平速度** [m/s]（`MPC_XY_VEL_MAX`）—— 位置跳变判据必须比它宽，
+#: 否则一次正常的高速机动会被读成"跳变"而**无故停发**（飞机在空中收不到指令）。
+#: ★ 它**不在代码里**（是飞控参数，不是我们的模型参数，`docs/reference/params-analysis.md`
+#:   对账过）⟹ 本文件是它唯一的落点，与上面那个 40 N 的电机上限同一种用法。
+MPC_XY_VEL_MAX = 12.0
+
+
+def check_fallback(p, z0: Optional[Z0Params] = None) -> List[Check]:
+    """兜底阶梯与输入合理性判据 —— 全是**参数之间的大小关系**，不重复代码里的逻辑。"""
+    z0 = z0 or p.z0_params()
+    g = "兜底"
+    out: List[Check] = []
+
+    ok = int(p.fallback_hold_frames) >= 0
+    out.append(Check(g, "兜底保持拍数 ≥0", ok,
+                     f"fallback_hold_frames = {p.fallback_hold_frames} 拍"
+                     f"（0 = 第一次失败就切安全悬停；默认 10 拍 = 100 ms ≈ 28 个求解预算）"))
+
+    fastest = max(z0.rate_max)
+    ok = p.mocap_jump_speed_max > MPC_XY_VEL_MAX and p.mocap_jump_rate_max > fastest
+    out.append(Check(g, "位姿合理性阈值比真机动宽", ok,
+                     f"位移上限 {p.mocap_jump_speed_max:g} m/s（须 > {MPC_XY_VEL_MAX:g} = 飞控的 "
+                     f"`MPC_XY_VEL_MAX`）、转角上限 {p.mocap_jump_rate_max:g} rad/s"
+                     f"（须 > {fastest:g} = 模型里最快的角速率）—— ★ 反过来的错是**无故停发**："
+                     "一次正常机动被读成跳变，飞机在空中就收不到指令了"))
+
+    ok = int(p.inject_solve_fail_after_frames) == 0
+    out.append(Check(g, "故障注入关着", ok,
+                     f"inject_solve_fail_after_frames = {p.inject_solve_fail_after_frames}"
+                     + ("" if ok else "　⟹ **装桨前必须设回 0**：它会让每一拍的求解结果"
+                                      "都被换成坏解，飞机收到的全是兜底帧")))
     return out
 
 
@@ -404,6 +441,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     else:
         checks += check_signs(repo)
     checks += check_normalization(p.z0_params())
+    checks += check_fallback(p, p.z0_params())
     checks += check_stop_conditions(p, sorted(pkg.glob("*.py")))
     if args.solve:
         checks += check_solver(p.z0_params())
