@@ -47,6 +47,13 @@ Phase 1 让 z0 能自主定点飞了，但**控制律从头到尾都是飞控内
 真实动捕 rosbag 回放**（Q13）。理由：`gz_x500` 的动力学与 z0 差得远，"在 x500 上能飞"证明不了
 "在 z0 上能飞"。详见 Further Notes。
 
+> ★ **2026-09-28 落地（[ticket 01](issues/01-sitl-px4-msgs-baseline.md)）**：后端取 **SIH**
+> （`sihsim_quadx`，`SYS_AUTOSTART=10040`）—— gazebo-classic 与 gz-sim 在**本机均不可直接用**
+> （第一手证据见 [`docs/control/px4-sitl-baseline.md`](../../docs/control/px4-sitl-baseline.md) §3）。
+> Q11 的 ±30% 失配改用 SIH 参数做（`SIH_MASS` / `SIH_IXX..IZZ` / `SIH_T_MAX` / `SIH_L_ROLL` 等，
+> 全在 airframe 文件里 ⟹ **可入库、可复核**）。⚠️ **代价**：SIH 是与控制器同层次的简化模型，
+> 它**证明不了"模型够真"**，只证明约定对得上 —— 这一条已知情并接受。
+
 **实机飞行不在本 spec 范围** → [`phase3/spec.md`](../phase3/spec.md)。
 **Phase 1 的整条链在 Phase 2 期间保持可用**，随时可退回 (A) 级。
 

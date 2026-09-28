@@ -419,23 +419,44 @@ ubu = np.array([+Fmax,     wmax,       wmax,      +0.5*wmax])
 
 ### S1 —— 环境：SITL + `px4_msgs`
 
+> ★ **2026-09-28 已收口（[ticket 01](../../.scratch/phase2/issues/01-sitl-px4-msgs-baseline.md)）**。
+> **构建步骤 / 版本与 commit / 五个坑 / 验收证据 / 给 Phase 3 的交接**全在
+> [`px4-sitl-baseline.md`](px4-sitl-baseline.md)，脚本在 [`tools/px4-sitl/`](../../tools/px4-sitl/)。
+> **本节只留结论**；下面三处的旧口径已被实测推翻，就地改正。
+
 | 项 | 值 | 备注 |
 |---|---|---|
-| PX4 源码 | ★ **上游 `PX4/PX4-Autopilot` @ tag `v1.14.3`（`1dacb4c`）**（§2.6 执行版；用户未单独表态，取默认） | 需**带 `--recursive` 的完整 clone**（23 个 submodule）；`~/refs/px4-v1.14.3` 是 `--depth 1 --filter=blob:none`，**不能直接构建** → 建议新目录 `~/refs/px4-v1.14.3-build/`。⚠️ 动手前先实测 `ROMFS/.../init.d-posix/airframes/` 条目数，确认要用的机型在（v1.14.3 这里条目比 fork 少）。☠️ ~~fork `Peize-Liu/PX4-Autopilot @ 5ba2e91f`~~ —— **作废，飞控不跑 fork** |
-| SITL 仿真后端 | **gazebo-classic 或 gz-sim 都可用（Q12 的 gazebo-classic 选择不变）** | ✅ 第一手（对 fork 核过；上游 v1.14.3 的 `4001_gz_x500` 亦已核到，见 [`refs-manifest.md`](../reference/refs-manifest.md) §2.6 可行性表） |
-| `px4_msgs` | ★ **钉 `release/1.14` @ `ffb6e80e`**（✅ **用户签字**） | ✅ 与真身 `4a0e65f2` 在**共有的 184 个 `msg/` 文件上 blob 全同**（唯一集合差异 `msg/CMakeLists.txt`，那是 PX4 的构建文件）。☠️ ~~从 fork 的 `msg/` + `srv/` 生成（Q31=a）~~ + ☠️ ~~`release/1.14` 已被判为不兼容（28/184 字段不同）~~ —— **两条都作废**（那是拿 fork 比出来的）。详见 §6.1 与 [`refs-manifest.md`](../reference/refs-manifest.md) §2.5(d)/§2.6 执行版 |
-| 中间件代理 | `micro-xrce-dds-agent udp4 -p 8888` | PX4 SITL 默认端口 |
+| PX4 源码 | ★ **上游 `PX4/PX4-Autopilot` @ tag `v1.14.3`（`1dacb4c`）**（§2.6 执行版） | 已用 `~/refs/px4-v1.14.3-build/`（`--recursive --single-branch`）编通。**submodule 是 17 个，不是 23 个**（`grep -c '^\[submodule' .gitmodules`）。`~/refs/px4-v1.14.3` 是 `--filter=blob:none`，**不能直接构建**。✅ 机型已实测：`ROMFS/.../init.d-posix/airframes/` 共 **56 个条目**（55 airframe + CMakeLists）。☠️ ~~fork `Peize-Liu/PX4-Autopilot @ 5ba2e91f`~~ —— **作废，飞控不跑 fork** |
+| SITL 仿真后端 | ★ **SIH（`sihsim_quadx`，`SYS_AUTOSTART=10040`）** —— 2026-09-28 操作者裁定 | ☠️ ~~「gazebo-classic 或 gz-sim 都可用」~~ —— **两条在本机都不成立**：gazebo-classic 的 dev 库 apt **无候选**（jammy/arm64）；gz-sim 只支持 Garden（`gz_bridge/CMakeLists.txt` 明写 `IGN (Fortress and earlier) no longer supported`），要加 OSRF 源 + ~500 MB + 写 SDF。SIH 零外部依赖。**代价已知情并接受**：SIH 是与我们控制器同层次的简化模型，**证明不了"模型够真"**，只能证明约定对得上 —— 详见交付文档 §3 |
+| `px4_msgs` | ★ **钉 `release/1.14` @ `ffb6e80e`**（✅ **用户签字**） | ✅ 与真身 `4a0e65f2` 在**共有的 184 个 `msg/` 文件上 blob 全同**（唯一集合差异 `msg/CMakeLists.txt`，那是 PX4 的构建文件）；并已补证 **真身 ↔ 上游 v1.14.3 在 185 个文件上 blob 亦全同、无集合差异** ⟹ 拿上游当被控对象对兼容性无差别。☠️ ~~从 fork 的 `msg/` + `srv/` 生成（Q31=a）~~ + ☠️ ~~`release/1.14` 已被判为不兼容（28/184 字段不同）~~ —— **两条都作废**（那是拿 fork 比出来的）。详见 §6.1 与 [`refs-manifest.md`](../reference/refs-manifest.md) §2.5(d)/§2.6 执行版 |
+| 中间件代理 | ★ **`MicroXRCEAgent udp4 -p 8888`**（钉 `v2.4.2`） | ☠️ ~~`micro-xrce-dds-agent`~~ —— **二进制名没有小写别名**，写不对就是「命令找不到」。PX4 SITL 默认端口 8888 |
 
 **⚠️ 必须做的版本校验**（roadmap 与 [`open-source-survey.md`](../reference/open-source-survey.md) §10 都强调过）：
 
 ```
-PX4 侧：  python3 Tools/check-message-compatibility.py
+PX4 侧：  python3 tools/px4-sitl/check_msg_compat.py \
+              --px4-tree ~/refs/px4-v1.14.3-build --px4-msgs ~/refs/px4_msgs \
+              --interface-lib ~/refs/px4-ros2-interface-lib
 ROS 侧：  ros2 interface show px4_msgs/msg/VehicleRatesSetpoint
 ```
 
+☠️ ~~`python3 Tools/check-message-compatibility.py`~~ —— ★ **这个路径是错的，而且照着改也还是会错**：
+该脚本**不在 PX4-Autopilot 里**（v1.14.3 / v1.15.0 / v1.16.0 / fork / `px4_msgs` 逐棵树查过，全无），
+它住在 **`auterion/px4-ros2-interface-lib`** 的 `scripts/` 下；**直接跑它对本项目会报假 FAILED**
+（它按自己仓库 main 的类型清单查，而那 20 个类型 v1.14 里根本不存在 —— 报错原文里**没有** `Some files differ` 那一段，
+即**零个字段不符**）。本项目改用 `check_msg_compat.py`：**复用官方那份 `message_hash` 算法**，
+但把类型换成两侧 `msg/` 的**并集（184 个全覆盖）**，**严格强于官方脚本的子集检查**。
+⚠️ `PROJECT.md:450` 与 [`px4-interface.md`](../reference/px4-interface.md):178、`:284` 仍写着那个错路径 ——
+**本张不动别的票**（开票点名即可，`done` 的纪律不允许靠"留给以后"掩盖），已另开
+[ticket 14](../../.scratch/phase2/issues/14-stale-check-msg-compat-path.md)。
+
 **判据**：`px4_msgs` 与固件的消息定义一致。**v1.15 及以前版本不匹配会静默失败** —— 话题能订阅、能发布，但 PX4 收不到，且**不报任何错**。（px4-mpc 里那段同时订阅 `vehicle_status` 和 `vehicle_status_v1` 的代码，就是在绕这个版本问题。我们锁定版本后可以删掉。）
 
-**验收**：`ros2 topic list | grep fmu` 能看到 `/fmu/in/*` 与 `/fmu/out/*`。
+**验收**（2026-09-28 全过，证据见交付文档 §2.4）：
+① `check_msg_compat.py` **PASS** —— 共有的 **184/184** 字段布局全同，`OffboardControlMode` 与 `VehicleRatesSetpoint` 均在共有集内；
+② `ros2 topic list | grep fmu` 看到 **`/fmu/in/*` 13 条 + `/fmu/out/*` 11 条**（双向前缀）；
+③ 类型能解析成 `[px4_msgs/msg/…]`，且 `vehicle_status` **有真实数据在流**（显式 `BEST_EFFORT`，即 §6.4 那个坑的现场）。
+⚠️ **但本步到此为止**：以上都**不是「通了」的判据** —— 那正是版本不匹配骗人的地方。真判据在 S5 / [ticket 05](../../.scratch/phase2/issues/05-sitl-offboard-smoke.md)：**PX4 是不是真的照做了**。
 
 ### S2 —— acados 在 Jetson Orin NX 上编译
 
@@ -607,7 +628,10 @@ v1.15 及以前，`px4_msgs` 与固件不匹配时：话题存在、能发布、
 > —— 只是**我们并没有踩到它**：这一次的"不匹配"是误报。
 >
 > **→ S1 的第一步不再是"定案怎么得到与 fork 逐字节一致的 `px4_msgs`"，而是
-> 「用 `release/1.14` @ `ffb6e80e` + 上游 v1.14.3 跑 SITL，并跑一遍 `check-message-compatibility.py` **复验**」。**
+> 「用 `release/1.14` @ `ffb6e80e` + 上游 v1.14.3 跑 SITL，并跑一遍**消息一致性比对** **复验**」。**
+> ✅ **2026-09-28 已复验通过**（ticket 01）：比对脚本用 `tools/px4-sitl/check_msg_compat.py`
+> —— ☠️ ~~`check-message-compatibility.py`~~，那个路径**在 PX4-Autopilot 里不存在**且直接跑会给假 FAILED，
+> 理由见 §S1 与 [`px4-sitl-baseline.md`](px4-sitl-baseline.md) §2.3。
 >
 > 完整对照表见 [`refs-manifest.md`](../reference/refs-manifest.md) §2.5(d) 与 §2.6 执行版。
 >
@@ -755,8 +779,18 @@ S1 环境 ──> S2 acados ──> S3 离线 OCP ──> S4 节点 ──> S5 S
 | `thrust_body` 原样透传、不受 `MPC_THR_HOVER` 影响 | PX4 `v1.14.3` `src/modules/mc_rate_control/MulticopterRateControl.cpp`，offboard 分支 `_thrust_setpoint = Vector3f(vehicle_rates_setpoint.thrust_body);` |
 | 角速率有 NaN 回退、推力没有 | 同上，`PX4_ISFINITE(...)` 只出现在三行角速率上 |
 | `MC_BAT_SCALE_EN` 默认 **0（关闭）** | PX4 `v1.14.3` `src/modules/mc_rate_control/mc_rate_control_params.c`，`PARAM_DEFINE_INT32(MC_BAT_SCALE_EN, 0);` |
-| `gz_x500` 在 v1.14.3 存在 | `git ls-tree v1.14.3:ROMFS/px4fmu_common/init.d-posix/airframes` → `4001_gz_x500` |
+| `gz_x500` 在 v1.14.3 存在 | `git ls-tree v1.14.3:ROMFS/px4fmu_common/init.d-posix/airframes` → `4001_gz_x500`（★ 但**存在 ≠ 本机可用**，见 §S1） |
 | `px4_msgs` 有 `release/1.14` 分支与 `v1.14.0` 标签 | `git ls-remote --heads --tags https://github.com/PX4/px4_msgs.git` |
+| SIH 可用、机型是 `sihsim_{airplane,quadx,xvert}` | v1.14.3 `src/modules/simulation/simulator_sih/CMakeLists.txt:51` `set(models …)`、`:94` `add_custom_target(sihsim_${model} …)` |
+| v1.14.3 的 airframe 共 56 个条目（SIH 3 / gz 6 / gazebo-classic 35 / jsbsim+flightgear 9 / jmavsim 1 / none 1 + `CMakeLists.txt`） | `ls ROMFS/px4fmu_common/init.d-posix/airframes/`，按后缀 `grep -c` |
+| gz-sim 在 v1.14.3 **只支持 Garden** | `src/modules/simulation/gz_bridge/CMakeLists.txt:38-39`：`#ignition-transport11 # IGN (Fortress and earlier) no longer supported` + `gz-transport12` |
+| submodule 是 **17** 个（不是 23） | `grep -c '^\[submodule' ~/refs/px4-v1.14.3-build/.gitmodules` |
+| 真身 `4a0e65f2` ↔ 上游 `v1.14.3` 的 `msg/`：185 个文件 blob **全同**、**无集合差异** | `git -C ~/refs/px4-z0 ls-tree -r 4a0e65f2 -- msg/` vs `git -C ~/refs/px4-v1.14.3 ls-tree -r HEAD -- msg/`，按文件名 join 比 blob |
+| `Tools/check-message-compatibility.py` **不在 PX4-Autopilot 里** | 逐棵树 `ls`/`find`：v1.14.3 / v1.15.0 / v1.16.0 / fork `5ba2e91f` / `px4_msgs` 全无；`Tools/` 下只有三个 `*msg*` 脚本，仓库根无 `scripts/` |
+| 消息比对的官方算法在 `auterion/px4-ros2-interface-lib`，且直接跑会给假 FAILED | `scripts/check-message-compatibility.py`；其类型清单来自同仓 `message_compatibility_check.hpp`，该仓**无 `release/1.14` 分支** ⟹ 报 20 个 v1.14 根本不存在的类型为「缺失」，但报错里**没有** `Some files differ` |
+| `px4_msgs` 与上游 v1.14.3 的 184 个共有 `msg/` 文件**字段布局全同** | `tools/px4-sitl/check_msg_compat.py`（复用官方 `message_hash`），**RESULT: PASS** |
+| `MicroXRCEAgent` 跑通后 `/fmu/in/*` 13 条 + `/fmu/out/*` 11 条，且有真实数据 | `run_sitl.sh --agent` + `ros2 topic list \| grep fmu` + `ros2 topic echo --qos-reliability best_effort --once /fmu/out/vehicle_status` |
+| Agent superbuild 会 checkout 上游**已删除**的分支 `2.12.x` | `git ls-remote --heads https://github.com/eProsima/Fast-DDS.git` 无 `2.12.x`；报错 `fatal: invalid reference: 2.12.x`（**不指向根因**） |
 
 > 📌 **顺带一条对用户有利的发现**：`MC_BAT_SCALE_EN` 默认**关闭**，所以 [`phase1-implementation.md`](phase1-implementation.md) §8.2 里记的 ADC 电池电流采样 bug **在默认配置下不会污染推力/力矩指令**（该参数打开时才会把 `thrust` 和 `torque` 同时乘上由电池测量算出的 `battery_status.scale`）。
 > **但如果将来有人图"电量低时性能一致"把 `MC_BAT_SCALE_EN` 打开，这个 ADC bug 就会从"遥测读数不对"升级成"控制环里的乘性干扰"。** 建议在 z0 上**保持该参数为 0**。
