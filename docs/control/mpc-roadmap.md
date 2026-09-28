@@ -262,9 +262,9 @@ nlp   = SQP_RTI           ← 实时迭代：每周期只做一次 SQP，延迟�
 
 | # | 事项 | 说明 |
 |---|---|---|
-| 1 | **`BLASFEO_TARGET = ARMV8A_ARM_CORTEX_A76`** | ★ Orin NX 是 **Cortex-A78AE**，但 BLASFEO 没有 A78 目标，A76 最接近（上游 aarch64 默认是 **A57**）。☠️ 但「不指定就掉一个量级」不成立：`GENERIC` 只慢 **~21%**（median 2.84 → 3.43 ms）。⭐ 同一批实测里更值钱的是**绑核**：3.96 → 2.83 ms |
+| 1 | **`BLASFEO_TARGET = ARMV8A_ARM_CORTEX_A76`** | ★ Orin NX 是 **Cortex-A78AE**，但 BLASFEO 没有 A78 目标，A76 最接近（上游 aarch64 默认是 **A57**）。☠️ 但「不指定就掉一个量级」不成立：`GENERIC` 只慢 **~21%**（median 2.83 → 3.43 ms）。⭐ 同一批实测里更值钱的是**绑核**：median 3.96 → 2.83 ms（−29%）、max 4.39 → 2.96 ms（−33%） |
 | 2 | **`HPIPM_TARGET = GENERIC`** | hpipm 无 ARM 专属目标，上游默认即 `GENERIC` |
-| 3 | **Tera 渲染器** | ☠️ 不是「缺失报 `EOFError`」（那是 v0.5.x 及以前交互式 `input()` 在非交互下的内建异常，v0.6.0 已删）。真身是**三种落点，其中一种完全静默**：在但渲染不出东西时，`utils.py:397` 用 `os.system` **只查退出码、不校验产物**，静默两层后才炸成 `.so: cannot open shared object file` |
+| 3 | **Tera 渲染器** | ☠️ 不是「缺失报 `EOFError`」（那是 v0.5.x 及以前交互式 `input()` 在非交互下的内建异常，v0.6.0 已删）。真身是**三种落点，其中一种完全静默**：在但渲染不出东西时，`utils.py:396-397` 用 `os.system` **只查退出码、不校验产物**，静默两层后才炸成 `.so: cannot open shared object file` |
 | 4 | **`ACADOS_SOURCE_DIR`** | 指**安装目录**（要有 `bin/ lib/ include/ cmake/`），不是源码目录 |
 | 5 | **`LD_LIBRARY_PATH`** | 运行时需要指向 acados 的 `lib/` |
 | 6 | **不要走 CUDA 后端** | 宿主**没有 `nvcc`、没有 TensorRT**（实测）。CPU 路线足够 |
@@ -275,10 +275,14 @@ nlp   = SQP_RTI           ← 实时迭代：每周期只做一次 SQP，延迟�
 **建议的顺序**：
 
 1. 先在**宿主原生**编译 acados（不要在容器里，避免路径混乱）
-2. 跑通一个自带示例（验证工具链）—— 第 2 步实测用的是**参考实现自带的 x500 例子**
-   （`mass=1 / hover_thrust=0.73`，比 acados 自己的 `quadrotor` 更贴近我们要移植的东西；
-   验收脚本 `tools/acados-orin/check_x500_ocp.py`）
+2. 跑通 acados 自带的 `quadrotor` 示例（验证工具链）
 3. 再写自己的 OCP
+
+> 📌 **第 2 步的实测偏离**（ticket [02](../../.scratch/phase2/issues/02-acados-orin-build.md)，2026-09-28）：
+> 实际跑的**不是** acados 自带的 `quadrotor`，而是**参考实现自带的 x500 例子**
+> （`mass=1 / hover_thrust=0.73`，`DISCOWER/px4-mpc`）—— 理由是它更贴近要移植的东西，
+> 且验收脚本能顺带断言那组配置。**上面这条建议本身不变**（`quadrotor` 仍是"验工具链"最省事的选择），
+> 只是记下本票走的是哪条路。脚本：`tools/acados-orin/check_x500_ocp.py`
 
 ---
 

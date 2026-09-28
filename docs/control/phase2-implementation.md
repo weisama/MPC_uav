@@ -448,14 +448,14 @@ ROS 侧：  ros2 interface show px4_msgs/msg/VehicleRatesSetpoint
    （另：0.6.0 的默认值本来就是 OFF，显式写只是防上游改默认）。
 2. **BLASFEO target = `ARMV8A_ARM_CORTEX_A76`** —— Orin NX 是 Cortex-**A78AE**，A76 确实是可用集中最接近的
    （上游在 aarch64 上的默认是 **A57**，`CMakeLists.txt:62-66`；`X64_AUTOMATIC` 在 aarch64 上压根不是可选值）。
-   ☠️ 但「用 `GENERIC` 会掉一个量级」**不对**：实测只慢 **~21%**（median 2.84 → 3.43 ms）。
-   ⭐ 同一批实测里**更值钱的一条是绑核**：不绑核 3.96 ms → 绑核 2.83 ms（**差 40%**），
-   比换 BLASFEO 目标影响大得多 —— 频率定档（D6）必须写明这个前提。
+   ☠️ 但「用 `GENERIC` 会掉一个量级」**不对**：实测只慢 **~21%**（median 2.83 → 3.43 ms）。
+   ⭐ 同一批实测里**更值钱的一条是绑核**：median 3.96 → 2.83 ms（**−29%**）、max 4.39 → 2.96 ms（**−33%**），
+   比换 BLASFEO 目标影响大得多 —— 频率定档（D6）必须写明这个前提（⚠️ 百分比要连着 median/max 一起说）。
 3. **`t_renderer`（Tera）必须装** —— ☠️ 旧话「缺了报 `EOFError`」**在我们用的 v0.6.0 上不成立**：
    那是 v0.5.x 及以前**交互式提问**（`input(...)`）在非交互下读到的 Python 内建异常，
    commit `a26c7d0ce`（首发于 **v0.6.0**）已删掉该提问。**真正要记的是三种落点，其中一种完全静默**：
    缺失+有网 → 自己下载（只是慢）；缺失+无网 → `RuntimeError`，信息完整**直指根因**；
-   **在但渲染不出东西 → 不报错**，只因 `utils.py:397` 用 `os.system` 且**只查退出码、不校验产物**，
+   **在但渲染不出东西 → 不报错**，只因 `utils.py:396-397` 用 `os.system` 且**只查退出码、不校验产物**，
    一路静默到两层之后才炸成 `OSError: …libacados_ocp_solver_….so: cannot open shared object file`。
 
 **验收**：编译 `px4-mpc` 自带的例子（`mass=1, hover_thrust=0.73` 的 x500 配置）能 `AcadosOcpSolver` 创建成功并 `solve()` 返回 0。

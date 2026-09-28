@@ -27,7 +27,8 @@ PINNED_COMMIT="00947ddc394b30c956d9a7794d0bbcbc44c7c050"
 
 if [[ "${1:-}" == "--print-pin" ]]; then
   echo "acados 源码 $SRC @ $PINNED_COMMIT"
-  echo "t_renderer v0.2.1 (linux-arm64) sha256: 17db270e2f21f25bfb994d0eaea9e0481f3c2dd081030f959c254b8862df4453"
+  # t_renderer 的版本与 sha256 只写在 install_t_renderer.sh 一处（那边才是核对它的地方）
+  echo "t_renderer: 见 tools/acados-orin/install_t_renderer.sh（v0.2.1 / 带 sha256 核对）"
   exit 0
 fi
 
@@ -61,5 +62,7 @@ done
 echo
 echo "已安装到 $INSTALL_DIR（含上游漏装的 lib/link_libs.json、lib/git_commit_hash）"
 echo "接下来："
-echo "  bash tools/acados-orin/install_t_renderer.sh      # 缺它会在生成代码时炸（见文档 §坑 3）"
-echo "  python3 -m pip install --user -e $SRC/interfaces/acados_template"
+echo "  bash tools/acados-orin/install_t_renderer.sh      # 缺它的三种落点见文档 §4.1"
+echo "  # ⚠️ 本机 pypi.org 不可达（会静默卡十分钟），必须带镜像："
+echo "  python3 -m pip install --user -i https://pypi.tuna.tsinghua.edu.cn/simple \\"
+echo "      -e $SRC/interfaces/acados_template"

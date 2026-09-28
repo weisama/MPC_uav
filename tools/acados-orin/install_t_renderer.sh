@@ -4,7 +4,8 @@
 # 为什么单独一个脚本：acados 0.6.0 检测到 $ACADOS_SOURCE_DIR/bin/t_renderer 缺失时会
 # **自己去 GitHub 下载**。机身有网时这很省事，但 Phase 2 的验收要求可复现 ——
 # 所以这里把它固定成 v0.2.1 的 linux-arm64 二进制并核对 sha256。
-# 缺它的真实症状（不是文档里流传的 EOFError）见 docs/control/acados-orin-build.md §坑 3。
+# 缺它的真实症状（不是文档里流传的 EOFError）见 docs/control/acados-orin-build.md §4.1 ——
+# 三种落点里有一种**完全不报错**（在、但渲染不出东西），那才是真正坑人的那种。
 #
 # 用法：bash tools/acados-orin/install_t_renderer.sh [安装目录，默认 $HOME/acados]
 set -euo pipefail

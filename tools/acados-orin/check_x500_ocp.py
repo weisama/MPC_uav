@@ -11,7 +11,13 @@
     export LD_LIBRARY_PATH=$ACADOS_SOURCE_DIR/lib:$LD_LIBRARY_PATH
     python3 tools/acados-orin/check_x500_ocp.py --runs 1000
 
-量出来的数回填 `docs/control/phase2-implementation.md` §5 的 P3（最坏求解耗时）。
+⚠️ **量之前先看 `uptime`**：这台机器有并行会话，别人一编译（PX4 SITL 之类）读数就废了 ——
+实测同一命令在负载下 max 从 4.4 ms 涨到 23 ms，判定行会翻成"100 Hz 不够"的**假**结论。
+脚本自己会报 load 并在有负载时给判定行打失真的标记。
+
+⚠️ 本脚本量的是**上游参考实现的 x500 占位配置**（`mass=1`、`hover_thrust=0.73`），
+**不是 z0 自己的 OCP** ⟹ 这些数**不能**用来回填 `docs/control/phase2-implementation.md` §5 的 P3
+（那一项问的是 z0 的 OCP，仍待 ticket 04）。量级与瓶颈归因见 `docs/control/acados-orin-build.md` §6。
 """
 
 from __future__ import annotations
@@ -27,6 +33,13 @@ from pathlib import Path
 # ★ 钉住的上游 commit —— 与 docs/reference/refs-manifest.md §1 记的同一行
 PX4_MPC_COMMIT = "3e541afb05350e30a0867420a5df40dbdfa92c13"
 PX4_MPC_REF = Path.home() / "refs" / "px4-mpc"
+
+# ★ 被验收的那组配置 —— 来源是 ticket 02 的验收项原文
+#   「质量 1 kg / 悬停油门 0.73 的 x500 配置」，不是我们挑的数。
+#   断言它们是为了挡住"参考实现哪天悄悄换了占位值、脚本却照样报通过"。
+X500_MASS = 1.0
+X500_HOVER_THRUST = 0.73
+G = 9.81
 
 
 def sh(cmd: list[str]) -> str:
@@ -89,6 +102,8 @@ def main() -> int:
     tera = acados_dir / "bin" / "t_renderer"
     print(f"t_renderer            : {sh([str(tera), '--version']) if tera.is_file() else '缺失'}")
     print(f"CPU                    : {_cpu_line()}  亲和={sorted(os.sched_getaffinity(0))}")
+    quiet, load_line = _machine_quiet()
+    print(f"机器负载               : {load_line}{'' if quiet else '  ⚠️ 有负载，下面的耗时不可信！'}")
     print("=" * 78)
 
     # ── 1. 参考实现（钉住 commit，导出到 scratch，不动只读副本）
@@ -99,10 +114,11 @@ def main() -> int:
 
     # ── 2. 确认这确实是「1 kg / 悬停油门 0.73 的 x500 配置」
     model = MultirotorRateModel()
-    expected_max_thrust = 1.0 * 9.81 / 0.73
-    assert model.mass == 1.0, f"mass = {model.mass}，不是 x500 的 1 kg"
-    assert abs(model.max_thrust - expected_max_thrust) < 1e-9, "max_thrust 与 0.73 不自洽"
-    print(f"模型: mass={model.mass} kg, max_thrust={model.max_thrust:.4f} N ⟸ hover_thrust=0.73")
+    expected_max_thrust = X500_MASS * G / X500_HOVER_THRUST
+    assert model.mass == X500_MASS, f"mass = {model.mass}，不是 x500 的 {X500_MASS} kg"
+    assert abs(model.max_thrust - expected_max_thrust) < 1e-9, "max_thrust 与 hover_thrust 不自洽"
+    print(f"模型: mass={model.mass} kg, max_thrust={model.max_thrust:.4f} N "
+          f"⟸ hover_thrust={X500_HOVER_THRUST}")
 
     # ── 3. 建 AcadosOcpSolver（触发代码生成 + 生成代码的 C 编译）
     t0 = time.perf_counter()
@@ -148,9 +164,27 @@ def main() -> int:
     print(stat_line("  ↑ acados 自报 time_tot", internal))
     print(stat_line("controller.solve(x0)", node_samples))
     print("-" * 78)
-    print(f"最坏纯求解耗时 = {max(samples):.3f} ms ⟹ "
-          f"100 Hz 预算 10 ms {'够' if max(samples) < 10 else '不够'}")
+    verdict = "够" if max(samples) < 10 else "不够"
+    # ★ 负载下这一行会给出**相反**的结论（实测：空载 max 4.4 ms / 有编译负载 max 23 ms），
+    #   所以必须把「这次读数可不可信」和结论印在一起，不能只印结论。
+    if not quiet:
+        verdict += "（⚠️ 但本次有负载，此判定可能失真 —— 换空载机器重测）"
+    print(f"最坏纯求解耗时 = {max(samples):.3f} ms ⟹ 100 Hz 预算 10 ms {verdict}")
     return 0
+
+
+def _machine_quiet() -> tuple[bool, str]:
+    """看 1 分钟 load average 是否低于核数的一半。
+
+    存在的理由（第一手）：2026-09-28 有一次复测撞上另一个会话在编译 PX4 SITL，
+    同一命令的 max 从 4.39 ms 变成 23.4 ms、判定行直接翻成"不够"。
+    """
+    ncpu = os.cpu_count() or 1
+    try:
+        load1 = float(Path("/proc/loadavg").read_text().split()[0])
+    except OSError:
+        return True, "读不到 /proc/loadavg"
+    return load1 < ncpu / 2, f"load1={load1:.2f} / {ncpu} 核"
 
 
 def _has_openmp(acados_dir: Path) -> bool:
