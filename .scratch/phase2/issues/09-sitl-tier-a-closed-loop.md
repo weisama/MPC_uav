@@ -180,7 +180,7 @@ yaw_quat(2π − ψ) = [−cos(ψ/2), 0, 0, sin(ψ/2)]     ← 只有 w 差一�
 **不是本票造成的**，但本票往那个文件里加了用例，所以在这里点名：该文件**没注册**进
 `src/nmpc/CMakeLists.txt`（`grep node_core` 只有一句注释），55 个用例只有手工 `pytest` 才跑
 （直跑是**绿的**，55 passed / 1.5 s ⟹ 是漏接线，不是跑不过）。已开 **[18](18-test-node-core-never-runs-under-colcon.md)**
-（`needs-triage`，归口 06 还是本票由操作者定）。⟹ 上面那句"`colcon test` 两包全绿"字面为真，
+（开票时是 `needs-triage`，当轮已 `done`）。⟹ 上面那句"`colcon test` 两包全绿"字面为真，
 但**不含这 55 个**；本票新增的纯逻辑用例目前**没有守卫**。
 
 **当轮已按操作者裁定补上并复验**（详见 18）：`src/nmpc/CMakeLists.txt` 加了一行注册，
