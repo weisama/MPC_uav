@@ -519,7 +519,23 @@ ROS 侧：  ros2 interface show px4_msgs/msg/VehicleRatesSetpoint
 > ⚠️ **被控对象不是 `gz_x500`（Q9 决策）**：`gz_x500` 只是"能跑起来"的现成平台，
 > **SITL 要重新生成一份符合 z0 的模型** —— 按 Q11 用**故意失配**的参数（质量 / `kt` / 转动惯量 / τ 按单参数 ±30% 扫），
 > 并保留一份**同参数变体**作为对照；按 Q13 用 **Phase 1 的真实动捕 rosbag 回放**驱动，
-> 地面真值重映射那份作为对照。`gz_x500` 仅可作为**最早期**的冒烟目标。
+> 地面真值重映射那份作为对照。
+>
+> 🚫 **`gz_x500` 仅可作为最早期冒烟目标 —— 不得用于 SITL 验收。** 理由不是"精度不够"
+> 而是**量级差得远**。上游那些机型的实数（第一手：`simulator_sih/sih_params.c` 的
+> `PARAM_DEFINE_FLOAT` 默认值 + `init.d-posix/airframes/10040_sihsim_quadx`）：
+> `SIH_MASS 1.0` / `SIH_L_ROLL 0.2` / `SIH_T_MAX 5.0`（单电机）/ `SIH_IXX 0.025`，
+> 而机型里 `CA_ROTORn_PX/PY = ±0.15`（**与 SIH 的 0.2 自相矛盾**）。
+> 对 z0 的 0.75 / 0.0537 / 2.95 / 0.002166：**力臂 2.8 倍、`IXX` 11.5 倍**。
+> "在 x500 上能飞"因此**不蕴含**"在 z0 上能飞"，拿它做 SITL 验收等于把本步的判据换成另一台飞机的。
+> 验收用的被控对象是 `sihsim_z0`（ticket 08 交付），参数、切换与复原见
+> [`sitl-z0-plant.md`](sitl-z0-plant.md)。
+
+> ★ **2026-09-28：本步的"被控对象"这一半已单独收口（[ticket 08](../../.scratch/phase2/issues/08-sitl-z0-airframe.md)）**。
+> z0 同构机 `sihsim_z0`（`SYS_AUTOSTART=10046`）已能起，
+> 参数、±30 % 失配开关、复原方式、验收脚本全在 [`sitl-z0-plant.md`](sitl-z0-plant.md)。
+> **S5 本身（闭环）仍未开始** —— 收口的是"拿什么当被控对象"，不是"闭环跑通了"。
+> 一句话记值：`SIH_MASS 0.75` / `SIH_T_MAX 2.95` / 力臂 `0.0537401` / `MPC_TILTMAX_AIR 30`（SITL 侧）。
 
 在（z0 参数的）SITL 被控对象上跑通完整链路。**SITL 里 PX4 状态话题可用，所以这一步有两个可选的输入源**：
 

@@ -1,0 +1,65 @@
+#!/bin/sh
+#
+# @name z0 同构四旋翼 SITL（SIH，含参数失配开关）
+#
+# @type Quadrotor
+#
+# ⚠️ **本文件由 tools/px4-sitl/z0-plant/plant_spec.py 生成，不要手改** ——
+#    改参数请改那份 spec 再 `--emit`，否则文档表格与这里的值会漂移。
+#
+# 由 ticket 08 新增。上游 10040_sihsim_quadx 是 x500 量级的通用四旋翼（质量 1 kg、
+# 力臂 0.15/0.2 m 互相矛盾），与 z0（750 g、152 mm 轴距）差得远 ——
+# 「在 10040 上能飞」证明不了「在 z0 上能飞」。
+#
+# 参数分两处：这里是**机器身份**（构型、几何、输出分配、检查位）+ SIH 标称默认值；
+# 会被扫/会被改的那部分（SIH_* 现值、THR_MDL_FAC、MC_*RATE_MAX、MPC_TILTMAX_AIR）
+# 走覆盖层（z0-plant/params/*.param，经 rcS 的 `. px4-rc.params` 钩子按名取自 PATH）。
+# 理由与复现步骤见 docs/control/sitl-z0-plant.md。
+#
+
+. ${R}etc/init.d/rc.mc_defaults
+
+PX4_SIMULATOR=${PX4_SIMULATOR:=sihsim}
+PX4_SIM_MODEL=${PX4_SIM_MODEL:=z0}
+
+param set-default SIH_MASS 0.75
+param set-default SIH_T_MAX 2.95
+param set-default SIH_Q_MAX 0.1475
+param set-default SIH_L_ROLL 0.0537401
+param set-default SIH_L_PITCH 0.0537401
+param set-default SIH_IXX 0.002166
+param set-default SIH_IYY 0.002166
+param set-default SIH_IZZ 0.004332
+param set-default SIH_IXY 0
+param set-default SIH_IXZ 0
+param set-default SIH_IYZ 0
+param set-default SIH_T_TAU 0.05
+param set-default SIH_KDV 1
+param set-default SIH_KDW 0.025
+param set-default SIH_VEHICLE_TYPE 0
+param set-default CA_ROTOR_COUNT 4
+param set-default CA_ROTOR0_PX 0.0537401
+param set-default CA_ROTOR0_PY 0.0537401
+param set-default CA_ROTOR0_KM 0.05
+param set-default CA_ROTOR1_PX -0.0537401
+param set-default CA_ROTOR1_PY -0.0537401
+param set-default CA_ROTOR1_KM 0.05
+param set-default CA_ROTOR2_PX 0.0537401
+param set-default CA_ROTOR2_PY -0.0537401
+param set-default CA_ROTOR2_KM -0.05
+param set-default CA_ROTOR3_PX -0.0537401
+param set-default CA_ROTOR3_PY 0.0537401
+param set-default CA_ROTOR3_KM -0.05
+param set-default CA_ROTOR0_CT 6.5
+param set-default PWM_MAIN_FUNC1 101
+param set-default PWM_MAIN_FUNC2 102
+param set-default PWM_MAIN_FUNC3 103
+param set-default PWM_MAIN_FUNC4 104
+param set-default SENS_EN_GPSSIM 1
+param set-default SENS_EN_BAROSIM 1
+param set-default SENS_EN_MAGSIM 1
+param set-default CBRK_SUPPLY_CHK 894281
+param set-default CBRK_IO_SAFETY 22027
+
+# SIH 在 init 时读它，必须 `param set`（`set-default` 会被已持久化的值压住）
+param set SIH_VEHICLE_TYPE 0

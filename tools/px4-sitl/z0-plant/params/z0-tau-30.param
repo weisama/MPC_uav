@@ -1,0 +1,27 @@
+# 失配变体：tau ×-30（内环时间常数辨识误差）
+#
+# ⚠️ 由 tools/px4-sitl/z0-plant/plant_spec.py 生成，不要手改。
+# 全量参数（不是差量）：无条件 `param set` ⟹ 结果与 rootfs/parameters.bson 里的
+# 历史残留无关，这一条是 ticket 12 能复现的前提。
+
+param set SIH_MASS 0.75
+param set SIH_T_MAX 2.95
+param set SIH_Q_MAX 0.1475
+param set SIH_L_ROLL 0.0537401
+param set SIH_L_PITCH 0.0537401
+param set SIH_IXX 0.002166
+param set SIH_IYY 0.002166
+param set SIH_IZZ 0.004332
+param set SIH_IXY 0
+param set SIH_IXZ 0
+param set SIH_IYZ 0
+param set SIH_T_TAU 0.035
+param set SIH_KDV 1
+param set SIH_KDW 0.025
+param set THR_MDL_FAC 0
+param set MC_ROLLRATE_MAX 220
+param set MC_PITCHRATE_MAX 220
+param set MC_YAWRATE_MAX 360
+param set MPC_TILTMAX_AIR 30
+param set MC_BAT_SCALE_EN 0
+param set MC_AIRMODE 0
