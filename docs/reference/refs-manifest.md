@@ -8,7 +8,7 @@
 >
 > **重建方式**：按本表的仓库地址与 commit 重新克隆即可。核验用 `git log -1 --format=%H`。
 
-## 1. 清单与核对结果（2026-09-20 实测）
+## 1. 清单与核对结果（2026-09-20 实测；`acados` 一行 2026-09-28 新增）
 
 | 本地目录 | 仓库 | 钉住的 commit | 日期 | 与项目文档记录比对 |
 |---|---|---|---|---|
@@ -24,6 +24,7 @@
 | **`px4-z0/`** | `git@github.com:Peize-Liu/PX4-Autopilot.git` | **`5ba2e91ff227fe4da0133371e88dc81b038bb81e`** | 2024-07-02 | ☠️ ~~★ **z0 固件的真身**~~ —— **2026-09-21 定案：与 z0 无关**（z0 **不跑 fork**，真身是 `4a0e65f2`，见 §2.5(d)）。本目录现只承担「读 **fork** 源码」职责。以 **fetch-only** 方式保存（无工作树）；读文件用 `git show <ref>:<path>` |
 | ↑ 同上目录里的**真身** | `Minderring/PX4-Autopilot`（**按 SHA 取，未建 remote**） | **`4a0e65f2331b23b9c8352656e9ccb6edeaea5d6c`** | 2024-11-18 | ★ **z0 固件真身（v1.14.3 系的 MicoAir 厂商构建）**。commit/tree 落在 `~/refs/px4-z0/` 的**同一个对象库**里（`--depth 1 --filter=blob:none`，见 §2.5(d)②）；⚠️ **来源 URL 未在 git config 里留痕**（是一次性 `git fetch <url> <sha>`），重建时按 §2.5(d)② 的口径重取 |
 | `px4-v1.14.3/` `px4-v1.15.0/` `px4-v1.16.0/` | `git@github.com:PX4/PX4-Autopilot.git`（三个 tag） | `1dacb4c` / `30e763b` / `6ea3539` | — | 作对照用（如 ADC 通道的版本边界）。**fetch-only，无工作树** |
+| `acados/`（**2026-09-28 新增**） | `git@github.com:acados/acados.git` | **`00947ddc394b30c956d9a7794d0bbcbc44c7c050`** | 2026-09-25 | `git describe` = **`v0.6.0-41-g00947ddc3`**。ticket [02](../../.scratch/phase2/issues/02-acados-orin-build.md) 的取证与构建基准；构建方式见 [`control/acados-orin-build.md`](../control/acados-orin-build.md)。⚠️ 本目录**不再是严格只读**：上游在 cmake configure 时会往 `lib/` 写 `link_libs.json` 与 `git_commit_hash`（在 acados 自己的 `.gitignore` 里，故 `git status` 仍干净）—— 所以构建走 **out-of-source**，产物落 `~/acados-build*` |
 
 ## 2. ★ z0 固件真身是怎么找到的
 

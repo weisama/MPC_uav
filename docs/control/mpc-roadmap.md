@@ -256,20 +256,28 @@ nlp   = SQP_RTI           ← 实时迭代：每周期只做一次 SQP，延迟�
 
 ## 5. ★ acados 在 Jetson 上的部署要点
 
+> ✅ **本节已在 z0 上落地并逐条实测复核**（2026-09-28）：安装步骤、报错原文、实测数据见
+> [`acados-orin-build.md`](acados-orin-build.md)，可复现脚本在 [`tools/acados-orin/`](../../tools/acados-orin/)。
+> 下表里标 ☠️ 的两行是**实测推翻的旧说法**（动作不变，理由改口径）。
+
 | # | 事项 | 说明 |
 |---|---|---|
-| 1 | **`BLASFEO_TARGET = ARMV8A_ARM_CORTEX_A76`** | ★ Orin NX 是 **Cortex-A78AE**，但 **acados/BLASFEO 没有 A78 目标**，用 A76 最接近 |
-| 2 | **`HPIPM_TARGET = GENERIC`** | |
-| 3 | **Tera 渲染器** | 缺失时报 **`EOFError`** —— acados 最常见的坑 |
-| 4 | **`ACADOS_SOURCE_DIR`** | 生成代码时需要 |
+| 1 | **`BLASFEO_TARGET = ARMV8A_ARM_CORTEX_A76`** | ★ Orin NX 是 **Cortex-A78AE**，但 BLASFEO 没有 A78 目标，A76 最接近（上游 aarch64 默认是 **A57**）。☠️ 但「不指定就掉一个量级」不成立：`GENERIC` 只慢 **~21%**（median 2.84 → 3.43 ms）。⭐ 同一批实测里更值钱的是**绑核**：3.96 → 2.83 ms |
+| 2 | **`HPIPM_TARGET = GENERIC`** | hpipm 无 ARM 专属目标，上游默认即 `GENERIC` |
+| 3 | **Tera 渲染器** | ☠️ 不是「缺失报 `EOFError`」（那是 v0.5.x 及以前交互式 `input()` 在非交互下的内建异常，v0.6.0 已删）。真身是**三种落点，其中一种完全静默**：在但渲染不出东西时，`utils.py:397` 用 `os.system` **只查退出码、不校验产物**，静默两层后才炸成 `.so: cannot open shared object file` |
+| 4 | **`ACADOS_SOURCE_DIR`** | 指**安装目录**（要有 `bin/ lib/ include/ cmake/`），不是源码目录 |
 | 5 | **`LD_LIBRARY_PATH`** | 运行时需要指向 acados 的 `lib/` |
 | 6 | **不要走 CUDA 后端** | 宿主**没有 `nvcc`、没有 TensorRT**（实测）。CPU 路线足够 |
 | 7 | 内存 | 7.4 GB，**仿真时才紧张**，真机飞行无压力 |
+| 8 | ⚠️ **out-of-source 构建要自己搬 `lib/link_libs.json`** | 上游只 `file(WRITE …)` 进源码树，**全仓没有它的 install 规则**；官方流程「构建目录=安装目录=源码目录」恰好掩盖了这点。缺了 `AcadosOcpSolver` 直接 `FileNotFoundError` |
+| 9 | ⚠️ **该机 `pypi.org` 不可达** | `pip3 install` 会**卡十分钟一声不响**；加 `-i https://pypi.tuna.tsinghua.edu.cn/simple` |
 
 **建议的顺序**：
 
 1. 先在**宿主原生**编译 acados（不要在容器里，避免路径混乱）
-2. 跑通 acados 自带的 `quadrotor` 示例（验证工具链）
+2. 跑通一个自带示例（验证工具链）—— 第 2 步实测用的是**参考实现自带的 x500 例子**
+   （`mass=1 / hover_thrust=0.73`，比 acados 自己的 `quadrotor` 更贴近我们要移植的东西；
+   验收脚本 `tools/acados-orin/check_x500_ocp.py`）
 3. 再写自己的 OCP
 
 ---
