@@ -35,6 +35,13 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_commands test/test_commands.py
     TIMEOUT 60)
 
+  # ★ 节点内核的纯逻辑（闸门 / 外推 / 参考 / 前馈 / 饱和标志）：同样是**零 ROS** 的一档。
+  #   ⚠️ **ticket 18 补的**：这个文件从 ticket 06 落地起就没被注册过 ⟹ 55 个用例一直只有
+  #      手工 `pytest` 才跑（直跑是绿的）。文件里的"纯模块不许拉 ROS"那条断言取在**子进程**里
+  #      （ticket 06 复核轮改的），所以与谁先跑、和别的文件合跑都无关。
+  ament_add_pytest_test(test_node_core test/test_node_core.py
+    TIMEOUT 300)
+
   # ★ 起飞前静态自检的测试（ticket 06）：同样是零 ROS 的纯逻辑（参数表 + 符号对账 +
   #   `ast` 扫描），但**每一组检查都配了负控** —— 一个"永远打 ✅"的自检脚本比没有更糟。
   #   ⚠️ 它会 import `nmpc.mpc_node`（要 rclpy/acados 在环境里）才拿得到参数表，

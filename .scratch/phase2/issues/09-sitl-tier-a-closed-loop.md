@@ -182,3 +182,8 @@ yaw_quat(2π − ψ) = [−cos(ψ/2), 0, 0, sin(ψ/2)]     ← 只有 w 差一�
 （直跑是**绿的**，55 passed / 1.5 s ⟹ 是漏接线，不是跑不过）。已开 **[18](18-test-node-core-never-runs-under-colcon.md)**
 （`needs-triage`，归口 06 还是本票由操作者定）。⟹ 上面那句"`colcon test` 两包全绿"字面为真，
 但**不含这 55 个**；本票新增的纯逻辑用例目前**没有守卫**。
+
+**当轮已按操作者裁定补上并复验**（详见 18）：`src/nmpc/CMakeLists.txt` 加了一行注册，
+`colcon test --packages-select nmpc` 从 **136 → 191** 全绿
+（`test_node_core.xunit.xml: tests=55 errors=0 failures=0`）。
+⚠️ 附一条数字订正：本票收口的 commit `78f373d` message 里写"nmpc 145"是笔误，**实测 136**。
