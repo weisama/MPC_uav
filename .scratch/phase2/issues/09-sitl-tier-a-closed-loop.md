@@ -142,6 +142,7 @@ yaw_quat(2π − ψ) = [−cos(ψ/2), 0, 0, sin(ψ/2)]     ← 只有 w 差一�
 - [`docs/control/tier-a-sitl-hover.md`](../../../docs/control/tier-a-sitl-hover.md)（**本票主交付**：接线 / 被控对象 / 飞行记录 / 棘轮 / 镜像井 / D6 / 符号确认 / 归因 / 仪器 / 能-不能证明）
 - `tools/px4-sitl/verify_tier_a_hover.py`（+ 别名闸门、`yaw_rate_bound`、`yaw_had_power`、⑧ 那一行的改法、新归因分支）、`tools/px4-sitl/test_tier_a_judges.py`（+5 例）
 - `src/nmpc/nmpc/node_core.py`（+`hold_feedforward`，复核后：删 `_age_json`、简化 `saturated_bounds`、裸词 `MPC` 改全称）、`src/nmpc/nmpc/mpc_node.py`（喂解析前馈、日志列 `u_ref0`）、`src/nmpc/test/*`（+3 例，其中节点那条做过**变异验证**）
+  - ⚠️ 其中落在 `test_node_core.py` 的那几条**在 `colcon test` 里根本不跑**（该文件没注册，见 #11）⟹ 真正在跑的守卫是 `test_mpc_node.py` 那条。
 - 交叉引用：`phase2-implementation.md`（D6 / O3 / O5 行 + 新 **O9** + M6 落地状态补记）、`offline-ocp.md`（§2 量化 `qw=0`、§4.4 补闭环答案、§6 更新能/不能）、`mpc-node-seam1.md`（§9 两条交接行、§10 一条已答）
 - **另开的两张票**：[16](16-ocp-yaw-weights-mirror-well.md)（`qw`/`R_yaw` 权重，`ready-for-human`）、[17](17-traj-reference-interface.md)（`/traj/reference`，`needs-triage`）
 
@@ -173,3 +174,11 @@ yaw_quat(2π − ψ) = [−cos(ψ/2), 0, 0, sin(ψ/2)]     ← 只有 w 差一�
 **稳态**（票面要的是"稳定悬停"，而中段的瞬态是起飞过程）；③ 另有一条真值帧读数作 ℹ️ 背景。
 `--replay` **旧观测**（别名闸门之前记的 obs 里没有 `yaw_rate_bound`）时闸门开不了、会复现那个
 假 ❌ —— 已在 ⑨a 那一行的文字里点明"以重飞为准"，并写进 `yaw_verdict` 的 docstring。
+
+### #11 ⚠️ 收口时发现的一处**洞**：`test_node_core.py` 从来没被 `colcon test` 跑过
+
+**不是本票造成的**，但本票往那个文件里加了用例，所以在这里点名：该文件**没注册**进
+`src/nmpc/CMakeLists.txt`（`grep node_core` 只有一句注释），55 个用例只有手工 `pytest` 才跑
+（直跑是**绿的**，55 passed / 1.5 s ⟹ 是漏接线，不是跑不过）。已开 **[18](18-test-node-core-never-runs-under-colcon.md)**
+（`needs-triage`，归口 06 还是本票由操作者定）。⟹ 上面那句"`colcon test` 两包全绿"字面为真，
+但**不含这 55 个**；本票新增的纯逻辑用例目前**没有守卫**。
