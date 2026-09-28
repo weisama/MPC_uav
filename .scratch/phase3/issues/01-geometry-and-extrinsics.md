@@ -19,6 +19,57 @@ Type: task
 - [ ] **若不是**均匀缩放（`PX ≠ PY` 或非正 X 布局）→ 改几何 **并同时重调** `MC_ROLLRATE_*` / `MC_PITCHRATE_*` / `MC_YAWRATE_*`；★ 重调后角速率环**必须重新验证**，不能只改一半留下一个配错的角速率环
 - [ ] 实测值与判定写进文档，并从本文件回链
 
+## 电机序 / 物理口 ↔ 机臂角 / 桨转向（2026-09-28 由 [phase2/08](../../phase2/issues/08-sitl-z0-airframe.md) 交来）
+
+**为什么加在票 01**：ticket 08 收口时发现"电机序 `3-2-1-4` / 物理口 ↔ 机体角 / 桨转向"这三件事
+**没有任何票认领**。操作者 2026-09-28 裁定：**在当前 tickets 里加一项，且这些数据要读飞控参数得到**（不新开票）。
+它们与上面"几何"同属"四个电机到底装在哪、朝哪转"，故并入本节。
+
+**关键**：这三件事**都能从飞控参数导出**（不是猜、不是只有拆机才知道），
+但参数说明的是**飞控以为的**接线 —— 与实物是否一致仍需一次物理确认。链条是：
+
+```
+物理输出口 k  --PWM_MAIN_FUNCk-->  功能码(101..104 = Motor 1..4)  -->  逻辑电机号 n
+              --CA_ROTORn_PX/PY-->  机臂上的位置（机体系 x 前 / y 右）
+              --CA_ROTORn_KM 符号--> 桨转向约定（PX4 里 KM 正 = CCW）
+```
+
+**用现有参数推出来的表**（第一手读自 `docs/assets/z0.params`；⚠️ 这是**参数推出的结论**，
+本票要做的正是"从**飞控**读回来核对 + 实物核对"，不是抄这份文档）：
+
+| 物理口 | `PWM_MAIN_FUNC` | 逻辑电机 | `CA_ROTORn` | 机臂位置（机体系 x 前 / y 右） | KM 符号 → 桨转向 |
+|---|---|---|---|---|---|
+| MAIN1 | `103` | Motor 3 | `CA_ROTOR2` | 前左（`PX +0.15`, `PY −0.15`） | `−0.05` → **CW** |
+| MAIN2 | `102` | Motor 2 | `CA_ROTOR1` | 后左（`PX −0.15`, `PY −0.15`） | `+0.05` → **CCW** |
+| MAIN3 | `101` | Motor 1 | `CA_ROTOR0` | 前右（`PX +0.15`, `PY +0.15`） | `+0.05` → **CCW** |
+| MAIN4 | `104` | Motor 4 | `CA_ROTOR3` | 后右（`PX −0.15`, `PY +0.15`） | `−0.05` → **CW** |
+
+"物理口 1/2/3/4 对应逻辑电机 3/2/1/4"就是从 `PWM_MAIN_FUNC1..4 = 103/102/101/104` 来的。
+对角线同向（前右 & 后左 CCW，前左 & 后右 CW）—— 是标准 quad-X，**看着对，但仍是"参数说的"**。
+
+**三条链各自的第一手依据**（免得后来者以为这是惯例、没人验过）：
+
+- 口→功能：`PWM_MAIN_FUNCk` 的取值就是函数号，`101..104 = Motor 1..4`；
+- 功能→逻辑电机：⚠️ **PX4 里 `Motor n` 与 `CA_ROTOR(n−1)` 是硬绑定的，没有重排** ——
+  `ActuatorEffectivenessRotors.cpp:52-73` 按 rotor 序号 `i` 读 `CA_ROTORi_*`，`:154-212` 的 `computeEffectivenessMatrix()` 又按同一序号把 rotor `i` 填进效能矩阵第 `i + actuator_start_index` 列（纯多旋翼无伺服前置时 `actuator_start_index = 0`）；
+  `ControlAllocator.cpp:658-661` 按 `actuator_idx` 顺序写 `actuator_motors.control[motors_idx]`（无重排）；
+  `FunctionMotors.hpp:46/49` 两条 `static_assert` 钉住 `ACTUATOR_FUNCTION_MOTOR1 == OutputFunction::Motor1`，
+  `:69` 的 `value(func)` 直接取 `control[(int)func − Motor1]` ⟹ **Motor n = `actuator_motors.control[n−1]`**；
+- KM 符号：`src/modules/control_allocator/module.yaml:207-220`（v1.14.3）原文
+  *"Use a positive value for a rotor with CCW rotation. Use a negative value for a rotor with CW rotation."*
+
+- [ ] 从**飞控**读回（不是抄文档）并核对上表：`PWM_MAIN_FUNC1..4`、`CA_ROTOR0..3_PX/PY`、`CA_ROTOR0..3_KM`、`CA_ROTOR0..3_AX/AY/AZ`
+      方法见 [phase1/15](../../phase1/issues/15-fcu-param-reconciliation.md)：`ros2 param dump /mavros/param`（全量 915 条 / 约 45 s）
+- [ ] 把链条三方对齐成一张表：**物理口 → 功能码 → 逻辑电机 → `CA_ROTORn` 的机臂角 → KM 符号（CCW/CW）**
+- [ ] ⚠️ **参数只说明飞控"以为"的接线** —— 再用物理手段确认一次：**拆桨**上电后逐口点动（`actuator_test` / `motor_test`），
+      看"哪个物理口动 → 哪个机臂的电机转"，与上表逐行对上
+- [ ] 桨转向：**PX4 里没有独立的"桨转向"参数**，只有 `CA_ROTORn_KM` 的**符号**承载（正 = CCW，见上面的 module.yaml 原文）。
+      所以这一列**一半来自参数约定、一半必须实物确认**（叶片朝向 / 桨的正反标识）——
+      参数对而桨装反，飞控不会报错，只会一起翻
+- [ ] 结论写入文档并从本文件回链；若与上表不符，**以飞控读数 + 实物为准**，并记下差在哪
+- [ ] ⚠️ 顺手记一笔（不属于本票的判定）：`CA_ROTOR*_PX/PY` 现值 `0.15` 是 **PX4 Generic Quad X 默认半展**，
+      与 z0 实际几何差 2.79× —— 见上一节的"先判断是否均匀缩放"
+
 ## 外参（P3 / `params-changes.md` C2）
 
 `EKF2_EV_POS_X/Y/Z` 现值 `0/0/0`。**若动捕刚体原点刻意定义在 IMU 上，`0` 就是对的** —— 本票要区分「对」和「没做」。

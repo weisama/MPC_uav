@@ -547,7 +547,8 @@ ROS 侧：  ros2 interface show px4_msgs/msg/VehicleRatesSetpoint
 > z0 同构机 `sihsim_z0`（`SYS_AUTOSTART=10046`）已能起，
 > 参数、±30 % 失配开关、复原方式、验收脚本全在 [`sitl-z0-plant.md`](sitl-z0-plant.md)。
 > **S5 本身（闭环）仍未开始** —— 收口的是"拿什么当被控对象"，不是"闭环跑通了"。
-> 一句话记值：`SIH_MASS 0.75` / `SIH_T_MAX 2.95` / 力臂 `0.0537401` / `MPC_TILTMAX_AIR 30`（SITL 侧）。
+> 一句话记值：`SIH_MASS 0.75` / `SIH_T_MAX 2.95` / 力臂 `0.0537401` / `MPC_TILTMAX_AIR 45`（**与飞机一致** —— 2026-09-28 裁定「两边都回 45」，原打算在 SITL 侧收成 30° 的那版**已作废**）。
+> 失配开关是**五个**旋钮（质量 / 推力系数 / 转动惯量 / 作动器滞后 `tau` / 内环闭环带宽 `rate`），其中 `rate` 动的是**控制器**、其余四个动**被控对象** —— 与上一段 Q11 记的四个不完全是一回事，见 `sitl-z0-plant.md` §5.4。
 
 在（z0 参数的）SITL 被控对象上跑通完整链路。**SITL 里 PX4 状态话题可用，所以这一步有两个可选的输入源**：
 

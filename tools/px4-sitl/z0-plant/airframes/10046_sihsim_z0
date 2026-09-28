@@ -12,7 +12,7 @@
 # 「在 10040 上能飞」证明不了「在 z0 上能飞」。
 #
 # 参数分两处：这里是**机器身份**（构型、几何、输出分配、检查位）+ SIH 标称默认值；
-# 会被扫/会被改的那部分（SIH_* 现值、THR_MDL_FAC、MC_*RATE_MAX、MPC_TILTMAX_AIR）
+# 会被扫/会被改的那部分（SIH_* 现值、THR_MDL_FAC、MC_*RATE_MAX、MC_*RATE_P、MPC_TILTMAX_AIR）
 # 走覆盖层（z0-plant/params/*.param，经 rcS 的 `. px4-rc.params` 钩子按名取自 PATH）。
 # 理由与复现步骤见 docs/control/sitl-z0-plant.md。
 #

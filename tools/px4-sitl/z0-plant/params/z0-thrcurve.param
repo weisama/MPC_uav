@@ -22,6 +22,9 @@ param set THR_MDL_FAC 0.45
 param set MC_ROLLRATE_MAX 220
 param set MC_PITCHRATE_MAX 220
 param set MC_YAWRATE_MAX 360
-param set MPC_TILTMAX_AIR 30
+param set MC_ROLLRATE_P 0.15
+param set MC_PITCHRATE_P 0.15
+param set MC_YAWRATE_P 0.2
+param set MPC_TILTMAX_AIR 45
 param set MC_BAT_SCALE_EN 0
 param set MC_AIRMODE 0

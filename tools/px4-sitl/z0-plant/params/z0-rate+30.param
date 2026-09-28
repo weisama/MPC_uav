@@ -1,0 +1,30 @@
+# 失配变体：rate ×+30（**内环闭环带宽失配**（≈ 模型预测控制所用模型里 `k_ω` 的失配）：三个轴的速率环 P 增益同比例 ±30 %。★ 与其余四个旋钮**性质不同** —— 那四个动的是**被控对象**，这个动的是**控制器**；P 与闭环带宽在低增益下近似成正比，故 ±30 % P ≈ ±30 % `k_ω`（近似，精确值要实测）。被控对象本身不变 ⟹ 本旋钮用 `verify_z0_plant.py` **量不到**（它只验被控对象），要闭环阶跃响应才量得出（ticket 09/11 的仪表））
+#
+# ⚠️ 由 tools/px4-sitl/z0-plant/plant_spec.py 生成，不要手改。
+# 全量参数（不是差量）：无条件 `param set` ⟹ 结果与 rootfs/parameters.bson 里的
+# 历史残留无关，这一条是 ticket 12 能复现的前提。
+
+param set SIH_MASS 0.75
+param set SIH_T_MAX 2.95
+param set SIH_Q_MAX 0.1475
+param set SIH_L_ROLL 0.0537401
+param set SIH_L_PITCH 0.0537401
+param set SIH_IXX 0.002166
+param set SIH_IYY 0.002166
+param set SIH_IZZ 0.004332
+param set SIH_IXY 0
+param set SIH_IXZ 0
+param set SIH_IYZ 0
+param set SIH_T_TAU 0.05
+param set SIH_KDV 1
+param set SIH_KDW 0.025
+param set THR_MDL_FAC 0
+param set MC_ROLLRATE_MAX 220
+param set MC_PITCHRATE_MAX 220
+param set MC_YAWRATE_MAX 360
+param set MC_ROLLRATE_P 0.195
+param set MC_PITCHRATE_P 0.195
+param set MC_YAWRATE_P 0.26
+param set MPC_TILTMAX_AIR 45
+param set MC_BAT_SCALE_EN 0
+param set MC_AIRMODE 0

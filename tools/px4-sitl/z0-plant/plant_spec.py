@@ -10,6 +10,10 @@
 - `--table`  打印 markdown 参数表（文档直接引用，避免手抄漂移）
 - `--list`   列出全部变体名
 
+失配旋钮 **5** 个（ticket 12 的原始清单是 4 个 —— 质量 / 推力系数 / 转动惯量 / 内环时间常数；
+第 5 个 `rate` 是 2026-09-28 操作者裁定「两者都做」时加的：原 `tau` 旋钮扫的是**作动器滞后**，
+而模型预测控制所用模型里的 `k_ω` 是**闭环**时间常数，两者不是同一个量，故补一个直接改速率环 P 增益的旋钮）。
+
 数值分**五档**诚实标注（前两档是本项目文档的既有约定；后三档是 ticket 08 加的必要区分 ——
 "照抄上游"与"项目决定"**既不是 z0 的读数、也不是由 z0 读数推出来的**，
 把它们混进前两档就是**假证据**）：
@@ -114,17 +118,30 @@ ROWS = [
 
     # ---- PX4 侧（只写覆盖层）
     ("THR_MDL_FAC", 0.0, "决定",
-     "★ **故意不等于 z0 的 0.45**：SIH 的被控对象对电机信号是**线性**的，"
-     "取 0 才能让混控器的推力曲线与被控对象自洽（否则控制→推力多出一段与工作点有关的"
-     "非线性，且它不在 ticket 12 的四个旋钮里）。要复现 z0 的 0.45 用 `z0-thrcurve` 变体。见 sitl-z0-plant.md §5.2",
+     "★ **故意不等于 z0 的 0.45**，理由**不是**「SIH 是线性的所以别叠非线性」（那太弱），"
+     "而是**端到端等价**：混控器把**推力**反解成电机信号（`FunctionMotors.hpp:93`），"
+     "SIH 的被控对象对电机信号线性（`sih.cpp:303`）⟹ 取 0 时「命令推力 → 实得推力」是**恒等**，"
+     "而真机恰好也是恒等（真机的物理曲线与 0.45 模型**相消**）。取 0.45 反而在 SITL 里造出"
+     "一条**真机上不存在**的失真（同一个 z0-thrcurve 变体实测：悬停处同命令多出约 15 % 推力）。"
+     "⚠️ 代价写在这儿：取 0 时 SITL 的**电机信号数值**与真机不同（真机命令 0.6325 → 信号 0.7227，"
+     "SITL 则是 0.6325 → 0.6325）—— 若将来比较「模型预测控制输出的电机指令大小」或研究电机饱和边界要记得。"
+     "`0.45` 是标定值还是残留值**未知**（归 phase3/02）。见 sitl-z0-plant.md §5.2",
      "overlay"),
     ("MC_ROLLRATE_MAX", 220, "实测", f"z0 值（{Z0_PARAMS}；角速率环约束）", "overlay"),
     ("MC_PITCHRATE_MAX", 220, "实测", "z0 值（同上）", "overlay"),
     ("MC_YAWRATE_MAX", 360, "实测", f"z0 值（{Z0_PARAMS}；≠ PX4 默认 200）", "overlay"),
-    ("MPC_TILTMAX_AIR", 30, "决定",
-     "★ **项目决定，不是 z0 现值**（z0 = PX4 默认 45）：30° 需 8.5 N = 电池可用推力的 72 %，"
-     "45° 需 10.4 N = 88 %（phase2-implementation.md §3.3）。"
-     "⚠️ **这是 PX4 位置控制器参数，与模型预测控制毫无关系**。"
+    ("MC_ROLLRATE_P", 0.15, "实测",
+     f"z0 值（{Z0_PARAMS}；恰等于 PX4 默认，params-analysis.md §3.1 已坐实）；"
+     "★ 被 `rate` 旋钮扫（内环闭环带宽失配），故基线里也要显式写",
+     "overlay"),
+    ("MC_PITCHRATE_P", 0.15, "实测", "同 ROLLRATE_P（z0 = PX4 默认）", "overlay"),
+    ("MC_YAWRATE_P", 0.2, "实测", "z0 值（z0 = PX4 默认 0.2；偏航**单独给**，不取横滚的值）", "overlay"),
+    ("MPC_TILTMAX_AIR", 45, "实测",
+     f"z0 现值 = PX4 默认 45（{Z0_PARAMS}）。★★ **本行原写成 `决定` + 取 30**（想靠收小倾角给被控对象"
+     "留推力裕度：30° 需 8.5 N = 电池可用推力的 72 %，45° 需 10.4 N = 88 %）——"
+     "**2026-09-28 操作者裁定「两边都回 45」**，于是它成了本表里**唯一一处「想过偏离但最终没偏」**的参数。"
+     "⚠️ 提醒留着：45° 的 88 % 意味着留给姿态控制的余量只有 12 %，大机动时注意推力饱和。"
+     "⚠️ **这是 PX4 位置控制器参数，与模型预测控制毫无关系**（Multicopter Position Controller）。"
      "见 sitl-z0-plant.md §5.3 / params-changes.md §E6.4",
      "overlay"),
     ("MC_BAT_SCALE_EN", 0, "实测", f"z0 值 = 默认（{Z0_PARAMS}；不要电池电压补偿，仿真里没有电池模型）", "overlay"),
@@ -150,7 +167,17 @@ KNOBS = {
     },
     "tau": {
         "params": ["SIH_T_TAU"],
-        "why": "内环时间常数辨识误差",
+        "why": "**作动器滞后**辨识误差（`SIH_T_TAU` 是电机的一阶滞后，`sih.cpp:290-293`；"
+               "官方描述是 0→100 % 用时约 4τ）。★ **它 ≠ phase2 §5 里的 P4 `k_ω`** —— "
+               "后者是**角速率环的闭环**时间常数，从 IMU 日志拟合。要扫真正的闭环带宽失配用 `rate` 旋钮",
+    },
+    "rate": {
+        "params": ["MC_ROLLRATE_P", "MC_PITCHRATE_P", "MC_YAWRATE_P"],
+        "why": "**内环闭环带宽失配**（≈ 模型预测控制所用模型里 `k_ω` 的失配）：三个轴的速率环 P 增益同比例 ±30 %。"
+               "★ 与其余四个旋钮**性质不同** —— 那四个动的是**被控对象**，这个动的是**控制器**；"
+               "P 与闭环带宽在低增益下近似成正比，故 ±30 % P ≈ ±30 % `k_ω`（近似，精确值要实测）。"
+               "被控对象本身不变 ⟹ 本旋钮用 `verify_z0_plant.py` **量不到**（它只验被控对象），"
+               "要闭环阶跃响应才量得出（ticket 09/11 的仪表）",
     },
 }
 
@@ -215,7 +242,7 @@ def render_airframe() -> str:
         "# 「在 10040 上能飞」证明不了「在 z0 上能飞」。",
         "#",
         "# 参数分两处：这里是**机器身份**（构型、几何、输出分配、检查位）+ SIH 标称默认值；",
-        "# 会被扫/会被改的那部分（SIH_* 现值、THR_MDL_FAC、MC_*RATE_MAX、MPC_TILTMAX_AIR）",
+        "# 会被扫/会被改的那部分（SIH_* 现值、THR_MDL_FAC、MC_*RATE_MAX、MC_*RATE_P、MPC_TILTMAX_AIR）",
         "# 走覆盖层（z0-plant/params/*.param，经 rcS 的 `. px4-rc.params` 钩子按名取自 PATH）。",
         "# 理由与复现步骤见 docs/control/sitl-z0-plant.md。",
         "#",
@@ -266,18 +293,19 @@ def render_table() -> str:
     for name, value, strength, why, _scope in ROWS:
         out.append(f"| `{name}` | `{fmt(value)}` | {strength} | {why or '—'} |")
     out.append("")
+    # 变体表按**旋钮**合并成一行（± 两个变体同义，只是方向不同）——
+    # 逐变体列会把每个旋钮的理由抄两遍，人读不动；变体名仍逐个写全，不丢信息
     out.append("| 变体 | 动的参数 | 含义 |")
     out.append("|---|---|---|")
-    for variant in build_variants():
-        if variant == "z0":
-            out.append("| `z0` | — | 参数一致的对照组（基准） |")
-        elif variant in EXTRA_VARIANTS:
-            out.append(f"| `{variant}` | `THR_MDL_FAC` | {EXTRA_VARIANTS[variant][1]} |")
-        else:
-            knob = _knob_of(variant)
-            out.append(f"| `{variant}` | "
-                       f"{', '.join('`'+p+'`' for p in KNOBS[knob]['params'])} | "
-                       f"{KNOBS[knob]['why']} |")
+    out.append("| `z0` | — | 参数一致的对照组（基准） |")
+    for knob, spec in KNOBS.items():
+        names = " / ".join(f"`z0-{knob}{tag}{int(MISMATCH_PCT * 100)}`" for tag in ("+", "-"))
+        out.append(f"| {names} | "
+                   f"{', '.join('`'+p+'`' for p in spec['params'])} | "
+                   f"{spec['why']} |")
+    for variant, (overrides, why) in EXTRA_VARIANTS.items():
+        out.append(f"| `{variant}` | "
+                   f"{', '.join('`'+p+'`' for p in overrides)} | {why} |")
     return "\n".join(out)
 
 

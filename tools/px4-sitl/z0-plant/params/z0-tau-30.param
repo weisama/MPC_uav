@@ -1,4 +1,4 @@
-# 失配变体：tau ×-30（内环时间常数辨识误差）
+# 失配变体：tau ×-30（**作动器滞后**辨识误差（`SIH_T_TAU` 是电机的一阶滞后，`sih.cpp:290-293`；官方描述是 0→100 % 用时约 4τ）。★ **它 ≠ phase2 §5 里的 P4 `k_ω`** —— 后者是**角速率环的闭环**时间常数，从 IMU 日志拟合。要扫真正的闭环带宽失配用 `rate` 旋钮）
 #
 # ⚠️ 由 tools/px4-sitl/z0-plant/plant_spec.py 生成，不要手改。
 # 全量参数（不是差量）：无条件 `param set` ⟹ 结果与 rootfs/parameters.bson 里的
@@ -22,6 +22,9 @@ param set THR_MDL_FAC 0
 param set MC_ROLLRATE_MAX 220
 param set MC_PITCHRATE_MAX 220
 param set MC_YAWRATE_MAX 360
-param set MPC_TILTMAX_AIR 30
+param set MC_ROLLRATE_P 0.15
+param set MC_PITCHRATE_P 0.15
+param set MC_YAWRATE_P 0.2
+param set MPC_TILTMAX_AIR 45
 param set MC_BAT_SCALE_EN 0
 param set MC_AIRMODE 0
