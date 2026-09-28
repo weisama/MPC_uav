@@ -1,0 +1,17 @@
+# 飞控日志列表（节选） —— 支持 docs/reference/mocap-setup.md §6.3.2 的「log id 210 / utc / size」
+#
+# 来源：Jetson 经 /dev/ttyTHS1 @921600，用 MAVLink 原生日志协议向飞控发 LOG_REQUEST_LIST，
+#       收满 num_logs 条 LOG_ENTRY 后停止。**只读**：没有解锁、没有改参数、没有切模式。
+# 抓取时间：2026-09-28 08:28 UTC（本文件是节选，原始 214 条；下表连同表头一并原样摘自原始输出）
+#
+# ⚠️ 本协议只给 id / utc / size，**不给 SD 路径**。
+#    「id ↔ sessNNN/logMMM.ulg」的对应关系**本文件不建立**，见 §6.3.2 那一行「SD 路径未建立」。
+
+heartbeat ok, sys 1
+num_logs=214 received=214
+  ...
+  id= 208  utc=2000-01-01 00:04:46  size=    9.53 MB
+  id= 209  utc=2026-09-24 04:05:18  size=   65.98 MB
+  id= 210  utc=2026-09-24 06:55:00  size=   49.09 MB
+  id= 211  utc=2000-01-01 00:02:54  size=    6.16 MB
+  ...

@@ -847,7 +847,7 @@ z0 的链路跑在 `MAVLINK_MODE_ONBOARD`，该模式配 `ESTIMATOR_STATUS` **1.
 | 参数 | 现值 | 判断 | 说明 |
 |---|---|---|---|
 | `EKF2_EV_CTRL` | `11` | ✅ 对 | 用外部视觉的位置 + yaw |
-| `EKF2_EV_DELAY` | `50.0` | ✅ 对 | 与实测 50 ms 吻合 |
+| `EKF2_EV_DELAY` | `50.0` | ✅ 对 | 与实测 50 ms 吻合。★ **2026-09-28 加强**：在 **z0 上**从飞控 ulog 实测 **≈ 50 ms**（[`../reference/mocap-setup.md`](../reference/mocap-setup.md) §6.3）⟹ 旧机那个 50 ms 不再是唯一佐证 |
 | `EKF2_MAG_TYPE` | `5` | ✅ 对 | = none，无磁力计（这正是"机头朝哪，哪就是北"能成立的前提） |
 | `EKF2_HGT_REF` | `3` | ✅ 对 | = Vision，高度用动捕 |
 | `COM_RC_OVERRIDE` | `3` | ✅ 对 | ★ 打杆能踢出 Offboard，**实飞前必须验证一次** |

@@ -34,7 +34,8 @@
 |---|---|---|
 | **整机组装 + 遥控器实飞** | ✅ 完成 | 用户确认；**z0 目前只遥控器飞过** |
 | **动捕 → PX4 定点/Offboard 飞行** | ✅ **已在旧机上实现** | `weisama-log/25.09.30_s2-f290.md` 标题即「已实现动捕定点飞行」 |
-| **动捕延迟实测 = 50 ms** | ✅ 已测 | `weisama-log/25.06.28_PX4_log.md`（对 `vehicle_visual_odometry_0` 测出） |
+| **动捕延迟实测 = 50 ms** | ✅ 已测（**旧机**） | `weisama-log/25.06.28_PX4_log.md`（对 `vehicle_visual_odometry_0` 测出）。⚠️ 只有一句结论、**没有方法/相关峰/原始数据** ⟹ 对 z0 是**参照、不是结论** |
+| **★ 动捕延迟在 z0 上实测 ≈ 50 ms** | ✅ **2026-09-28 已测（z0 自己的数）** | 从飞控 ulog log 210 交叉相关 IMU × 动捕（**同一 hrt 时钟**，不含跨机对时误差）。方法/出处/不确定性见 [`reference/mocap-setup.md`](reference/mocap-setup.md) **§6.3**，工具在 [`../tools/tau-analysis/`](../tools/tau-analysis/) |
 | **动捕漂移问题已解决** | ✅ 已解决 | 通过调 `EKF2_EVP_NOISE`；见 `25.06.26_mocap.md` |
 | **动捕上电返回 (0,0,0) 问题** | ✅ 已解决 | 自写 `vrpn_relative_pose` 记录初始位姿做相对转发 |
 | **PX4 SITL 仿真环境** | ✅ 已搭通 | `osrf/ros:humble-desktop-full` 容器 + PX4 1.13.3 + gazebo-classic + mavros |
