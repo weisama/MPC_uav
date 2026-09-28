@@ -7,6 +7,8 @@
         │  FakeMavros  ── 发 /mavros/*（/mavros/state 1 Hz、local_position、rc、battery、estimator_status）
         │              ── 收 /mavros/setpoint_raw/local 并逐帧记录（含到达时刻）
         │              ── 服务 /mavros/set_mode、/mavros/cmd/arming
+        │  FakePx4     ── 假 PX4（uXRCE-DDS 侧，`px4=True`，Phase 2）：发 /fmu/out/vehicle_status
+        │              ── 收 /fmu/in/vehicle_rates_setpoint 与 /fmu/in/offboard_control_mode 并逐帧记录
         │  VrpnSource  ── 脚本化发 /mocap/pose_enu（或上游 /vrpn/<刚体>/pose）
         │  FakeTraj   ── 假 traj：收 /traj/select + /traj/start，发 /traj/reference + /traj/progress
         │  Timeline    ── "第几秒掐掉哪条话题 / 改哪个状态"
@@ -26,6 +28,7 @@
 | 假 | 不假 |
 |---|---|
 | **mavros 的行为**：话题名、频率、**QoS**、`/mavros/state` 1 Hz、`mode_sent` 的语义、服务的应答、`/mavros/estimator_status` 自报的 `pos_horiz_abs` | **PX4 的行为**：`COM_OF_LOSS_T` 超时退 OFFBOARD、EKF2 融合、模式需求检查 |
+| **PX4 的行为**（`FakePx4`，ticket 06，仅 `Scenario(px4=True)` 时起）：`/fmu/out/vehicle_status` 的**话题名、QoS、字段语义、2 Hz 定频 + 变化即刻发**；`/fmu/in/*` 的**订阅侧** QoS（决定 DUT 的发布方接不接得上）；`armed` / `nav_state` / `pre_flight_checks_pass` 的**注入**；PX4 反序列化器对 `timestamp` 的读法（`stamp_age_s()` 把它**报告**成一个有物理含义的数，**不据此行动**） | **飞控内部的一切**：夹具只把 DUT 发来的 `/fmu/in/*` 帧**记进列表**（`_on_frame`），没有任何动力学 ⟹ **姿态环 / 混控 / 位置控制都不假**。同样不假：`COM_OF_LOSS_T` 超时退 OFFBOARD、EKF2 **怎么**融合、模式需求检查、prearm 的**具体**检查项、时钟同步的真实滞后 Δ、`vehicle_command` 的处理（MPC（模型预测控制）节点是纯控制器，不发命令） |
 | EKF2 的**位置输出**（`local_position`，可被 `set_position` 搬动） | EKF2 **怎么算出**这个位置 |
 | EKF2 的**速度输出**（`local_position/velocity_local`，可被 `set_velocity` 搬动；与位置**解耦**，两条独立话题） | 速度**怎么融合**出来的（TRIAD/差动，与它的噪声） |
 | PX4 **接受 SET_MODE 之后 mode 会变**（`follow_set_mode`，默认开） | PX4 **为什么可能拒绝**某个模式 |
@@ -34,6 +37,12 @@
 
 ⟹ **依赖 PX4 侧行为的验收项不能在夹具里做**（例如"杀节点 → PX4 自行退出 OFFBOARD"），
 那是 SITL / 拆桨台架的职责。夹具只能证到"节点确实停止发 setpoint 了"。
+
+★ **上面第一行与第二行的口径不冲突，是分工**：`FakeMavros` 那行右列的"不假 PX4 的行为"指的是
+**飞控内部**的控制/融合逻辑；`FakePx4` 那行假的是 PX4 **暴露给 uXRCE-DDS 的接口层**
+（话题名 / QoS / 字段语义 / 出版节奏 / 注入点），它没有任何动力学模型 —— (C) 级 CTBR 下
+PX4 收到的是「总推力 + 机体角速率」，夹具只照抄这个接缝的**名字与 QoS**
+（见 [`src/nmpc/package.xml`](../nmpc/package.xml) 的 `<description>`）。
 
 > 📌 **夹具假的是哪个 mavros 节点**：mavros 2.15.x 是 **router 架构** —— `mavros_router`
 > 持链路，`mavros` 只是 UAS 节点（`mavros_node.cpp:77-79`，第一手核实见
@@ -48,6 +57,20 @@
 `QoS(10).transient_local()`。**QoS 不兼容不会报错，只是永远不匹配** ——
 `ros2 topic list`、`ros2 topic hz`、日志全都看不出原因。
 `test/test_bench_selftest.py` 里有一条专门的回归测试盯着这件事。
+
+★★ **但黑盒读不回 QoS 的哪两项**（本机实测，2026-09-28，Humble + rmw_fastrtps）：
+**DDS 发现信息**里的 `history` 回来是 `UNKNOWN(3)`、`depth` **恒为 0**，且与发布者**实际写的值无关**
+（`depth=1` 与 `depth=10` 读回来一模一样）⟹ 黑盒**只能断言 `reliability` / `durability`**。
+这一条写在 `bench/fake_px4.py` 的 `publisher_qos()` docstring 里，
+并被 `test/test_fake_px4_selftest.py::test_发现信息里读不回来的那两项_history_与_depth`
+钉成会红的一行 —— 量具自己坏了必须立刻看得出来。
+⚠️ 谁拿 `depth` 下断言，谁就会得到一个**恒红**的测试（而它与 DUT 毫无关系）。
+
+★ 同一条实测的第二个推论：**`TRANSIENT_LOCAL` 的历史重放不发生** —— 晚加入的 durable 订阅者
+**匹配得上**（发布者视角 `get_subscription_count() == 1`）、**新**帧也收得到，但**收不到任何旧帧**。
+⟹ 连"拿重放间接反推 `depth` 语义"这条路也是堵死的（同一份实测见
+[`src/nmpc/test/test_mpc_node.py`](../nmpc/test/test_mpc_node.py) 的
+`test_发现信息里的_depth_读不回来_所以票面那条只能靠读常量`）。
 
 ## ★ 安全边界（不是洁癖）
 
@@ -201,6 +224,33 @@ with Scenario(dut=("control", "control_node")) as sc:
 `== 0` ⟹ 根本没接上（QoS 不兼容 / 话题名写错）；`> 0` 却收不到 ⟹ 才是 DUT 的逻辑问题。
 没有这个数，两种情况在测试日志里长得一模一样。
 
+### `FakePx4`（`sc.px4`，仅 `Scenario(px4=True)` 时存在，否则是 `None`）
+
+Phase 2 的 `/fmu/*` 外部世界（ticket 06）。它**发** `/fmu/out/vehicle_status`、**收**
+`/fmu/in/vehicle_rates_setpoint` 与 `/fmu/in/offboard_control_mode`；话题名的 key 分别是
+`status` / `rates` / `mode`（`FakePx4.OUT_TOPICS` / `IN_TOPICS`，默认值在 `config/bench.yaml` 的 `px4:` 段）。
+
+| 方法 | 说明 |
+|---|---|
+| `mute(*keys)` / `unmute(*keys)` | 让话题**停止发布**（不是"发空值"）。⚠️ 目前只有 `status` 可静默（`SILENCEABLE`），别的 key 抛 `ValueError` |
+| `set_armed(bool)` / `set_nav_state(int)` / `set_pre_flight_checks_pass(bool)` | 三条注入面（改一个属性）。★ **下一拍（≤10 ms）就发出去** —— 夹具按 commander 主循环的 10 ms 跑，**不是**按 500 ms |
+| `matched_subscribers(topic_key)` | 夹具**发**的那条（`status`）上已匹配的订阅者数。★ 发现屏障：**QoS 不兼容时恒为 0** |
+| `matched_publishers(topic_key)` | 反方向的发现屏障：DUT 在那条 `/fmu/in/*` 上有几个发布者已匹配（两者都是 0 才说明 DDS 根本没发现） |
+| `wait_for_publishers(topic_key, count=1, timeout_s=10.0)` / `wait_for_subscribers(topic_key, count=1, timeout_s=10.0)` | 上面两个的轮询版；**超时返回 `False`**（不抛） |
+| `published_frames(topic_key)` | DUT 发到某条 `/fmu/in/*` 上的**全部帧**（只读快照，元素是 `DutFrame(at_s, msg, topic_key)`） |
+| `frames_between(topic_key, from_s, to_s)` | 按窗口取（窗口两端用的都是记录的 `at_s`） |
+| `rate_hz(topic_key, from_s=None, to_s=None)` | 窗口内的实测频率（★ 纪律同 `Scenario.setpoint_rate_hz`：**不要在相邻两帧的间隔上断言**） |
+| `status_rate_hz(from_s=None, to_s=None)` | 夹具**自己**发状态的频率（默认应 ~2 Hz —— 真 PX4 的定频） |
+| `publisher_qos(topic_key)` | DUT 发布方**实际提供**的 QoS（读不到返回 `None`，断言前先过 `wait_for_publishers`）。★★ **只能对 `reliability` / `durability` 下断言** |
+| `stamp_age_s(frame, now_s=None)` | 那帧时间戳相对**墙钟**的"年龄" [s]（正 = 过去）。⚠️ `now_s` 是**墙钟秒**，**不是** `sc.t()` —— 它第一版取错过，于是正确的 µs 会被判成 `ns` |
+| `stamp_unit_guess(topic_key="rates")` | 猜单位，返回 `(单位, 中位年龄秒)`：`"us"` / `"ms"` / `"ns"` / `"zero"` / `"stale"` / `"none"`。★ 它是**猜测**不是断言 —— 断言请用 `stamp_age_s()` |
+| `status_frames` | 夹具**发出**的 `StatusFrame(at_s, timestamp_us, msg)` 列表 |
+| `t()` / `hrt_us()` | 与 `Scenario` 同一把尺子 / 夹具这一侧的"PX4 时钟"（µs，从**夹具就位**起算 —— 与 DUT 的墙钟 µs 是**两个纪元**，相减没有意义） |
+| `evidence()` | 人话证据（三个注入状态的当前值 + 两条 `/fmu/in/*` 的帧数/频率/单位猜测 + `status` 的匹配数） |
+
+★ 与 `FakeMavros` 同一套纪律：**任何"没收到"的断言之前先过发现屏障**、"频率只在窗口上算"、
+每条"不发生"的断言配一条正控。
+
 ### `VrpnSource`（`sc.mocap_source`）
 
 | 成员 | 说明 |
@@ -223,8 +273,10 @@ with Scenario(dut=("control", "control_node")) as sc:
 配方都是"返回事件列表"的**纯函数**，挂上去即可：
 
 ```python
+from bench.fake_px4 import NAV_STATE_OFFBOARD
 from bench.timeline import (silence_for, state_change, voltage_drop, rc_change,
-                            set_mode_policy, hold_mocap_stamp, pause_mocap)
+                            set_mode_policy, hold_mocap_stamp, pause_mocap,
+                            px4_arm, px4_nav_state, px4_status_silence, px4_preflight_checks)
 
 sc.timeline.extend(silence_for(sc.fake, "state", at_s=4.0, duration_s=3.0))
 sc.timeline.extend(state_change(sc.fake, 6.0, connected=False))
@@ -233,8 +285,18 @@ sc.timeline.extend(rc_change(sc.fake, 8.0, channel=9, value=2000))
 sc.timeline.extend(set_mode_policy(sc.fake, 9.0, "fail"))
 sc.timeline.extend(hold_mocap_stamp(sc.mocap_source, 10.0))
 sc.timeline.extend(pause_mocap(sc.mocap_source, 11.0, duration_s=2.0))
+# 假 PX4（ticket 06）：`/fmu/*` 那一侧的注入 —— 全部**按时刻**注入，不在测试里直接调 setter
+sc.timeline.extend(px4_arm(sc.px4, 12.0, armed=True))
+sc.timeline.extend(px4_nav_state(sc.px4, 12.0, NAV_STATE_OFFBOARD))
+sc.timeline.extend(px4_status_silence(sc.px4, 14.0, duration_s=3.0))  # 状态龄超阈值 ⟹ 闸门关
+sc.timeline.extend(px4_preflight_checks(sc.px4, 15.0, ok=False))
 sc.timeline.add(sc.t() + 0.5, sc.stop_dut, "杀掉 DUT")
 ```
+
+⚠️ 假 PX4 那四个助手的 `at_s` 与 `sc.t()` 同尺；**事件在等待期间照常触发**
+（`Scenario.wait_for` / `advance_to` / `hold` 都会 `_fire_due()`），所以"跑 3 s 之后注入"
+不需要额外写轮询。★ 它们是 `px4_arm(…, armed=False)` 这种**状态设置**而不是"执行一个动作"，
+名字读作"改假 PX4 的 armed 状态"（`armed=False` 是合法的，就是**上锁**）。
 
 时序的错误（漏触发 / 重复触发 / 早触发）在集成测试里表现为"偶尔抽风"，
 所以 `Timeline` 本身是**零 ROS 的纯逻辑**并被 `test/test_timeline.py` 单独钉死。
@@ -249,6 +311,7 @@ sc.timeline.add(sc.t() + 0.5, sc.stop_dut, "杀掉 DUT")
 | `VrpnSource.set_trajectory` | 仍然没人用（原以为会给 ticket 07/09，实际 ticket 09 用的是新加的 `FakeTraj`：轨迹跟踪要的是**参考位姿的流**，而不是"动捕跟着飞机动"） |
 | `FakeMavros.set_arming_service_available()` | 暂时没人用（`set_arming_policy('absent')` 已覆盖"服务不存在"）；留着是为了与 `set_mode_service_available` 对称 |
 | `Scenario(start_dut=False)`（只起夹具，手动起节点） | 台架排障时好用，自动化里没用过 |
+| `px4_preflight_checks`（假 PX4 的第四个注入面） | **还没有读者**：`FakePx4.set_pre_flight_checks_pass` 自身有自检（真发到话题上），但被测节点**目前不看这一位**（闸门只看 `armed` + `nav_state`）⟹ 现在拿它写不出会红的断言。07/09 若开始看 prearm，再挂到 `control`/`nmpc` 的测试上 |
 
 ★ 反过来，`FakeTraj`（全部能力）/ `Plant` / `Scenario.wait_for_subscribers` 的"**DUT 已死**"分支
 （它现在会把 DUT 的日志尾巴一起抛出来 —— 参数名/类型写错会让 `rclcpp` 构造参数时直接退进程，
@@ -298,6 +361,22 @@ sc.timeline.add(sc.t() + 0.5, sc.stop_dut, "杀掉 DUT")
       ⟹ 正控会误报"注入没生效"，而注入其实是好的。
       写法见 `control/test/test_control_failsafe.py::_watch_mocap_stamps`：先等匹配数 +1，再等基线帧到齐。
 
+## ★ 台架纪律（起 DUT 子进程的用例）
+
+1. **收工前看一眼有没有残留的 DUT 子进程**：`pgrep -af mpc_node`。
+   DUT 的话题名是**全固定**的（`/fmu/in/*`，见 `FakePx4.IN_TOPICS`），测试用的域号也是固定的
+   （73）⟹ 上一个没杀干净的进程会与这一次**同时**往同两条话题上发，夹具的记录里就混进了别人的帧
+   （症状是"帧数对不上 / 频率翻倍"，而断言本身照样绿或红得莫名其妙）。
+   同一时刻两者还共用 `$MPC_CODEGEN_DIR`（560 KB 的生成代码）⟹ 两个进程同时判"要重新生成"
+   会撞出一个与代码无关的 `RuntimeError: Rendering of model.in.h failed!`。
+2. **不要用 `pytest -n`（xdist）**跑起子进程的用例 —— 同上：并发就地撞话题与生成目录。
+   ★ 这条与第 1 条的第一手记录在 [`src/nmpc/test/test_mpc_node.py`](../nmpc/test/test_mpc_node.py)
+   文件头（"别并发跑，也别把 DUT 落在后台"）。
+3. **读 DUT 日志要等进程退出、读线程 join 完** —— `Scenario.stop_dut` 里的那条修复：
+   进程退出 ⟹ 管道 EOF ⟹ 读线程随即结束，`join` 一下才返回；少了这一句，调用方紧跟的
+   `dut_log()` 只拿到**前半段**（第一手：ticket 06 的收尾摘要明明打出来了、`returncode` 也是 0，
+   日志里却只有开头那行 matplotlib 警告，看上去像"节点根本没打摘要"）。
+
 ## 配置
 
 `config/bench.yaml`（安装到 `share/bench/config/bench.yaml`，用 `bench.config.load()` 读，
@@ -341,6 +420,15 @@ colcon test  --packages-up-to bench
 一个把 `local_position` 发成 reliable 的假 mavros，会让**所有**依赖它的测试"莫名其妙收不到数据"，
 而那种故障在日志里看不出来。
 
+★ **ticket 06（Phase 2 的假 PX4）另起了一个文件**：`test/test_fake_px4_selftest.py`（**16 条**，
+已在 `CMakeLists.txt` 里注册成 `test_fake_px4_selftest` ⟹ **`colcon test` 会跑它**——ticket 06 的验收项（"夹具能在 `colcon test` 里跑起来"）取的就是这一个文件的证；
+且**全部不起 DUT** —— `start_dut=False`，需要"有个谁在发/在收"的地方由测试**自己**发，
+这样夹具的量具 `publisher_qos` / `stamp_unit_guess` / `matched_*` 也被一起验了，而不是靠 DUT 恰好正确）：
+两个 QoS 常量与 PX4 的 writer/reader **逐字段**一致、`vehicle_status` 真的是 2 Hz、注入的变化
+≤0.1 s 就落地、`mute` 真的掐断又能恢复、四条注入面都落到话题上、夹具时钟与墙钟**是两个纪元**、
+时间戳取证的三种单位 + `zero` / `stale` / `none`、`publisher_qos` **只断言得了两项**、
+导航常量与 `px4_msgs` 里的一致。
+
 ⚠️ `bench` 是 Python 包：改 `bench/*.py` 之后**必须重新 `colcon build`**（代码被**复制**进
 `install/bench/local/lib/python3.10/dist-packages/bench/`，**不是软链**；而 `source install/setup.bash`
 把那个目录放进 `PYTHONPATH` ⟹ pytest 导入的是**安装副本**，不是 `src/bench/`），只改 `test/*.py` 则不用。
@@ -352,6 +440,7 @@ colcon test  --packages-up-to bench
 
 ```
 bench/fake_mavros.py    ★ 假 mavros（QoS 对照表在文件头；记录 DUT 发来的每一帧）
+bench/fake_px4.py       ★ 假 PX4（uXRCE-DDS 侧，ticket 06）：发 /fmu/out/vehicle_status、收 /fmu/in/*（仅 px4=True）
 bench/vrpn_source.py    脚本化动捕（两种喂法 + 输入故障注入）
 bench/plant.py          ★ 场景：假飞机（速率受限地逼近 setpoint）+ fly() / fly_until()
 bench/fake_traj.py      假 traj：把 /traj/select + /traj/start 变成 50 Hz 的参考与完成度
@@ -360,5 +449,5 @@ bench/scenario.py       Scenario：拼装 + DUT 子进程 + 秒表 + 证据输�
 bench/config.py         DEFAULTS 与 yaml 深合并
 bench/pytest_support.py ★ 会话级 ROS 上下文与 domain 安全边界
 config/bench.yaml       默认频率/话题/初始状态
-test/                   夹具自检（26 条）+ 时序纯逻辑单测（6 条）
+test/                   夹具自检（26 条 + 假 PX4 的 16 条）+ 时序纯逻辑单测（6 条）
 ```

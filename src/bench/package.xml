@@ -4,10 +4,11 @@
   <name>bench</name>
   <version>0.1.0</version>
   <description>
-    ★ 台架夹具（不是飞行代码）：**假 mavros** + 脚本化动捕输入 + 故障注入时序。
-    给"节点级测试"提供 seam 1 的另一半 —— 状态机里那些"实飞才会想到"的判据
-    （/mavros/state 静默、时间戳倒退、电压跌落、服务不应答）真 SITL 无法注入，
-    只能靠夹具按秒表注入。Phase 1/2/3 的所有节点级测试共用它。
+    ★ 台架夹具（不是飞行代码）：**假 mavros** + **假 PX4（uXRCE-DDS 的 /fmu/*）** +
+    脚本化动捕输入 + 故障注入时序。给"节点级测试"提供 seam 1 的另一半 ——
+    状态机里那些"实飞才会想到"的判据（/mavros/state 静默、时间戳倒退、电压跌落、
+    服务不应答、未解锁 / 未 offboard）真 SITL 无法注入，只能靠夹具按秒表注入。
+    Phase 1/2/3 的所有节点级测试共用它。
   </description>
   <maintainer email="127371350+weisama@users.noreply.github.com">weisama</maintainer>
   <license>TODO: License declaration</license>
@@ -20,6 +21,10 @@
   <depend>geometry_msgs</depend>
   <depend>sensor_msgs</depend>
   <depend>mavros_msgs</depend>
+  <!-- ★ 假 PX4（`bench/fake_px4.py`）用到的 `/fmu/*` 消息类型。⚠️ `px4_msgs` **不在本仓库里**
+       （在下位工作区 `~/px4_msgs_ws`）⟹ 裸 `colcon build` 之前要先 source 它，
+       见仓库根 README 的构建段。 -->
+  <depend>px4_msgs</depend>
 
   <test_depend>ament_cmake_pytest</test_depend>
 

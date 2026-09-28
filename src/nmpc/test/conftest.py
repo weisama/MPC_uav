@@ -36,6 +36,28 @@ from nmpc import NU, OfflineOcp
 WARMUP = 10
 
 
+@pytest.fixture(scope="session")
+def ros_context():
+    """会话级的 ROS 上下文 —— **只有 seam 1（起 DUT 子进程）的用例请求它**。
+
+    ★ 为什么不做成 `autouse`：本目录里绝大多数用例是**零 ROS** 的（`sign_map`、离线 OCP），
+      它们不该因为"同目录还有一个集成测试"就去 init 一个 DDS 上下文 —— 那会顺手改掉
+      进程的环境（`ROS_DOMAIN_ID` / `ROS_LOCALHOST_ONLY`），也会让 `ROS_DOMAIN_ID=0`
+      这一条安全网在这里无端生效（`bench/pytest_support.py` 会**硬拒** domain 0）。
+      所以 `test_mpc_node.py` 用 `pytestmark = pytest.mark.usefixtures("ros_context")` 显式要它。
+
+    ★ 夹具（`Scenario` / `FakePx4` / 假 mavros）用 rclpy 直接在**本进程**收发 ⟹ 必须在
+      任何 `Scenario()` 之前 init 一次，而且是**会话级**（反复 init/shutdown 是抖动之源，
+      见 `bench/pytest_support.py`）。`from bench…` 放在函数里：`bench` 没装时，
+      零 ROS 的用例不该因为这个 import 而整个目录收集失败。
+    """
+    from bench.pytest_support import init_ros_for_tests, shutdown_ros_after_tests
+
+    init_ros_for_tests()
+    yield
+    shutdown_ros_after_tests()
+
+
 @pytest.fixture(scope="module")
 def ocp() -> OfflineOcp:
     """一个模块一个求解器实例 —— 建实例要代码生成 + C 编译，别每个用例都建。"""

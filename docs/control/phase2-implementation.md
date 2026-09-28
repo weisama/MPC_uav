@@ -301,6 +301,24 @@ ubu = np.array([+Fmax,     wmax,       wmax,      +0.5*wmax])
 > **M5** 的"求解失败不抛异常、由健康度如实返回"那一半在 `ocp.py`（`SolveInfo.degraded`、`ok`）；
 > **谁接管、怎么降级**归 ticket 06/07。**M7–M9 是节点侧的事**，本票未动。
 
+> ✅ **落地状态（2026-09-28，ticket 06 —— 节点侧 M7–M9）** —— 逐条的**落地位置 + 一手依据**：
+>
+> | 编号 | 落地位置 | 一手依据 |
+> |---|---|---|
+> | **M7** | `mpc_node.py:244-247` 只订阅 `/mocap/pose_enu`（`geometry_msgs/PoseStamped`）+ `/fmu/out/vehicle_status`；状态由 `node_core.pose_to_state` 直接组装，**没有一行坐标系转换** | `/mocap/pose_enu` 是 `mocap_rel_pose_node.cpp:93` 用 `QoS(10)` 发的 **ENU/FLU**（节点里的引文见 `mpc_node.py:134-139`）⟹ §2.3(a) 那段手写 NED→ENU 四元数变换**整段删掉**。测试：`test_mpc_node.py::test_接口与_QoS_与票面一致`（夹具的动捕源上有订阅者）、`test_node_core.py::test_pose_to_state_不做任何坐标系转换` |
+> | **M8** | `mpc_node.py:246` 只有**一个** `VehicleStatus` 订阅（`TOPIC_STATUS`），全仓没有 `_v1` 后缀话题 | z0 真身的 `msg/` 与**上游 v1.14.3 逐字节相同**，而 `_v1` / `msg/versioned/` 是 **v1.16 才有**的机制 ⟹ 那段兼容代码在我们这里是死代码（[`refs-manifest.md`](../reference/refs-manifest.md) §2.6）。测试：`test_接口与_QoS_与票面一致` 里的 `matched_subscribers("status") == 1` —— **恰好一个**订阅者，多一个 `_v1` 变体这条就红 |
+> | **M9** | 全仓**没有**定义了却不用的 horizon 常量：`OcpConfig.N = 50`（`ocp.py:51`）在 `ocp.py:225/256/281-283`（内步长、`N_horizon`、参考的 reshape）与节点侧的 RViz 点数上**都在用** | 参考实现那个死变量：`mpc_quadrotor.py:142` 的 `MPC_HORIZON = 15` —— 它只被**注释掉**的那段代码（`:149` `N=MPC_HORIZON,`）引用，真正 spawn 的控制器（`:145`）用的是自己的缺省 horizon ⟹ 定义了却不起作用。测试：`test_mpc_node.py::test_RViz_的预测轨迹与参考点` 断言的 51 点 = `N+1`，把"用了没用的 N"这件事钉在话题上 |
+>
+> ⚠️ **M5 的兜底路径本票只做到"如实回报"** —— 而且**"发不发"分三类**，别当成一件事
+> （**ticket 07 接手前先读这三条**，都是本票实测的行为）：
+> · **非有限值**（动捕位置 / 四元数非有限）⟹ `node_core._hold("non_finite_mocap")` ⟹ **闸门关、不发**；
+> · **求解退化**（`SolveInfo.degraded`：acados 状态码非零 / `u` 越出约束）⟹ **照样发**！只 `warn` + 计数
+>   （`degraded_count`，进收尾摘要）—— 因为解仍有限，退化的判据在 `ocp.py` 而不是"能不能用"；
+> · **映射前拒绝**（`sign_map` 对非有限的 `u` / 负推力抛 `ValueError`）⟹ **这一拍不发**（`rejected` 计数）。
+> **"谁来接管、怎么降级"（悬停？切回 `(A)` 链？）归 ticket 07**（`heartbeat_always` 那个接缝就是给它的）。
+> ★ 这一条是 ticket 06 的复核抓出来的：本文件原写"求解失败 + 非有限值 ⟹ 不发"，
+> 而代码里**退化求解照样发** —— 07 照着错的描述接手，会以为"已经不发"了。
+
 > 📌 **M7 顺带干掉了一整类 bug**：既然动捕原生就是 ENU/FLU，MPC 内部也用 ENU/FLU，那么 §2.3(a) 那段手写四元数转换（`1/√2·[w+z, x+y, x−y, w−z]`，**整个文件里最容易写错的一行**）**可以直接删掉**。详见 §3.2。
 
 ### 2.6 可以直接抄的部分
@@ -539,15 +557,21 @@ ROS 侧：  ros2 interface show px4_msgs/msg/VehicleRatesSetpoint
 
 按 §2.6 复制 `px4-mpc`，按 §2.5 的 M1–M9 改造。**必须同时具备**：
 
-- [ ] 订阅 `/mocap/pose_enu`（**不是** NED）
-- [ ] 订阅 `/fmu/out/vehicle_status`（判断是否已 armed / offboard）
-- [ ] 发布 `/fmu/in/offboard_control_mode`（`body_rate = True`，其余 False），**≥ 2 Hz，实做 50 Hz**
-- [ ] 发布 `/fmu/in/vehicle_rates_setpoint`
-- [ ] QoS：pub `BEST_EFFORT + TRANSIENT_LOCAL + depth 1`，**sub 也必须 `BEST_EFFORT`**（§6.4）
-- [ ] `timestamp` 用 `Clock().now().nanoseconds / 1000`（**PX4 用微秒**）
-- [ ] 求解失败 / 非有限值的兜底路径（M5）
-- [ ] 100 Hz 定时器（D6 待实测后调）
-- [ ] RViz：预测轨迹 `Path` + 参考 `Marker`
+> ✅ **落地状态（2026-09-28，ticket 06）** —— 逐条勾选 + 依据。**逐条的读法、第一手数字与
+> 交接项在** [`mpc-node-seam1.md`](mpc-node-seam1.md)（节点与 seam 1 的交付文档），这里只留索引。
+>
+> - [x] 订阅 `/mocap/pose_enu`（**不是** NED）—— `mpc_node.py:244`；`test_接口与_QoS_与票面一致`
+> - [x] 订阅 `/fmu/out/vehicle_status` —— `mpc_node.py:246`；同一条用例里的 `matched_subscribers("status") == 1`
+> - [x] 发布 `/fmu/in/offboard_control_mode`（`body_rate = True`，其余 False），**≥ 2 Hz，实做 50 Hz** —— `test_闸门关闭时只发心跳_一帧_setpoint_都没有`（≥2 Hz）+ `test_实做频率_心跳_50_Hz_setpoint_100_Hz`（实测 50.0 Hz）
+> - [x] 发布 `/fmu/in/vehicle_rates_setpoint` —— 同两条用例；`test_解锁切_OFFBOARD_之后立刻开始发`
+> - [x] QoS：pub `BEST_EFFORT + TRANSIENT_LOCAL + depth 1`，**sub 也必须 `BEST_EFFORT`** —— `test_接口与_QoS_与票面一致`（⚠️ `depth` 黑盒读不回来，守法见 seam 1 文档 §3）
+> - [x] `timestamp` 用微秒 —— `test_时间戳是墙钟微秒`（夹具按"相对墙钟的比值"把 µs/ms/ns 分开）
+> - [x] 求解失败 / 非有限值的兜底路径（M5）—— **只做到"如实回报"**；⚠️ "发不发"分三类、**退化求解照样发**（见 §2.5 那条警示）；谁接管归 ticket 07
+> - [x] 100 Hz 定时器（D6 待实测后调）—— 实测落在 100.0 Hz；**降档决定归 ticket 09/11**
+> - [x] RViz：预测轨迹 `Path` + 参考 `Marker` —— `test_RViz_的预测轨迹与参考点`（51 点、起点≈当前位置、终点朝目标、参考点落位）
+> - [x] 另外三项票面要求：**饱和表现为打满**（`test_目标在正前方时_pitch_为负_且顶约束表现为打满`）、
+>       **软急停接口参数化**（零通道号，见 seam 1 文档 §6）、**装桨前的静态自检**
+>       （`nmpc/preflight_check.py`，见 seam 1 文档 §7）
 
 ### S5 —— SITL 闭环 ★ **Phase 2 的真正关卡**
 

@@ -3,6 +3,7 @@
 它把四件事拼成一个上下文管理器：
 
     ┌── 假 mavros（`FakeMavros`）：提供 PX4 的"外部世界"，并记录 DUT 发来的每一帧 setpoint
+    ├── 假 PX4（`FakePx4`，**可选**，`px4=True`）：Phase 2 的 `/fmu/*` 外部世界
     ├── 脚本化动捕（`VrpnSource`）：按秒表喂出"动捕说有数据"
     ├── 故障注入时序（`Timeline`）：第几秒掐掉哪条话题、改哪个状态
     └── DUT 子进程：真的把节点当进程启起来（★ 不是"import 它的类"）
@@ -34,6 +35,7 @@ from std_msgs.msg import String
 from . import config as config_mod
 from .config import default_config_file
 from .fake_mavros import FakeMavros
+from .fake_px4 import FakePx4
 from .timeline import Timeline
 from .vrpn_source import VrpnSource
 
@@ -68,6 +70,7 @@ class Scenario:
         config_file: Optional[str] = None,
         start_dut: Optional[bool] = None,
         mocap: Optional[bool] = None,
+        px4: Optional[bool] = None,
         dut_env: Optional[Dict[str, str]] = None,
         node_name: Optional[str] = None,
     ) -> None:
@@ -76,16 +79,21 @@ class Scenario:
         self.params = dict(params or {})
         self._config_file = config_file if config_file is not None else default_config_file()
         self.config = config if config is not None else config_mod.load(self._config_file)
-        # 这两个开关的默认值来自配置（`config/bench.yaml` 的 scenario 段），显式传参则覆盖。
+        # 这几个开关的默认值来自配置（`config/bench.yaml` 的 scenario 段），显式传参则覆盖。
         sc_cfg = self.config.get("scenario", {})
         self._start_dut_immediately = sc_cfg.get("start_dut", True) if start_dut is None else start_dut
         self._want_mocap = sc_cfg.get("mocap", True) if mocap is None else mocap
+        # ★ 假 PX4 **默认关**：Phase 1 的 `(A)` 链（走 mavros）不需要它，而多起一个往
+        #   `/fmu/*` 上发状态的夹具会让"这个场景到底在测哪条链"变得含糊 ——
+        #   Phase 2 的用例显式写 `px4=True`（或配 `scenario.px4: true`）。
+        self._want_px4 = sc_cfg.get("px4", False) if px4 is None else px4
         self._dut_env_extra = dict(dut_env or {})
         self._node_name = node_name
         self._index = next(_INDEX)
 
         self.node = None
         self.fake: Optional[FakeMavros] = None
+        self.px4: Optional[FakePx4] = None
         self.mocap_source: Optional[VrpnSource] = None
         self.executor: Optional[MultiThreadedExecutor] = None
         self.timeline = Timeline()
@@ -132,6 +140,16 @@ class Scenario:
             position=initial["position"],
             voltage=initial["voltage"],
         )
+        if self._want_px4:
+            px4_cfg = self.config.get("px4", {})
+            self.px4 = FakePx4(
+                self.node,
+                clock=self,
+                topics=px4_cfg.get("topics"),
+                armed=px4_cfg.get("armed", False),
+                nav_state=px4_cfg.get("nav_state", 2),   # POSCTL：切 OFFBOARD 之前的常态
+                pre_flight_checks_pass=px4_cfg.get("pre_flight_checks_pass", True),
+            )
         if self._want_mocap:
             mocap_cfg = self.config["mocap"]
             self.mocap_source = VrpnSource(
@@ -309,6 +327,12 @@ class Scenario:
             try:
                 self.dut_proc.wait(timeout=timeout_s)
                 self.log(f"[t={self.t():.2f}s] DUT 已退出，returncode = {self.dut_proc.returncode}")
+                # ★ 读完输出**再**返回：进程退出 ⟹ 管道 EOF ⟹ 读线程随即结束，join 一下就够了。
+                #   少了这一句，调用方紧跟的 `dut_log()` 可能只拿到**前半段**（第一手：ticket 06
+                #   的收尾摘要明明打出来了 —— returncode 也是 0 —— 日志里却只有开头那行
+                #   matplotlib 警告，看上去像"节点根本没打摘要"）。
+                if self._dut_reader is not None:
+                    self._dut_reader.join(timeout=2.0)
                 return
             except subprocess.TimeoutExpired:
                 continue
@@ -420,6 +444,8 @@ class Scenario:
         ]
         if self.fake is not None:
             parts += [self.fake.evidence(), ""]
+        if self.px4 is not None:
+            parts += [self.px4.evidence(), ""]
         if self.mocap_source is not None:
             parts += [
                 f"- 动捕源：{self.mocap_source.topic}，匹配到的订阅者 "

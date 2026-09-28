@@ -17,7 +17,7 @@
 | **分支** | `main`（开发主线）· **`v1.0`（本版本的快照，与 `main` 同指这一个提交）** |
 | **本版对应提交** | ☠️ **本页无法自引自己的 hash** —— 用 `git rev-parse v1.0`（或 `git rev-parse main`）取 |
 | **飞控固件** | `Minderring/PX4-Autopilot` @ `4a0e65f2` —— v1.14.3 系的 MicoAir 厂商构建，**已在机上、不刷不改** |
-| **`px4_msgs`** | `release/1.14` @ `ffb6e80`（仓库外 `~/refs/px4_msgs`；**Phase 2 才用**） |
+| **`px4_msgs`** | `release/1.14` @ `ffb6e80`（仓库外 `~/refs/px4_msgs`；**Phase 2 起用** —— ⚠️ 现已是**构建期依赖**：`nmpc` 与 `bench` 的 `package.xml` 里各有一条 `<depend>`） |
 | **mavros** | **2.15.1 @ `22ae5b7`** —— 源码构建在 `~/mavros_ws`，**不在本仓库**（Phase 1 全靠它） |
 | **ROS 2** | **Humble** |
 | **运行环境** | Ubuntu 22.04.5 LTS · 内核 5.15.185-tegra · aarch64（Jetson Orin NX 8GB） |
@@ -103,8 +103,9 @@
     ├── vrpn_listener/                ✅ 动捕链路，vendored 原样 —— 读它的 VENDORED.md，**别读它的 README.md**
     ├── mocap/                        ✅ 相对位姿（两阶段原点 + 仅归零 yaw）→ `/mavros/vision_pose/pose` → EKF2
     ├── traj/                         ✅ 参考轨迹（三条解析轨迹，50 Hz，**相对轨迹原点**；不发 setpoint）
-    ├── bench/                        ✅ 台架夹具（**测试基础设施，不是飞行代码**）：假 mavros + 脚本化动捕 + 假 traj + 故障注入
+    ├── bench/                        ✅ 台架夹具（**测试基础设施，不是飞行代码**）：假 mavros + **假 PX4（`/fmu/*`，Phase 2）** + 脚本化动捕 + 假 traj + 故障注入
     ├── control/                      ✅ 自主飞行控制节点（ticket 05/06/08/09：起飞 → 悬停判稳 → **等开始键** → 跟踪轨迹 → 自动降落；**2026-09-28 真机自由飞一次成**，阶梯 1–3 级待做）
+    ├── nmpc/                         ✅ Phase 2 的 MPC（模型预测控制）节点：`(C)` 级 CTBR（只发总推力 + 机体角速率）+ 零 ROS 的 OCP 与符号映射 + **装桨前的静态自检**（`ros2 run nmpc preflight_check.py`）
     └── bringup/                      ✅ launch + 操作台（ticket 09）：`z0.launch.py` 一键起 mocap+traj+control(+mavros)、`fly.py` 选轨迹看状态
 ```
 
@@ -112,6 +113,10 @@
 > ```bash
 > source /opt/ros/humble/setup.bash && cd ~/ros_ws && colcon build
 > ```
+> ⚠️ **裸 `colcon build` 之前要先 source `px4_msgs`** —— 本仓库的 `nmpc` 与 `bench` 都依赖它
+> （两个包的 `package.xml` 里各有 `<depend>px4_msgs</depend>`），而 `px4_msgs` **在仓库外**
+> （下位工作区 `~/px4_msgs_ws`，`release/1.14`）⟹ 完整的一行是
+> `source /opt/ros/humble/setup.bash && source ~/px4_msgs_ws/install/setup.bash && cd ~/ros_ws && colcon build`。
 > 依赖与运行方式见 [`src/vrpn_listener/VENDORED.md`](src/vrpn_listener/VENDORED.md) §5；
 > `mocap` 与它的测试见 [`src/mocap/README.md`](src/mocap/README.md)（`colcon test --packages-select mocap`）；
 > `traj` 见 [`src/traj/README.md`](src/traj/README.md)（`--packages-up-to traj`，**它的 seam 1 也依赖 `bench`**）；

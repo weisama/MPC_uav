@@ -20,6 +20,12 @@ if(BUILD_TESTING)
   # 时序的纯逻辑单测：零 ROS，一毫秒跑完 —— 与上面那个刻意分开，好让"跑得快的那些"不被 ROS 拖慢。
   ament_add_pytest_test(test_timeline test/test_timeline.py
     TIMEOUT 60)
+  # 假 PX4 的自检（ticket 06）：频率、QoS 兼容性、四条注入面真的落到话题上、时间戳纪元。
+  # ⚠️ 它**必须注册在 `colcon test` 里** —— ticket 06 的验收项（"夹具能在 colcon test 里跑起来"）
+  #    就是拿这一个文件取证的；漏注册的话手动 `pytest` 照样绿，而 `colcon test` 里
+  #    **一条夹具自检都没跑**，那种"绿得很安静"正是本项目最防的那种绿。
+  ament_add_pytest_test(test_fake_px4_selftest test/test_fake_px4_selftest.py
+    TIMEOUT 180)
 endif()
 
 ament_package()

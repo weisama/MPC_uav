@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 import math
+import subprocess
 import sys
 from pathlib import Path
 
@@ -109,6 +110,16 @@ def test_bad_omega_is_rejected(omega):
 
 
 def test_no_ros_import_leaks_in():
-    """纯函数模块**不得**拉进 ROS：离线 OCP 与假 PX4 夹具都要能直接 import 它（§8.1）。"""
-    for module in ("rclpy", "px4_msgs"):
-        assert module not in sys.modules, f"sign_map 把 {module} 带进来了 —— 它必须是纯函数"
+    """纯函数模块**不得**拉进 ROS：离线 OCP 与假 PX4 夹具都要能直接 import 它（§8.1）。
+
+    ★★ 判据在**子进程**里取（ticket 06 复核轮改的，只改取法、不改结论）：`sys.modules` 是
+      整个 pytest 进程的，而同目录的 `test_mpc_node.py` / `test_preflight_check.py`
+      （ticket 06 新增）会 import `px4_msgs` / `rclpy` ⟹ 直接查 `sys.modules` 时本断言
+      在 `pytest src/nmpc/test/` 下**假红**，而在 `colcon test`（一个文件一个进程）下绿。
+      子进程里"只 import sign_map"问的是同一个契约，且与谁先跑无关。
+    """
+    code = ("import sys, nmpc.sign_map;"
+            " assert 'rclpy' not in sys.modules, 'sign_map 把 rclpy 带进来了';"
+            " assert 'px4_msgs' not in sys.modules, 'sign_map 把 px4_msgs 带进来了'")
+    done = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)
+    assert done.returncode == 0, f"sign_map 不再是纯模块：{done.stderr.strip()[-300:]}"

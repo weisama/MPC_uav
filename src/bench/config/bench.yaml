@@ -58,3 +58,19 @@ scenario:
   start_dut: true
   # 要不要起脚本化动捕源（测的节点不依赖动捕时可以关掉）
   mocap: true
+  # ★ 要不要起**假 PX4**（Phase 2 走 uXRCE-DDS 的 `/fmu/*` 那一半）。默认关：
+  #   Phase 1 的 (A) 链不需要它。⚠️ 它与假 mavros 互不干扰（不同话题族），可以同时开。
+  px4: false
+
+# 假 PX4 的初始状态与话题名（对应 `bench/config.py` 的 DEFAULTS["px4"]）。
+px4:
+  # 默认"上电后、切 OFFBOARD 之前"的样子：未解锁 + POSCTL。
+  armed: false
+  nav_state: 2          # 2 = POSCTL（VehicleStatus.msg 的 NAVIGATION_STATE_POSCTL）
+  pre_flight_checks_pass: true
+  # 话题名照抄 PX4 的 uXRCE-DDS 命名，不要为了"测试方便"改名 ——
+  # 改名会让 DUT 里写错的默认值照样通过测试。
+  topics:
+    status: "/fmu/out/vehicle_status"
+    rates: "/fmu/in/vehicle_rates_setpoint"
+    mode: "/fmu/in/offboard_control_mode"

@@ -122,6 +122,44 @@ def set_mode_policy(fake, at_s: float, policy: str, label: str = "") -> List[Eve
     return [Event(at_s=at_s, action=lambda: fake.set_mode_policy(policy), label=tag)]
 
 
+def px4_status_silence(px4, at_s: float, duration_s: float, label: str = "") -> List[Event]:
+    """假 PX4 的 `/fmu/out/vehicle_status` **停止发布** `duration_s` 秒。
+
+    ★ 时长要按被测判据选（与 `silence_for` 同一条纪律）：真 PX4 的这条话题是
+      **2 Hz 定频 + 变化即刻发**（`Commander.cpp:1790`）⟹ 只掐 0.5 s 落在正常间隔内，
+      什么也测不出来；要触发"状态多久没到"的判据，`duration_s` 必须**明显大于 2.5 个周期**。
+    """
+    tag = label or f"假 PX4 状态静默 {duration_s:g} s"
+    return [
+        Event(at_s=at_s, action=lambda: px4.mute("status"), label=f"开始：{tag}"),
+        Event(at_s=at_s + duration_s, action=lambda: px4.unmute("status"), label="恢复：假 PX4 状态"),
+    ]
+
+
+def px4_arm(px4, at_s: float, armed: bool = True, label: str = "") -> List[Event]:
+    """改假 PX4 的解锁状态。★ 变化**不超过一拍（10 ms）就发出去**（见 `fake_px4.STATUS_PERIOD_S`），
+    所以"注入 armed 之后等它反映到话题上"是毫秒级的事，不需要留 0.5 s 的余量。"""
+    tag = label or f"假 PX4 armed → {armed}"
+    return [Event(at_s=at_s, action=lambda: px4.set_armed(armed), label=tag)]
+
+
+def px4_nav_state(px4, at_s: float, nav_state: int, label: str = "") -> List[Event]:
+    """改假 PX4 的当前模式。
+
+    ⚠️ `nav_state` 传**整数**（`NAV_STATE_OFFBOARD = 14` 等）。常量只在
+    `bench/fake_px4.py` 里有一份 —— 本模块**零 ROS 依赖**（见文件头），所以不 import 它，
+    由调用方传值（测试里 `from bench.fake_px4 import NAV_STATE_OFFBOARD` 即可）。
+    """
+    tag = label or f"假 PX4 nav_state → {nav_state}"
+    return [Event(at_s=at_s, action=lambda: px4.set_nav_state(nav_state), label=tag)]
+
+
+def px4_preflight_checks(px4, at_s: float, ok: bool, label: str = "") -> List[Event]:
+    """改假 PX4 的 `pre_flight_checks_pass`（解锁前的门槛之一）。"""
+    tag = label or f"假 PX4 pre_flight_checks_pass → {ok}"
+    return [Event(at_s=at_s, action=lambda: px4.set_pre_flight_checks_pass(ok), label=tag)]
+
+
 def hold_mocap_stamp(source, at_s: float, held: bool = True, label: str = "") -> List[Event]:
     """动捕的**时间戳冻住**（照发，但 stamp 不前进）—— mavros 会丢弃这类消息。"""
     tag = label or ("动捕时间戳冻住" if held else "动捕时间戳恢复")

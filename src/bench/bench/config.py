@@ -68,6 +68,28 @@ DEFAULTS: Dict[str, Any] = {
         "start_dut": True,
         # 要不要起脚本化动捕源（测的节点不依赖动捕时可以关掉）
         "mocap": True,
+        # ★ 要不要起**假 PX4**（Phase 2 的 `/fmu/*` 那一半）。默认**关** ——
+        #   Phase 1 的 `(A)` 链不需要它，而多起一份"外部世界"会让场景在测哪条链变得含糊。
+        #   ⚠️ 一份夹具里 `FakeMavros` 与 `FakePx4` **可以同时开**（Phase 2 的"回退"验收项
+        #   要的就是"两条链并存"），但它们发的是**不同的话题族**（`/mavros/*` vs `/fmu/*`），
+        #   不会像"两份假 mavros"那样互相打架。
+        "px4": False,
+    },
+    # 假 PX4 的初始状态与话题名（`bench/fake_px4.py` 的 `OUT_TOPICS` / `IN_TOPICS`）。
+    "px4": {
+        # 假 PX4 报的 armed / nav_state。默认 **未解锁 + POSCTL** —— 真机上"上电后、
+        # 切 OFFBOARD 之前"的样子；要测"未解锁不发"这类判据就必须从这里开始。
+        "armed": False,
+        # 2 = POSCTL（`VehicleStatus.msg` 的 NAVIGATION_STATE_POSCTL，逐字一致）
+        "nav_state": 2,
+        "pre_flight_checks_pass": True,
+        # 话题名照抄 PX4 的 uXRCE-DDS 命名（`utilities.hpp` 的 `rt/fmu/{in,out}/<名>`，
+        # ROS 2 侧去掉 `rt/` 前缀）。不要为了"测试方便"改名。
+        "topics": {
+            "status": "/fmu/out/vehicle_status",
+            "rates": "/fmu/in/vehicle_rates_setpoint",
+            "mode": "/fmu/in/offboard_control_mode",
+        },
     },
 }
 

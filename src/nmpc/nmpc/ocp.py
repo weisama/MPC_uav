@@ -207,6 +207,10 @@ class OfflineOcp:
         self._build_solver(verbose=verbose)
         # 缺省 `u_ref` 的第一帧：悬停前馈（M6 的参考量，见类 docstring 的表）
         self._u_ref_last = np.tile(np.array([self.params.t_hover, 0.0, 0.0, 0.0]), (self.config.N, 1))
+        #: 解过几次。`last_prediction()` 用它回答"求解器里到底有没有一条轨迹"——
+        #: 没解过的时候 `get_flat` 读到的是**初始化时写进去的那条**（近似水平悬停的猜测），
+        #: 把它当预测轨迹画出来就是拿假数据糊弄人。
+        self._solves = 0
 
     # ── 装配 ────────────────────────────────────────────────────────────
     def _build_solver(self, verbose: bool) -> None:
@@ -306,6 +310,7 @@ class OfflineOcp:
         self.solver.set(0, "ubx", x0)
 
         status = int(self.solver.solve())
+        self._solves += 1
         time_tot = float(self.solver.get_stats("time_tot"))
         u_first = np.array(self.solver.get(0, "u"))
         cost_acados = float(self.solver.get_cost())          # ⚠️ RTI 下不可信，只留证（见 SolveInfo）
@@ -340,6 +345,24 @@ class OfflineOcp:
             self._u_ref_last = u_pred
         ref = np.asarray(x_ref, dtype=float).reshape(self.config.N + 1, NX)
         return OcpSolution(u=u_first, u_pred=u_pred, x_pred=x_pred, info=info, ref=ref)
+
+    def last_prediction(self) -> tuple[np.ndarray, np.ndarray] | None:
+        """把**求解器里那份当前迭代点**的预测轨迹读出来（`None` = 还没解过）。
+
+        ★ 它**不额外解一次**：`get_flat` 实测 0.049 ms，而一次 `solve()` 是 3.5 ms 的量级
+          （本包 README 的耗时分解）。节点的 RViz 那条预测路径走这里 ⟹ 可视化不占控制预算，
+          而且画出来的就是"**刚发出去的那个 `u` 所属的那条轨迹**"（同一次迭代的结果），
+          所以"节点此刻认为会发生什么"与"节点刚才发了什么"永远自洽。
+        ⚠️ 它读的是**求解器内部状态**，不是 `solve()` 的返回值：`prediction=False` 时
+          `OcpSolution.x_pred` 是 `None`，但求解器里**仍然**有一条轨迹（RTI 每周期都会算）。
+          两条路读到的可能是**不同次**迭代的结果（若中间又解过一次）——节点里是同一个定时器
+          回调，不存在这个问题；跨线程调用则不然（本包目前没有第二个线程）。
+        """
+        if self._solves == 0:
+            return None
+        u = np.array(self.solver.get_flat("u")).reshape(self.config.N, NU)
+        x = np.array(self.solver.get_flat("x")).reshape(self.config.N + 1, NX)
+        return x, u
 
     # ── 自算的健康度指标（不依赖 acados 的残差记账，见 SolveInfo 的说明） ──
     def _bound_violation(self, u: np.ndarray) -> float:

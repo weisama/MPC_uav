@@ -20,8 +20,16 @@
        ⟹ 裸 colcon build 前要先 source 那个工作区的 install/setup.bash，
        见仓库根 README.md 的构建段与 .scratch/phase2/issues/06 的 Comments。 -->
   <depend>px4_msgs</depend>
+  <!-- 节点要收 `/mocap/pose_enu`（`geometry_msgs/PoseStamped`），
+       并往 RViz 发 `/mpc/predicted_path`（`nav_msgs/Path`）与 `/mpc/reference`（`Marker`）。 -->
+  <depend>geometry_msgs</depend>
+  <depend>nav_msgs</depend>
+  <depend>visualization_msgs</depend>
 
   <test_depend>ament_cmake_pytest</test_depend>
+  <!-- ★ seam 1 的集成测试（`test/test_mpc_node.py`）用仓库里的台架夹具起 DUT 子进程
+       （`Scenario` + `FakePx4`）。`bench` 在本仓库内、同一次 colcon build 里就有。 -->
+  <test_depend>bench</test_depend>
 
   <export>
     <build_type>ament_cmake</build_type>
