@@ -1,0 +1,29 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>nmpc</name>
+  <version>0.1.0</version>
+  <description>
+    Phase 2 的 MPC（模型预测控制）包：把 PX4 的内置 PID 换成自己的控制律（(C) 级 CTBR ——
+    只发「总推力 + 机体角速率」，姿态环与混控仍留在飞控里）。
+    ★ 分层是刻意的：`sign_map` / `commands` 是**零 ROS 的纯函数**（离线 OCP 与假 PX4 夹具共用），
+    只有节点才碰话题。符号与归一化的数值权威在 docs/control/sign-map.md，不在本包里。
+  </description>
+  <maintainer email="127371350+weisama@users.noreply.github.com">weisama</maintainer>
+  <license>TODO: License declaration</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <buildtool_depend>ament_cmake_python</buildtool_depend>
+
+  <depend>rclpy</depend>
+  <!-- ★ px4_msgs 不在本仓库里（下位工作区 ~/px4_msgs_ws，release/1.14 @ ffb6e80e）
+       ⟹ 裸 colcon build 前要先 source 那个工作区的 install/setup.bash，
+       见仓库根 README.md 的构建段与 .scratch/phase2/issues/06 的 Comments。 -->
+  <depend>px4_msgs</depend>
+
+  <test_depend>ament_cmake_pytest</test_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

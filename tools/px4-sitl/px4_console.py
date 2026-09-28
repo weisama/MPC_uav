@@ -160,13 +160,47 @@ class Px4Console:
         但字节流里全是噪声（ticket 01 那次管道喂命令刷出 64 MB 就是这个）。
         这里按 `\\n` 切行、每行只留最后一个 `\\r` 之后的那段 —— 正则和日志就都干净了。
         """
-        plain = ANSI_RE.sub("", self._raw.decode("utf-8", "replace"))
+        return self._render(self._raw)
+
+    @staticmethod
+    def _render(raw) -> str:
+        """`raw` 可以是 `bytes` 也可以是 `bytearray`（`self._raw` 就是后者）。
+
+        ★ 别为了"安全"先 `bytes(raw)` 复制一遍：这份缓冲实测能到几十 MB
+        （管道喂命令刷出 64 MB 那次），而这个函数在 `wait_for` 的轮询里每 0.2 s 就叫一次。
+        `decode` 只读，不需要可写副本。
+        """
+        plain = ANSI_RE.sub("", raw.decode("utf-8", "replace"))
         # 注意 ONLCR：pty 输出侧把 `\n` 补成 `\r\n`，所以行尾会多一个空段 ——
         # 取"最后一个**非空**段"，不能直接取最后一个。
         lines = []
         for line in plain.split("\n"):
             lines.append(next((seg for seg in reversed(line.split("\r")) if seg), ""))
         return "\n".join(lines)
+
+    def mark(self) -> int:
+        """记一个**字节**游标 —— 配合 `text_since()` / `wait_for_mark()` 用。
+
+        ⚠️ 别拿 `len(self.text())` 当游标：`text()` 是**整段** `_raw` 的重渲染，
+        而它的长度与内容会随**后来**到的字节变（pxh 的 `ESC[2K\\r` 常跨两次 `read()` 到达）。
+        见 `text_since()` 里记的实测。
+        """
+        return len(self._raw)
+
+    def text_since(self, mark: int) -> str:
+        """只渲染 `_raw[mark:]`（`mark` 来自 `mark()`）。
+
+        ★ 为什么不能用 `text()[当时的长度:]` 这种**文本偏移**：渲染不是增量的。
+        实测（不启 SITL，直接往 `_raw` 喂字节，见 `test_px4_console.py`）：
+            喂完 `…TOPIC: foo\\n` 时 `len(text())==35`；
+            再喂半截转义 `ESC[`（不匹配 `ANSI_RE`，先当普通字符留着）⟹ 37；
+            再喂 `2K\\rTOPIC: bar\\n`，两截合成一个完整序列**一起**被吃掉、`\\r` 又被收行，
+            于是从 37 起切片只剩 `'PIC: bar\\n'` —— **新打印的 `TO` 被整个跳过**，
+            `^TOPIC: bar` 这类锚行首的正则就永远等不到，症状是"超时、重试才成功"。
+        （夹具上真踩过：baseline 第一处采样站在 t=0.02 s，16 s 后才拿到数据。）
+        `_raw` 只增不减，字节游标没有这个毛病。
+        """
+        return self._render(self._raw[mark:])
 
     def clear(self):
         self._raw.clear()
@@ -179,11 +213,22 @@ class Px4Console:
         self.pump(settle)
 
     def wait_for(self, pattern, timeout=10.0, since=0):
-        """等正则出现（在 `since` 之后的文本里找）；返回 Match，超时抛错。"""
+        """等正则出现（在 `since` 之后的**渲染文本**里找）；返回 Match，超时抛错。
+
+        ⚠️ `since` 是 `len(self.text())` 口径的**文本偏移**，跨读取块时不可靠
+        （见 `text_since()`）。新代码请用 `mark()` + `wait_for_mark()`。
+        """
+        return self._wait(lambda: self.text()[since:], pattern, timeout)
+
+    def wait_for_mark(self, pattern, mark, timeout=10.0):
+        """同上，但 `mark` 是 `mark()` 记下的**字节**游标。"""
+        return self._wait(lambda: self.text_since(mark), pattern, timeout)
+
+    def _wait(self, render, pattern, timeout):
         rx = re.compile(pattern)
         deadline = time.time() + timeout
         while True:
-            m = rx.search(self.text()[since:])
+            m = rx.search(render())
             if m:
                 return m
             if self.proc is not None and self.proc.poll() is not None:
