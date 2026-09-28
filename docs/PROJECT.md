@@ -500,7 +500,8 @@ PX4 官方 Offboard 文档明确标注了每种 setpoint 所需的**状态估计
 |---|---|
 | [`../CONTEXT.md`](../CONTEXT.md) | **术语表（先读）**，含 `MPC` 歧义澄清 |
 | [`control/mpc-roadmap.md`](control/mpc-roadmap.md) | MPC 路线图详细版（**资料汇总**，含 D1–D10 待决清单） |
-| [`control/phase2-implementation.md`](control/phase2-implementation.md) | ★★ **Phase 2 实施清单（MPC 接管 PID）** —— D1–D10 决议、`px4-mpc` 第一手解读与符号映射表、S1–S8 分步步骤、待实测参数——**做 Phase 2 时先读它** |
+| [`control/phase2-implementation.md`](control/phase2-implementation.md) | ★★ **Phase 2 实施清单（MPC 接管 PID）** —— D1–D10 决议、`px4-mpc` 第一手解读、S1–S8 分步步骤、待实测参数——**做 Phase 2 时先读它** |
+| [`control/sign-map.md`](control/sign-map.md) | ★★ **符号映射表的唯一权威** —— ENU/FLU ↔ PX4 FRD 的推导、与参考实现的逐条对照、推力项的量纲与 `T_max` 口径；**代码一律回链它、不复写数值** |
 | [`reference/hardware.md`](reference/hardware.md) | 硬件规格调查原始记录 |
 | [`reference/params-analysis.md`](reference/params-analysis.md) | `z0.params` 逐项分析 |
 | [`reference/px4-interface.md`](reference/px4-interface.md) | 动捕 / PX4 / Offboard 接口事实 |

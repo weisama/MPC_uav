@@ -29,6 +29,7 @@
 | **轴距 (wheelbase)** | **对角两个电机中心之间的距离**。本项目为 **152 mm**。注意：不叫"轮距"，也不是相邻电机间距。 |
 | **臂长 (arm length)** | 机体中心到单个电机中心的距离 = 轴距 / 2。本项目为 **76 mm**。PX4 里体现为 `CA_ROTORx_PX/PY` 的组合模长。 |
 | **机体系 (body frame)** | PX4 约定：**x 轴向前、y 轴向右、z 轴向下**（FRD, Forward-Right-Down）。 |
+| **机体系（MPC（模型预测控制）内部）** | **FLU**：x 朝前、**y 朝左**、**z 朝上（沿推力方向）** —— 与项目依据的两篇论文一致。★ 它与上面那个 PX4 的 FRD 是**同一台飞机的两套标注**（x 相同，y 与 z 取反），两者之间的映射表**全项目只有一处权威**：[`docs/control/sign-map.md`](docs/control/sign-map.md)。 |
 | **世界系 (world / NED)** | PX4 约定：**北-东-地**（NED）。动捕与 ROS 常用 **ENU**（东-北-天），两者相差一次坐标变换。 |
 | **props-in / props-out** | 螺旋桨旋转方向布置的两种约定。**决定 MPC 模型里力矩 τ 的符号**，必须在文档里写死。 |
 | **电机序 (motor order)** | 物理输出口编号 ↔ PX4 逻辑电机编号的映射。本项目飞控为 **`3-2-1-4`**（见 `docs/reference/params-analysis.md`）。 |

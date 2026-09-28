@@ -150,7 +150,11 @@ force = cs.vertcat(0.0, 0.0, F)      # 推力沿机体 +z ⇒ 机体 z 朝上 = 
 > 这个 `+e_z` 形式**只在 FLU/ENU 下成立**（e_z 朝上、g = [0,0,−9.81]）。在 FRD/NED 下正确写法是 `v̇ = g − R(q)·e_z·T/m`，`g = [0,0,+9.81]`。
 > **两行只能对一个。** 本文 §3.2 给出决议（选 FLU/ENU），届时 roadmap 那两行需要一起改。
 
-### 2.3 ★ 符号映射表（**整个 Phase 2 最容易摔机的地方**）
+### 2.3 ★ 符号映射（**整个 Phase 2 最容易摔机的地方**）
+
+> ★★ **本项目自己的权威表在 [`sign-map.md`](sign-map.md)，不在本节。**
+> 本节只做一件事：**逐行读参考实现是怎么写的**，作为那份文件的交叉核对材料。
+> 代码一律**回链 `sign-map.md`**、不复写数值。
 
 节点 `mpc_quadrotor.py` 里的三个转换：
 
@@ -179,16 +183,19 @@ setpoint_msg.yaw   = float(-thrust_rates[3])   # 变号
 setpoint_msg.thrust_body[2] = float(thrust_command)
 ```
 
-**(c) 归一化对照表**
+> ⚠️ 上面引的是**参考实现**的写法 —— 它自带的 `0.07` 魔数**我们不抄**（§2.4 坑 1）。
+> **本项目该用哪组数，见 [`sign-map.md`](sign-map.md) §2**（唯一权威）。
 
-| 量 | MPC 内部 | PX4 `VehicleRatesSetpoint` | 变换 |
-|---|---|---|---|
-| roll rate | `ω_x` (FLU) | `roll` (FRD) | **不变** |
-| pitch rate | `ω_y` (FLU) | `pitch` (FRD) | **取反** |
-| yaw rate | `ω_z` (FLU) | `yaw` (FRD) | **取反** |
-| 推力 | `F` [N]，≥0，沿机体 +z | `thrust_body[2]` ∈ [−1,0]，FRD | `−F / T_max` |
+**(c) 归一化对照表 —— ☠️ 已迁走**
 
-> ✅ 这套符号本身是**正确的**：FRD 与 FLU 的关系就是「x 不变、y 和 z 取反」。推力取负号也对（FRD 下 z 朝下，向上推力 = 负 z）。
+本小节原先在这里复写了一张「MPC（模型预测控制）内部 ↔ PX4」的对照表。**已按 [ticket 03](../../.scratch/phase2/issues/03-sign-map-derivation.md)
+的要求迁到唯一权威处：[`sign-map.md`](sign-map.md) §2**（原文见本文件的 git 历史）。
+本节保留 (a)(b) 两段，因为它们是**参考实现的源码引用**（属"逐行解读"）；
+但"**我们**该用哪组数"不在本节定义。
+
+**与 (b) 的对照结论**：逐条一致，**无分歧点** ——
+比对表与判定过程见 [`sign-map.md`](sign-map.md) §4。（这是那张票**唯一的失败模式**：两个来源都自称对，
+而代码不会报错，所以对照本身必须留档。）
 
 **★ 但 `0.07` 是个魔法数字** —— 见 §2.4 第 1 条。
 
@@ -214,6 +221,8 @@ self.thrust_scale = 1.0 / self.model.max_thrust     # max_thrust = mass*g/hover_
 ...
 thrust_body_z = -(F * self.thrust_scale)
 ```
+
+> 符号与量纲的权威写法见 [`sign-map.md`](sign-map.md) §6（`T_max` 按电池、由 ticket 10 定稿）。
 
 #### 坑 2 ★★ `solve()` 失败时直接 `raise`
 
@@ -340,7 +349,7 @@ ubu = np.array([+Fmax,     wmax,       wmax,      +0.5*wmax])
 1. **动捕原生就是 ENU/FLU。** 状态源是 `/mocap/pose_enu`（G3/G11），**输入侧零转换**。若选 NED/FRD，反而要在输入侧做 ENU→NED + FLU→FRD，其中包括**最难写对的那一行四元数变换**（px4-mpc 的 `1/√2·[w+z, x+y, x−y, w−z]`）。
 2. **模型代码可以逐字复用。** px4-mpc 的 `multirotor_rate_model.py` 在 ENU/FLU 下**一个字都不用改**。选 NED/FRD 就要改重力符号和推力符号 —— 这正是 §2.2 指出的、roadmap 自己都写矛盾了的地方。
 3. **转换总数相同，但风险不同。** 两种方案都恰好 1 处物理转换：
-   - ENU/FLU：输出侧 `[+ω_x, −ω_y, −ω_z]` —— **纯符号翻转，4 行，肉眼可验**。
+   - ENU/FLU：输出侧 —— **4 行里 3 行纯符号翻转、1 行取反 + 归一化，肉眼可验**（表与推导：`sign-map.md` §2/§4）。
    - NED/FRD：输入侧 ENU→NED 四元数 + FLU→FRD 姿态 —— **需要矩阵/四元数推导，出错概率高一个数量级**。
 
 > **结论：把误差风险挪到「纯符号翻转」那一侧，而不是「四元数变换」那一侧。**
@@ -395,7 +404,7 @@ ubu = np.array([+Fmax,     wmax,       wmax,      +0.5*wmax])
                    acados OCP (ENU/FLU, 10 状态)
                         │  u = [F, ωx, ωy, ωz]
                         ▼
-                   符号映射 [+ωx, −ωy, −ωz],  thrust_body[2] = −F/T_max
+           符号映射（权威：sign-map.md §2）⟹ roll / pitch / yaw / thrust_body[2]
                         │
                         ▼
               /fmu/in/vehicle_rates_setpoint  (uXRCE-DDS)  +  /fmu/in/offboard_control_mode
@@ -494,11 +503,14 @@ ROS 侧：  ros2 interface show px4_msgs/msg/VehicleRatesSetpoint
 |---|---|---|
 | 悬停配平 | 状态 = 原点，`v=0`，`q=identity`，目标 = 原点 | `F ≈ T_hover = 7.36 N`，`ω ≈ 0` |
 | 差一个重力 | 同上，但目标在 `+z 0.5 m` | `F > T_hover`，`ω ≈ 0` |
-| 姿态响应符号 | 同上，但目标在 `+x 0.5 m` | 产生**朝 +x 倾斜**的角速率（在 FLU 下是 `ω_y`... ⚠️ **必须手推一遍确认，不许猜**） |
+| 姿态响应符号 | 同上，但目标在 `+x 0.5 m` | 产生**朝 +x 倾斜**的角速率 —— ⚠️ 方向**不要猜**：推导与结论见 [`sign-map.md`](sign-map.md) §3 |
 | 约束生效 | 目标在 `+x 10 m` | `ω` 打满 `ω_max`，`F` 打满 `T_max`，**不越界** |
 | 求解耗时 | 重复 1000 次 | 报**最坏**耗时（不是平均） |
 
-> ⚠️ **第 3 行的「姿态响应符号」是整个项目最容易搞错的一步。** 在 FLU/ENU 下，要往 +x（东）飞，需要绕 **−y** 轴倾斜……还是 +y？**不要靠记忆，推导或者用已知正确的仿真器验证。** px4-mpc 的输出侧翻转表（§2.3c）已经给了正确自洽的一组，照抄即可，但要**理解而不是盲抄**。
+> ⚠️ **第 3 行的「姿态响应符号」是整个项目最容易搞错的一步。** 在 FLU/ENU 下，要往 +x（东）飞，需要绕 **−y** 轴倾斜……还是 +y？**不要靠记忆。**
+> 答案、完整推导、以及"参考实现是这么写的"三方对照，现在都在
+> [`sign-map.md`](sign-map.md) §3/§4 —— 而且**有可执行复核**（`tools/sign-map/`）。
+> 那里给的是一组**推导出来**的数，照抄之前先读推导。
 
 ### S4 —— MPC 节点骨架
 
@@ -696,7 +708,8 @@ v1.15 及以前，`px4_msgs` 与固件不匹配时：话题存在、能发布、
 ### 6.2 `thrust_body` 是 `[-1, 1]`，**不是** `[0,1]`、**不是**牛顿
 
 第一手证据见 §3.3：`_thrust_setpoint = Vector3f(vehicle_rates_setpoint.thrust_body)` 原样透传。
-FRD 下 z 朝下 ⇒ **向上推力是负值**。写成 `+F/T_max` 会直接**全速砸地**。
+FRD 下 z 朝下 ⇒ **向上推力是负值**。写成 `+F/T_max` 会直接**全速砸地**
+（符号、量纲与推导：[`sign-map.md`](sign-map.md) §5.3）。
 
 ### 6.3 `thrust_body` 不受 `MPC_THR_HOVER` 影响
 
@@ -788,7 +801,7 @@ S1 环境 ──> S2 acados ──> S3 离线 OCP ──> S4 节点 ──> S5 S
 |---|---|
 | px4-mpc 的 OCP 是 10 状态、ω 不是状态 | `models/multirotor_rate_model.py`，`x = cs.vertcat(p, v, q)`，`nx=10` |
 | px4-mpc 内部是 ENU/FLU | 同上，`g=[0,0,-9.81]`、`force=[0,0,F]` |
-| 输出侧符号为 `[+ωx, −ωy, −ωz]`，推力取反 | `mpc_quadrotor.py`，`setpoint_msg.roll/pitch/yaw` 与 `thrust_command` |
+| **参考实现**的输出侧依次取 `roll/pitch/yaw = +ωx, −ωy, −ωz`、推力取反（★ 这是对**上游源码的引用**，不是本项目的规定；**本项目自己的权威表在 [`sign-map.md`](sign-map.md) §2**） | `mpc_quadrotor.py`，`setpoint_msg.roll/pitch/yaw` 与 `thrust_command` |
 | `0.07 ≈ 1/F_max` | `multirotor_rate_model.py` `max_thrust = mass*9.81/hover_thrust` ⇒ `1/13.44 = 0.0744` |
 | `R` 罚绝对角速率 | `multirotor_rate_mpc.py` `yref` 的 u 部分全零 + `R_mat` |
 | `lbu/ubu` 的 yaw 取半 | `multirotor_rate_mpc.py` `-0.5*wmax` / `+0.5*wmax` |

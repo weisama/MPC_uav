@@ -286,4 +286,5 @@ ros_ws/  = weisama/MPC_uav   （private）
 | 阶段 | 文件 | 内容 |
 |---|---|---|
 | **Phase 1** | [`../control/phase1-implementation.md`](../control/phase1-implementation.md) | 包与文件、话题接口、坐标系、FSM、判据与轨迹、参数核对、验证顺序、避坑清单、需要你物理操作的 4 件事 |
-| **Phase 2** | [`../control/phase2-implementation.md`](../control/phase2-implementation.md) | D1–D10 决议、`px4-mpc` 第一手解读与符号映射表、S1–S8 步骤、待实测参数 |
+| **Phase 2** | [`../control/phase2-implementation.md`](../control/phase2-implementation.md) | D1–D10 决议、`px4-mpc` 第一手解读、S1–S8 步骤、待实测参数 |
+| **Phase 2** | [`../control/sign-map.md`](../control/sign-map.md) | ★ **符号映射表的唯一权威** —— 推导、与参考实现的对照、推力归一化的量纲；代码回链它 |
