@@ -40,7 +40,7 @@
 | 参数覆盖层 ×12 | `tools/px4-sitl/z0-plant/params/*.param` | `z0`（对照组）+ **5 旋钮** × 2 方向 + `z0-thrcurve` |
 | 装机脚本 | `tools/px4-sitl/install_z0_airframe.sh` | 装进已构建的 SITL，**不需要重编** |
 | 起机脚本 | `tools/px4-sitl/run_sitl.sh --plant z0 [--mismatch …]` | 选变体 / 清持久化参数 / 列变体 |
-| 验收脚本 | `tools/px4-sitl/verify_z0_plant.py` | 45 项静态 + 5 项动态检查，见 §6 |
+| 验收脚本 | `tools/px4-sitl/verify_z0_plant.py` | 48 项静态 + 5 项动态检查，见 §6 |
 | 取证工具 | `tools/px4-sitl/px4_console.py` | 用 pty 驱动 pxh 控制台（为什么要 pty 见它自己的 docstring） |
 
 ---
@@ -117,7 +117,7 @@
 - **机型文件**（`param set-default`）= **机器身份** —— 构型、几何、输出分配、检查位。
   它决定"这是哪台机"，ticket 12 **不会**动它。
 - **覆盖层**（`param set`）= **会被扫/会被改的那部分** —— `SIH_*` 现值、`THR_MDL_FAC`、
-  `MC_*RATE_MAX`、`MPC_TILTMAX_AIR`。12 扫的就是这一层。
+  `MC_*RATE_MAX`、`MC_*RATE_P`、`MPC_TILTMAX_AIR`。12 扫的就是这一层。
 
 > ★ **覆盖层是全量而不是差量**（每个变体都无条件 `param set` 全部 24 条）：
 > 这样结果与 `rootfs/parameters.bson` 里的**历史残留无关** ——
@@ -204,7 +204,7 @@ bash tools/px4-sitl/run_sitl.sh
 | `z0-mass+30` / `z0-mass-30` | `SIH_MASS` | 挂载/换电池；只动质量、不动转动惯量 —— 这才是'单参数'的含义 |
 | `z0-thrust+30` / `z0-thrust-30` | `SIH_T_MAX`, `SIH_Q_MAX` | 推力系数；Q_MAX 跟着动以保持偏航/推力比（= CA_ROTOR_KM）不变，所以这个旋钮只改推力总量，不改偏航通道 |
 | `z0-inertia+30` / `z0-inertia-30` | `SIH_IXX`, `SIH_IYY`, `SIH_IZZ` | 转动惯量辨识误差；三轴同比例动（一个旋钮） |
-| `z0-tau+30` / `z0-tau-30` | `SIH_T_TAU` | **作动器滞后**辨识误差（`SIH_T_TAU` 是电机的一阶滞后，`sih.cpp:290-293`；官方描述是 0→100 % 用时约 4τ）。★ **它 ≠ phase2 §5 里的 P4 `k_ω`** —— 后者是**角速率环的闭环**时间常数，从 IMU 日志拟合。要扫真正的闭环带宽失配用 `rate` 旋钮 |
+| `z0-tau+30` / `z0-tau-30` | `SIH_T_TAU` | **作动器滞后**辨识误差（`SIH_T_TAU` 是电机的一阶滞后，`sih.cpp:293-294`；官方描述是 0→100 % 用时约 4τ）。★ **它 ≠ phase2 §5 里的 P4 `k_ω`** —— 后者是**角速率环的闭环**时间常数，从 IMU 日志拟合。要扫真正的闭环带宽失配用 `rate` 旋钮 |
 | `z0-rate+30` / `z0-rate-30` | `MC_ROLLRATE_P`, `MC_PITCHRATE_P`, `MC_YAWRATE_P` | **内环闭环带宽失配**（≈ 模型预测控制所用模型里 `k_ω` 的失配）：三个轴的速率环 P 增益同比例 ±30 %。★ 与其余四个旋钮**性质不同** —— 那四个动的是**被控对象**，这个动的是**控制器**；P 与闭环带宽在低增益下近似成正比，故 ±30 % P ≈ ±30 % `k_ω`（近似，精确值要实测）。被控对象本身不变 ⟹ 本旋钮用 `verify_z0_plant.py` **量不到**（它只验被控对象），要闭环阶跃响应才量得出（ticket 09/11 的仪表） |
 | `z0-thrcurve` | `THR_MDL_FAC` | 复现 z0 固件的 `THR_MDL_FAC`，用于量化曲线失配 |
 
@@ -288,7 +288,7 @@ ticket 12 的清单里写的是"**内环时间常数** ±30 %"（[`12-mismatch-s
 
 | 量 | 是什么 | 在哪 | 对应旋钮 |
 |---|---|---|---|
-| 作动器（电机）一阶滞后 | 被控对象的一部分：`_u[i] += dt/_T_TAU·(u_sp − _u[i])`（`sih.cpp:290-293`）。官方描述是 0→100 % 用时约 **4τ** | **被控对象**（SITL 里的 `SIH_T_TAU`） | **`tau`** |
+| 作动器（电机）一阶滞后 | 被控对象的一部分：`_u[i] += dt/_T_TAU·(u_sp − _u[i])`（`sih.cpp:293-294`）。官方描述是 0→100 % 用时约 **4τ** | **被控对象**（SITL 里的 `SIH_T_TAU`） | **`tau`** |
 | 角速率环**闭环**时间常数 | 控制器合上环之后，从指令到实际角速率的等效一阶滞后（`phase2-implementation.md` §5 的 **P4 `k_ω`**，从 IMU 日志拟合） | **控制器**（真的由 `MC_*RATE_P` 这类增益决定） | **`rate`** |
 
 **两个都留（2026-09-28 操作者裁定"两者都做"）**，理由各有各的：
@@ -323,7 +323,7 @@ python3 tools/px4-sitl/verify_z0_plant.py --variant z0 --json /tmp/z0.json   # �
 
 **两类检查**：
 
-- **静态 45 项**：用 `param show <前缀>*` 批量读回（`SIH_ CA_ROTOR PWM_MAIN_FUNC MC_ MPC_ SENS_EN_ CBRK_ THR_MDL_FAC`），
+- **静态 48 项**：用 `param show <前缀>*` 批量读回（`SIH_ CA_ROTOR PWM_MAIN_FUNC MC_ MPC_ SENS_EN_ CBRK_ THR_MDL_FAC`），
   逐条与 `plant_spec.expected_params(变体)` 比对（绝对容差 `5e-5` / 相对 `2e-3`
   —— PX4 参数是 float32，且 `param show` 只打印 4 位小数）。
   **它同时验证了"覆盖层真的生效"和"机型文件真的被加载"**（后者的 `CA_ROTOR_*` / `PWM_MAIN_FUNC*`
@@ -335,7 +335,7 @@ python3 tools/px4-sitl/verify_z0_plant.py --variant z0 --json /tmp/z0.json   # �
 1. **悬停附近取工作点**：`A = m·g / SIH_T_MAX`（= 2.4932，即"4 台电机信号之和"的悬停值），
    令**每台电机**的电机信号 `u = min(A/3.45, 0.97)`。
    关键在 `3u < A < 4u`：**三台电机还压在地面上**（接地时 SIH 把 `_w_B` 清零，
-   见 `sih.cpp:385` 的假地面钳位），只有第四台补上时才起飞 ——
+   见 `sih.cpp:385-397` 的假地面钳位），只有第四台补上时才起飞 ——
    所以中间那几个"三台转、一台停"的不平衡态**翻不了**；
    而 4 台齐了是 `4u ≈ 1.16·A`，只比悬停高 16 %。
    （第一版没用这条，中间态直接把飞机掀到 72 rad/s²。）

@@ -53,7 +53,8 @@ Type: task
 - 功能→逻辑电机：⚠️ **PX4 里 `Motor n` 与 `CA_ROTOR(n−1)` 是硬绑定的，没有重排** ——
   `ActuatorEffectivenessRotors.cpp:52-73` 按 rotor 序号 `i` 读 `CA_ROTORi_*`，`:154-212` 的 `computeEffectivenessMatrix()` 又按同一序号把 rotor `i` 填进效能矩阵第 `i + actuator_start_index` 列（纯多旋翼无伺服前置时 `actuator_start_index = 0`）；
   `ControlAllocator.cpp:658-661` 按 `actuator_idx` 顺序写 `actuator_motors.control[motors_idx]`（无重排）；
-  `FunctionMotors.hpp:46/49` 两条 `static_assert` 钉住 `ACTUATOR_FUNCTION_MOTOR1 == OutputFunction::Motor1`，
+  `FunctionMotors.hpp:46` 的 `static_assert` 钉住 `NUM_CONTROLS == MotorMax − Motor1 + 1`、
+  `:49` 那条钉住 `ACTUATOR_FUNCTION_MOTOR1 == OutputFunction::Motor1`，
   `:69` 的 `value(func)` 直接取 `control[(int)func − Motor1]` ⟹ **Motor n = `actuator_motors.control[n−1]`**；
 - KM 符号：`src/modules/control_allocator/module.yaml:207-220`（v1.14.3）原文
   *"Use a positive value for a rotor with CCW rotation. Use a negative value for a rotor with CW rotation."*
