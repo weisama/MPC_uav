@@ -8,11 +8,53 @@
 
 ---
 
+## 版本信息
+
+| | |
+|---|---|
+| **当前版本** | **v1.0** —— **Phase 1 收口**：offboard 位置定点飞行**真机飞成**（2026-09-28） |
+| **日期** | 2026-09-28 |
+| **分支** | `main`（开发主线）· **`v1.0`（本版本的快照，与 `main` 同指这一个提交）** |
+| **本版对应提交** | ☠️ **本页无法自引自己的 hash** —— 用 `git rev-parse v1.0`（或 `git rev-parse main`）取 |
+| **飞控固件** | `Minderring/PX4-Autopilot` @ `4a0e65f2` —— v1.14.3 系的 MicoAir 厂商构建，**已在机上、不刷不改** |
+| **`px4_msgs`** | `release/1.14` @ `ffb6e80`（仓库外 `~/refs/px4_msgs`；**Phase 2 才用**） |
+| **mavros** | **2.15.1 @ `22ae5b7`** —— 源码构建在 `~/mavros_ws`，**不在本仓库**（Phase 1 全靠它） |
+| **ROS 2** | **Humble** |
+| **运行环境** | Ubuntu 22.04.5 LTS · 内核 5.15.185-tegra · aarch64（Jetson Orin NX 8GB） |
+| **阶段状态** | Phase 1 🟨（见下） · Phase 2 ⬜ · Phase 3 ⬜ |
+
+★ 上表每一行的证据落点：固件与 `px4_msgs` 见 [`refs-manifest.md`](docs/reference/refs-manifest.md)
+§2.5/§2.6，mavros 版本见 [`src/control/README.md`](src/control/README.md)。
+
+## 项目基础信息
+
+| | |
+|---|---|
+| **项目** | **MPC_uav** —— z0 无人机自主飞行栈的工作副本（★ **文档优先**：本仓库就是现场那台 Jetson 上的工作树） |
+| **机体** | **z0** = OddityRC XI35 Pro，**152 mm 涵道四旋翼** |
+| **飞控** | MicoAir **NxtPX4v2**（PX4 1.14.x，⚠️ 板名 ≠ 固件目标名，见"关键约束"） |
+| **机载电脑** | Jetson Orin NX 8GB —— ★ **本仓库就在它上面**（`~/ros_ws`），文档里的"现场"指这台 |
+| **定位** | **Nokov 动捕** → VRPN → `/mavros/vision_pose/pose` → EKF2（**室内飞行，不用 GPS**） |
+| **中间件** | ROS 2 Humble + mavros2 —— Phase 1 **完全不碰 uXRCE-DDS**，Phase 2 才引入 |
+| **工作区形态** | ROS 2 工作区，★ **colcon 根 = 仓库根**（不是 `src/`）；6 个包见下面目录树 |
+| **目标** | 让 **MPC 接管飞控内置 PID**；分三阶段，**每阶段只引入一个新变量** |
+| **issue tracker** | **`.scratch/<phase>/issues/*.md`** —— 本地 markdown，**随 git 入库**，**不用 GitHub Issues**（规则见 [`docs/agents/issue-tracker.md`](docs/agents/issue-tracker.md)） |
+| **术语表** | [`CONTEXT.md`](CONTEXT.md) —— 查词先看它（含"MPC"这个词的歧义澄清） |
+| **文档优先** | 结论大多带**第一手证据**（源码路径 + 行号 + commit）⟹ **改代码前先确认文档里的结论有没有被推翻**，不要凭记忆。教训见 [`open-source-survey.md`](docs/reference/open-source-survey.md) §0 |
+
+**怎么跑起来**：构建命令见下面[目录](#目录)末尾的引用块；起链与现场操作看
+[`run/README.md`](run/README.md)（菜单）与 [`operation_manual.md`](operation_manual.md)（★ 真机飞之前必读）。
+**怎么跑测试**：`python3 -m pytest run/tests/test_operation_manual.py -q`（文档守卫，逐文件跑 ——
+★ **`pytest run/tests` 整个目录跑会一条都收不到**，这不是"全绿"）；ROS 侧的
+`colcon test` 用法与已知抖动见 [`src/bench/README.md`](src/bench/README.md)。
+
+---
+
 ## 三阶段路线
 
 | 阶段 | 做什么 | 控制接口 | 状态 |
 |---|---|---|---|
-| **Phase 1** | **offboard 位置定点飞行** —— 用动捕让 z0 稳定悬停并跟踪简单轨迹，**PX4 跑全部内环 PID** | **(A) 级**：`/mavros/setpoint_raw/local`（位置 + yaw） | 🟨 **代码与台架测试已就绪** + **2026-09-28 真机自由飞一次成**（定点定高 + 各按键 + 三条轨迹，**目测一切正常、数值未量** ⟹ ticket 09 收 `done`）· **阶梯 1–3 级（拆桨 / 系绳 20 cm / 系绳悬停 30 s）未做** · [`spec`](.scratch/phase1/spec.md) `ready-for-agent` |
+| **Phase 1** | **offboard 位置定点飞行** —— 用动捕让 z0 稳定悬停并跟踪简单轨迹，**PX4 跑全部内环 PID** | **(A) 级**：`/mavros/setpoint_raw/local`（位置 + yaw） | 🟨 **代码与台架测试已就绪** + **2026-09-28 真机自由飞一次成**（定点定高 + 各按键 + 三条轨迹，**目测一切正常、数值未量** ⟹ ticket 09 收 `done`）· **阶梯 1–3 级（拆桨 / 系绳 20 cm / 系绳悬停 30 s）未做** —— ★ 2026-09-28 操作者裁定**不再补做**（自由飞已覆盖其风险；**是裁定不是做过了**，那几级的读数仍然是空的）· **台架清单 T1–T8 待下一次台架日一次性全跑** · [`spec`](.scratch/phase1/spec.md) `ready-for-agent` |
 | **Phase 2** | **MPC 接管 PID —— SITL 验证**：MPC 输出角速率 + 推力，PX4 只跑角速率环；被控对象**从上游 v1.14.3 构建的 z0 同构机**（**不是 `gz_x500`**；☠️ 原写"从 fork 构建"，该 fork 与 z0 无关） | **(C) 级**：`/fmu/in/vehicle_rates_setpoint` | ⬜ 未开始 · [`spec`](.scratch/phase2/spec.md) `ready-for-agent` |
 | **Phase 3** | **MPC 上实机**：四项前置测量 + 一次固件重编（~~ADC 一行修复~~ ☠️ **修法要重定 —— 那条缺陷不在 z0 的固件里**），然后拆桨 → 系绳 → 自由飞四级阶梯 | 同 Phase 2（**(C) 级**） | ⬜ 未开始 · [`spec`](.scratch/phase3/spec.md) `ready-for-human` |
 
