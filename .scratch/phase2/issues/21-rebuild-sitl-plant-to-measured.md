@@ -238,6 +238,12 @@ Type: task
 ⚠️ 抬头的 `Blocked by` 正是为了这份清单里 [12](12-mismatch-sweep.md)／[20](20-vertical-channel-mismatch-offset.md)
 两行 —— **先让它们在旧基线上量完归档，再来换基线**。
 
+⚠️ **另有一条与"重搭"无关的复现性缺口，本张重跑前必须先知道**（2026-09-29 核出，详见 Comments 第三条）：
+[12](12-mismatch-sweep.md) 那轮扫描飞的 `install/` 快照**不是某一棵提交的树，而是多提交混合**，
+且其中 **`params.py` 的字节已在仓库里永久丢失**（全历史 4 个版本 + 对象库 1008 个 blob 含 dangling，**全无命中**）。
+⟹ 那 13 场**可识别、不可完整复现**。**这不改变"重搭后整表作废"的结论**（削弱它的方向一样），
+但它意味着**"旧基线"本身就不是一份能重跑出来的代码** —— 本张要重跑扫描，得先把这一点当前提。
+
 ---
 
 ## Comments
@@ -275,3 +281,20 @@ Type: task
    不记 harness 自身** ⟹ "评判者换了版本、归档里看不出来"这条路是通的（本轮实测没出事：
    10 份 obs 的 `controller_code` 与 `entry.sha256` 全同 `1c7fbd2947bdb6ce`）。
    本张要重跑扫描，故把"堵这条路"列进清单。
+4. ★★ **2026-09-29 追加（本会话核出）：那套 `install/` 快照**不是一棵提交的树**，且 `params.py` 已永久丢失。**
+   起于 `ros-ws-8b` 转来的一条更早的第一手来源，但**最硬的证据是 [12](12-mismatch-sweep.md) 自己的归档**：
+   `tools/px4-sitl/evidence/tier-a/mismatch-sweep/obs-z0-1.json` 的 `controller_code` 记了
+   `entry{sha256: 1c7fbd29…, same_as_package_copy: true}` + 11 个文件逐个 sha256
+   + `driver_view: src/nmpc/nmpc` + `polluted: true`（连"驱动在 `src`、节点在 `install`"这个混血都是仪器当场测的）。
+   拿这 11 个 sha 当靶子逐个扫全历史，**命中的提交互不相同**：
+   `mpc_node.py`→`3ddb145`(= `f6c1b7f`)、`node_core.py`→`78f373d`、`ocp.py`→`aaeb356`、
+   `model`/`preflight_check`→`b7b4881`、`sign_map`/`offboard_smoke`→`8c4e014`、`timing`/`__init__`→`f1ced82`
+   —— 这正是**"从脏工作区构建"的指纹**。
+   ☠️ **`params.py`（归档 sha `3d4b29cd1bca6f52`）全历史 4 个版本无命中**；再扫**整个对象库**
+   （`git cat-file --batch-all-objects`，**1008 个 blob，含 dangling**）**仍零命中**
+   （同批 `1c7fbd29→2969bf22…`、`b724bef5→a80b0e37…` 都命中，说明搜法有效）
+   ⟹ **只能知道"是哪一份"、拿不到内容**（旁证：`mismatch-sweep.md` 记 `params.py` 的 `src` vs `install` 差 **54 行**，
+   各文件里最大 —— 正是"改到一半被构建进去"的那个）。
+   **本张的影响**：旧基线的**结论**不受影响（判据挂读数与 sha，不挂 `params.py` 源码），
+   但"**换个环境重跑能不能复现**"必须说清 —— 本张 §1 引基线时**不得**声称旧基线可重跑。
+   （此条已回信给 `tickets 212`；**12 号票的票面我不动**，是否补记由它定 —— 见"只登记不落地"那条纪律。）
