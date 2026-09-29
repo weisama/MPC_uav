@@ -964,6 +964,27 @@ tick=159 u0=11.800000 df=3.119970  tbz=-0.254845  f_out=11.800000  want=11.80000
 **另一条通路**给出的重复性上界，**不能**拿来当"本张判据① 的重复性"填进去 —— 但它是目前
 手上最接近的旁证，也是"那 0.26 m 不框本张"从"论证"升级为"**有数**"的地方。
 
+### 12.4 "同一个 topic、两条 transport" 的**行号依据** + 一条结构性事实
+
+§12.3 第 ② 条里我说"B 档走的是同一个 topic 的另一条通路"。并行会话**正当点名**：他们是按我的话
+接受的、没读取数代码。补上行号，别让这句话停在"信我"这一档：
+
+| 档 | 文件:行 | 内容 |
+|---|---|---|
+| A 档 | `verify_tier_a_hover.py:91` | `GT_TOPIC = "vehicle_local_position_groundtruth"`（**控制台**话题名） |
+| B 档 | `verify_tier_b_seam3.py:112` | `TOPIC_GT_POS = "/fmu/out/vehicle_local_position_groundtruth"`（**DDS** 名） |
+| B 档 | `verify_tier_b_seam3.py:203` | `create_subscription(VehicleLocalPosition, TOPIC_GT_POS, …)` |
+
+⟹ 同一个 uORB topic、两条 transport（控制台打印 vs DDS 订阅）。§12.3 第 ② 条据此成立。
+
+**★ 顺带记一条结构性事实（免得后人白试）**：`evidence/tier-b/` 下**七份**控制台日志
+（F0/F0b/F1/F1b/F2/F3/F4）`grep -c "TOPIC: vehicle_local_position_groundtruth"` **全是 0**，
+每份只出现 `actuator_outputs_sim` 与 `vehicle_status`。⟹ **B 档的控制台根本没有订阅真值 topic**，
+**"从控制台重推 B 档真值"这条路不存在**（不是"会掉多少帧"）。根因是设计而非遗漏：
+`seam3` 的 docstring 写着 A 档控制台真值只有 4 Hz（分辨力 2 Hz），判据① 的稳态读数与
+"无持续振荡"都吃不起 ⟹ 真值**必须**桥到 DDS。
+⚠️ 因此并行会话那条"17/17 场命中、`climb_gt` 只挪 ≤0.064 m"的重取实验**只在 A 档成立**。
+
 ## Comments
 
 - **2026-09-29（agent，落地 + 自测）**：§9.5 第 2 条要的读数拿到了 ——
