@@ -795,6 +795,16 @@ class World:
         self.px = None
         self.tmpdir = None
 
+    #: 参数覆盖层用哪一份（相对 `z0-plant/params/`）。**子类改这一个属性就能换机型**
+    #: —— B 档要跑"参数故意不对"的机型（`z0-mass+30.param` 等），而改 `_enter` 的代价是
+    #: 把"起手清干净"那套逻辑复制一份（那份逻辑踩过一次坑，见类 docstring）。默认值保持
+    #: 逐字不变 ⟹ A 档与冒烟档的行为一个字节都不动。
+    plant_param = "z0.param"
+
+    def _overlay_path(self) -> Path:
+        """覆盖层文件的绝对路径（`Path`）。"""
+        return HERE / "z0-plant" / "params" / self.plant_param
+
     def __enter__(self):
         # ★ `__enter__` 自己失败时（最常见：`wait_ready` 超时）`with` **不会**调 `__exit__`，
         #   于是 agent 进程、PX4 进程组、覆盖层临时目录全留在盘上，下一场起手就不干净
@@ -808,8 +818,7 @@ class World:
     def _enter(self):
         self.agent = subprocess.Popen([self.args.agent_bin, "udp4", "-p", self.args.agent_port],
                                       stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)
-        self.tmpdir, env = parse_overlay_into_env(
-            str(HERE / "z0-plant" / "params" / "z0.param"))
+        self.tmpdir, env = parse_overlay_into_env(str(self._overlay_path()))
         env["PX4_SIM_MODEL"] = "sihsim_z0"
         env["PX4_SIMULATOR"] = "sihsim"
         self.px = Px4Console(cwd=self.args.build_dir, env=env)

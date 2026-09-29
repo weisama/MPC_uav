@@ -378,6 +378,47 @@ class MpcDut(v.Dut):
 # ------------------------------------------------------------------ 推进 / 等待
 
 
+# ---- 转节点：**一个进程共用一个 SingleThreadedExecutor**（2026-09-29 改，ticket 11）
+#
+# ☠️ 不要再退回 `for n in nodes: rclpy.spin_once(n, timeout_sec=0.0)`。
+#    那个写法**每次调用都 add_node/remove_node**，实测会让**某一个**节点的回调
+#    被永久饿死 —— 饿死谁是不确定的（与建节点的时间、话题、QoS、有没有回放、DUT 在不在
+#    都无关）。B 档上撞到的两种表现：
+#      · `--no-replay`：`Recorder` 计数从 t=5 s 起冻住（35 s 内一动不动，同时别的节点照涨）
+#      · `--with-replay`：换成裸 `vehicle_status` 订阅者饿死，`ArmAgent.status` 收不到
+#        ⟹ `_tick()` 提前返回 ⟹ **解锁命令 0 条**⟹ PX4 不进 OFFBOARD ⟹ 整场废掉
+#    探针（`/tmp/probe_b_arm.py`，四订阅者分两批建 + 单/多执行器开关）逐条钉住了上面这段；
+#    换成共享执行器后**每个节点都收得到**，A 档同一条链路也一并受益。
+#
+# ☠️ `SPIN_DRAIN` 不是"多转几圈好看"：`SingleThreadedExecutor.spin_once` 一次只处理
+#    **一个**回调，5 个节点共享时每拍只 drain 1 次会把每个话题的速率压到 11 Hz 上下
+#    （真值流尤其吃亏：判据① 的统计窗就建在它上面）。30 次/拍实测把真值流拉到 231 Hz
+#    （探针 30 s：tap 6928 点），比旧的 round-robin 还快 3 倍。
+SPIN_DRAIN = 30
+
+_EXEC = None
+_EXEC_NODES: set = set()
+
+
+def _executor_for(nodes):
+    """进程内共用的执行器；新节点只 add 一次（`add_node` 幂等，集合只是省点开销）。"""
+    global _EXEC
+    if _EXEC is None:
+        from rclpy.executors import SingleThreadedExecutor
+        _EXEC = SingleThreadedExecutor()
+    for n in nodes:
+        if id(n) not in _EXEC_NODES:
+            _EXEC.add_node(n)
+            _EXEC_NODES.add(id(n))
+    return _EXEC
+
+
+def _spin(nodes) -> None:
+    ex = _executor_for(nodes)
+    for _ in range(SPIN_DRAIN):
+        ex.spin_once(timeout_sec=0.0)
+
+
 def spin_all(px, nodes, seconds: float, tick=None) -> None:
     """推进墙钟：喂控制台 + 转**所有**节点的回调（记录器与解锁器都要转）。
 
@@ -389,8 +430,7 @@ def spin_all(px, nodes, seconds: float, tick=None) -> None:
     end = time.time() + seconds
     while time.time() < end:
         px.pump(min(0.01, max(0.001, end - time.time())))
-        for n in nodes:
-            rclpy.spin_once(n, timeout_sec=0.0)
+        _spin(nodes)
         if tick is not None:
             tick()
 
@@ -400,8 +440,7 @@ def wait_until(px, nodes, predicate, timeout_s, message: str = "", tick=None):
     end = time.time() + timeout_s
     while time.time() < end:
         px.pump(0.01)
-        for n in nodes:
-            rclpy.spin_once(n, timeout_sec=0.0)
+        _spin(nodes)
         if tick is not None:
             tick()
         if predicate():
@@ -1242,8 +1281,18 @@ def solve_stats(frames) -> dict:
 # ------------------------------------------------------------------ 判据（纯函数）
 
 
-def segments(truth, liftoff_cross=-0.15, hover_s=3.0, ground_s=1.0):
+def segments(truth, liftoff_cross=-0.15, hover_s=3.0, ground_s=1.0, rising=False):
     """把真值轨迹切成 `ground / climb / hover` 三段（**只用真值自己的时钟**）。
+
+    ★ `rising`：判"起飞"的方向。A 档真值是 **NED（z 向下为正）** ⟹ 起飞 = 第一帧
+      `z < liftoff_cross`（默认，A 档行为一字不改）。B 档（`verify_tier_b_seam3`）真值
+      直接取自 DDS 真值帧、是 **ENU（z 向上为正）** ⟹ 起飞 = 第一帧 `z > liftoff_cross`，
+      得传 `rising=True`。
+      ⚠️ 不传就是**静默取反**：ENU 下 `z < 0.15` 取到的是**第一帧地面**，
+      `liftoff_t` 记成 0、`climb` 恒等于"开场头 5 s" —— 而 B 档真值从回放启动就开始录、
+      起飞在 OFFBOARD 之后好几秒，于是**起飞晚于 5 s 就会判出一个假的 ❌**
+      （报告会写成"真值高度没升上去"，指向控制器）。这正是 `test_tier_b_judges.py`
+      里 `test_起飞晚于五秒也认得出来` 钉住的那条。
 
     ★ "起飞"是从**真值**认出来的（第一帧 z < `liftoff_cross`），不是从另一个时钟换算的：
       两个时钟之间隔着 `time_offset`（ticket 08 实测 ≈0.18 s），换算一次就够把
@@ -1257,7 +1306,10 @@ def segments(truth, liftoff_cross=-0.15, hover_s=3.0, ground_s=1.0):
     truth = [r for r in (truth or []) if all(v is not None for v in r)]
     if not truth:
         return seg
-    t_first_climb = next((r[0] for r in truth if r[3] < liftoff_cross), None)
+    if rising:
+        t_first_climb = next((r[0] for r in truth if r[3] > liftoff_cross), None)   # ENU
+    else:
+        t_first_climb = next((r[0] for r in truth if r[3] < liftoff_cross), None)   # NED
     seg["liftoff_t"] = t_first_climb
     if t_first_climb is not None:
         seg["ground"] = [r for r in truth

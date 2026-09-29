@@ -1,0 +1,324 @@
+{
+ "name": "F0",
+ "plant_param": "z0.param",
+ "plant": "none",
+ "mismatch": "none",
+ "state_source": "mocap",
+ "params": [
+  "log_file:=/tmp/tier-b/F0-dut.jsonl",
+  "state_source:=mocap",
+  "hover_thrust:=0.6235",
+  "hold_offset_x:=0.0",
+  "hold_offset_y:=0.0",
+  "hold_offset_z:=1.0",
+  "rate_hz:=100.0"
+ ],
+ "rate_hz": 100.0,
+ "hold_s": 15.0,
+ "extra_delay_ms": 0.0,
+ "model": "/tmp/mocap-model-3.json",
+ "inject_solve_fail_after_frames": 0,
+ "plant_hover": {
+  "mass_kg": 0.75,
+  "t_max_total_n": 11.8,
+  "hover_thrust": 0.6235169491525423,
+  "t_hover_n": 7.3575
+ },
+ "t": {
+  "replay_frames_at_dut_start": 43,
+  "dut_start": 8.41,
+  "first_frame": 14.83,
+  "offboard_enter": 0.47,
+  "flight_end": 30.31
+ },
+ "replay_up": true,
+ "armed_ever": true,
+ "agent": "解锁命令 6 条、模式命令 13 条；末态 armed=1 nav_state=14",
+ "dut": {
+  "frames": 1544,
+  "span_s": 15.49,
+  "actual_hz": 99.58,
+  "nav_seen": [
+   14
+  ],
+  "state_source": "mocap",
+  "fallback": {
+   "warmup": 5,
+   "normal": 1539
+  },
+  "sat_any": [],
+  "sat_count": {},
+  "sat_logged": true,
+  "ref_events": [
+   "anchor"
+  ],
+  "ages_ok": false,
+  "u_end": [
+   7.365981,
+   -0.019953,
+   0.010518,
+   -9.6e-05
+  ],
+  "thrust_body_z_seen": [
+   -0.9159,
+   -0.9158,
+   -0.9157,
+   -0.9152,
+   -0.9142,
+   -0.9129
+  ],
+  "thrust_body_z_tail": -0.6239929391430283,
+  "u_mean_normal": [
+   7.440391268356075,
+   -0.00510279012345679,
+   -0.0010061312540610786,
+   -9.803963612735542e-05
+  ],
+  "ekf_flags_seen": [
+   [
+    null,
+    null
+   ]
+  ],
+  "track": {
+   "n": 1539,
+   "up_head": 0.00128955,
+   "up_tail": 0.9982971266666667,
+   "climb": 0.9970075766666667,
+   "up_tail_min": 0.992421,
+   "up_tail_max": 1.00195,
+   "up_tail_p2p": 0.009528999999999899,
+   "up_tail_std": 0.002827475831424369,
+   "up_tail_osc_hz": 0.3344311439179353,
+   "vup_head": 0.0,
+   "vup_tail": 0.0,
+   "xy_drift_tail": 0.0021670489149993822,
+   "tail_s": 2.99,
+   "ref_span_z": 0.0,
+   "ref_span_xy": 0.0,
+   "referr_head": -0.9999445,
+   "referr_tail": -0.0016714999999999924,
+   "ref_n": 1539,
+   "yaw_ekf_span": -0.014384401989764317,
+   "yaw_ekf_tail_span": -0.004568313917681532,
+   "yaw_ekf_tail_rate": -0.0015227713058938441,
+   "u3_tail": -9.883e-05
+  }
+ },
+ "solve": {
+  "n": 1544,
+  "p50": 2.843,
+  "p99": 3.508,
+  "max": 16.191,
+  "min": 2.048,
+  "over_10": 1,
+  "over_20": 0,
+  "ladder": "50 Hz（10–20 ms，降档）",
+  "warmup_n": 5,
+  "cold_ms": 16.191,
+  "cold_in_warmup": true,
+  "cold_fallback": "warmup",
+  "steady_n": 1539,
+  "steady_p50": 2.841,
+  "steady_p99": 3.468,
+  "steady_max": 5.652,
+  "ladder_steady": "100 Hz（最坏 ≤10 ms，余量够）",
+  "tick_p50_ms": 9.998,
+  "tick_p99_ms": 11.919,
+  "tick_max_ms": 84.635
+ },
+ "replay_stdout_tail": "  \"span_s\": 2.999,\n  \"rate_hz\": 463.8,\n  \"newest_age_s\": 0.0575\n },\n \"dt_actual\": {\n  \"n\": 3760,\n  \"mean_ms\": 6.424,\n  \"p50_ms\": 1.124,\n  \"p99_ms\": 72.735,\n  \"max_ms\": 1954.759\n }\n}",
+ "replay": {
+  "frames": 3761,
+  "span_s": 24.154,
+  "delay_ms": 5.34,
+  "base_delay_ms": 5.34,
+  "extra_delay_ms": 0.0,
+  "no_signal_frames": 321,
+  "sigma_m": [
+   0.00016441757085779269,
+   0.00029011402674673407,
+   0.00010498718073221897
+  ],
+  "truth": {
+   "n": 1392,
+   "span_s": 2.999,
+   "rate_hz": 463.8,
+   "newest_age_s": 0.0575
+  },
+  "dt_actual": {
+   "n": 3760,
+   "mean_ms": 6.424,
+   "p50_ms": 1.124,
+   "p99_ms": 72.735,
+   "max_ms": 1954.759
+  }
+ },
+ "stdout_tail": "[INFO] [1790675443.244256661] [mpc_node]: t=8013.62s 第 1052 帧 | roll=-0.010 pitch=-0.000 yaw=+0.000 thrust_body[2]=-0.6214 | 解 1100 次、闸门 not_offboard×43,warmup×5、退化 0、兜底：保持 0 拍 / 安全悬停 0 拍 / 触发 0 次\n[INFO] [1790675444.245162249] [mpc_node]: t=8014.62s 第 1152 帧 | roll=-0.016 pitch=-0.000 yaw=+0.000 thrust_body[2]=-0.6226 | 解 1200 次、闸门 not_offboard×43,warmup×5、退化 0、兜底：保持 0 拍 / 安全悬停 0 拍 / 触发 0 次\n[INFO] [1790675445.245092067] [mpc_node]: t=8015.62s 第 1252 帧 | roll=+0.007 pitch=+0.015 yaw=+0.000 thrust_body[2]=-0.6255 | 解 1300 次、闸门 not_offboard×43,warmup×5、退化 0、兜底：保持 0 拍 / 安全悬停 0 拍 / 触发 0 次\n[INFO] [1790675446.244808277] [mpc_node]: t=8016.62s 第 1352 帧 | roll=-0.012 pitch=-0.001 yaw=+0.000 thrust_body[2]=-0.6233 | 解 1400 次、闸门 not_offboard×43,warmup×5、退化 0、兜底：保持 0 拍 / 安全悬停 0 拍 / 触发 0 次\n[INFO] [1790675447.244125235] [mpc_node]: t=8017.62s 第 1452 帧 | roll=-0.026 pitch=-0.000 yaw=+0.000 thrust_body[2]=-0.6232 | 解 1500 次、闸门 not_offboard×43,warmup×5、退化 0、兜底：保持 0 拍 / 安全悬停 0 拍 / 触发 0 次\n[INFO] [1790675448.244378743] [mpc_node]: t=8018.62s 第 1552 帧 | roll=-0.021 pitch=-0.011 yaw=+0.000 thrust_body[2]=-0.6242 | 解 1600 次、闸门 not_offboard×43,warmup×5、退化 0、兜底：保持 0 拍 / 安全悬停 0 拍 / 触发 0 次\n[INFO] [1790675448.707927048] [mpc_node]: t=8019.08s 闸门关闭（mocap_stale）：status 龄 0.20s / 状态龄 0.50s ⟹ 不发 setpoint；动捕龄 0.50 s > 上限 0.5 s（心跳照发）\n[mpc_node] 收尾：共发 1598 帧 setpoint（心跳 827 个，52 Hz），跨 16.04s ⟹ 实际 99.6 Hz；定时器 1654 拍、求解 1603 次、求解耗时 p50 2.838 ms / p99 3.504 ms / 最坏 16.191 ms（1603 次）、退化 0 拍、拒绝 0 拍；约束饱和：无；闸门：mocap_stale×8, not_offboard×43, warmup×5；兜底：保持 0 拍 / 安全悬停 0 拍 / 触发 0 次",
+ "summary": "[mpc_node] 收尾：共发 1598 帧 setpoint（心跳 827 个，52 Hz），跨 16.04s ⟹ 实际 99.6 Hz；定时器 1654 拍、求解 1603 次、求解耗时 p50 2.838 ms / p99 3.504 ms / 最坏 16.191 ms（1603 次）、退化 0 拍、拒绝 0 拍；约束饱和：无；闸门：mocap_stale×8, not_offboard×43, warmup×5；兜底：保持 0 拍 / 安全悬停 0 拍 / 触发 0 次",
+ "truth_n": 5790,
+ "truth_hz": 231.26,
+ "truth_att_n": 5727,
+ "truth_pos_n": 5790,
+ "tilt_deg_max": 0.4872562692111075,
+ "tilt_deg_max_steady": 0.48288601423346106,
+ "status_end": {
+  "nav_state": 14.0,
+  "arming_state": 2.0,
+  "pre_flight_checks_pass": true
+ },
+ "motors_mean_end": 0.5630000000000001,
+ "thrust_n_end": 6.643400000000001,
+ "model_hover_thrust": 0.6235,
+ "fallback_report": {
+  "dist": {},
+  "order": [],
+  "n_hold": 0,
+  "n_hover": 0,
+  "hover_thrust_body_z_seen": [],
+  "notes": []
+ },
+ "att_err_deg": {
+  "n": 1544,
+  "median": 0.02599602367795533,
+  "p95": 0.13228593746679834,
+  "max": 0.5005068228725849
+ },
+ "steady": {
+  "n": 1845,
+  "tag": "判据①稳态窗口",
+  "window_s": 8.0,
+  "span_s": 7.99,
+  "target_enu": [
+   -0.0,
+   -0.0003,
+   0.9998
+  ],
+  "h_mean": 0.01372157368112108,
+  "h_max": 0.02243300466755569,
+  "z_mean": 0.001568136358359354,
+  "z_absmean": 0.008935927316364814,
+  "z_max": 0.03621357665252689,
+  "d3_mean": 0.01878468374267103,
+  "d3_max": 0.03894176234727143,
+  "h_std": 0.006683740269938334,
+  "z_std": 0.01299146104030419,
+  "z_p2p": 0.056664228439331055,
+  "h_p2p": 0.02194189579532442,
+  "z_min_abs": 0.9793473482131958,
+  "vz_tail": -0.0033796985002402876
+ },
+ "osc": {
+  "z_hz": 0.3127876082057451,
+  "h_hz": 0.12511504328229803,
+  "hz_limit": 115.63
+ },
+ "diverge": {
+  "n": 1845,
+  "span_s": 8.0,
+  "vz_mean": -0.005836504944956498,
+  "vz_absmax": 0.025503264417845485,
+  "z_p2p": 0.056664228439331055,
+  "z_mean": 1.0013661363583592,
+  "h_drift": 0.004245905657938402,
+  "h_max": 0.018910207571746687,
+  "z_min_all": -0.00015690641885157675,
+  "z_max_all": 1.500432014465332,
+  "air_n": 3476,
+  "z_min_air": 0.155021071434021,
+  "z_max_air": 1.500432014465332
+ },
+ "checks": [
+  {
+   "name": "⓪ 仪器自检：回放夹具在发帧、真值流在流、DUT 的每一帧都认得状态源",
+   "ok": true,
+   "detail": "夹具发出 43 帧（DUT 起手那一刻）、本场共 3761 帧；真值 5790 点 @ 231.3 Hz（姿态 5727 点）；回放延迟 基 5.34 ms + 注入 0.0 ms = 5.34 ms；DUT 的 state_source=mocap",
+   "counts": true
+  },
+  {
+   "name": "⓪b 仪器自检：DUT 报出的姿态与同一时刻真值一致（中位数 ≤ 10°）",
+   "ok": true,
+   "detail": "**取自本场落盘的读数**（`--replay` 复判：配对用的真值流不在，但读数在）；配到 1544 帧；夹角 中位数 0.03°、p95 0.13°、最大 0.50°",
+   "counts": true
+  },
+  {
+   "name": "① 中间件：DUT 发得出帧、PX4 解锁并进了 OFFBOARD",
+   "ok": true,
+   "detail": "DUT 1544 帧（99.6 Hz）、armed=True、OFFBOARD 于 t=0.47s；解锁命令 6 条、模式命令 13 条；末态 armed=1 nav_state=14",
+   "counts": true
+  },
+  {
+   "name": "① 参考锚定：目标全程没跟着测量走（`x_ref0` 钉在锚点上）",
+   "ok": true,
+   "detail": "`x_ref0[2]` 全程跨度 0.0000 m（该接近 0）、水平跨度 0.0000 m；锚点事件 ['anchor']；参考误差头 -1.000 m ⟹ 末段 -0.002 m。★ B 档尤其要盯着这一条：参考若漏进回放噪声，误差就会一直不收敛，而症状看起来像「控制器不行」",
+   "counts": true
+  },
+  {
+   "name": "② 行为：真值高度真的升上去了（起飞后 5 s 内 z > +0.4 m，ENU）",
+   "ok": true,
+   "detail": "真值首点 z=-0.0002 m（地面）⟹ 第一次越过 +0.15 m 于 t=9.98s；起飞段最高 +1.500 m。★ ENU 的 z 是**向上为正**，所以判据的符号与 A 档（NED）相反",
+   "counts": true
+  },
+  {
+   "name": "★判据① 前置：真值流在稳态窗口里够密（**仪器自检**；判 ❌ = 本场不能算通过，但归因**不指向**控制器）",
+   "ok": true,
+   "detail": "稳态窗口 [1790675440.113, 1790675448.113] s（墙钟）里有 1845 点真值（该 ≥ 10；本场真值 5790 点 @ 231.3 Hz ⟹ 8s 该有 1850 点）。★ 不过 ⟹ 真值流没覆盖到窗口（录得比 DUT 早停？或 `truth` 列被裁过），本场的判据①/③ 读数**都不作数**；这与飞机飞得好不好无关",
+   "counts": true
+  },
+  {
+   "name": "★判据① 稳态位置误差 < 0.15 m（真值帧；窗口 = 最后一次正常帧往前 8 s）",
+   "ok": true,
+   "detail": "窗口 8.00s / 1845 点；水平误差 均值 0.0137 m、最大 0.0224 m；垂直误差 均值 +0.0016 m（绝对值均值 0.0089 m）、最大 0.0362 m；3D 均值 0.0188 m。目标（节点自己 `x_ref0` 的中位数）[-0.0, -0.0003, 0.9998]。★ 判**均值**（稳态二字就是这个意思）：抖动用下一条判",
+   "counts": true
+  },
+  {
+   "name": "★判据①·振荡 无持续振荡：末段高度峰峰值 < 0.35 m 且穿均值频率 < 2.0 Hz",
+   "ok": true,
+   "detail": "末段 1845 点 / 7.99s：高度峰峰值 0.0567 m、穿均值 0.31 Hz；水平误差穿均值 0.13 Hz。★★ 本档真值流是**全速**（231.3 Hz ⟹ 分辨力 115.6 Hz）—— A 档真值只有 4 Hz、连自己 2 Hz 的门槛都够不到，只能退回 EKF 帧判；B 档**判据与仪器同一帧**",
+   "counts": true
+  },
+  {
+   "name": "① 「没失控」的旁证：真值倾角（与朝向无关 ⟹ 补上「机头在自转而位置判据全绿」那个盲区）",
+   "ok": null,
+   "detail": "全程最大倾角 0.49°；稳态窗口内最大 0.48°（姿态真值 5727 点）。★ A 档 2026-09-28 实测过「飞机自转 5 圈而位置判据全过」，所以这一列与位置那几条是**互相独立**的两条证据；本行不设阈值（悬停时该接近 0°，判据① 的位置误差已经覆盖了「稳不稳」这件事）",
+   "counts": false
+  },
+  {
+   "name": "★判据③ 注入 50 ms 动捕延迟后仍稳定（可变差、不可发散）",
+   "ok": null,
+   "detail": "本场 `--extra-delay-ms 0.0` ⟹ **这一条没做**（不是通过也不是不通过）。要判它就跑 `--extra-delay-ms 50`",
+   "counts": false
+  },
+  {
+   "name": "★判据④ 求解器失败后保持安全悬停（M5 兜底）",
+   "ok": null,
+   "detail": "本场 `inject_solve_fail_after_frames=0` ⟹ **这一条没做**。要判它就跑 `--inject-solve-fail-after-frames N`（N 的含义 = 「已发布 N 帧之后」）",
+   "counts": false
+  },
+  {
+   "name": "⑦ D6（结论行）：求解耗时 p50/p99/最坏 —— 冷启动与稳态分账",
+   "ok": null,
+   "detail": "n=1544 ⟹ p50 2.843 ms / p99 3.508 ms / **全集最坏 16.191 ms**；去掉 5 拍 `warmup` 之后（n=1539）：p50 2.841 / p99 3.468 / **稳态最坏 5.652 ms**。按票面字面 ⟹ 50 Hz（10–20 ms，降档）；按稳态 ⟹ 100 Hz（最坏 ≤10 ms，余量够）。★ **交给 Phase 3 的「实测最坏求解时间」取 `steady_max`**（冷启动那一拍是 acados 的一次性开销，不是持续负载）",
+   "counts": false
+  },
+  {
+   "name": "⑦ D6 的另一半：这台机器真跑出多少 Hz（逐拍间隔）",
+   "ok": true,
+   "detail": "逐拍间隔 p50 9.998 ms / p99 11.919 ms / 最坏 84.635 ms ⟹ 请求 100.0 Hz、实发 99.6 Hz",
+   "counts": true
+  },
+  {
+   "name": "⑧ 复盘面：逐帧日志里有状态源、分龄、饱和标志与档位",
+   "ok": true,
+   "detail": "state_source=mocap、分龄齐全=True（缺 0 帧；B 档的分龄只有 `age_state_s` **一条** —— 位置与姿态同一条 `PoseStamped` ⟹ A 档那两条 `age_pos_s`/`age_att_s` 在 B 档**本就不存在**，不是缺口）、每帧带 `sat` 列=True、档位分布 {'warmup': 5, 'normal': 1539}",
+   "counts": true
+  },
+  {
+   "name": "★判据② 跑完 Phase 1 的三条轨迹（悬停 / 1 m 正方形 / r=0.5 m 8 字）",
+   "ok": false,
+   "detail": "**未达标** —— 两条独立的缺口，都不在本票手里：（a）`bag/` 里**没有「1 m 正方形」那份包**（四份场景逐条见 `bag/README.md` §①–④）；（b）节点的参考是**锚点 + 常量偏移**（`node_core.hold_reference`），**没有轨迹跟踪能力** —— 消费 `/traj/reference` 的那个口在 **17 号票**（仍 needs-triage）。本场实际做的是**悬停那一条**（判据① 的读数就是它）。★ 操作者 2026-09-29 裁定：「先跑 1/3/4，2 记未达标」；票面也要求「记录未达标 + 实际数值」而不是「基本通过」。本场实测：悬停稳态水平误差 0.0137 m、高度误差 +0.0016 m；第三/四条轨迹**没有运行**（没有参考可追）",
+   "counts": true
+  }
+ ],
+ "checks_note": "本 `checks` 由**当前判层** `verify_tier_b_seam3.evaluate_b` 跑在**完整产物**上得到（飞行当时写下的那一份有过两个 bug：⑧ 误读了 A 档的分龄列、判据① 缺「正常帧总长够不够 8 s」的前置三判定）。整个五场据此**重判过一次**，裁决表见 `docs/control/tier-b-sitl-seam3.md`。★ 逐帧数组 `frames`/`truth` 未随本文件归档 ⟹ **拿这份文件单独重跑 `evaluate_b` 会少掉若干依赖逐帧数组的行**（那是判层的优雅降级，不是这些行不通过）。要重判请带全套 `tools/px4-sitl/run_matrix.sh` 重飞。"
+}

@@ -1,0 +1,596 @@
+"""B 档 seam 3 四条判据的离线单测（ticket 11）—— 不启 SITL、不启夹具、不读包。
+
+**为什么必须单开一个文件**：一场 B 档要 3–5 分钟 SITL，而这一档是 **Phase 2 最高的闸**
+（票面：上面没有退路）。判据层里一个笔误的代价不是"多跑一次"，而是**把闸的结论写反** ——
+A 档已经栽过两次同类：判据⑤ 在一场爬升里照样过、判据⑧ 把"没饱和"判成 ❌
+（见 `test_tier_a_judges.py` 的 docstring）。这个文件把人造 obs 喂进判据层，
+让"该炸的时候炸、该过的时候过"变成一毫秒的事。
+
+★ 本文件盯住的是 B 档**特有**的几件事（通用的那套在 `test_verify_judges.py` 与
+  `test_tier_a_judges.py` 里，不重复）：
+
+  1. **NED/ENU 的取反**（三处：起飞方向、真值高度、离地段最低点）—— 静默取反的症状是
+     报告指向控制器，而真身是判据自己；
+  2. **稳定窗口止于最后一次正常帧** —— 否则判据④ 那场（注入后全程兜底）会把
+     "兜底保不住高度"记成"判据① 悬停精度不行"，两件事混成一条 ❌；
+  3. **判据② 恒为未达标且计入** —— 票面要求"记录未达标 + 实际数值"，
+     一个 `ok=True` 的假绿会让整份报告读成"全部通过"；
+  4. **"没做" / "判不了" / "不通过" 的三分法** —— 前两者是 `ok=None` + `counts=False`，
+     只有第三者才计数；而"仪器没覆盖到窗口"另有一条**计数**的前置行兜底；
+  5. **判据④ 的 A/B/C 三层分开** —— 阶梯走没走（结构证据：悬停帧的推力恒等于
+     −hover_thrust）、高度保没保住、这一场该记在谁头上，是**三个**读数；
+     合成到一个 ❌ 里就会写出"阶梯坏了"这种归因错误的结论。
+
+（要 `rclpy` / `px4_msgs` / `nmpc`：被测模块导入期就 import 它们。没有环境直接 skip。）
+"""
+
+from __future__ import annotations
+
+import importlib.util
+import sys
+from pathlib import Path
+
+import pytest
+
+pytest.importorskip("rclpy")
+pytest.importorskip("px4_msgs")
+pytest.importorskip("nmpc")
+
+HERE = Path(__file__).resolve().parent
+
+#: 墙钟原点。取一个**真实量级**的 epoch（1.7e9 s）：判据层按绝对墙钟配对，
+#: 这里若图省事从 0 开头，两列时基混了也照样"能跑"，测出来的就不是真东西。
+T_ABS0 = 1_700_000_000.0
+FRAME_HZ = 100.0        #: DUT 逐帧日志
+TRUTH_HZ = 250.0        #: 真值流（SITL 全速）
+DUR_S = 20.0
+
+
+def _load():
+    """按路径导入被测脚本（`tools/` 不是一个包）。
+
+    ★ `sys.path` 要补 `HERE`：被测脚本里有一句 `import verify_offboard_smoke as v`
+      与 `import verify_tier_a_hover as ta`（同目录复用世界/记录器/判据尺），
+      而 pytest 的 rootdir 不在这一层。
+    ★ 执行失败要把半成品从 `sys.modules` 里摘掉（否则下一次拿到的是空模块，
+      报出来的是 `has no attribute …` 这种把人往错方向带的假象 —— 见
+      `test_mocap_model.py::_load` 的 ★）。
+    """
+    if str(HERE) not in sys.path:
+        sys.path.insert(0, str(HERE))
+    name = "verify_tier_b_seam3"
+    if name in sys.modules:
+        return sys.modules[name]
+    spec = importlib.util.spec_from_file_location(name, HERE / f"{name}.py")
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules[name] = mod
+    try:
+        spec.loader.exec_module(mod)
+    except BaseException:
+        sys.modules.pop(name, None)
+        raise
+    return mod
+
+
+b = _load()
+ta = b.ta
+
+
+# ────────────────────────────────────────────── 造观测
+
+
+def wall(i, hz=FRAME_HZ):
+    """第 `i` 帧的绝对墙钟 [s]（整数纳秒 → 秒，避免浮点漂移）。"""
+    return (int(T_ABS0 * 1e9) + int(round(i * 1e9 / hz))) / 1e9
+
+
+def frame(i, *, fallback="normal", ref=(0.0, 0.0, 1.0), thrust=None, note=""):
+    """一"帧"DUT 逐帧日志（只造判据层真正读的那几列）。"""
+    return {"wall_ns": int(T_ABS0 * 1e9) + int(round(i * 1e9 / FRAME_HZ)),
+            "tick": i, "fallback": fallback, "fallback_note": note,
+            "x_ref0": list(ref), "thrust_body_z": thrust, "sat": [],
+            "ref_anchor": "anchor" if i == 0 else "", "age_state_s": 0.01,
+            "state_source": "mocap"}
+
+
+def rise_traj(t):
+    """默认真值轨迹：1 s 内从地面升到 1 m，然后悬停。"""
+    return (0.0, 0.0, min(1.0, t))
+
+
+def truth_(dur_s=DUR_S, fn=None, hz=TRUTH_HZ, t_abs0=T_ABS0, n=None):
+    """真值行 `[t_rel, x, y, z, vx, vy, vz, wall_s]`（**ENU**），与 `TruthTap.enu_rows` 同形。
+
+    ★ 第 0 列是流自己的相对时基、第 7 列是绝对墙钟 —— **两列都要对**，
+      因为它们各自被不同的判据读（分段用第 0 列、配对与窗口用第 7 列）。
+    """
+    n = int(dur_s * hz) if n is None else n
+    rows = []
+    for i in range(n):
+        t_rel = i / hz
+        x, y, z = rise_traj(t_rel) if fn is None else fn(t_rel)
+        rows.append([t_rel, x, y, z, 0.0, 0.0, 0.0, t_abs0 + t_rel])
+    return rows
+
+
+def make_obs(*, frames=None, truth=None, extra_delay_ms=0.0, inject=0,
+             mismatch="none", model_ht=0.6235, plant_param="z0.param",
+             ref_span_z=0.0):
+    """一份最小但**判据层跑得动**的 obs（形状与 `run_flight_b` 的输出一致）。"""
+    frames = [frame(i) for i in range(int(DUR_S * FRAME_HZ))] if frames is None else frames
+    truth = truth_() if truth is None else truth
+    return {
+        "name": "synthetic", "mismatch": mismatch, "plant_param": plant_param,
+        "model_hover_thrust": model_ht,
+        "plant_hover": b.plant_hover_thrust(plant_param),
+        "extra_delay_ms": extra_delay_ms,
+        "inject_solve_fail_after_frames": inject,
+        "replay_up": True, "truth_n": len(truth), "truth_hz": TRUTH_HZ,
+        "truth_att_n": 200, "truth_pos_n": len(truth),
+        "tilt_deg_max": 1.5, "tilt_deg_max_steady": 0.5,
+        "frames": frames, "truth": truth,
+        "dut": {"frames": len(frames), "actual_hz": FRAME_HZ, "state_source": "mocap",
+                "ages_ok": True, "sat_logged": True,
+                "ref_events": ["anchor"], "track": {"ref_span_z": ref_span_z,
+                                                    "ref_span_xy": 0.0}},
+        "solve": {"n": 100, "p50": 3.0, "p99": 5.0, "max": 11.3, "warmup_n": 5,
+                  "steady_n": 95, "steady_p50": 3.0, "steady_p99": 5.0,
+                  "steady_max": 6.0, "cold_ms": 11.3, "cold_in_warmup": True,
+                  "tick_p50_ms": 10.1, "tick_p99_ms": 11.0, "tick_max_ms": 12.0},
+        "armed_ever": True, "rate_hz": FRAME_HZ,
+        "t": {"offboard_enter": 3.0, "replay_frames_at_dut_start": 100},
+        "replay": {"frames": int(DUR_S * FRAME_HZ), "base_delay_ms": 12.0,
+                   "delay_ms": 12.0 + extra_delay_ms},
+        "agent": "解锁命令 1 条、模式命令 1 条",
+    }
+
+
+def picked(checks, *prefixes):
+    """按**前缀**挑判据（判据名很长，全等断言会把每条改名都变成一次测试失败）。"""
+    return [c for c in checks if any(c["name"].startswith(p) for p in prefixes)]
+
+
+def one(checks, prefix):
+    got = picked(checks, prefix)
+    assert len(got) == 1, f"{prefix!r} 该命中 1 条，实得 {[c['name'] for c in got]}"
+    return got[0]
+
+
+def counted(checks):
+    return [c for c in checks if c.get("counts", True)]
+
+
+def failed(checks):
+    return [c["name"] for c in counted(checks) if c["ok"] is False]
+
+
+# ────────────────────────────────────────────── NED / ENU 的取反（三处）
+
+
+def test_起飞晚于五秒也认得出来_ENU要传rising():
+    """★★ 三处取反里最隐蔽的一处：`ta.segments` 的起飞判法是给 **A 档 NED** 写的
+    （第一帧 `z < liftoff_cross`）。B 档真值是 **ENU**，直接传 `liftoff_cross=0.15`
+    取到的是**第一帧地面**（z=0 < 0.15）⟹ `liftoff_t` 记成 0、`climb` 恒等于"开场头 5 s"。
+
+    而 B 档真值**从回放启动就开始录**、起飞在 OFFBOARD 之后好几秒（夹具要等帧、
+    等 DUT、等解锁）⟹ 起飞晚于 5 s 时，"起飞段"里全是地面数据，判据② 会报
+    **「真值高度没升上去」** —— 一个把仪器毛病写进控制器账上的假 ❌。
+    """
+    late = truth_(fn=lambda t: (0.0, 0.0, min(1.0, max(0.0, t - 8.0))))
+    right = ta.segments(late, liftoff_cross=0.15, hover_s=8.0, rising=True)
+    wrong = ta.segments(late, liftoff_cross=0.15, hover_s=8.0)          # 不传 rising
+    assert right["liftoff_t"] == pytest.approx(8.15, abs=0.05)         # 8.0 起飞 + 爬到 0.15 m
+    assert any(r[3] > 0.4 for r in right["climb"])                     # 认出来了
+    assert wrong["liftoff_t"] == pytest.approx(0.0, abs=0.02)          # 记成了地面
+    assert not any(r[3] > 0.4 for r in wrong["climb"])                 # ⟹ 假 ❌
+
+
+def test_A档的判法一字未改_默认仍是NED():
+    """`rising` 默认 `False` ⟹ A 档（NED，z 向下为正）的行为必须**逐字不变**。"""
+    ned = [[i / 100.0, 0.0, 0.0, -min(1.0, i / 100.0), 0.0, 0.0, 0.0, T_ABS0 + i / 100.0]
+           for i in range(500)]
+    seg = ta.segments(ned, liftoff_cross=-0.15, hover_s=3.0)
+    assert seg["liftoff_t"] == pytest.approx(0.15, abs=0.02)
+    assert any(r[3] < -0.4 for r in seg["climb"])
+
+
+def test_判据2的起飞段只认_升上去():
+    assert one(b.evaluate_b(make_obs()), "② 行为")["ok"] is True
+
+
+def test_判据3的好飞机不该被地面段判成触地():
+    """★★ 第二处取反：`divergence` 的"没触地"若拿**整条真值**的最低点判
+    （`z_min_all`），那它必然 ≈ 0 —— 真值是从回放启动就开录的，
+    飞机那会儿正停在地面上。于是**每一场都 ❌**，报告会写成"触地了"。
+
+    判在**离地段**（`z_min_air`）才对：这一场全程没下降，判据③ 该过。
+    """
+    obs = make_obs(extra_delay_ms=50.0)
+    checks = b.evaluate_b(obs)
+    di = obs["diverge"]
+    assert di["z_min_all"] < 0.05                     # 整条真值含地面 ⟹ 恒触地
+    # 离地段从**离地那一刻**起算 ⟹ 最低点就是那个 0.15 m 的门槛值（不是稳态的 1 m）：
+    # 这一条判的是"有没有再掉回地面"，不是"悬停高度准不准"（那是判据① 的事）。
+    assert di["z_min_air"] == pytest.approx(0.15, abs=0.01)
+    assert di["z_min_air"] > b.GROUND_M
+    assert one(checks, "★判据③")["ok"] is True
+
+
+# ────────────────────────────────────────────── 稳定窗口
+
+
+def test_稳定窗口止于最后一次正常帧():
+    """★ 判据④ 那场里注入之后**全程**都是兜底帧。窗口若取到整场末尾，
+    "兜底保不住高度"就会被记成"判据① 悬停精度不行" —— 一条 ❌ 混两件事。"""
+    fs = [frame(i) for i in range(100)] + [frame(i, fallback="hover", thrust=-0.6235)
+                                          for i in range(100, 300)]
+    lo, hi = b.steady_bounds(fs, steady_s=1.0)
+    assert hi == pytest.approx(fs[99]["wall_ns"] / 1e9)
+    assert hi - lo == pytest.approx(1.0)
+
+
+def test_稳定窗口在没有正常帧时退回末帧():
+    """全是兜底帧（起手就没进来）⟹ 仍要给一个窗口，不能返回 None 把判据整条吞掉。"""
+    fs = [frame(i, fallback="hover") for i in range(50)]
+    lo, hi = b.steady_bounds(fs, steady_s=0.5)
+    assert hi == pytest.approx(fs[-1]["wall_ns"] / 1e9)
+
+
+def test_稳定窗口_空帧表返回None():
+    assert b.steady_bounds([], steady_s=1.0) is None
+
+
+def test_目标取中位数_不受锚点重钉那一拍的影响():
+    """`x_ref0` 在锚点重钉那一拍照例会跳一下；均值会把它摊进目标里，中位数不会。"""
+    fs = [frame(i, ref=(0.0, 0.0, 1.0)) for i in range(99)]
+    fs.append(frame(99, ref=(5.0, 0.0, 1.0)))            # 一个离群点
+    t = b.ref_target(fs, 0.0, fs[-1]["wall_ns"] / 1e9)
+    assert t == [0.0, 0.0, 1.0]
+
+
+# ────────────────────────────────────────────── 判据①
+
+
+def test_判据1_悬停在目标上就通过():
+    ck = one(b.evaluate_b(make_obs()), "★判据① 稳态位置误差")
+    assert ck["ok"] is True, ck["detail"]
+
+
+def test_判据1_偏了0_2米就不通过():
+    """正好卡在票面的 0.15 m 外面 —— 这条是"判据真的会炸"的证据。"""
+    obs = make_obs(truth=truth_(fn=lambda t: (0.2, 0.0, min(1.0, t))))
+    ck = one(b.evaluate_b(obs), "★判据① 稳态位置误差")
+    assert ck["ok"] is False
+    assert "0.2" in ck["detail"]
+
+
+def test_判据1_高度差也算在内():
+    """水平 0 但高度差 0.2 m ⟹ 仍不通过（票面说的是"位置误差"，不是"水平误差"）。"""
+    obs = make_obs(truth=truth_(fn=lambda t: (0.0, 0.0, 0.8)))
+    assert one(b.evaluate_b(obs), "★判据① 稳态位置误差")["ok"] is False
+
+
+def test_判据1_真值点太少记没做_并另有计入的前置行兜住():
+    """★ 三分法：**数据不够**（`ok=None`，不计数）与**不通过**（`False`，计数）不是一回事。
+
+    真值流没覆盖到窗口时，报"判据① 不通过"会把仪器毛病写成控制器结论 —— 而这一条
+    恰恰是本档最容易被引用的那行。所以判据① 记「没做」，另由一条**计入**的
+    前置行（仪器自检）保证"本场不能算通过"这件事仍然说得出。
+    """
+    obs = make_obs(truth=[r for r in truth_() if r[7] <= T_ABS0 + 2.0])
+    checks = b.evaluate_b(obs)
+    crit = one(checks, "★判据① 稳态位置误差")
+    pre = one(checks, "★判据① 前置")
+    assert crit["ok"] is None and crit["counts"] is False
+    assert pre["ok"] is False and pre["counts"] is True
+    assert "★判据① 稳态位置误差" not in failed(checks)      # 不在「不通过」名单里
+
+
+def test_判据1振荡_高度在抖就不过():
+    """±0.4 m 的方波 ⟹ 峰峰值 0.8 m > 0.35 m，穿均值频率也应该很高。"""
+    obs = make_obs(truth=truth_(fn=lambda t: (0.0, 0.0, 1.0 + 0.4 * (int(t * TRUTH_HZ) % 2))))
+    assert one(b.evaluate_b(obs), "★判据①·振荡")["ok"] is False
+
+
+def test_判据1振荡_平的就过():
+    assert one(b.evaluate_b(make_obs()), "★判据①·振荡")["ok"] is True
+
+
+# ────────────────────────────────────────────── 判据②（恒未达标）
+
+
+def test_判据2恒定记未达标_且计入():
+    """★ 票面要求"记录未达标 + 实际数值"。若写成 `ok=True`（或 `counts=False`），
+    整份报告会读成"全部通过" —— 那正是票面点名禁止的"基本通过"。"""
+    for kw in ({}, {"mismatch": "mass+30"}, {"extra_delay_ms": 50.0}):
+        ck = one(b.evaluate_b(make_obs(**kw)), "★判据②")
+        assert ck["ok"] is False and ck["counts"] is True
+        assert "17 号票" in ck["detail"] and "未达标" in ck["detail"]
+
+
+# ────────────────────────────────────────────── 判据③（延迟）
+
+
+def test_判据3_没加延迟就是没做_不计数():
+    """★ 三分法：「没做」与「没通过」不是一回事。写反的症状是：
+    一场**没做延迟实验**的飞行被判成"判据③ 不通过"。"""
+    ck = one(b.evaluate_b(make_obs(extra_delay_ms=0.0)), "★判据③")
+    assert ck["ok"] is None and ck["counts"] is False
+
+
+def test_判据3_加了延迟且稳稳的_就通过():
+    ck = one(b.evaluate_b(make_obs(extra_delay_ms=50.0)), "★判据③")
+    assert ck["ok"] is True, ck["detail"]
+
+
+def test_判据3_发散就不通过():
+    """高度一路往下掉 ⟹ 末段垂直速度很大、离地段最低点触地 ⟹ 不过。"""
+    obs = make_obs(extra_delay_ms=50.0,
+                   truth=truth_(fn=lambda t: (0.0, 0.0, 1.0 - 0.5 * t)))
+    assert one(b.evaluate_b(obs), "★判据③")["ok"] is False
+
+
+def test_判据3_慢慢漂走也算发散():
+    """高度还在 1 m 附近、但水平一路漂 —— "不能发散"包含这一路。"""
+    obs = make_obs(extra_delay_ms=50.0,
+                   truth=truth_(fn=lambda t: (0.3 * t, 0.0, 1.0)))
+    assert one(b.evaluate_b(obs), "★判据③")["ok"] is False
+
+
+# ────────────────────────────────────────────── 判据④（M5 兜底）
+
+
+def _m5_obs(*, descent_pred=0.0, plant_param="z0-mass+30.param", mismatch="mass+30",
+            hold_n=5, hover_n=500, model_ht=0.6235):
+    """造一场"注入求解失败"的观测：前段正常，中段 `hold`，后段 `hover`；高度按
+    `descent_pred` 匀加速往下掉（0 = 兜底把高度保持住了）。"""
+    n_head, n = 20, 20 + hold_n + hover_n
+    fs = ([frame(i) for i in range(n_head)]
+          + [frame(n_head + i, fallback="hold", thrust=-0.60, note="注入的坏解")
+             for i in range(hold_n)]
+          + [frame(n_head + hold_n + i, fallback="hover", thrust=-model_ht,
+                   note="注入的坏解：`-p inject_solve_fail_after_frames:=…` 在生效")
+             for i in range(hover_n)])
+    t_hover = wall(n_head + hold_n)
+    rows = []
+    for i in range(int((n / FRAME_HZ + 1.0) * TRUTH_HZ)):
+        t_abs = T_ABS0 + i / TRUTH_HZ
+        z = 1.0 if t_abs < t_hover else 1.0 - 0.5 * descent_pred * (t_abs - t_hover) ** 2
+        rows.append([i / TRUTH_HZ, 0.0, 0.0, z, 0.0, 0.0, 0.0, t_abs])
+    return make_obs(frames=fs, truth=rows, inject=800, model_ht=model_ht,
+                    plant_param=plant_param, mismatch=mismatch)
+
+
+def test_判据4_没注入就是没做_不计数():
+    ck = one(b.evaluate_b(make_obs(inject=0)), "★判据④")
+    assert ck["ok"] is None and ck["counts"] is False
+
+
+def test_判据4A_阶梯按_hold_到_hover_走了_就算阶梯通过():
+    """★ 结构证据：悬停帧的 `thrust_body_z` **恒等于 −hover_thrust**
+    （`mpc_node.py:405`）⟹ 日志里出现这个常数就只能来自兜底。"""
+    obs = _m5_obs()
+    a = one(b.evaluate_b(obs), "★判据④-A")
+    assert a["ok"] is True, a["detail"]
+    assert obs["fallback_report"]["order"] == ["normal", "hold", "hover"]
+    assert obs["fallback_report"]["hover_thrust_body_z_seen"] == [-0.6235]
+
+
+def test_判据4A_只进hover没经过hold_不算走完阶梯():
+    """`hold` 那一档是"内容原样、时间戳换新"——**跳过它**说明阶梯没有按设计走。"""
+    fs = [frame(i) for i in range(20)] + [frame(20 + i, fallback="hover") for i in range(50)]
+    obs = make_obs(frames=fs, inject=800)
+    assert one(b.evaluate_b(obs), "★判据④-A")["ok"] is False
+
+
+def test_判据4B_对得上的被控对象_兜底保住了高度就通过():
+    """对照场（`--mismatch none`）：模型与被控对象同口径 ⟹ 兜底该把高度保持住。"""
+    ck = one(b.evaluate_b(_m5_obs(plant_param="z0.param", mismatch="none")), "★判据④-B")
+    assert ck["ok"] is True, ck["detail"]
+
+
+def test_判据4B_失配被控对象_兜底保不住高度就不通过():
+    """★ 这一条是**预期会 ❌** 的，而且是本票要的那条结论：
+    兜底发的固定悬停推力是**模型参数**，失配机型需要 1.30 倍 ⟹ 必然下坠。
+    它必须记成 ❌ + 实际数值，**不能**因为"知道原因"就放过。"""
+    ck = one(b.evaluate_b(_m5_obs(descent_pred=2.264)), "★判据④-B")
+    assert ck["ok"] is False
+    assert "hover_thrust" in ck["detail"]
+
+
+def test_判据4B_预测下降率与机型文件同源_且符号对():
+    """`(1 − 模型/被控对象)·g`：**正 = 推力不足 = 下坠**。写反的话，
+    "失配机型下坠"会被报成"上飘"，而两种情形的处置完全不同。"""
+    obs = _m5_obs(descent_pred=2.264)
+    b.evaluate_b(obs)
+    pred = obs["m5"]["predicted_descent_ms2"]
+    want = b.plant_hover_thrust("z0-mass+30.param")["hover_thrust"]
+    assert pred == pytest.approx((1.0 - 0.6235 / want) * 9.81)
+    assert pred > 0                                    # 模型推力不足 ⟹ 下坠
+    assert pred == pytest.approx(2.264, abs=0.01)
+
+
+def test_判据4B_对得上的被控对象_预测值应该是零():
+    obs = _m5_obs(plant_param="z0.param", mismatch="none", model_ht=0.6235)
+    b.evaluate_b(obs)
+    assert abs(obs["m5"]["predicted_descent_ms2"]) < 0.01
+
+
+def test_判据4C_归属行不计数():
+    """归属是**读数**不是判决 —— 计进去会让"报告不通过"变成算术问题。"""
+    ck = one(b.evaluate_b(_m5_obs()), "★判据④-C")
+    assert ck["ok"] is None and ck["counts"] is False
+
+
+# ────────────────────────────────────────────── 整体
+
+
+def test_悬停场_计入的判据里只有判据2不通过():
+    """一场**正常悬停**的账面：除了票面要求记未达标的判据②，其余都该过
+    —— 这条给"判据层是不是整体判反了"一个一毫秒的答案。"""
+    bad = failed(b.evaluate_b(make_obs()))
+    assert len(bad) == 1 and bad[0].startswith("★判据②"), bad
+
+
+def test_DUT一帧都没发时提前收手_且判据层不崩():
+    obs = make_obs()
+    obs["dut"]["frames"] = 0
+    checks = b.evaluate_b(obs)
+    assert any("DUT 一帧都没发" in c["name"] for c in checks)
+    assert any(c["ok"] is False for c in checks)
+
+
+def test_判据层是obs的纯函数_同一份obs两次结果一致():
+    """`--replay` 的前提：判据**只读 obs**。任何"跑的时候顺手改了什么"都会破坏它。"""
+    obs = make_obs()
+    a = b.evaluate_b(obs)
+    c = b.evaluate_b(obs)
+    assert [(x["name"], x["ok"], x["counts"]) for x in a] == \
+           [(x["name"], x["ok"], x["counts"]) for x in c]
+
+
+# ────────────────────────────────────── ⓪b 仪器自检：DUT 报出的姿态 vs 真值
+#
+# ☠☠ 2026-09-29 B 档首飞就是这么废掉的：夹具把四元数分量序写反（`px4_pose_to_enu`
+#     给的是 wxyz，而 `PoseStamped.orientation` 的字段是 x,y,z,w），水平机在节点眼里
+#     变成"绕 x 转 90°"。**位置判据、饱和日志、闸门日志全都正常**，只有把
+#     "DUT 报出来的姿态"与"同一时刻的真值"对撞才看得见 —— 所以这一条是**仪器自检**，
+#     不是判据：它判红时，整场的位置读数都不作数。
+
+
+def _level_att_tap(n=300, hz=TRUTH_HZ, t_abs0=T_ABS0, q_wxyz=(1.0, 0.0, 0.0, 0.0)):
+    """只有 `att` 的假 tap（形状同 `TruthTap.att`：`(墙钟, w, x, y, z)`，**NED/FRD 原生**）。"""
+    import types
+    return types.SimpleNamespace(
+        att=[(t_abs0 + i / hz,) + tuple(q_wxyz) for i in range(n)])
+
+
+def _frames_with_state_q(q_flu_wxyz, n=200, delay_s=0.0):
+    """造逐帧日志，`x0[6:10]` 放**节点报出来的姿态**（ENU/FLU，wxyz）。"""
+    out = []
+    for i in range(n):
+        f = frame(i)
+        f["x0"] = [0.0, 0.0, 1.0, 0.0, 0.0, 0.0] + list(q_flu_wxyz)
+        out.append(f)
+    return out
+
+
+def test_仪器自检_分量序正确时判绿():
+    """正对照：DUT 报的就是"真值过一遍那唯一一处换算"⟹ 夹角≈0、判据✅。
+
+    ★ 没有这一条，"判红"那条说明不了任何事 —— 它可能只是把两个永远对不上的量
+      放在一起比（那样它**恒红**，看起来还很像"很严"）。
+    """
+    q_ned = (1.0, 0.0, 0.0, 0.0)
+    q_flu = b.px4_quat_to_enu(q_ned)
+    obs = make_obs(frames=_frames_with_state_q(q_flu))
+    obs["_tap"] = _level_att_tap()
+    c = b.evaluate_b(obs)
+    row = one(c, "⓪b")
+    assert row["ok"] is True, row["detail"]
+    assert row["counts"] is True
+    assert obs["att_err_deg"]["median"] == pytest.approx(0.0, abs=1e-6), obs["att_err_deg"]
+
+
+def _old_buggy_readback(q_msg_wxyz):
+    """复刻**修之前**那条路，返回节点最终读到的 ENU/FLU 姿态（wxyz）。
+
+    旧三行：`_on_att` 把 PX4 的 wxyz 存成 xyzw → 直接喂进 `px4_quat_to_enu`
+    （它按 wxyz 解释）→ 又把返回的 wxyz 按 xyzw 写进消息字段。
+    这里照抄这条路径，而不是手敲一个字面量：字面量只能钉住"我当时算出来的那个数"，
+    抄路径才能钉住"错在哪一步"。
+    """
+    x, y, z, w = q_msg_wxyz                       # 旧的 `_on_att`：存成 xyzw
+    arr = b.px4_quat_to_enu((x, y, z, w))         # 旧的转换调用（函数按 wxyz 解释）
+    ox, oy, oz, ow = arr[0], arr[1], arr[2], arr[3]   # 旧的发布：当成 xyzw 写字段
+    return (ow, ox, oy, oz)                       # 收端按 xyzw 读回来 ⟹ wxyz
+
+
+def test_仪器自检_夹具分量序写反时判红_且读数是120度():
+    """☠☠ 首飞那场的复现。
+
+    错出来的姿态是「绕 x 转 90°」，对的应该是「绕 z 转 90°」；两个转轴**正交**，
+    所以相对角是 **120°**（`2·acos(|⟨q1,q2⟩|)`）而不是 90° —— 这个数字本身就是
+    "错的是分量序、不是换算公式"的指纹（公式错会给另一个角）。
+    """
+    q_ned = (1.0, 0.0, 0.0, 0.0)                  # 真值：水平（NED/FRD 下单位四元数）
+    q_buggy = _old_buggy_readback(q_ned)
+    # 与首飞逐帧日志里的 `x0[6:10]` 同形（差一个整体符号：`q` 与 `−q` 是同一姿态）
+    for got, want in zip([abs(c) for c in q_buggy], [2 ** -0.5, 2 ** -0.5, 0.0, 0.0]):
+        assert got == pytest.approx(want, abs=1e-12)
+
+    obs = make_obs(frames=_frames_with_state_q(q_buggy))
+    obs["_tap"] = _level_att_tap()
+    c = b.evaluate_b(obs)
+    row = one(c, "⓪b")
+    assert row["ok"] is False, row["detail"]
+    assert obs["att_err_deg"]["median"] == pytest.approx(120.0, abs=1e-6), obs["att_err_deg"]
+
+
+def test_仪器自检_真值按已知延迟回退_所以判据3那场也说得通():
+    """判据③ 那场动捕**故意**迟 50 ms ⟹ 配对时真值也要回退 50 ms。
+
+    不回退的话，"延迟"本身会被记成"仪器姿态对不上"，判据③ 那场会**先被自检拦下**，
+    而它拦下的理由还是错的（延迟是这一场要测的自变量，不是故障）。
+    """
+    q_ned = (1.0, 0.0, 0.0, 0.0)
+    q_flu = b.px4_quat_to_enu(q_ned)
+    tap = _level_att_tap()
+    # 真值姿态在这一段里匀速转动 100°/s；DUT 看到的**本该**是 50 ms 之前那一帧
+    import math as _m
+    # 转速取 200°/s：50 ms 的延迟 ⟹ 10° 的夹角，而真值是 250 Hz（配对误差 ≤2 ms ⟹ ≤0.4°）
+    # ⟹ 两个断言之间有三个数量级的余量，不靠"刚好越过阈值"。
+    rate = _m.radians(200.0)
+    tap.att = [(T_ABS0 + i / TRUTH_HZ, _m.cos(rate * (i / TRUTH_HZ) / 2), 0.0, 0.0,
+                _m.sin(rate * (i / TRUTH_HZ) / 2)) for i in range(300)]
+    n = 200
+    frames = []
+    for i in range(n):
+        t = T_ABS0 + i / FRAME_HZ - 0.05                 # 状态是 50 ms 之前的
+        k = min(299, max(0, int(round((t - T_ABS0) * TRUTH_HZ))))
+        f = frame(i)
+        f["x0"] = [0.0, 0.0, 1.0, 0.0, 0.0, 0.0] + list(b.px4_quat_to_enu(tap.att[k][1:]))
+        frames.append(f)
+    assert b.att_err_deg(tap, frames, delay_s=0.0)["median"] > 5.0, "不回退就该对不上"
+    assert b.att_err_deg(tap, frames, delay_s=0.05)["median"] < 1.5, "回退 50 ms 后该对上"
+    assert q_flu is not None
+
+
+# ────────────────────────────────────── 判层的契约：它会**写回** obs（有意，不是纯函数）
+
+def test_判层把派生块写回obs_这是刻意的契约不是副作用():
+    """`evaluate_b` 名字像纯函数，实际会把派生块写回 `obs` —— `obs.json` 要留档的正是它们。
+
+    ☠️ 钉住它是因为**这不是实现细节**：谁要是把"重判一次"写成 `evaluate_b(存下来的 obs)`，
+    第二次读到的就是**第一次写下的块**（`att_err_deg` 直接复用、不重算）⟹ 判层改了却看不出
+    差别、还以为"重判过了"。要干净重判得先删掉这些键，或者整场重飞。见判层 docstring 的 ⚠️。
+    """
+    obs = make_obs()
+    # 这四个**无条件**写回（`m5` 只在注入求解失败那场才有 —— 见下面第二个断言）
+    derived = ("fallback_report", "steady", "osc", "diverge")
+    assert [k for k in derived if k in obs] == [], "前提：这些块本来不该在 obs 里"
+    assert "m5" not in obs, "前提：没注入就没有 m5"
+    b.evaluate_b(obs)
+    missing = [k for k in derived if k not in obs]
+    assert not missing, f"判完该写回这些派生块，却缺 {missing}"
+    # 写回的是**真的派生读数**，不是占位：稳态块该带着判据① 用的那几个均值
+    assert {"z_mean", "h_mean"} <= set(obs["steady"]), obs["steady"]
+    # `m5` 是**条件**写回的：没注入的那场判不了兜底，自然也没有这个块
+    m5_obs = _m5_obs(descent_pred=0.0)
+    assert "m5" not in m5_obs, "前提：`_m5_obs` 造的是观测，判之前不该有 m5"
+    b.evaluate_b(m5_obs)
+    assert {"z_start", "z_end", "vz_tail"} <= set(m5_obs["m5"]), m5_obs["m5"]
+
+
+def test_重判一份存下来的obs_会复用已存的姿态误差读数_不重算():
+    """`_tap` 不在（JSON 落盘时会摘掉）但有 `att_err_deg` ⟹ **复用**，判层不再碰真值流。
+
+    这是"`--replay` 复判"那条路的正常行为（读数随 JSON 落盘就是为了让 JSON 自给自足），
+    但它同时意味着：**判层改了口径、拿旧 JSON 重判，⓪b 那一行不会跟着变**。
+    """
+    obs = make_obs()
+    obs["att_err_deg"] = {"n": 42, "median": 7.5, "p95": 9.0, "max": 11.0}   # 哨兵：别处算不出来
+    assert "_tap" not in obs
+    detail = one(b.evaluate_b(obs), "⓪b ")["detail"]
+    assert "取自本场落盘的读数" in detail, f"该走复用分支，实得：{detail[:80]}"
+    assert "42 帧" in detail and "7.50" in detail, f"该报哨兵的数，实得：{detail[:80]}"
