@@ -259,6 +259,31 @@ python3 tools/px4-sitl/verify_tier_b_seam3.py --tag F1b $COMMON --mismatch mass+
   **`params.py` 一个字不动**（操作者裁定）。
 - **只跑这两场**（裁定 3）：F2/F3/F4 不在本张判据里 —— 若改动意外波及它们，**如实记**，别默认没波及。
 - **逐场记 `controller_code`**（11 号票漏了这个、事后才补，见其 Comments）—— 本轮起是硬要求。
+  ☠️ **探身份必须在"与节点同环境的子进程"里探，禁止用驱动进程自己的 `import nmpc`** ——
+  这条是 12 号票会话踩出来的、本张已复现：驱动脚本为了读源码常数会把 `src/nmpc` 塞进自己的
+  `sys.path`（[`mismatch_sweep.py:61`](../../../tools/px4-sitl/mismatch_sweep.py#L61)），
+  于是**驱动进程里 `import nmpc` 必然落到 `src/`**，而真正飞的节点子进程落到 `install/`
+  —— **两份相反的答案，且打印出来完全像真的**。
+  本张复现（同一台机器、同一次运行）：
+
+  | 探法 | 解析到 |
+  |---|---|
+  | 驱动进程内 `import nmpc`（`sys.path` 里已插 `src/nmpc`） | `src/nmpc/nmpc` |
+  | 干净子进程（无 `PYTHONPATH` 覆盖） | `install/nmpc/local/lib/python3.10/dist-packages/nmpc` |
+
+  根因：**`sys.path.insert` 不传子进程**，子进程只认 `PYTHONPATH` 环境变量。
+  ⟹ 记身份要"**照节点的启动方式**再起一个进程去看它 import 到哪"，而不是问自己。
+  ★★ 另有一条**很容易误判**的细节：入口脚本自己会插路径 ——
+  [`mpc_node.py:150`](../../../src/nmpc/nmpc/mpc_node.py#L150) 的
+  `if __package__ in (None, ""): sys.path.insert(0, parents[1])`，
+  乍看像是"**谁被执行谁赢**"、`PYTHONPATH` 根本不起作用。**不是**：
+  `install/nmpc/lib/nmpc/` **没有 `__init__.py`** ⟹ 它只构成 PEP 420 的**命名空间段**，
+  会被后面 sys.path 上的**正规包**（有 `__init__.py` 的那个）盖过
+  ⟹ 最终仍由 **`PYTHONPATH` 的顺序**决定。
+  ★ 本张已按真实启动顺序（脚本目录 → 第 150 行的 insert → `PYTHONPATH`）复现验证过，
+  两种环境各得一份、与 11 号票 / 12 号票的实际跑法一致。
+  ★ 若已记错，**别静默覆盖**：把错值留在旁边（12 号票的做法：`controller_code_prev` + mtime 判据），
+  与本仓库"驳回的写明为什么"同一条纪律。
 - **空机 + 判在真值帧 + 沿用 `evaluate_b`**：不另立口径，这样与 11 的数字**可直接比**（同基线，裁定 3）。
 - ☠️ **本仓库没做 `ROS_DOMAIN_ID` 隔离 ⟹ domain 0 是共用的，会互相踩**：
   并行会话的 SITL 节点、`/fmu/out/*`、真值话题都在同一个 DDS 域里。
