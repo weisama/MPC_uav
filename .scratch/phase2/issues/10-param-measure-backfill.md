@@ -817,3 +817,80 @@ if load1 is not None and load1 >= ncpu / 2:
 它返回的是**对象 id（SHA-1）**，拿去跟内容 sha256 比会**全部不命中**，从而错误地得出"这批内容都没了"。
 要用 `git cat-file -p <rev>:<path> | sha256sum`（本会话全程用的就是 `git show … | sha256sum` 与
 `hashlib.sha256(git show … 的 stdout)`，**没有用过 `rev-parse` 做内容比对** ⟹ 上面这张表不受影响）。
+
+### 2026-09-29 12:4x–13:0x —— ✅ **验收轮跑完**：全量 682 条 + 三条容差断言的 DUT 端到端取证
+
+**结论先说**：**本张"还等两件事"里的第 1 件（测试/DUT 复验那半）做完了；第 2 件（台架/悬停测量）
+仍然空着 ⟹ `Status` 维持 `ready-for-human`，不收 `done`**（理由见本节末）。
+
+**身份（跑之前钉死、跑完复核）**：
+- `HEAD = 8cbd31e`；`git diff --stat d817a16 HEAD -- src/nmpc/nmpc/` **为空** ⟹ 源码与本轮定稿逐字节一致；
+- 三份 `mpc_node.py`（`install/…/lib/nmpc/` 入口、`install/…/dist-packages/nmpc/`、`src/nmpc/nmpc/`）
+  sha256 **全等** `a4e0fa8c…`；`PYTHONPATH` 前置 `src/nmpc` ⟹ 进程内 `import nmpc` 实测落在 `src`；
+- `test_mpc_node.py` sha256 `9af2700efd7965c5…`；
+- ⚠️ **本轮没有 `colcon build`**，而且**不需要**：票面第 1 件里那句"build 一下"是为了让 DUT 别再起
+  `install/` 的**旧副本**，而本轮三份副本**本来就逐字节相同** ⟹ build 想达到的效果**已经成立**。
+  （这是"内容说了算、时刻不算"的又一例，见 §12:3x。）
+
+**命令**（`/tmp/mpc-acceptance-run.log`，一次性、整仓根目录）：
+```
+source /opt/ros/humble/setup.bash
+source /home/chen/px4_msgs_ws/install/setup.bash     # ★ 不 source 它，px4_msgs 那批会静默跳过
+source /home/chen/ros_ws/install/setup.bash
+export PYTHONPATH=/home/chen/ros_ws/src/nmpc:$PYTHONPATH
+export ACADOS_SOURCE_DIR=$HOME/acados                 # ★ 见下面的坑
+export LD_LIBRARY_PATH=$ACADOS_SOURCE_DIR/lib:$LD_LIBRARY_PATH
+python3 -m pytest -q -rf
+```
+☠️ **坑（开跑前核出来的，差点让我跑出假红）**：我旧笔记里记的 `ACADOS_SOURCE_DIR=/home/chen/refs/acados`
+是**源码树**（只有 `CMakeLists.txt`/`cmake/`/`docs/`，**没有 `lib/`**）—— 而
+`test_mpc_node.py::_dut_env()` **只在环境里没设时才补** `~/acados`（`:83-89`，"不能覆盖操作者给的值"）。
+照着错路径导出去，DUT 子进程会**继承错值**、红给我看，而**不是被测代码的错**。
+正解二选一：**不导出**（让 `_dut_env()` 自己补）或导出 **`$HOME/acados`**（有 `lib/libacados.so`）。
+`docs/control/mpc-roadmap.md:268` 早就写着"要指**安装目录**、不是源码目录"。
+
+**结果**：
+```
+1 failed, 681 passed, 233 warnings in 954.55s (0:15:54)
+起跑 12:48:27 load1=0.35   →   结束 13:04:26 load1=1.17     （全程 < 3.0）
+采集 682 / 通过 681 / 失败 1 / 跳过 0
+```
+★ **`跳过 0` 这条本身是读数**：`test_ocp_timing.py:52` 的闸门在 `load1 ≥ ncpu/2 = 3.0` 时会**静默自跳**，
+本轮 load1 全程 < 1.2 ⟹ 那条 **100 Hz 预算用例是真跑了的**（不是"绿"来自"没跑"）。
+（8b 同一轮的起/终 = `1.25→1.90` / `1.80→1.92`，同样没跳 —— 两轮互证。）
+
+**唯一的红 = 预存假红，与本张无关**（已回代码核实，不是猜）：
+`src/nmpc/test/test_ocp_health.py::test_no_ros_import_leaks_in`
+```
+E  AssertionError: nmpc.ocp 把 rclpy 带进来了 —— 它必须是零 ROS 的
+E  assert 'rclpy' not in {... 'Cython' …}
+   src/nmpc/test/test_ocp_health.py:112
+```
+判据是 `module not in sys.modules` —— 它在**整仓拼跑**时看的是**全进程**的 `sys.modules`，
+而别的测试文件的 conftest 早就 `rclpy.init()` 过了 ⟹ 这**不是** `nmpc.ocp` 泄漏，
+是"这条断言假设了自己在干净进程里"。**第一手证伪**：`python3 -m pytest src/nmpc/test/test_ocp_health.py -q`
+⟹ **`8 passed in 6.57s`**（同一次会话、紧跟全量之后跑的）。
+⚠️ 处置**没做**（属别人的域 / 要不要单开票是**操作者的裁定**，我不自作主张）：
+把断言换成"子进程里 import `nmpc.ocp` 后 `rclpy` 不在 `sys.modules`"才是它**想**测的东西。
+
+**三条容差断言的 DUT 端到端取证**（`-v` 逐 node id，一次跑完 `32 passed in 40.90s`，load1 0.99）：
+| 要验的东西 | node id | 结果 |
+|---|---|---|
+| `ubu[0] == f_max`（= **11.8 N**，电池层） | `test_ocp_constraints.py::test_wired_bounds_use_per_axis_rate_limits`（`:84`） | ✅ PASSED |
+| `ub[0] != t_max`（≠ **46.3027 N**，归一化层，`rel=0.01`） | 同上（`:86`） | ✅ PASSED |
+| 顶到上限时 `u[0] == f_max`（两个边界都够得着且不越） | `test_ocp_constraints.py::test_thrust_pins_at_both_bounds_without_violating`（`:58`） | ✅ PASSED |
+| preflight 守卫看 `f_max` 而非 `t_max`（硬编码归一化常数会被抓） | `test_preflight_check.py::test_归一化常数被硬编码会被抓到` | ✅ PASSED |
+
+⟹ **两个角色确实解耦了**：同一个 `F` 上限，**= 11.8 N**（电池）且**显式 ≠ 46.3027 N**（归一化）——
+这条正是本张的核心，现在有 DUT 侧读数背书。
+
+**8b 那两条偏置积分器用例（本轮同一次 `-v` 里）**：
+- `test_mpc_node.py::test_垂直偏置积的是实测位置误差` ✅ PASSED
+- `test_mpc_node.py::test_闸门关闭期间垂直偏置冻结` ✅ PASSED
+☞ 8b 预告过一条**环境侧偶发红** `test_SIGINT_之后打出收尾摘要而不是_traceback`（整文件拼跑时
+`rclpy/executors.py:400 Unable to convert call argument`）—— **本轮没撞上**（全量里 test_mpc_node 全绿）。
+
+**⟹ 为什么 `Status` 仍然是 `ready-for-human`**：票面"还等两件事"的第 **2** 件是
+**只有人能产的台架/悬停测量**（电池可持续供多少推力，§6.2 那条 15 A 瓶颈），
+它决定 `f_max = 11.8 N` 保不保守。那一格是本张**清单之外**的收口条件，**没做** ⟹ 不能收 `done`。
+（第 1 件里"重搭 SITL 同构机"那半是 [11](11-sitl-tier-b-seam3.md) 的域、排在它收口后，不在本轮。）
