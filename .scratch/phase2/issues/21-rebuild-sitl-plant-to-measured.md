@@ -286,9 +286,11 @@ Type: task
    `tools/px4-sitl/evidence/tier-a/mismatch-sweep/obs-z0-1.json` 的 `controller_code` 记了
    `entry{sha256: 1c7fbd29…, same_as_package_copy: true}` + 11 个文件逐个 sha256
    + `driver_view: src/nmpc/nmpc` + `polluted: true`（连"驱动在 `src`、节点在 `install`"这个混血都是仪器当场测的）。
-   拿这 11 个 sha 当靶子逐个扫全历史，**命中的提交互不相同**：
-   `mpc_node.py`→`3ddb145`(= `f6c1b7f`)、`node_core.py`→`78f373d`、`ocp.py`→`aaeb356`、
-   `model`/`preflight_check`→`b7b4881`、`sign_map`/`offboard_smoke`→`8c4e014`、`timing`/`__init__`→`f1ced82`
+   拿这 11 个 sha 当靶子逐个扫全历史，**各自的"引入者"互不相同**：
+   `mpc_node.py`→`3ddb145`、`node_core.py`→`78f373d`、`ocp.py`→`aaeb356`、
+   `model`/`preflight_check`→`b7b4881`、`commands`/`sign_map`/`offboard_smoke`→`8c4e014`、
+   `timing`/`__init__`→`f1ced82`（"引入者"= 首次带来那份字节的提交，**不是**"唯一含它的提交" ——
+   内容会随未改该文件的后续提交一起带下去）。
    —— 这正是**"从脏工作区构建"的指纹**。
    ☠️ **`params.py`（归档 sha `3d4b29cd1bca6f52`）全历史 4 个版本无命中**；再扫**整个对象库**
    （`git cat-file --batch-all-objects`，**1008 个 blob，含 dangling**）**仍零命中**

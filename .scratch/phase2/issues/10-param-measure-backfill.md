@@ -762,21 +762,26 @@ SITL 与 CPU 密集测试" ⟹ **第①步已满足**。但 `git status` 实测
 ③ `docs/control/mismatch-sweep.md:199` 那张表只是这份 JSON 的**人读版**。
 
 **☠️ 订正：旧快照不是一棵"某提交的树"，是一堆不同提交的混合。**
-我拿归档里 11 个文件的 sha256 当靶子，逐个扫全历史（`git log --all` 里该文件的每个版本），结果：
+我拿归档里 11 个文件的 sha256 当靶子，逐个查它的**引入者**（= 首次带来那份字节的提交；
+用 `git log --all --reverse -- <path>`，它只列**动过该文件**的提交，故给出的是引入者）：
 
-| 模块 | 归档 sha256(16) | 命中的提交 |
+| 模块 | 归档 sha256(16) | **引入者** |
 |---|---|---|
-| `mpc_node.py` | `1c7fbd2947bdb6ce` | `3ddb145`（也 = `f6c1b7f` = `a4cdadc`）|
-| `node_core.py` | `b724bef51dad1dc6` | **`78f373d`** |
+| `mpc_node.py` | `1c7fbd2947bdb6ce` | `3ddb145` |
+| `node_core.py` | `b724bef51dad1dc6` | `78f373d` |
 | `ocp.py` | `e49b2e3ef7bb5107` | `aaeb356` |
 | `model.py` / `preflight_check.py` | `65f5565a…` / `8a04e2dc…` | `b7b4881` |
-| `sign_map.py` / `offboard_smoke.py` | `436a32c1…` / `a342a2d1…` | `8c4e014` |
+| `commands.py` / `sign_map.py` / `offboard_smoke.py` | `3aafee4a…` / `436a32c1…` / `a342a2d1…` | `8c4e014` |
 | `timing.py` / `__init__.py` | `335f7ccd…` / `6c01eeaa…` | `f1ced82` |
 | **`params.py`** | **`3d4b29cd1bca6f52`** | **❌ 全历史 4 个版本里无命中** |
 
+⚠️ **这一列是"引入者"，不是"唯一含它的提交"**（`ros-ws-8b` 订正）：内容一旦引入，
+**后面没动过该文件的提交也带着它** —— 例如 `mpc_node.py` 的引入者是 `3ddb145`，
+而 `f6c1b7f` / `a4cdadc` 同样含这些字节，只是它们没改这个文件。
+（我第一版把这一列写成"命中的提交"、每格一个，会让读者以为唯一 —— 已按"引入者"改写。）
 ⟹ **"旧快照 = `f6c1b7f`"只对 `mpc_node.py` 成立**（那恰好就是我们关心的那个文件，所以我上一条的
 **结论**没错，但**说法**错了 —— 若照它去取 `ocp.py`/`params.py` 会取到**别的**东西）。
-这堆"每个文件各挂在不同提交上"正好就是**"从脏工作区构建"的指纹**，也再次印证时点不可靠。
+这堆"每个文件各挂在不同的引入者上"正好就是**"从脏工作区构建"的指纹**，也再次印证时点不可靠。
 
 **☠️ `params.py` 的字节真的没了（这条最要紧）。**
 除了全历史无命中，我又把**对象库整个**扫了一遍（`git cat-file --batch-all-objects`，**1008 个 blob，含 dangling/不可达**）：
@@ -792,4 +797,10 @@ SITL 与 CPU 密集测试" ⟹ **第①步已满足**。但 `git status` 实测
 `git diff f6c1b7f cff55ae -- …mpc_node.py` = **1 行 / 1 hunk**（`:130` 的 `T_max`→`f_max`）
 ⟹ tier-b README §4 那句"只差 1 行"**从断言变成可复现命令**。
 （⚠️ **`78f373d` 对 `mpc_node.py` 不是那份快照** —— `78f373d→cff55ae` 的 `mpc_node.py` 是 8 行/3 hunk，
-会多出 7 行假差异；**但它恰好是 `node_core.py` 的正确锚**，别一概否掉。这条已回信给 8b。）
+会多出 7 行假差异。它**是** `node_core.py` 的引入者，但那是**另一个对象上的巧合**，
+不是"谁给对了"—— 8b 自己也说那是**张冠李戴**，我先前写成"你的直觉没全错"是**替人拔高**，已收回。）
+
+☠️ **方法坑（8b 先栽、我确认没踩）：做"归档 sha ↔ 提交"比对，别用 `git rev-parse <rev>:<path>`** ——
+它返回的是**对象 id（SHA-1）**，拿去跟内容 sha256 比会**全部不命中**，从而错误地得出"这批内容都没了"。
+要用 `git cat-file -p <rev>:<path> | sha256sum`（本会话全程用的就是 `git show … | sha256sum` 与
+`hashlib.sha256(git show … 的 stdout)`，**没有用过 `rev-parse` 做内容比对** ⟹ 上面这张表不受影响）。
