@@ -42,6 +42,7 @@
 from __future__ import annotations
 
 import argparse
+import bisect
 import hashlib
 import json
 import math
@@ -682,8 +683,11 @@ def extract(obs) -> dict:
         "u3_tail": tr.get("u3_tail"),
         # —— 真值帧（**被控对象**的读数，只当背景：这台 SITL 的估计器自带 0.4 m 量级误差）
         "climb_gt": climb_gt,
-        # 末段 EKF 高度（**绝对**，含起机零点）—— 不进 `METRIC_KEYS`（不参与排序），
-        # 只用来算"两帧差多大"：与 `climb_gt`（真值爬升，地面均值为零）同口径。
+        # 末段 EKF 高度（**绝对**，含 EKF 起机零点）—— 不进 `METRIC_KEYS`（不参与排序）。
+        # ☠️ **它不是帧差、也不能与 `climb_gt` 相减**：`climb_gt` 是**真值相对抬升**
+        #   （地面为零点），两者 datum 不同 ⟹ 差里主要是起机零点（本轮 +0.65…+0.79 m）。
+        #   要量两帧的分歧请用 `climb_ekf − climb_gt`（**同口径**，都是相对抬升）。
+        #   （2026-09-29 自查抓到：这里原先写着"与 `climb_gt` 同口径"，与前半句自相矛盾。）
         "up_tail": tr.get("up_tail"),
         "p2p_gt": hov.get("p2p"),
         # —— 求解耗时（D6 那一列）
@@ -695,6 +699,155 @@ def extract(obs) -> dict:
         "frames": dut.get("frames"),
         "actual_hz": dut.get("actual_hz"),
     }
+
+
+# ------------------------------------------------- 真值离线重取（只读控制台归档，不占 SITL 窗口）
+#
+# ★ 为什么需要它：归档的 `obs["truth"]` 是**抽稀**过的一路（A 档 `TruthSampler` 每拍只留到几帧），
+#   而 A 档控制台**全文**里真值块密得多（本批实测 ~5.1 Hz / 末段 22 帧，vs obs 的 5–11 帧）。
+#   有全文就能**离线**答"某个真值读数的散度是采样太稀、还是真的散"，不必再占一次 SITL 窗口。
+#
+# ☠️ 它**替代不了实跑**，而且只能**证伪**：重取值与归档值**相等不认证干净**（一个坏窗口
+#   完全可能给出同一个值）。写成结论只能说"重取后差值 ≤ N m"，不能说"检查过了、没问题"。
+
+GT_TOPIC = "TOPIC: vehicle_local_position_groundtruth"
+
+#: **同一个字符类纪律**（`verify_offboard_smoke.field()` 2026-09-29 那次崩点）：**至少要有一位数字**。
+#: 控制台是**按块**渲染的，块边界可以落在数值中间 —— 旧写法（`-?[0-9.eE+-]+`）会把半截的 `-`
+#: 当成一个数 ⟹ `float('-')` 抛 ValueError ⟹ **整场作废**（加密档第一场就是这么死的）。
+_GT_NUM = r"-?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?"
+
+
+def parse_console_gt(text) -> list:
+    """控制台全文 → `[[t_s, x, y, z], …]`（按 px4 时间戳排序）。
+
+    **半截/非数值的那一整块丢掉**，不抛 —— 这是取数纪律不是宽容：丢一条只少一帧，
+    抛出去会让整场作废（2026-09-29 加密档第一场就是这么死的）。
+
+    ★ 取值一律**行锚定**（`[ \\t\\r]*$`）：`z: 1.0e` / `z: -0.0140-` / `z: -` 三样都判不合格、
+      整块丢掉。**这比 `verify_offboard_smoke.field()` 严一档** —— 那个只要求"至少一位数字"，
+      于是 `z: 1.0e` 会被**静默截短**成 `1.0`（§附.8 明记那条分支**没关掉**）。
+      这里没有那个分支，**但只关掉了"行尾带杂质"这一种**：
+      若上游渲染出来的是一条**看着完整、其实被截短**的行（`z: -0.0140` 而真值是 `-0.01408`），
+      本函数**看不出来**，也无法看出来。
+    """
+    out = []
+    for blk in (text or "").split(GT_TOPIC)[1:]:
+        ts = re.search(r"^\s*timestamp:\s*(\d+)", blk, re.M)
+        cols = [re.search(rf"^\s*{k}:\s*({_GT_NUM})[ \t\r]*$", blk, re.M) for k in ("x", "y", "z")]
+        if not ts or not all(cols):
+            continue
+        out.append([int(ts.group(1)) / 1e6] + [float(c.group(1)) for c in cols])
+    out.sort(key=lambda r: r[0])
+    return out
+
+
+def match_flight(obs_zs, snaps, tol=0.002) -> tuple:
+    """`obs["truth"]` 的 z 序列 → `(快照名, 命中率, 快照序列)`，取命中率最高的那个。"""
+    best = (0.0, None)
+    for name, gt in snaps.items():
+        if not gt:
+            continue
+        pool = sorted(r[3] for r in gt)
+        hit = 0
+        for z in obs_zs:
+            i = bisect.bisect_left(pool, z)
+            for j in (i, i - 1):
+                if 0 <= j < len(pool) and abs(pool[j] - z) <= tol:
+                    hit += 1
+                    break
+        rate = hit / len(obs_zs) if obs_zs else 0.0
+        if rate > best[0]:
+            best = (rate, name)
+    return (best[1], best[0], snaps.get(best[1]))
+
+
+def slice_between(gt, z_first, z_last, tol=0.002) -> list:
+    """把控制台序列切成与 obs **同跨度**（首个/末个 z 各配一次）⟹ 窗口定义一致，可比。"""
+    i0 = next((i for i, r in enumerate(gt) if abs(r[3] - z_first) <= tol), None)
+    i1 = next((i for i in range(len(gt) - 1, -1, -1) if abs(gt[i][3] - z_last) <= tol), None)
+    if i0 is None or i1 is None or i1 < i0:
+        return []
+    return gt[i0:i1 + 1]
+
+
+def truth_lift(rows, hover_s=3.0) -> dict:
+    """`[[t,x,y,z], …]` → 地面/悬停段的 n 与均值、抬升 —— **用 A 档自己的**窗口函数，不另写一套。"""
+    ta = _ta()
+    seg = ta.segments([[r[0], r[1], r[2], r[3], 0.0, 0.0, 0.0] for r in rows], hover_s=hover_s)
+    hov, gnd = ta.z_stats(seg["hover"]), ta.z_stats(seg["ground"])
+    lift = (None if hov.get("mean") is None or gnd.get("mean") is None
+            else gnd["mean"] - hov["mean"])
+    return {"gnd_n": gnd.get("n"), "gnd_mean": gnd.get("mean"),
+            "hov_n": hov.get("n"), "hov_mean": hov.get("mean"), "lift": lift}
+
+
+def load_console_snaps(console_dir) -> dict:
+    """`<dir>/*.log` → `{文件名: [[t,x,y,z], …]}`（**只读**；空文件也留着，让调用方能报出来）。"""
+    return {p.name: parse_console_gt(p.read_text(errors="replace"))
+            for p in sorted(Path(console_dir).glob("*.log"))}
+
+
+def reread_truth(outdir, snaps) -> list:
+    """逐场：`obs["truth"]`（抽稀）vs 控制台全文重取（全速）的同一读数对照。
+
+    变体名从文件名 `obs-<variant>-<rep>.json` 取（`obs` 里没有变体字段）。
+    """
+    rows = []
+    for f in sorted(Path(outdir).glob("obs-*.json")):
+        obs = json.loads(f.read_text())
+        truth = [r for r in (obs.get("truth") or []) if all(v is not None for v in r)]
+        if not truth:
+            continue
+        m = re.match(r"obs-(.+)-(\d+)\.json$", f.name)
+        slim = [[r[0], r[1], r[2], r[3]] for r in truth]
+        name, hit, gt = match_flight([r[3] for r in slim], snaps)
+        sub = slice_between(gt or [], slim[0][3], slim[-1][3])
+        hover_s = obs.get("hover_s", 3.0)
+        rows.append({
+            "file": f.name, "variant": (m.group(1) if m else f.stem),
+            "rep": (int(m.group(2)) if m else 0),
+            "snap": name, "hit": hit, "snap_n": 0 if not gt else len(gt),
+            "obs_hz": (len(slim) / (slim[-1][0] - slim[0][0])) if slim[-1][0] > slim[0][0] else None,
+            "obs": truth_lift(slim, hover_s),
+            "full": truth_lift(sub, hover_s) if sub else None,
+            "sub_n": len(sub),
+            "full_hz": ((len(sub) - 1) / (sub[-1][0] - sub[0][0])
+                        if len(sub) > 1 and sub[-1][0] > sub[0][0] else None),
+        })
+    return rows
+
+
+def render_reread(rows) -> str:
+    """上面那批 → markdown 表 + 极值 + 同参数重复对。**不判通过与否**（它只报读数）。"""
+    out = ["| 场次 | 快照 | 命中率 | obs：Hz / 末段 n / 抬升 | 全速：Hz / 末段 n / 抬升 | Δ抬升 |",
+           "|---|---|---|---|---|---|"]
+    deltas = []
+    for r in rows:
+        o, g = r["obs"], r["full"]
+        def cell(d):
+            if d is None or d["lift"] is None:
+                return f"{'—' if d is None else round(d['hov_n'] or 0)} / **算不出**"
+            return f"{_f(d['hov_n'], '.0f')} / {_f(d['lift'])}"
+        hz = "—" if not r["obs_hz"] else f"{r['obs_hz']:.2f}"
+        fhz = "—" if not r["full_hz"] else f"{r['full_hz']:.2f}"
+        d = (None if (o["lift"] is None or (g or {}).get("lift") is None)
+             else g["lift"] - o["lift"])
+        if d is not None:
+            deltas.append(abs(d))
+        out.append(f"| `{r['variant']}` rep{r['rep']} | {r['snap']} | {r['hit']:.0%} | "
+                   f"{hz} / {cell(o)} | {fhz} / {cell(g)} | {'—' if d is None else _f(d)} |")
+    if deltas:
+        out.append(f"\n**重取与归档的最大差：{max(deltas):.3f} m**（{len(deltas)} 场两版都算得出来）")
+    pairs = {}
+    for r in rows:
+        pairs.setdefault(r["variant"], []).append(r)
+    for v, rs in pairs.items():
+        full = [r["full"]["hov_mean"] for r in rs if r["full"] and r["full"]["hov_mean"] is not None]
+        if len(full) >= 2:
+            out.append(f"- `{v}` 同参数 {len(full)} 场：全速悬停平台 "
+                       f"{_f(min(full))} … {_f(max(full))}（**差 {max(full) - min(full):.3f} m**）")
+    return "\n".join(out)
 
 
 # ---------------------------------------------------------------- 汇总（纯函数）
@@ -928,16 +1081,24 @@ def rank_degradation(s: dict) -> dict:
     frames = {rank_frame(r.get("key")) for r in rows if r.get("x") is not None}
     frames.discard(None)
     if len(frames) > 1 and note is None:
-        gaps = [r["up_tail"] - r["climb_gt"]
+        # ☠️ 2026-09-29 自查抓到的**第三类缺陷**：这里原本印 `up_tail − climb_gt`，并称之为
+        #   "两帧差"。**它不是**：`up_tail` 是 **EKF 末段绝对高度**（含 EKF 起机零点，
+        #   本轮 +0.65…+0.79 m），`climb_gt` 是**真值相对抬升**（地面为零点）——
+        #   减出来那 0.51…0.96 m 主要是**起机零点**，不是两帧的分歧，而且因此**恒同号**。
+        #   同口径的差是 `climb_ekf − climb_gt`（都是"相对抬升、各自地面为零点"），
+        #   本轮实测 −0.29…+0.39 m，**并且会换号**。
+        #   ⟹ 注释里那句"与 `climb_gt` 同口径"**自相矛盾**（同句前半句说它是绝对量），已改。
+        #   教训与本文件 §2.7.1"身份探针在说假话"同类：**一个量看着像帧差，不等于它是帧差**。
+        gaps = [r["climb_ekf"] - r["climb_gt"]
                 for vr in s["by_variant"].values() for r in vr
-                if isinstance(r.get("up_tail"), (int, float))
+                if isinstance(r.get("climb_ekf"), (int, float))
                 and isinstance(r.get("climb_gt"), (int, float))]
         if len(gaps) >= 2:
             # ⚠️ "跨零"也**必须现判**：范围全是同一号的时候还说"跨零"就是编的
             #    （这条是被本文件自己的单测抓出来的，不是想出来的）。
             crosses = min(gaps) < 0 < max(gaps)
-            gap_txt = (f"（本批实测 `up_tail − climb_gt` 在 {min(gaps):+.2f} … {max(gaps):+.2f} m "
-                       f"之间，{len(gaps)} 场两帧都取得到"
+            gap_txt = (f"（本批实测 **同口径**的 `climb_ekf − climb_gt` 在 "
+                       f"{min(gaps):+.2f} … {max(gaps):+.2f} m 之间，{len(gaps)} 场两帧都取得到"
                        + ("，且**跨零**" if crosses else "，**同号**（没跨零）") + "）")
         else:
             gap_txt = "（本批取不到两帧都有的场次 ⟹ 这个差**没量**，别引任何数）"
@@ -1285,6 +1446,10 @@ def main(argv=None) -> int:
                     help=f"轨迹降到多少 Hz 入库（默认 {TRACE_HZ}）")
     ap.add_argument("--recover-sweep", action="store_true",
                     help="给缺 `obs[\"sweep\"]` 的场次从 A 档 run log 恢复读回（只补不覆盖）")
+    ap.add_argument("--reread-truth", default=None, metavar="DIR",
+                    help="**离线**把 `--outdir` 那批的 A 档真值从控制台归档（DIR 里的 *.log）"
+                         "按全速重取，与 `obs[\"truth\"]`（抽稀）逐场对照；只读、不飞、不改盘。"
+                         "用来判'真值读数的散度是采样太稀还是真散'")
     ap.add_argument("--fix-controller-code", action="store_true",
                     help="重探控制器代码身份并修正 obs 里的旧记录（原值留在 "
                          "`controller_code_prev`；判据见 `judge_controller_record`）")
@@ -1319,6 +1484,21 @@ def main(argv=None) -> int:
                                 hz=args.trace_hz, dry_run=args.dry_run):
             mark = "挂" if row["changed"] else "留"
             print(f"[trace] {mark} {row['file']}：{row['why']}")
+        return 0
+
+    if args.reread_truth is not None:
+        snaps = load_console_snaps(args.reread_truth)
+        empty = [n for n, g in snaps.items() if not g]
+        if not snaps:
+            raise SystemExit(f"--reread-truth：{args.reread_truth} 里没有 *.log")
+        rows = reread_truth(Path(args.outdir), snaps)
+        if not rows:
+            raise SystemExit(f"--reread-truth：{args.outdir} 里没有带 truth 的 obs-*.json")
+        missed = [r for r in rows if r["hit"] < 1.0]
+        print(render_reread(rows))
+        print(f"\n[重读] {len(snaps)} 个快照（{len(empty)} 个空的没取到块）、{len(rows)} 场对照；"
+              f"命中率 100 % 的 {len(rows) - len(missed)} 场"
+              + (f"、**低于 100 % 的 {len(missed)} 场**（配错快照 ⟹ 该行读数不可用）" if missed else ""))
         return 0
 
     outdir = Path(args.outdir)

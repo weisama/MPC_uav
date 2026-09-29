@@ -894,18 +894,20 @@ def test_跨帧差的数是现算的_不是写死的():
     它必须**跟着数据变** —— 本测试就是钉这一条：写死的话，下面第二次会挂。
     """
     truth = truth_rows(climb_m=1.4)
-    def mixed(extra_up_tail):
+    def mixed(ekf_climb):
+        # ⚠️ 真值帧那一场的 `climb_gt` 取 **1.20**（不是更远的 0.50）：同口径的差是
+        #    `climb_ekf − climb_gt`，取 0.50 会让这一场变成 **+0.51 ⟹ 整批跨零**，
+        #    于是"同号"那一句根本判不出来（这是 2026-09-29 换口径时被本条测试抓到的）。
         return [run("z0", 1, climb_ekf=1.0, truth=truth),
                 run("z0", 2, climb_ekf=1.02, truth=truth_rows(climb_m=1.42)),
-                run("z0-mass+30", 1, climb_ekf=0.40, truth=truth,
-                    track_extra={"up_tail": extra_up_tail}),
-                run("z0-inertia+30", 1, climb_ekf=1.01, truth=truth_rows(climb_m=0.50))]
+                run("z0-mass+30", 1, climb_ekf=ekf_climb, truth=truth),
+                run("z0-inertia+30", 1, climb_ekf=1.01, truth=truth_rows(climb_m=1.20))]
 
     s1 = ms.summarise(mixed(-0.40))
     note1 = ms.rank_degradation(s1)["note"]
-    gaps = [r["up_tail"] - r["climb_gt"]
+    gaps = [r["climb_ekf"] - r["climb_gt"]
             for vr in s1["by_variant"].values() for r in vr
-            if isinstance(r.get("up_tail"), (int, float))
+            if isinstance(r.get("climb_ekf"), (int, float))
             and isinstance(r.get("climb_gt"), (int, float))]
     assert len(gaps) >= 2
     assert f"{min(gaps):+.2f}" in note1 and f"{max(gaps):+.2f}" in note1
@@ -923,6 +925,30 @@ def test_跨帧差的数是现算的_不是写死的():
     assert "且**跨零**" not in note2 and "**同号**（没跨零）" in note2
     note3 = ms.rank_degradation(ms.summarise(mixed(+3.00)))["note"]
     assert "且**跨零**" in note3 and "同号" not in note3  # +3.00 − 1.40 = +1.60 > 0
+
+
+def test_跨帧差必须是同口径的_不许拿绝对高度去减相对抬升():
+    """★ 2026-09-29 自查抓到的**第三类缺陷**（与本文件 §2.7.1"身份探针在说假话"同类）。
+
+    原来这里印 `up_tail − climb_gt` 并称之为"两帧差"。**它不是**：
+    `up_tail` 是 **EKF 末段绝对高度**（含 EKF 起机零点，本轮 +0.65…+0.79 m），
+    `climb_gt` 是**真值相对抬升**（地面为零点）⟹ 差里主要是**起机零点**，而且因此**恒同号**。
+    同口径的差是 `climb_ekf − climb_gt` —— 本轮实测 −0.29…+0.39 m，**会换号**。
+
+    ★ 为什么这条要写成测试：错的那一版**看起来完全正常**（数字有量纲、有范围、还"同号"，
+    读起来像"两帧一致地同向偏"），而且它被文档引过。**判据全绿也可能是机理反了。**
+    """
+    truth = truth_rows(climb_m=1.4)
+    runs = [run("z0", 1, climb_ekf=1.0, truth=truth),
+            run("z0", 2, climb_ekf=1.02, truth=truth_rows(climb_m=1.42)),
+            run("z0-mass+30", 1, climb_ekf=0.40, truth=truth,
+                track_extra={"up_tail": 9.99}),      # ← 把 EKF 绝对高度推到极大
+            run("z0-inertia+30", 1, climb_ekf=1.01, truth=truth_rows(climb_m=0.50))]
+    note = ms.rank_degradation(ms.summarise(runs))["note"]
+    assert "climb_ekf − climb_gt" in note
+    assert "up_tail − climb_gt" not in note
+    # ★ 判别力守卫：`up_tail` 挪了 9.99 m，同口径的那个差**一点没动** ⟹ 说明它没被算进去。
+    assert "-1.00" in note and "9.99" not in note
 
 
 def test_帧的判断_按后缀而不是按猜():
@@ -1012,3 +1038,99 @@ def test_轨迹要记是谁挂的(tmp_path):
     runs[1]["obs"]["trace"] = {"hz": 5.0, "rows": [], "attached_by": "attach_trace"}
     table = ms.render_table(ms.summarise(runs))
     assert "run_variant 1 场" in table and "attach_trace 1 场" in table
+
+
+# ------------------------------------------- 真值离线重取（`--reread-truth`）：取数与配对
+#
+# ★ 为什么这几条要单测：§附.9 的结论是"真值读数的散度**不是**采样稀疏造成的"，
+#   而这句话全靠"把控制台全文按同一个窗口定义重算一遍"站住。取数错一位、配对错一场，
+#   它就反了 —— 而反了以后**报告照样印得很像样**（每行都有数）。
+#   ★ 这一节里两条带"★ 变异守卫"的，是**故意**用来在写错时变红的（见各条注释）。
+
+
+def _gt_block(t_s, x, y, z, idx=1):
+    """造一个控制台真值块（`timestamp` 是 px4 微秒）。"""
+    return (f"TOPIC: vehicle_local_position_groundtruth instance 0 #{idx}\n"
+            f"    timestamp: {int(t_s * 1e6)} ({t_s:.6f} seconds ago)\n"
+            f"    x: {x}\n    y: {y}\n    z: {z}\n    vx: 0.0\n    vy: 0.0\n    vz: 0.0\n")
+
+
+def test_控制台真值块取成_时间与_xyz_且按时间排序():
+    ms = _load()
+    text = _gt_block(2.0, "-0.1", "0.2", "0.0001", 1) + _gt_block(1.0, "-0.2", "0.3", "-1.0", 2)
+    assert ms.parse_console_gt(text) == [[1.0, -0.2, 0.3, -1.0], [2.0, -0.1, 0.2, 0.0001]]
+
+
+@pytest.mark.parametrize("bad", ["    z: -", "    z: e", "    z: 1.0e", "    z: -0.0140-"])
+def test_半截的_z_整块丢掉_绝不抛(bad):
+    """★ 钉 §附.8 那次崩点：半截窗口里的 `-` 不能当成一个数（旧字符类会 `float('-')` 抛出 ⟹ 整场作废）。"""
+    ms = _load()
+    good = _gt_block(1.0, "-0.1", "0.2", "0.0001", 1)
+    bad_blk = (f"TOPIC: vehicle_local_position_groundtruth instance 0 #2\n"
+               f"    timestamp: 2000000 (0.100000 seconds ago)\n"
+               f"    x: -0.2\n    y: 0.3\n{bad}\n    vx: 0.0\n")
+    rows = ms.parse_console_gt(good + bad_blk)
+    assert len(rows) == 1 and rows[0][3] == 0.0001
+
+
+def test_缺_timestamp_或缺_xyz_的块都丢掉_而不是给半条():
+    ms = _load()
+    no_ts = "TOPIC: vehicle_local_position_groundtruth instance 0 #3\n    x: -0.1\n    y: 0.2\n    z: -1.0\n"
+    assert ms.parse_console_gt(no_ts) == []
+    assert ms.parse_console_gt(_gt_block(1.0, "-0.1", "0.2", "-1.0")) == [[1.0, -0.1, 0.2, -1.0]]
+    assert ms.parse_console_gt("") == [] and ms.parse_console_gt(None) == []
+
+
+def test_配场次取命中率最高的快照_切跨度只看首末():
+    ms = _load()
+    a = [[1.0, 0, 0, -1.00], [2.0, 0, 0, -1.01], [3.0, 0, 0, -0.50]]
+    b = [[1.0, 0, 0, -0.30], [2.0, 0, 0, -0.31]]
+    name, hit, gt = ms.match_flight([-0.30, -0.31], {"a.log": a, "b.log": b})
+    assert (name, hit, gt) == ("b.log", 1.0, b)
+    assert ms.slice_between(a, -1.00, -0.50) == a        # 首末都在 ⟹ 整段
+    assert ms.slice_between(a, -1.01, -0.50) == a[1:]    # 从头切在中间
+    assert ms.slice_between(a, -9.0, -0.50) == []        # 配不上 ⟹ 空，**不抛**
+    assert ms.slice_between(a, -0.50, -1.00) == []       # **反序** ⟹ 空（别把上下界搞反了还给一段）
+
+
+def test_变异守卫_配场次必须比命中率_不能谁先遍历到就返回谁():
+    ms = _load()
+    right = [[1.0, 0, 0, -1.0], [2.0, 0, 0, -1.1]]
+    wrong = [[1.0, 0, 0, +0.5], [2.0, 0, 0, +0.6]]
+    snaps = {"wrong.log": wrong, "right.log": right}     # **先遍历到的是错的那个**
+    assert ms.match_flight([-1.0, -1.1], snaps)[0] == "right.log"
+
+
+def _flight(t_end=6.0, post_landing=False):
+    """人造一场：地面上 0–1.0 s（z=0），1.2 s 起飞，3.0 s 起稳定在 −1.0 m 直到 `t_end`。
+
+    用它是因为 **`segments()` 的窗口定义是已知的**（读出来的，不是猜的）：
+    起飞 = 首帧 `z < −0.15`；`ground` = 起飞前 1 s；`hover` = 末 `hover_s` 秒。
+    """
+    rows = [[t / 5.0, 0.0, 0.0, 0.0] for t in range(0, 6)]          # 0.0–1.0 s，地面
+    rows.append([1.2, 0.0, 0.0, -0.20])                            # 首帧越过 −0.15 ⟹ 起飞
+    rows += [[1.4 + t / 5.0, 0.0, 0.0, -1.0] for t in range(0, 24)]  # 1.4–6.0 s，稳定 −1.0
+    if post_landing:
+        rows += [[6.2 + t / 5.0, 0.0, 0.0, 0.0] for t in range(0, 10)]
+    return rows
+
+
+def test_抬升用地面段减悬停段_且窗口就是起飞前_1_s_与末_3_s():
+    ms = _load()
+    d = ms.truth_lift(_flight(), hover_s=3.0)
+    assert d["gnd_n"] == 5 and d["gnd_mean"] == pytest.approx(0.0)
+    assert d["hov_n"] == 16 and d["hov_mean"] == pytest.approx(-1.0)
+    assert d["lift"] == pytest.approx(1.0)
+
+
+def test_变异守卫_切跨度那一步不许省_否则着陆段会把悬停窗口顶掉():
+    """★ 这一条是 §附.9 那条结论的**命门**：控制台快照比 obs 长（含着陆后），
+    不切跨度 ⟹ `hover` 窗口落到**地面上** ⟹ 抬升被读成 ≈0 ⟹ "重取后散度照样在"这句话就假了。"""
+    ms = _load()
+    full = _flight(post_landing=True)
+    whole = ms.truth_lift(full, hover_s=3.0)
+    cut = ms.truth_lift(ms.slice_between(full, -0.0, -1.0), hover_s=3.0)
+    # 不切：末段 3 s = [5.0, 8.0] 里有 6 帧还在 −1.0、10 帧已落地 ⟹ 抬升被稀释成 0.375
+    assert whole["lift"] == pytest.approx(0.375, abs=0.02)
+    assert cut["lift"] == pytest.approx(1.0)               # 切了 ⟹ 读回真实的 1 m
+    assert cut["hov_mean"] == pytest.approx(-1.0)

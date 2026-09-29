@@ -1,0 +1,171 @@
+{
+ "n_runs": 2,
+ "baseline": {
+  "n": 0,
+  "present": false,
+  "warn": "**这次没有跑基准（`z0`）** ⟹ 整张表没有对照，「±30 % 是否有影响」这个问题**答不了**",
+  "climb_ekf": null,
+  "e_z_ekf": null,
+  "p2p_ekf": null,
+  "drift_ekf": null,
+  "yaw_span_ekf": null,
+  "solve_steady_max": null,
+  "solve_p50": null,
+  "climb_gt": null,
+  "p2p_gt": null
+ },
+ "by_variant": {
+  "z0-mass+30": [
+   {
+    "passed": false,
+    "failed_checks": [
+     "⑤ 推力标定：PX4 解出的电机均值 ≈ m·g/(4·T_max)（★ 只在末段配平时才算数）"
+    ],
+    "harness_dead": false,
+    "diverged": false,
+    "diverge_why": null,
+    "attribution": "本场没有失败项：EKF 帧内抬升 0.987 m、末段峰峰值 0.069 m ⟹ 控制器在**它能看见的那一帧**里把飞机稳住了；归因表不适用；★ 被控对象那一侧的读数（不参与通过与否）：末段 EKF-vs-真值 高度差 -0.740 m、真值抬升 1.259 m —— 这台 SITL 的估计器自带 0.4 m 量级误差（气压计/GPS 仿真喂的是 EKF 自己的输出）",
+    "climb_ekf": 0.9865387696013288,
+    "e_z_ekf": -0.013461230398671198,
+    "p2p_ekf": 0.06858600000000004,
+    "drift_ekf": 0.1290532058377474,
+    "referr_tail": -0.02540700000000007,
+    "yaw_span_ekf": -0.04879485279434048,
+    "u3_tail": -7.626e-05,
+    "climb_gt": 1.259231,
+    "up_tail": 1.7743521196013288,
+    "p2p_gt": 0.06547999999999998,
+    "solve_p50": 2.961,
+    "solve_p99": 3.355,
+    "solve_max": 16.503,
+    "solve_steady_max": 4.743,
+    "ladder_steady": "100 Hz（最坏 ≤10 ms，余量够）",
+    "frames": 2769,
+    "actual_hz": 99.74,
+    "variant": "z0-mass+30",
+    "rep": 1,
+    "knob": "mass",
+    "overlay_ok": true,
+    "status": "退化",
+    "delta": {
+     "climb_ekf": null,
+     "e_z_ekf": null,
+     "p2p_ekf": null,
+     "drift_ekf": null,
+     "yaw_span_ekf": null,
+     "solve_steady_max": null,
+     "solve_p50": null,
+     "climb_gt": null,
+     "p2p_gt": null
+    }
+   },
+   {
+    "passed": false,
+    "failed_checks": [
+     "⑤ 推力标定：PX4 解出的电机均值 ≈ m·g/(4·T_max)（★ 只在末段配平时才算数）"
+    ],
+    "harness_dead": false,
+    "diverged": false,
+    "diverge_why": null,
+    "attribution": "本场没有失败项：EKF 帧内抬升 0.964 m、末段峰峰值 0.076 m ⟹ 控制器在**它能看见的那一帧**里把飞机稳住了；归因表不适用；★ 被控对象那一侧的读数（不参与通过与否）：末段 EKF-vs-真值 高度差 -1.060 m、真值抬升 0.943 m —— 这台 SITL 的估计器自带 0.4 m 量级误差（气压计/GPS 仿真喂的是 EKF 自己的输出）",
+    "climb_ekf": 0.9639828933333332,
+    "e_z_ekf": -0.0360171066666668,
+    "p2p_ekf": 0.076376,
+    "drift_ekf": 0.2907172882819321,
+    "referr_tail": -0.007724999999999982,
+    "yaw_span_ekf": -0.05326319481013986,
+    "u3_tail": -8.704999999999999e-05,
+    "climb_gt": 0.9427760000000001,
+    "up_tail": 1.6854250933333332,
+    "p2p_gt": 0.058089999999999975,
+    "solve_p50": 2.877,
+    "solve_p99": 3.235,
+    "solve_max": 19.166,
+    "solve_steady_max": 3.448,
+    "ladder_steady": "100 Hz（最坏 ≤10 ms，余量够）",
+    "frames": 2769,
+    "actual_hz": 99.78,
+    "variant": "z0-mass+30",
+    "rep": 2,
+    "knob": "mass",
+    "overlay_ok": true,
+    "status": "退化",
+    "delta": {
+     "climb_ekf": null,
+     "e_z_ekf": null,
+     "p2p_ekf": null,
+     "drift_ekf": null,
+     "yaw_span_ekf": null,
+     "solve_steady_max": null,
+     "solve_p50": null,
+     "climb_gt": null,
+     "p2p_gt": null
+    }
+   }
+  ]
+ },
+ "counts": {
+  "发散": 0,
+  "退化": 2,
+  "稳定": 0
+ },
+ "variants": [
+  "z0-mass+30"
+ ],
+ "controller": {
+  "n_sigs": 1,
+  "sigs": {
+   "6f104eef2e94": [
+    "z0-mass+30-1",
+    "z0-mass+30-2"
+   ]
+  },
+  "packages": {
+   "6f104eef2e94": [
+    "/home/chen/ros_ws/install/nmpc/local/lib/python3.10/dist-packages/nmpc"
+   ]
+  },
+  "warn": null
+ },
+ "harness": {
+  "n_sigs": 1,
+  "sigs": {
+   "604d7f8bdac5b9bf": [
+    "z0-mass+30-1",
+    "z0-mass+30-2"
+   ]
+  },
+  "warn": null
+ },
+ "trace": {
+  "n": 2,
+  "n_runs": 2,
+  "by": {
+   "run_variant": 2
+  },
+  "hz": 5.0
+ },
+ "rank": {
+  "rows": [
+   {
+    "knob": "mass",
+    "x": null,
+    "flag": "不可分辨（基准散度带为 0 或只有 1 场）",
+    "variant": "z0-mass+30",
+    "rep": null,
+    "key": null,
+    "value": null,
+    "base_median": null
+   }
+  ],
+  "resolvable": false,
+  "note": "**这次没有跑基准（`z0`）** ⟹ 「谁先退化」**答不了**：没有散度带就没有尺子，只能看每档的绝对读数",
+  "frames": []
+ },
+ "vertical_gain": {
+  "k": null,
+  "rows": [],
+  "resolvable": false,
+  "note": "没有基准（`z0`）读数 ⟹ **反推不出刚度**"
+ }
+}
