@@ -55,17 +55,23 @@
     source install/setup.bash
 
     # 判据①（失配被控对象）
-    python3 tools/px4-sitl/verify_tier_b_seam3.py --tag F1 --mismatch mass+30 \\
-        --model /tmp/mocap-model-3.json --json /tmp/tier-b/F1.json
+    python3 tools/px4-sitl/verify_tier_b_seam3.py --tag F1 --mismatch mass+30 --json /tmp/tier-b/F1.json
     # 判据③（+50 ms）
     python3 tools/px4-sitl/verify_tier_b_seam3.py --tag F2 --mismatch mass+30 --extra-delay-ms 50 \\
-        --model /tmp/mocap-model-3.json --json /tmp/tier-b/F2.json
+        --json /tmp/tier-b/F2.json
     # 判据④（注入求解失败）
     python3 tools/px4-sitl/verify_tier_b_seam3.py --tag F3 --mismatch mass+30 \\
-        --inject-solve-fail-after-frames 700 --model /tmp/mocap-model-3.json --json /tmp/tier-b/F3.json
+        --inject-solve-fail-after-frames 700 --json /tmp/tier-b/F3.json
 
     # 只重判（不重跑 SITL）
     python3 tools/px4-sitl/verify_tier_b_seam3.py --replay /tmp/tier-b/F1.json
+
+☠️ **`--model` 可以不传**（默认 = 本仓库归档里那份 `evidence/tier-b/mocap-model-3.json`）。
+   五场当时用的是 `/tmp/mocap-model-3.json` —— 而 **`/tmp` 是 tmpfs，机器 2026-09-29 10:40
+   重启后那份就没了**（原始逐帧同样只在 `/tmp`）。模型现在**以归档里这份为准**，
+   内容与当时那份一致：归档里的 `F*-replay.json` 记的 `sigma_m`（0.164/0.290/0.105 mm，
+   逐位相同）与 `base_delay_ms = 5.34` 都是夹具**直接读模型**算出来并落盘的
+   （`mocap_replay.py:188` ⟹ `:325`）⟹ 可逐位核对。
 """
 
 from __future__ import annotations
@@ -1144,8 +1150,10 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0],
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--tag", default="B", help="这一场的名字（进文件名与报告标题）")
-    ap.add_argument("--model", default="/tmp/mocap-model-3.json",
-                    help="`mocap_model.py dump` 出来的模型 JSON（回放夹具的唯一输入）")
+    ap.add_argument("--model", default=str(HERE / "evidence" / "tier-b" / "mocap-model-3.json"),
+                    help="`mocap_model.py dump` 出来的模型 JSON（回放夹具的唯一输入）。"
+                         "默认 = 本仓库归档里那份（☠️ `/tmp` 是 tmpfs，2026-09-29 10:40 重启后 "
+                         "`/tmp/mocap-model-3.json` 已不存在，见模块 docstring）")
     ap.add_argument("--mismatch", default="none", choices=sorted(MISMATCHES),
                     help="被控对象的失配变体（`mass+30` = 票面要的那一档；`none` = 归因对照）")
     ap.add_argument("--hover-thrust", type=float, default=0.6235,

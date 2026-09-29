@@ -242,7 +242,7 @@ F0/F1 只差被控对象，F3/F4 只差被控对象 —— 没有这两对对照
 |---|---|---|
 | 1 | `run_matrix.sh:49` 设 `PYTHONPATH=/home/chen/ros_ws/src/nmpc` ⟹ 解析到**活的 `src/`**，不是 `install/` | [`run_matrix.sh:49`](../../../tools/px4-sitl/evidence/tier-b/run_matrix.sh#L49) |
 | 2 | 节点用 `subprocess.Popen(cmd, …)` **不传 `env=`** ⟹ 继承上面那个 `PYTHONPATH` | [`verify_offboard_smoke.py:239`](../../../tools/px4-sitl/verify_offboard_smoke.py#L239) |
-| 3 | 五场落盘 **09:50:48–09:53:17**，全在 `src/nmpc` 最后一次改动（`cff55ae` **09:40:49**）**之后**；此后 `src/nmpc` 无改动、`git status src/` 干净 | `/tmp/tier-b/F0..F4.json` 的 mtime；`git log -1 -- src/nmpc/nmpc/` |
+| 3 | 五场落盘 **09:50:48–09:53:17**，全在 `src/nmpc` 最后一次改动（`cff55ae` **09:40:49**）**之后**；此后 `src/nmpc` 无改动、`git status src/` 干净 | `/tmp/tier-b/F0..F4.json` 的 mtime（☠️ 该路径 2026-09-29 10:40 重启后消失，见下）；`git log -1 -- src/nmpc/nmpc/` |
 | 4 | **按真实启动顺序复现 import 解析**：脚本目录 → [`mpc_node.py:150`](../../../src/nmpc/nmpc/mpc_node.py#L150) 的 `sys.path.insert(0, parents[1])` → `PYTHONPATH` ⟹ 本票环境解析到 **`src/nmpc/nmpc`**；把 `src/nmpc` 从 `PYTHONPATH` 里去掉则解析到 `install/…/dist-packages/nmpc` | 本票当场跑的探针（两种环境各一次） |
 
 ★ 第 4 条顺手排掉一个**很容易误判**的细节：入口脚本自己那句
@@ -288,3 +288,18 @@ ticket 10 的第五轮复核整改）。已把 `controller_code` 块（含该 co
 `f_max` 解耦（`f6c1b7f`）修的就是这个，代码里留了第一手症状
 （[`node_core.py`](../../../src/nmpc/nmpc/node_core.py) 那段 ⚠️）：**"顶到电池极限"这一档永远不报 = 假绿**。
 ⟹ 本票发现 #3 从"只登记"升级为"**已由 `f_max` 解耦修掉，且解释了解耦为什么是必须的**"。
+
+#### 追加：`/tmp` 那批一手产物已经没了（2026-09-29 10:40 重启）
+
+12 号票会话 11:33 通报：机器 **10:40** 重启过，而 **`/tmp` 是 tmpfs**。本票当场核实
+（`uptime -s` = `10:40:36`；`ls` 两处皆 no such file）：
+
+| 原路径 | 现状 | 影响 |
+|---|---|---|
+| `/tmp/tier-b/F*.jsonl`（逐帧，48 MB） | **没了** | ⚠️ 归档 README 第 1 条（"拿 `-summary.json` 单独重跑 `evaluate_b` 会少掉若干行"）的前提**当初就成立**（逐帧数组本来就没入库），现在**连 `/tmp` 那份也没了 ⟹ 再也补不回来**；`checks` 里固化下来的判定行是唯一的一份 |
+| `/tmp/tier-b/F*-summary.json` 等 | 没了（**仓库里有**） | 无 —— 五个判定表 + 控制台 + 回放统计早已入库 |
+| `/tmp/mocap-model-3.json`（回放夹具的唯一输入） | **没了**；归档里有同一份 | 无，但**默认路径已修**：验证器与 `run_matrix.sh` 的 `--model` 默认值改指 [`evidence/tier-b/mocap-model-3.json`](../../../tools/px4-sitl/evidence/tier-b/mocap-model-3.json)。**不是换了实验条件**：夹具把模型里的 `noise.sigma_m` 与 `lag.p50_ms` 原样写进 `F*-replay.json`，逐位对得上 |
+| 上表第 3 条那次 mtime 观测 | 路径没了，**读数有效**（当时是一手看的，且与 `git log` 那条互证） | 无 |
+
+⟹ **教训（写给下一位）**：`/tmp` 产物一律**当成会话级临时物**；要能复核的数字，
+**当场就落进仓库**（本票的 `evidence/tier-b/` 就是干这个的），别指望"回头再拷"。

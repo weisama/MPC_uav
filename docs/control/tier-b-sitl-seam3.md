@@ -141,9 +141,16 @@ diff   src/modules/uxrce_dds_client/dds_topics.yaml | 4 ++++     ← 全部改�
 ### 3.3 模型的来源与读数（一手，来自真实 Phase 1 包）
 
 ```bash
-python3 tools/px4-sitl/mocap_model.py dump bag/3_traj1_hover --noise-bag bag/1_static
-# ⟹ /tmp/mocap-model-3.json（134 KiB，本票所有场次都用它）
+python3 tools/px4-sitl/mocap_model.py dump bag/3_traj1_hover --noise-bag bag/1_static \
+    --json tools/px4-sitl/evidence/tier-b/mocap-model-3.json
+# ⟹ 134 KiB，本票所有场次都用它（现在**以归档里这份为准**）
 ```
+
+☠️ 当时 dump 到的是 `/tmp/mocap-model-3.json` —— **`/tmp` 是 tmpfs，机器 2026-09-29 10:40
+重启后那份没了**。归档里这份内容与当时一致（`F*-replay.json` 的 `sigma_m` 与
+`base_delay_ms` 都是夹具直接读模型算出来落盘的，逐位对得上，见
+[`verify_tier_b_seam3.py`](../../tools/px4-sitl/verify_tier_b_seam3.py) 的模块 docstring）
+⟹ 验证器与 `run_matrix.sh` 的 `--model` 默认值已指向它。
 
 | 量 | 读数 | 说明 |
 |---|---|---|

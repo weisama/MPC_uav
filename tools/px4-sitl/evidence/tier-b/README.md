@@ -1,6 +1,6 @@
 # B 档五场矩阵的归档证据（ticket 11）
 
-这一份是 [`docs/control/tier-b-sitl-seam3.md`](../../../docs/control/tier-b-sitl-seam3.md)
+这一份是 [`docs/control/tier-b-sitl-seam3.md`](../../../../docs/control/tier-b-sitl-seam3.md)
 （ticket 11 的交付文档）背后的一手产物。**裁决表与全部读数在文档里，这里只放产物本身**，
 以免同一个数字在两处各写一遍、日后改一处忘一处。
 
@@ -58,3 +58,10 @@ TAGS="F0 F1 F2 F3 F4" bash tools/px4-sitl/evidence/tier-b/run_matrix.sh
 
 产出落在 `/tmp/tier-b/`。**必须先空机**：这套数字里有一条是"实测最坏求解耗时"，
 机上多几个进程就能把它从 5.7 ms 抬到 11 ms（A 档 §5.1 量过）；脚本的等空机闸门就是干这个的。
+
+☠️ **`/tmp` 是 tmpfs —— 重启即失，而且已经真丢过一次。** 机器 2026-09-29 10:40 重启后，
+五场的原始逐帧（`/tmp/tier-b/*.jsonl`，48 MB）与当时 dump 出来的 `/tmp/mocap-model-3.json`
+**都没了**；本归档里剩下的就是全部。⟹ **回放夹具的模型输入现在以本目录里那份
+`mocap-model-3.json` 为准**（内容与当时同一份：`F*-replay.json` 的 `sigma_m` 与
+`base_delay_ms` 是夹具直接读模型算出来落盘的，逐位对得上），验证器与 `run_matrix.sh`
+的 `--model` 默认值已指向它。**判据① 那类"要按新口径重算就得整场重飞"的行，从此没有回头路。**

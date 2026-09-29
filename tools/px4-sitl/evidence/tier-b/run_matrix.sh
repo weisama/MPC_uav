@@ -8,7 +8,10 @@ set +u
 
 OUTDIR=/tmp/tier-b
 LOG=/tmp/run_matrix.log
-COMMON="--model /tmp/mocap-model-3.json --hold-s 15 --dut-timeout-s 90 --offboard-timeout-s 45 --outdir $OUTDIR"
+# ☠️ `--model` 故意**不写**：五场当时写的是 `/tmp/mocap-model-3.json`，而 `/tmp` 是 tmpfs ——
+#    机器 2026-09-29 10:40 重启后那份没了。验证器的默认值已改成**本归档里那份**
+#    （`evidence/tier-b/mocap-model-3.json`，内容与当时一致，见其模块 docstring）。
+COMMON="--hold-s 15 --dut-timeout-s 90 --offboard-timeout-s 45 --outdir $OUTDIR"
 
 say() { echo "[$(date +%H:%M:%S)] $*" | tee -a "$LOG"; }
 : > "$LOG"
