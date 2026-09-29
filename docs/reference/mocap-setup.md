@@ -27,7 +27,8 @@ Nokov 软件 ──VRPN/UDP(3883)──▶ vrpn_listener ──▶ /vrpn/<刚体
 | 话题 | 内容 |
 |---|---|
 | `/vrpn/<刚体>/pose` | 动捕原始位姿（`PoseStamped`） |
-| `/vrpn/<刚体>/twist` | 动捕自算的速度（⚠️ **本项目不用**，见第 6 节） |
+| `/vrpn/<刚体>/twist` | 动捕自算的速度（`TwistStamped`）。⚠️ **不要 relay 进 mavros/EKF2**（理由见第 6 节）；✅ **Phase 2 的 MPC 用它** —— 由 `mocap` 节点原样转发成 `/mocap/velocity_enu`（ticket 15） |
+| `/mocap/velocity_enu` | `mocap` 节点从 `/vrpn/<刚体>/twist` **原样** republish 的速度（`TwistStamped`，与 `/mocap/pose_enu` 同一个 frame ⟹ 零变换）；Phase 2 的 `v`（ticket 15） |
 | `/mavros/vision_pose/pose` | 转发给 PX4 的相对位姿 |
 | `/mavros/state` | 检查 mavros 连接状态 |
 
@@ -372,6 +373,12 @@ router 日志 `Requested to add endpoint: … udp-b://0.0.0.0:14555@:14550` / `l
 ## 6. ★★ 速度数据路由（重要的架构决策）
 
 > ⚠️ **上游明确警告：不要把 `/vrpn/<刚体>/twist` relay 到 `/mavros/vision_speed/speed_twist`。**
+> ★ 这条警告**只针对"喂进 EKF2"这一条路**（理由见本节末「★ 不转发的原因」）——
+> **不是**"Phase 2 不能用它"。**两条路要分开看**：
+> · ❌ **relay 进 mavros/EKF2**：**仍然禁止**（`stamp = now()` 那条理由在整个 EKF2 融合里都成立）。
+> · ✅ **给 Phase 2 的 MPC 用**：**正是推荐做法** —— `mocap` 节点把它原样 republish 成
+>   `/mocap/velocity_enu`（同 frame ⟹ 零变换，ticket 15）。MPC 的状态初值 `x = [p, v, q]`
+>   里那个 `v` 就来自它，`x + v·τ` 那条外推靠它才不是恒等变换。
 
 **当前架构**：EKF2 **只融位置、不融速度**（`EKF2_EV_CTRL` 的 bit 3 不勾选）。
 
@@ -379,10 +386,11 @@ router 日志 `Requested to add endpoint: … udp-b://0.0.0.0:14555@:14550` / `l
 
 | 用途 | 速度来源 |
 |---|---|
+| **Phase 2 的 MPC（模型预测控制）** | ✅ **`/mocap/velocity_enu`** —— `mocap` 节点从 `/vrpn/<刚体>/twist` **原样** republish（`TwistStamped`，同 frame ⟹ 零变换，ticket 15）。这是 10 状态模型 `[p, v, q]` 里 `v` 的来源 |
 | 推理 policy（上游的 RL 控制器） | 直接订阅 `/vrpn/<刚体>/twist.linear`（**动捕自算的，最干净**） |
-| PX4 EKF2 / Position 模式 | 由 `vision_pose` + IMU **内部微分**得到 |
+| PX4 EKF2 / Position 模式 | 由 `vision_pose` + IMU **内部微分**得到（⚠️ **不** relay twist 进去） |
 
-**★ 不转发的原因（关键）**：
+**★ 不转发给 EKF2 的原因（关键）**：
 
 > `vrpn_listener` 的 `stamp` 用的是 `listener->now()`（ROS 接收时刻），**而不是 VRPN 的 `msg_time`**。
 > **喂给 EKF2 反而引入偏差。**

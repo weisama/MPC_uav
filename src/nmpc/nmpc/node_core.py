@@ -537,10 +537,17 @@ class NodeCore:
 
         self.status = None              # 最近一帧 vehicle_status（鸭子类型，不 import px4_msgs）
         self.mocap = None               # 最近一帧 /mocap/pose_enu
+        #: 最近一帧 `/mocap/velocity_enu`（`geometry_msgs/TwistStamped`，ENU，ticket 15）。
+        #: ★ 它是**独立的一条话题**（不是 pose 里的字段）：`mocap` 节点把 `/vrpn/<刚体>/twist`
+        #:   原样 republish 出来（同 frame ⟹ 零变换）。两档里只有 `mocap` 这一档会填它。
+        #:   取用与退化见 `_mocap_velocity`。
+        self.mocap_velocity = None
         self.status_at_s: Optional[float] = None
         self.mocap_at_s: Optional[float] = None
+        self.mocap_velocity_at_s: Optional[float] = None
         self.status_frames = 0
         self.mocap_frames = 0
+        self.mocap_velocity_frames = 0
         # PX4 那一档的两个输入（**两条消息**，各自计时、各自计数 —— 见 `_measure_px4`）。
         # ⚠️ 两档的槽位同时存在、互不干扰：`state_source` 决定 `cycle()` 读哪一对。
         #    不共用一个 `state` 槽位是刻意的 —— 共用会让"这一拍用的是谁"变成隐式的，
@@ -586,6 +593,18 @@ class NodeCore:
         self.mocap = msg
         self.mocap_at_s = float(at_s)
         self.mocap_frames += 1
+
+    def on_mocap_velocity(self, msg, at_s: float) -> None:
+        """`/mocap/velocity_enu`（`TwistStamped`，ENU，ticket 15）—— 与 `on_mocap` 同一形状。
+
+        ★ 它**与 `on_mocap` 分开记**（不并进 pose 那一帧）：两条是**各自独立的话题**，
+          各自的到达时刻不同。实测结论：`vrpn_listener` 里那个 `Synchronizer` **不是**时间
+          对齐器（它只是每个 sender 的发布者容器），pose 与 twist 各自 `publish + now()`
+          ⟹ 不能假设两条消息的时刻相等（详见 `_mocap_velocity` 的 ★ 与 ticket 15 的 Comments）。
+        """
+        self.mocap_velocity = msg
+        self.mocap_velocity_at_s = float(at_s)
+        self.mocap_velocity_frames += 1
 
     def on_local_position(self, msg, at_s: float) -> None:
         self.local_position = msg
@@ -649,6 +668,11 @@ class NodeCore:
         else:
             d["age_state_s"] = _num_json(self.age(self.mocap_at_s, now_s))
             d["mocap_cb"] = self.mocap_frames
+            # ★ 速度是**独立的一条话题**（ticket 15）⟹ 它的"到没到、多旧"要单独取证：
+            #   `vel_cb == 0` 就是"速度话题一帧都没到过"（这时 `v` 恰好是 0，看起来像静止 ——
+            #   与 CONTEXT.md 的判稳口径同一条坑）。**记录，但不闸**（同 `ekf_*` 那一组）。
+            d["vel_cb"] = self.mocap_velocity_frames
+            d["age_vel_s"] = _num_json(self.age(self.mocap_velocity_at_s, now_s))
         return d
 
     # ── 锚点（位置保持的绝对点）──
@@ -802,21 +826,43 @@ class NodeCore:
             #    而 NaN 进了求解器就是"整条预测轨迹烂掉"—— 宁可这一拍不发。
             return None, None, "bad_mocap_quat", f"|q| = {float(np.linalg.norm(quat)):.3f}"
 
-        # 速度：**约定**是从 `/mocap/pose_enu` 的 `twist` 字段取（ENU，m/s）。
-        # ⚠️ 但 z0 现在这条话题是 `geometry_msgs/PoseStamped`（`mocap_rel_pose_node.cpp:93`）
-        #    —— **根本没有 twist 字段** ⟹ 缺字段这条路**每拍都在走**，外推此刻等于恒等变换。
-        #    真身里速度是有的（`/vrpn/<刚体>/twist`，`vrpn_listener.cpp:46-65`，同 frame），
-        #    只是没人把它 republish 到 Phase 2 这一侧。**取法未定，见
-        #    [`.scratch/phase2/issues/15`](../../../.scratch/phase2/issues/15-mocap-velocity-source.md)**。
-        #    这里的退化行为（v ≡ 0）是刻意的：缺字段不许崩、也不许瞎猜一个速度出来。
-        twist = getattr(self.mocap, "twist", None)
-        linear = getattr(twist, "linear", None)
-        velocity = (linear.x, linear.y, linear.z) if linear is not None else (0.0, 0.0, 0.0)
+        # 速度（ENU，m/s）：来自**独立话题** `/mocap/velocity_enu`（ticket 15）—— 见 `_mocap_velocity`。
+        velocity = self._mocap_velocity()
 
         x_meas = pose_to_state((position.x, position.y, position.z), quat, velocity)
         if not np.isfinite(x_meas).all():
             return None, None, "non_finite_mocap", "动捕帧里有非有限值（位置或速度）"
         return x_meas, mocap_stamp_s(self.mocap), None, ""
+
+    def _mocap_velocity(self) -> Tuple[float, float, float]:
+        """这一拍的速度（ENU，m/s）—— **独立话题优先**，其次位姿里内嵌的 `twist`，最后退化成 0。
+
+        优先级与理由：
+          ① `self.mocap_velocity`（`/mocap/velocity_enu`，`TwistStamped`）—— **正常路径**
+             （ticket 15）：`mocap` 节点把 `/vrpn/<刚体>/twist` 原样 republish 出来，
+             与 pose **同一个 frame** ⟹ 零变换、与位姿同源。
+          ② `self.mocap.twist`——位姿消息若自带 `twist` 字段（本仓的纯逻辑替身就是这种形状；
+             也兼容将来上游换成带速度的位姿类型）。
+          ③ 两条都没有 ⟹ `(0,0,0)`：**缺字段的退化是刻意的** —— 不许崩、也不许瞎猜一个速度
+             出来（ticket 15 的裁定逐字）。`PoseStamped` **本来就没有** `twist` 字段
+             （`mocap_rel_pose_node.cpp:93`），而台架上的纯逻辑用例喂的正是这种形状
+             ⟹ 这条退化路径**必须**保留（`test_node_core.py::test_动捕缺_twist_时退化成不外推`）。
+
+        ★ **两条来源的形状是同一个** `…twist.linear`（`TwistStamped` 与"带 twist 的位姿"都如此）
+          ⟹ 分叉只剩"先看谁"这一件事，所以能写成一个小小的优先级循环。
+
+        ★ **不单独判速度的新鲜度**（记录，但不闸）：pose 与 twist 由**同一台** `vrpn_listener`
+          发出，位置那条链断了、twist 也就断了（`state_age` 只看 pose 那一路 ⟹ 已覆盖）。
+          实测：`vrpn_listener` 的 `Synchronizer` **不是时间对齐器**（它只是每个 sender 的发布者
+          容器，`vrpn_listener.hpp:12-20`），`handlePose` / `handleTwist` 各自 `publish + now()`
+          （`vrpn_listener.cpp:19-66`）⟹ 两条消息的**时刻并不保证相等**，但都随同一条链生死。
+          "速度到没到、多旧"在复盘面看得见（`describe_state` 的 `vel_cb` / `age_vel_s`）。
+        """
+        for src in (self.mocap_velocity, self.mocap):
+            linear = getattr(getattr(src, "twist", None), "linear", None)
+            if linear is not None:
+                return (linear.x, linear.y, linear.z)
+        return (0.0, 0.0, 0.0)
 
     def _measure_px4(self, now_s: float):
         """PX4 那一档：`vehicle_local_position` + `vehicle_attitude`（**NED/FRD**）→ `x_meas`。

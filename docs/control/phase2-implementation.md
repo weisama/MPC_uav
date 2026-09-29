@@ -742,6 +742,13 @@ ROS 侧：  ros2 interface show px4_msgs/msg/VehicleRatesSetpoint
 > 交接项在** [`mpc-node-seam1.md`](mpc-node-seam1.md)（节点与 seam 1 的交付文档），这里只留索引。
 >
 > - [x] 订阅 `/mocap/pose_enu`（**不是** NED）—— `mpc_node.py:284`；`test_接口与_QoS_与票面一致`
+> - [x] 订阅 `/mocap/velocity_enu`（`geometry_msgs/TwistStamped`，**ENU**，与 pose 同一个 frame）——
+>       ★ **ticket 15（2026-09-29）**：`PoseStamped` **没有** `twist` 字段 ⟹ 10 状态模型的 `v`
+>       必须走这条**独立话题**（`mocap` 节点把 `/vrpn/<刚体>/twist` **原样** republish，
+>       同 frame ⟹ 零变换）⟹ `x + v·τ` 在 B 档上不再恒等变换。
+>       落点：`mocap_rel_pose_node.cpp` 的 `on_twist` / `mpc_node.py` 的 `TOPIC_MOCAP_VEL`；
+>       用例 `test_node_core.py::test_动捕速度从独立话题进外推`、
+>       `test_mpc_node.py::test_B_档_速度从_velocity_enu_进外推_表现为推力低于悬停`
 > - [x] 订阅 `/fmu/out/vehicle_status` —— `mpc_node.py:286`；同一条用例里的 `matched_subscribers("status") == 1`
 >       （⚠️ 这两行的行号**2026-09-28 被 ticket 07 的改动下移了 ~40 行**：07 在 `NodeParams` / `__init__` / `_tick` 里都加了东西，订阅那几行的位置跟着走）
 > - [x] 发布 `/fmu/in/offboard_control_mode`（`body_rate = True`，其余 False），**≥ 2 Hz，实做 50 Hz** —— `test_闸门关闭时只发心跳_一帧_setpoint_都没有`（≥2 Hz）+ `test_实做频率_心跳_50_Hz_setpoint_100_Hz`（实测 50.0 Hz）

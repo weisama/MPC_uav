@@ -204,6 +204,10 @@ def test_接口与_QoS_与票面一致():
             "DUT 没接上 /fmu/out/vehicle_status（QoS 写错就永不匹配，且不报错）"
         assert sc.mocap_source.matched_subscribers() >= 1, \
             "DUT 没接上 /mocap/pose_enu（票面要求订 **ENU** 那条，不是 NED）"
+        # ★ 速度是**独立的一条话题**（ticket 15）⟹ 位姿订上了**不等于**速度也订上了，
+        #   而 QoS 不兼容同样"不报错、只是永不匹配" ⟹ 这一条要有自己的判据。
+        assert sc.mocap_source.matched_velocity_subscribers() >= 1, \
+            "DUT 没接上 /mocap/velocity_enu（ticket 15 的速度来源，QoS 写错就永不匹配）"
 
 
 # ───────────────────────────── 闸门：谁在发、谁不发 ─────────────────────────────
@@ -1119,6 +1123,44 @@ def test_A_档_垂直速度的外推_表现是推力低于悬停():
             "垂直方向的速度差不该产生角速率（ẑ × ẑ = 0）"
 
 
+def test_B_档_速度从_velocity_enu_进外推_表现为推力低于悬停():
+    """★ ticket 15 之后**动捕这一档**第一次有速度了：`/mocap/velocity_enu`（`TwistStamped`）。
+
+    ★★ 与上面两条 A 档用例是同一件事的**两个来源面**：A 档的速度来自
+      `vehicle_local_position` 的 `vx/vy/vz`；B 档（动捕闭环）的速度来自 `mocap` 节点
+      republish 的 `/mocap/velocity_enu`。**这条在 ticket 15 之前不可能存在** ——
+      `/mocap/pose_enu` 是 `PoseStamped`、没有 `twist` 字段 ⟹ `v ≡ 0` ⟹ `x + v·τ` 恒等变换
+      （见 `test_动捕那条话题没有速度字段_所以拍不出_tau的黑盒测试` 与 mpc-node-seam1.md §5）。
+
+    ★ 判据取**推力**而不是角速率（纯几何：垂直速度差 `ẑ × ẑ = 0` ⟹ 不动姿态）：
+      注入 ENU `vz = +1`（**上升** 1 m/s），τ = 0.05 ⟹ `x0` 比参考高 5 cm ⟹ 该**减推力**。
+      符号如果没传到位（或反了），要么推力不动、要么更大 —— 一眼分得开。
+      ⚠️ 阈值按**牛顿**定（同 A 档那条的理由：归一化常数变过、物理量没变）。
+    """
+    MIN_DELTA_THRUST_N = 0.590   # 同 test_A_档_垂直速度的外推…（= 旧归一化下 0.05 的物理对应）
+
+    z0 = Z0Params()
+    hover = -z0.t_hover / z0.t_max
+    min_delta = MIN_DELTA_THRUST_N / z0.t_max
+    with _scenario() as sc:                       # 默认 = mocap 档（夹具 target='mocap'）
+        _wait_dut_up(sc)
+        # 接口面先钉一下：DUT 真的订上了**速度那条话题**（QoS 不兼容就不报错、只是永不匹配）
+        assert sc.mocap_source.matched_velocity_subscribers() >= 1, \
+            "DUT 没接上 /mocap/velocity_enu —— ticket 15 的速度这条路没通"
+        _arm_and_offboard(sc)
+        sc.mocap_source.set_velocity(vz=1.0)      # ENU 向上 1 m/s（与 pose 同 frame，零变换）
+        sc.wait_for(lambda: len(sc.px4.published_frames("rates")) >= 15, timeout_s=10.0,
+                    message="注入速度后没攒到 15 帧 setpoint")
+        last = sc.px4.published_frames("rates")[-1].msg
+
+        fz = float(last.thrust_body[2])
+        assert fz > hover + min_delta, \
+            f"向上 1 m/s ⟹ 外推点比参考高 ⟹ 该减推力，实测 {fz:+.4f}（悬停 {hover:+.4f}、" \
+            f"要求高出 {min_delta:.4f}）—— /mocap/velocity_enu 的速度没进外推？"
+        assert abs(float(last.roll)) < 0.02 and abs(float(last.pitch)) < 0.02, \
+            "垂直方向的速度差不该产生角速率（ẑ × ẑ = 0）"
+
+
 def test_A_档的逐帧日志把状态源_求解耗时_饱和标志都记下来了(tmp_path):
     """票面验收项「日志记录 MPC（模型预测控制）内部状态、**求解耗时**、**约束饱和标志**，
     供飞行后复盘而不只依赖记忆」—— 这条验收项以前**没有任何用例**，而它的失效方式是静默的：
@@ -1646,6 +1688,12 @@ def test_动捕那条话题没有速度字段_所以拍不出_tau_的黑盒测�
     """★ 票面验收项「状态外推 `x + v·τ`」**在这一层无法黑盒验证** —— 原因不是夹具不够好，
     而是**输入里没有 `v`**（[issue 15](../../../.scratch/phase2/issues/15-mocap-velocity-source.md)）。
 
+    ☠️ **【2026-09-29 作废（ticket 15 落地）】** 上面这两句**已不成立** —— 见下面对角线
+    ★★★ 那段与 `test_B_档_速度从_velocity_enu_进外推_表现为推力低于悬停`。
+    **⚠️ 连本用例的函数名也一起过期了**（`…所以拍不出_tau_的黑盒测试` 这半句现在是假话：
+    B 档**拍得出**）。名字**刻意未改**（`mpc-node-seam1.md` §5 与 `test_mpc_node.py:1031/:1133`
+    都按名字引用它，改名要一起动；改动前先确认是否值得）。下面这段原文**保留**为当时的第一手推导。
+
     第一手：`/mocap/pose_enu` 是 `geometry_msgs/PoseStamped`
     （`mocap_rel_pose_node.cpp:93`），而 `PoseStamped` **没有** `twist` 字段
     ⟹ 节点侧的 `v` 每拍都退化成 0（`node_core.cycle()` 里那条"缺字段"的路**一直在走**）
@@ -1666,11 +1714,18 @@ def test_动捕那条话题没有速度字段_所以拍不出_tau_的黑盒测�
       黑盒用例见 `test_A_档_有速度之后_tau_第一次在话题上可观测_配对差分`。
       ⚠️ 两档的差别**只在有没有速度**，不在坐标系 —— 所以"τ 量不了"这句话本身
         一点都不该外推（它从来不是"节点不做外推"，而是"输入里没有 v"）。
+
+    ★★★ 2026-09-29 更新（**ticket 15 已落地**）：动捕这一档**也有速度**了 ——
+      `mocap` 节点把 `/vrpn/<刚体>/twist` 原样 republish 成 `/mocap/velocity_enu`
+      （`TwistStamped`，与 pose 同一个 frame ⟹ 零变换），节点订这条独立话题。
+      ⟹ B 档的 τ 黑盒用例见 `test_B_档_速度从_velocity_enu_进外推_表现为推力低于悬停`。
+      ⚠️ **不是**把速度塞进 `PoseStamped` —— 那仍然做不到（下面两条断言），
+        所以"速度走独立话题"这件事仍然由它们守着（有 twist 字段的 `PoseStamped` 才该提醒改票）。
     """
     from geometry_msgs.msg import PoseStamped
 
     assert not hasattr(PoseStamped(), "twist"), \
-        "PoseStamped 有 twist 了 ⟹ issue 15 可能已经解决，本文件该补一条 τ 的黑盒测试"
+        "PoseStamped 有 twist 了 ⟹ 速度改走位姿内嵌字段了，本文件与 mocap 节点都要跟着改"
     assert not hasattr(PoseStamped(), "velocity")
 
 

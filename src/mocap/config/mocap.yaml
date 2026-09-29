@@ -1,6 +1,6 @@
 # z0 的 mocap 节点参数。
 #
-# ★ 多台无人机复用：**复制这份文件**（如 mocap_z1.yaml），只改 body_name 与三个话题名，代码一行不动：
+# ★ 多台无人机复用：**复制这份文件**（如 mocap_z1.yaml），只改 body_name 与几个话题名，代码一行不动：
 #     ros2 launch mocap mocap.launch.py params_file:=<那份 yaml> namespace:=z1
 #   （yaml 里的 ros__parameters 键 `mocap_rel_pose` 与节点名对应，多机时也**不用改**。）
 
@@ -14,9 +14,14 @@ mocap_rel_pose:
     body_name: "z0"
     # 留空 = 由 body_name 推出 "/vrpn/<body_name>/pose"；填了就以此为准（逃生口）。
     input_topic: ""
+    # 留空 = 由 body_name 推出 "/vrpn/<body_name>/twist"；填了就以此为准（逃生口）。
+    # 速度是**原样转发**（frame = "world"，与 pose 同一个 frame ⟹ 零变换），供 Phase 2 的 MPC 用。
+    twist_topic: ""
 
     vision_pose_topic: "/mavros/vision_pose/pose"
     pose_enu_topic: "/mocap/pose_enu"
+    # Phase 2 的 MPC 速度来源（`geometry_msgs/TwistStamped`，ENU，与 pose_enu 同一个 frame）。
+    velocity_enu_topic: "/mocap/velocity_enu"
     state_topic: "/mavros/state"
 
     # 两阶段的采样帧数。动捕实测 ~196 Hz ⟹ 30 帧 ≈ 0.15 s，60 帧 ≈ 0.3 s（§3.4 的"约 30–120 帧"）。

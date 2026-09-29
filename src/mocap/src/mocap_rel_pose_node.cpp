@@ -1,8 +1,13 @@
 // mocap 节点：动捕刚体位姿 → **相对位姿**（两阶段原点 + 仅归零 yaw）→ 喂给 EKF2。
 //
 // 数据流（全部为**动捕原生 ENU / 机体 FLU**，本节点不做任何坐标系转换）：
-//   /vrpn/<刚体>/pose ──▶ 本节点 ──▶ /mavros/vision_pose/pose   （mavros 负责 ENU→NED、FLU→FRD）
-//                                 └─▶ /mocap/pose_enu           （Phase 1 只用于记录；Phase 2 的 MPC（模型预测控制）状态源）
+//   /vrpn/<刚体>/pose  ──▶ 本节点 ──▶ /mavros/vision_pose/pose   （mavros 负责 ENU→NED、FLU→FRD）
+//                                  └─▶ /mocap/pose_enu           （Phase 1 只用于记录；Phase 2 的 MPC（模型预测控制）状态源）
+//   /vrpn/<刚体>/twist ──▶ 本节点 ──▶ /mocap/velocity_enu         （Phase 2 的 MPC 速度来源，见 .scratch/phase2/issues/15）
+//
+// ★ 速度是**原样 republish**（`TwistStamped`，frame 与 stamp 都从 `msg->header` 带走）：
+//   `vrpn_listener` 的 twist 与本节点转发给 MPC 的 pose **同一个 frame**（都是 `"world"`）
+//   ⟹ 同 frame 直接转发就是**零变换**，与「输入侧不做坐标转换」那条约定一致。
 //
 // ★ 三条不许碰的约定（改任何一条都会毁掉 EKF2 融合，见 docs/control/phase1-implementation.md）：
 //   1. **stamp 原样转发** —— 不二次打戳（`vrpn_listener` 的 `stamp = now()` 是刻意设计）。
@@ -23,6 +28,7 @@
 #include <vector>
 
 #include "geometry_msgs/msg/pose_stamped.hpp"
+#include "geometry_msgs/msg/twist_stamped.hpp"
 #include "mavros_msgs/msg/state.hpp"
 #include "mocap/mocap_rel_pose.hpp"
 #include "rclcpp/rclcpp.hpp"
@@ -66,9 +72,17 @@ public:
     if (input_topic_.empty()) {
       input_topic_ = "/vrpn/" + body_name_ + "/pose";
     }
+    // 速度输入：`vrpn_listener` 对每个 sender 同时发 /pose、/twist、/accel
+    // （`vrpn_listener.cpp:139-144`），话题名规则与 pose 完全相同（刚体名 + `/{pose,twist}`）。
+    twist_topic_ = declare_parameter<std::string>("twist_topic", "");
+    if (twist_topic_.empty()) {
+      twist_topic_ = "/vrpn/" + body_name_ + "/twist";
+    }
     vision_pose_topic_ = declare_parameter<std::string>(
       "vision_pose_topic", "/mavros/vision_pose/pose");
     pose_enu_topic_ = declare_parameter<std::string>("pose_enu_topic", "/mocap/pose_enu");
+    velocity_enu_topic_ = declare_parameter<std::string>(
+      "velocity_enu_topic", "/mocap/velocity_enu");
     state_topic_ = declare_parameter<std::string>("state_topic", "/mavros/state");
 
     // —— 两阶段原点的采样帧数（动捕 ~200 Hz ⟹ 30 帧 ≈ 0.15 s，60 帧 ≈ 0.3 s）——
@@ -84,6 +98,9 @@ public:
     pose_sub_ = create_subscription<geometry_msgs::msg::PoseStamped>(
       input_topic_, rclcpp::QoS(10),
       std::bind(&MocapRelPoseNode::on_pose, this, std::placeholders::_1));
+    twist_sub_ = create_subscription<geometry_msgs::msg::TwistStamped>(
+      twist_topic_, rclcpp::QoS(10),
+      std::bind(&MocapRelPoseNode::on_twist, this, std::placeholders::_1));
     state_sub_ = create_subscription<mavros_msgs::msg::State>(
       state_topic_, rclcpp::QoS(10),
       std::bind(&MocapRelPoseNode::on_state, this, std::placeholders::_1));
@@ -91,14 +108,16 @@ public:
     vision_pose_pub_ = create_publisher<geometry_msgs::msg::PoseStamped>(
       vision_pose_topic_, rclcpp::QoS(10));
     pose_enu_pub_ = create_publisher<geometry_msgs::msg::PoseStamped>(pose_enu_topic_, rclcpp::QoS(10));
+    velocity_enu_pub_ = create_publisher<geometry_msgs::msg::TwistStamped>(
+      velocity_enu_topic_, rclcpp::QoS(10));
 
     RCLCPP_INFO(
       get_logger(),
-      "mocap 节点启动：订阅 %s（body_name = \"%s\"）与 %s；发布 %s、%s\n"
+      "mocap 节点启动：订阅 %s、%s（body_name = \"%s\"）与 %s；发布 %s、%s、%s\n"
       "  两阶段原点：启动采样 %d 帧 → 解锁上升沿后采样 %d 帧；切换量 > %.3f m 时告警\n"
       "  ★ 纪律：从本节点启动到解锁之间，不要把飞机搬来搬去、不要转它（朝向不重要，静止才重要）",
-      input_topic_.c_str(), body_name_.c_str(), state_topic_.c_str(),
-      vision_pose_topic_.c_str(), pose_enu_topic_.c_str(),
+      input_topic_.c_str(), twist_topic_.c_str(), body_name_.c_str(), state_topic_.c_str(),
+      vision_pose_topic_.c_str(), pose_enu_topic_.c_str(), velocity_enu_topic_.c_str(),
       boot_samples_, arm_samples, jump_warn_m_);
 
     // 动捕数据看门狗（每 no_data_warn_s/5 查一次，≥0.2 s ⟹ 检出滞后远小于阈值本身）：
@@ -127,6 +146,31 @@ private:
   {
     has_state_ = true;
     armed_ = msg->armed;
+  }
+
+  /// 动捕速度（ENU，m/s）→ **原样 republish** 成 `/mocap/velocity_enu`（`TwistStamped`）。
+  ///
+  /// ★ 三点与 pose 路径**刻意不同**，理由都在这：
+  ///   1. **零变换**：`vrpn_listener` 的 twist 与 pose 是**同一个 frame**（`"world"`，
+  ///      `vrpn_listener.cpp:61` 的 `listener->_frame_id`）⟹ 同 frame 直接转发即可，
+  ///      与「输入侧不做坐标转换」那条约定一致。`frame_id` 与 `stamp` 都从 `msg->header`
+  ///      **原样带走**（不二次打戳 —— 同 pose 的「约定 1」，理由见文首）。
+  ///   2. **不经过两阶段原点选择器**：速度与原点无关（原点只平移位置）⟹ 不需要
+  ///      `selector_->ready()` 那道闸门。位置在原点锁定前发出去会喂错数据，速度不会。
+  ///   3. **不参与动捕看门狗**：看门狗判的是「位置这条链还在不在」（`last_pose_time_`）；
+  ///      twist 与 pose 由**同一台** `vrpn_listener` 发出，位置断了 twist 也就断了。
+  void on_twist(const geometry_msgs::msg::TwistStamped::SharedPtr msg)
+  {
+    if (!received_twist_) {
+      received_twist_ = true;
+      RCLCPP_INFO(
+        get_logger(), "收到第一帧 %s（frame_id = \"%s\"）；开始转发到 %s（★ 原样，零变换）",
+        twist_topic_.c_str(), msg->header.frame_id.c_str(), velocity_enu_topic_.c_str());
+    }
+    geometry_msgs::msg::TwistStamped out;
+    out.header = msg->header;   // ★ 原样转发 frame_id 与 stamp（零变换 / 不二次打戳）
+    out.twist = msg->twist;     // ★ 三分量原样带走（angular 在 vrpn_listener 侧刻意留零）
+    velocity_enu_pub_->publish(out);
   }
 
   /// 动捕数据看门狗：数据停超过 no_data_warn_s 就 ERROR，恢复时报一声。
@@ -278,8 +322,10 @@ private:
 
   std::string body_name_;
   std::string input_topic_;
+  std::string twist_topic_;
   std::string vision_pose_topic_;
   std::string pose_enu_topic_;
+  std::string velocity_enu_topic_;
   std::string state_topic_;
   int boot_samples_{30};
   double jump_warn_m_{0.05};
@@ -292,13 +338,16 @@ private:
   bool logged_switch_{false};
   bool logged_no_data_{false};
   bool logged_stale_{false};
+  bool received_twist_{false};
   rclcpp::Time last_pose_time_{0, 0, RCL_ROS_TIME};
 
   std::unique_ptr<mocap::TwoStageOrigin> selector_;
   rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr pose_sub_;
+  rclcpp::Subscription<geometry_msgs::msg::TwistStamped>::SharedPtr twist_sub_;
   rclcpp::Subscription<mavros_msgs::msg::State>::SharedPtr state_sub_;
   rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr vision_pose_pub_;
   rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr pose_enu_pub_;
+  rclcpp::Publisher<geometry_msgs::msg::TwistStamped>::SharedPtr velocity_enu_pub_;
   rclcpp::TimerBase::SharedPtr watchdog_;
 };
 

@@ -78,6 +78,16 @@ class _Mocap:
             self.header = type("_Header", (), {"stamp": _stamp(stamp_s)})()
 
 
+class _Velocity:
+    """`/mocap/velocity_enu` 的形状（`geometry_msgs/TwistStamped`：`.twist.linear.{x,y,z}`）。
+
+    ★ 只造被测代码会读到的字段（角速度刻意不造）—— 与 `_Mocap` 同一条纪律。ticket 15：
+      速度**不与位姿同一条消息**，它是独立话题（所以这里是一个独立的替身，而不是 `_Mocap`）。
+    """
+    def __init__(self, vx=0.0, vy=0.0, vz=0.0):
+        self.twist = type("_Twist", (), {"linear": _Vec(vx, vy, vz)})()
+
+
 class _Status:
     def __init__(self, nav_state=NAV_STATE_OFFBOARD, arming_state=ARMING_STATE_ARMED,
                  pre_flight_checks_pass=True):
@@ -444,6 +454,40 @@ def test_动捕缺_twist_时退化成不外推():
     core.on_mocap(_Mocap(), at_s=0.0)          # 无 velocity ⟹ 没有 twist 字段
     assert core.cycle(0.1).x0[:3].tolist() == [0.0, 0.0, 0.0]
     assert core.cycle(0.1).x0[3:6].tolist() == [0.0, 0.0, 0.0]
+
+
+def test_动捕速度从独立话题进外推():
+    """ticket 15：速度走**独立话题** `/mocap/velocity_enu`（`TwistStamped`），真的进了 `x + v·τ`。
+
+    ★ 与上面那条是一对正/负控，**缺一不可**：上面守着"**没有**速度时不崩、不瞎猜"，
+      这条守着"**有**速度时它真的进了状态与那"一行外推"。⚠️ 只有上面那条时，速度这条路
+      直到 ticket 15 之前都是**死的**（`PoseStamped` 没有 `twist` 字段 ⟹ 缺字段那条路每拍
+      都在走），而它**照样绿** —— 这正是"没有速度"与"速度没接上"分不开的那个假绿。
+    """
+    cfg = ControlConfig(tau_s=0.05, stop=StopConfig(warmup_cycles=0))
+    core = _core(cfg)
+    core.on_status(_Status(), at_s=0.0)
+    core.on_mocap(_Mocap(), at_s=0.0)                        # 位姿（无 twist 字段）
+    core.on_mocap_velocity(_Velocity(vx=1.0, vy=2.0), at_s=0.0)
+    c = core.cycle(0.1)
+    assert c.publish, f"这一拍该发（warmup_cycles=0），却被 {c.reason} 拦下"
+    assert c.x0[3:6].tolist() == pytest.approx([1.0, 2.0, 0.0]), "速度没进 10 维状态"
+    assert c.x0[:3].tolist() == pytest.approx([0.05, 0.1, 0.0]), "`x + v·τ` 没把速度算进去"
+    # 取证面要能回答"速度到了几帧、多旧"（ticket 15 给 mocap 档加的两个键）
+    d = core.describe_state(0.1)
+    assert d["vel_cb"] == 1 and d["age_vel_s"] == pytest.approx(0.1)
+
+
+def test_独立速度话题优先于位姿里内嵌的_twist():
+    """两条来源同时在时，取**独立话题**那条 —— 那才是真身（ticket 15 的裁定）。"""
+    cfg = ControlConfig(tau_s=0.0, stop=StopConfig(warmup_cycles=0))
+    core = _core(cfg)
+    core.on_status(_Status(), at_s=0.0)
+    core.on_mocap(_Mocap(velocity=(9.0, 9.0, 9.0)), at_s=0.0)   # 位姿里嵌了一个"错"速度
+    core.on_mocap_velocity(_Velocity(vx=1.0), at_s=0.0)
+    c = core.cycle(0.1)
+    assert c.x0[3:6].tolist() == [1.0, 0.0, 0.0], \
+        "取到了位姿里内嵌的 twist，而不是独立话题那条（来源优先级反了）"
 
 
 # ───────────────────────────── 输入合理性（ticket 07 / M5）─────────────────────────────

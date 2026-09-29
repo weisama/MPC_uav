@@ -4,9 +4,14 @@
 使 **QGC 在解锁之前就已经有稳定收敛的位置估计**。
 
 ```
-/vrpn/<刚体>/pose ──▶ mocap 节点 ──▶ /mavros/vision_pose/pose   （→ PX4 EKF2，mavros 负责 ENU→NED、FLU→FRD）
-                                 └─▶ /mocap/pose_enu           （Phase 1 只用于记录；Phase 2 的 MPC（模型预测控制）状态源）
+/vrpn/<刚体>/pose  ──▶ mocap 节点 ──▶ /mavros/vision_pose/pose  （→ PX4 EKF2，mavros 负责 ENU→NED、FLU→FRD）
+                                  └─▶ /mocap/pose_enu          （Phase 1 只用于记录；Phase 2 的 MPC（模型预测控制）状态源）
+/vrpn/<刚体>/twist ──▶ mocap 节点 ──▶ /mocap/velocity_enu        （Phase 2 的 MPC 速度来源，见 .scratch/phase2/issues/15）
 ```
+
+速度是**原样转发**（`geometry_msgs/TwistStamped`，`frame_id` 与 `stamp` 都从 `msg->header` 带走）：
+`vrpn_listener` 的 twist 与 pose **同一个 frame**（`"world"`）⟹ 同 frame 直接转发就是**零变换**，
+与「本节点是全栈唯一一个不做坐标转换的节点」一致。速度不经过两阶段原点选择器（原点只平移位置）。
 
 **本节点是全栈唯一一个「不做任何坐标转换」的节点** —— 它只做两件事：**减原点** + **只归零 yaw**，
 输出**动捕原生 ENU / 机体 FLU**。ENU→NED 与 FLU→FRD 全部由 mavros 在自己的边界上完成
@@ -50,15 +55,17 @@
 |---|---|---|
 | `body_name` | `z0` | ★ **变量不是常量**（一天内实测到 `Z0` 与 `z0` 两个值）。话题名原样取自 VRPN sender 名，只换空格、**不做大小写归一化** |
 | `input_topic` | `""` | 留空 = `/vrpn/<body_name>/pose`；填了以此为准 |
+| `twist_topic` | `""` | 留空 = `/vrpn/<body_name>/twist`；填了以此为准（速度输入，原样转发） |
 | `vision_pose_topic` | `/mavros/vision_pose/pose` | 喂 EKF2 |
 | `pose_enu_topic` | `/mocap/pose_enu` | 记录 / Phase 2 状态源 |
+| `velocity_enu_topic` | `/mocap/velocity_enu` | Phase 2 的 MPC 速度来源（`TwistStamped`，与 pose 同一个 frame） |
 | `state_topic` | `/mavros/state` | 检测**解锁上升沿** |
 | `boot_samples` | `30` | 阶段 A 采样帧数（动捕 ~196 Hz ⟹ ≈0.15 s） |
 | `arm_samples` | `60` | 阶段 B 采样帧数（≈0.3 s，对应 §3.4 的"约 30–120 帧"） |
 | `jump_warn_m` | `0.05` | 两阶段原点差超过它就 WARN |
 | `no_data_warn_s` | `5.0` | 动捕数据健康看门狗：启动后一直没数据 → ERROR（并列出 graph 里的候选话题）；**运行中中断超时 → ERROR，恢复 → WARN** |
 
-**多台无人机复用：改参数、不改代码。** 复制一份 yaml 改 `body_name` 与三个话题名，
+**多台无人机复用：改参数、不改代码。** 复制一份 yaml 改 `body_name` 与几个话题名，
 `ros2 launch mocap mocap.launch.py params_file:=<那份 yaml> namespace:=z1`。
 
 ## 三条不许碰的约定（与 `src/mocap_rel_pose_node.cpp` 文首逐条对应）

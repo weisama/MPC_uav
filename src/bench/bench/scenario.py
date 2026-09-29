@@ -450,6 +450,8 @@ class Scenario:
             parts += [
                 f"- 动捕源：{self.mocap_source.topic}，匹配到的订阅者 "
                 f"{self.mocap_source.matched_subscribers()}；"
+                f"速度源：{self.mocap_source.velocity_topic}，匹配到的订阅者 "
+                f"{self.mocap_source.matched_velocity_subscribers()}；"
                 f" paused={self.mocap_source.paused} held_stamp={self.mocap_source.held_stamp}",
                 "",
             ]

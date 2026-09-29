@@ -171,6 +171,13 @@ python3 -m pytest src/nmpc/test/test_mpc_node.py        # 14 条；多数用例�
 
 ## 5. 状态外推 `x + v·τ`：本层**量不了**，原因不是夹具不够好
 
+> ☠️ **【2026-09-29 作废 —— 完整说明在本节末的「★ 2026-09-29 更新」】**
+> 本节**标题这句「本层量不了」以及下面整段结论已被推翻**（[ticket 15](../../.scratch/phase2/issues/15-mocap-velocity-source.md) 落地）：
+> 动捕这一档现在**也有速度**了（独立话题 `/mocap/velocity_enu`）⟹ τ 在 B 档上**可黑盒验证**，
+> 已有用例 `test_B_档_速度从_velocity_enu_进外推_表现为推力低于悬停`。
+> ⚠️ 标记放在**节首**而不是只在节尾：**排序就是可见性** —— 从节首读进来的人必须先知道它作废，
+> 而不是读完一整段才在末尾看到一句"上面作废"。下面原文**保留**（它是"为什么会走到这一步"的第一手推导）。
+
 票面要求"`x + v·τ`（τ = 50 ms）一行实现；不做完整延迟补偿"。**这一条在 seam 1 上无法黑盒验证**：
 
 - `node_core.cycle()` 的外推逻辑本身有单测（`test_node_core.py::test_外推只动位置且正好是_v_乘_tau` 等两条）；
@@ -184,6 +191,16 @@ python3 -m pytest src/nmpc/test/test_mpc_node.py        # 14 条；多数用例�
 
 测试 `test_动捕那条话题没有速度字段_所以拍不出_tau_的黑盒测试` 把**前提**钉住：哪天上游换成带
 twist 的类型，它会红，提醒来补这条端到端测试。
+
+> ### ★ 2026-09-29 更新（[ticket 15](../../.scratch/phase2/issues/15-mocap-velocity-source.md) 已落地）
+>
+> 上面这一节的**结论已作废**（推导保留 —— 它是"为什么会走到这一步"的第一手记录）：
+> 速度现在走**独立的一条话题** `/mocap/velocity_enu`（`mocap` 节点把 `/vrpn/<刚体>/twist`
+> **原样** republish，`geometry_msgs/TwistStamped`，与 pose **同一个 frame** ⟹ 零变换）。
+> 节点订它、`node_core.NodeCore._mocap_velocity` 用它当 10 状态里的 `v` ⟹ `x + v·τ` 在 B 档
+> 上**不再**恒等变换。B 档的黑盒用例：
+> `test_mpc_node.py::test_B_档_速度从_velocity_enu_进外推_表现为推力低于悬停`。
+> ⚠️ **仍然**不能把速度塞进 `PoseStamped`（上面那两条 `hasattr` 断言仍守着这一点）。
 
 ---
 

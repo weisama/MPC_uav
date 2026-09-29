@@ -8,7 +8,7 @@
 #   4) ★ 从这一刻到解锁之间，不要再搬动/转动飞机（两阶段原点的切换量 = 这段时间动的量）
 #
 # ★ 多台无人机复用：**改参数、不改代码**。
-#   复制一份 yaml（如 config/mocap_z1.yaml），改 body_name 与三个话题名，然后
+#   复制一份 yaml（如 config/mocap_z1.yaml），改 body_name 与几个话题名，然后
 #     ros2 launch mocap mocap.launch.py params_file:=<那份 yaml> namespace:=z1
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
@@ -22,7 +22,7 @@ def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument(
             'params_file', default_value=default_params,
-            description='每台无人机一份 yaml：刚体名与三个话题都在里面，换机只改 yaml'),
+            description='每台无人机一份 yaml：刚体名与所有话题名都在里面，换机只改 yaml'),
         DeclareLaunchArgument(
             'namespace', default_value='',
             description='多机时给实例加命名空间（yaml 里的话题名是绝对路径，不受影响）'),

@@ -15,6 +15,7 @@
 | 方向 | 话题 | QoS | 依据 |
 |---|---|---|---|
 | 订阅 | `/mocap/pose_enu`（**ENU/FLU**，B 档；`state_source=mocap` 时才有这一条） | 可靠 / depth 10 | `mocap_rel_pose_node.cpp:93` `QoS(10)` |
+| 订阅 | `/mocap/velocity_enu`（`geometry_msgs/TwistStamped`，**ENU**，B 档；`state_source=mocap` 时才有） | 可靠 / depth 10 | `mocap_rel_pose_node.cpp` 的 `QoS(10)`；★ 速度来源（ticket 15）—— `PoseStamped` 没有 `twist` 字段，`v` 必须走这条独立话题才能进 `x + v·τ` |
 | 订阅 | `/fmu/out/vehicle_local_position` + `/fmu/out/vehicle_attitude`（**NED/FRD**，A 档；`state_source=px4` 时才有这两条） | **BEST_EFFORT** / depth 1 | 发布方实测 best_effort + TRANSIENT_LOCAL（2026-09-28，z0 SITL，A 档探针）⟹ 订阅侧写 RELIABLE 就**一个回调都不进** |
 | 订阅 | `/fmu/out/vehicle_status` | **BEST_EFFORT** / depth 1 | PX4 的 writer 是 best_effort（`utilities.hpp:59-63`）⟹ 订阅侧写 RELIABLE 就**一个回调都不进** |
 | 发布 | `/fmu/in/vehicle_rates_setpoint` | BEST_EFFORT + TRANSIENT_LOCAL / depth 1 | PX4 的 reader 是 best_effort（`utilities.hpp:114-119`）；TRANSIENT_LOCAL 让晚起的 reader 也能拿到最后一帧 |
@@ -26,7 +27,7 @@
 ⚠️ 说"分岔**只有一处**"是把话说满了（2026-09-28 复核：`state_source` 的条件分支全仓实有
 9 处）—— 分岔的**内容**只有一处，但"这一档要订阅什么、要记什么"必然跟着分：
 ① **测量本身**（`_measure_mocap` / `_measure_px4`，见 `node_core` 的 ★★ 表）；
-② **订阅**（`mocap` 建 `/mocap/pose_enu`，`px4` 建那两条 —— 且 QoS 不同）；
+② **订阅**（`mocap` 建 `/mocap/pose_enu` + `/mocap/velocity_enu`，`px4` 建那两条 —— 且 QoS 不同）；
 ③ **日志的 `state_source` / `age_*` 键**（谁给的、多旧，这是 A 档复盘的入口）；
 ④ **参数校验**（`state_source` 不认识就启动即退；`px4` 档必须给话题名）。两档如下：
 
@@ -151,7 +152,7 @@ if __package__ in (None, ""):  # 直接 `python3 …/mpc_node.py` 时把包目�
 
 import numpy as np  # noqa: E402
 import rclpy  # noqa: E402
-from geometry_msgs.msg import PoseStamped  # noqa: E402
+from geometry_msgs.msg import PoseStamped, TwistStamped  # noqa: E402
 # ⚠️ **必须改名**：`nav_msgs/Path` 与 `pathlib.Path` 同名，直接 import 会把上面那个
 #    悄悄换掉 —— 症状是"读 `/proc/self/status` 时 `Path.__init__() takes 1 positional argument`"，
 #    即一个与可视化毫无关系的报错（本文件第一次跑就是这么炸的）。
@@ -192,6 +193,10 @@ QOS_MOCAP = QoSProfile(history=HistoryPolicy.KEEP_LAST, depth=10,
                        reliability=ReliabilityPolicy.RELIABLE)
 
 TOPIC_MOCAP = "/mocap/pose_enu"
+#: 动捕**速度**（`geometry_msgs/TwistStamped`，ENU，与 `/mocap/pose_enu` 同一个 frame）——
+#: `mocap` 节点把 `/vrpn/<刚体>/twist` 原样 republish 出来（ticket 15）。与 `TOPIC_MOCAP` 一样
+#: **写死**（不参数化）：它是 `mocap` 档**定死**的上游，而 A 档那两条才是"可以换一条流"的参数。
+TOPIC_MOCAP_VEL = "/mocap/velocity_enu"
 TOPIC_STATUS = "/fmu/out/vehicle_status"
 #: A 档的状态话题（`state_source=px4`）。★ 默认值是**飞控自己的估计**（票面原文点名要的这两条），
 #: 而它们是可以换的 —— 换话题（真值 / 记录回放）是参数的事，见模块 docstring 的表。
@@ -347,7 +352,7 @@ class NodeParams:
         """
         if self.state_source == STATE_SOURCE_PX4:
             return f"PX4 {self.px4_position_topic} + {self.px4_attitude_topic}（NED/FRD）"
-        return f"{TOPIC_MOCAP}（ENU/FLU）"
+        return f"{TOPIC_MOCAP} + {TOPIC_MOCAP_VEL}（ENU/FLU）"
 
 
 class MpcNode(Node):
@@ -372,6 +377,7 @@ class MpcNode(Node):
         #    验收项在话题边界上**可断言**（`matched_subscribers() == 0`），而不是靠读代码相信。
         #    两档各自的槽位都在（`node_core` 里），但只有这一档的那条会被填。
         self.sub_mocap = None
+        self.sub_mocap_vel = None
         self.sub_pos = None
         self.sub_att = None
         if params.state_source == STATE_SOURCE_PX4:
@@ -383,6 +389,13 @@ class MpcNode(Node):
         else:
             self.sub_mocap = self.create_subscription(
                 PoseStamped, TOPIC_MOCAP, self._on_mocap, QOS_MOCAP)
+            # ★ 速度是**独立的一条话题**（ticket 15）：`PoseStamped` 里没有 `twist` 字段，
+            #   不能再从位姿那一条取。`mocap` 节点把 `/vrpn/<刚体>/twist` 原样 republish 成
+            #   `/mocap/velocity_enu`（`TwistStamped`，同 frame）⟹ 与 `PoseStamped` 那条
+            #   同样的 QoS（`mocap` 节点用 `QoS(10)` 发，见 QOS_MOCAP 的注释）。
+            #   ⚠️ 两档的分岔仍只有这一处：A 档的速度在 `vehicle_local_position` 里，不订这条。
+            self.sub_mocap_vel = self.create_subscription(
+                TwistStamped, TOPIC_MOCAP_VEL, self._on_mocap_velocity, QOS_MOCAP)
         self.sub_status = self.create_subscription(
             VehicleStatus, TOPIC_STATUS, self._on_status, QOS_SUB_STATUS)
 
@@ -522,6 +535,9 @@ class MpcNode(Node):
 
     def _on_mocap(self, msg: PoseStamped) -> None:
         self.core.on_mocap(msg, self._now_s())
+
+    def _on_mocap_velocity(self, msg: TwistStamped) -> None:
+        self.core.on_mocap_velocity(msg, self._now_s())
 
     def _on_local_position(self, msg: VehicleLocalPosition) -> None:
         self.core.on_local_position(msg, self._now_s())
