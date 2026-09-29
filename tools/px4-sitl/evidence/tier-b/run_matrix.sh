@@ -75,8 +75,11 @@ for tag in ${TAGS:-F0 F1 F2 F3 F4}; do
     # ★ 与 F0/F1 **同基线、同参数**，所以新数字与那五场可直接比（裁定 3：本张不重搭被控对象）。
     #   标签加 `b` 是为了**不覆盖**归档里的 F0/F1（它们的读数属于 08:59 那份 `install/` 快照）。
     # ☠️ 跑之前先 `colcon build --packages-select nmpc`：积分器写在 `mpc_node.py` 里，
-    #   而 DUT 的**入口脚本**来自 `install/` ⟹ 不 build 的话改的东西一行都不飞、
-    #   症状是"读数毫无变化"（ticket 20 §8.6）。
+    #   而 DUT 的**入口脚本**来自 `install/`（`ros2 run` 按 `<prefix>/lib/<包>/<名字>` 找文件）
+    #   ⟹ 不 build 的话 `mpc_node.py` **自身**的改动完全不生效，
+    #   症状指纹 = 日志里**没有 `df` 列**、读数与加积分作用之前逐位相同（ticket 20 §8.6 ★、§9.6）。
+    #   ⚠️ 别推成"改什么都要 build"：被 `import` 的 `node_core.py`/`ocp.py` 走的是 `src/` 正规包
+    #   （本脚本第 52 行把 `src/nmpc` 前置、DUT 子进程继承）⟹ 那类改动不 build 也会飞。
     F0b) fly F0b --mismatch none ;;
     F1b) fly F1b --mismatch mass+30 ;;
     *)  say "不认识的场次 $tag"; exit 2 ;;

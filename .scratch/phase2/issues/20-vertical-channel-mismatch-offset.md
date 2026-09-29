@@ -326,11 +326,13 @@ python3 tools/px4-sitl/verify_tier_b_seam3.py --tag F1b $COMMON --mismatch mass+
 
 ---
 
-## 9. 落地记录（2026-09-29 — 代码已写、**未 build、未飞**）
+## 9. 落地记录（2026-09-29 — 代码已写、**已 build（12:11:55）、未飞**）
 
 > 引用格式：`路径::符号` 定位、`路径:行号` 是**快照**（对当前工作树）。
-> ⚠️ 本节写于 build 之前 ⟹ **`install/` 里还是 08:59 那份快照**，
-> 下面所有"改了什么"都**还没飞**（症状会是"读数毫无变化"，见 §8.6）。
+> ⚠️ ★ **本标题原写"未 build"，写的时候就已经是错的 —— 订正记录见 §9.6。**
+> 正确口径：`colcon build --packages-select nmpc` 发生在 **12:11:55**，提交 `d817a16` 在 **12:12:58**
+> （build 早 63 s），且 `install/nmpc/lib/nmpc/mpc_node.py` 与提交里的那份**逐字节相同**
+> （`sha256 a4e0fa8c…`）⟹ 下面所有"改了什么"**已经在 `install/` 里了**，但**仍未飞**。
 
 ### 9.1 改了哪儿（四处）
 
@@ -377,10 +379,10 @@ python3 tools/px4-sitl/verify_tier_b_seam3.py --tag F1b $COMMON --mismatch mass+
 |---|---|---|
 | 1 `hold_feedforward` 可选形参、默认逐位不变 | [`test_node_core.py::test_保持前馈是参考自己的平衡点_也就是解析前馈的定义`](../../../src/nmpc/test/test_node_core.py#L174)（`:195` 用 `==` 钉"不传 == 传 0"） | ✅ 跑过（seam 2） |
 | 2 偏置只进第 0 路、铺满 `N` 行 | [`test_node_core.py::test_垂直偏置只进推力那一路_且偏离量正好是_df_over_m`](../../../src/nmpc/test/test_node_core.py#L206) | ✅ 跑过 |
-| 3 符号（`e_z>0` ⟹ ΔF 增） | [`test_mpc_node.py::test_垂直偏置积的是实测位置误差`](../../../src/nmpc/test/test_mpc_node.py#L1202) 判据② | ⏳ 待 build |
-| 4 抗饱和（夹住 ⟹ 不再累积） | [`test_mpc_node.py::test_垂直偏置顶在界上就不再累积`](../../../src/nmpc/test/test_mpc_node.py#L1268) | ⏳ 待 build |
-| 5 三个冻结/复位时点 | 闸门关 [`::test_闸门关闭期间垂直偏置冻结`](../../../src/nmpc/test/test_mpc_node.py#L1342)；兜底 [`::test_兜底期间垂直偏置冻结但不清零`](../../../src/nmpc/test/test_mpc_node.py#L1393)；钉锚点（判据⑥，在正控那条里） | ⏳ 待 build |
-| 6 台架"`ΔF` 不来自上一帧解" | 负控 [`::test_垂直偏置不跟着解爬`](../../../src/nmpc/test/test_mpc_node.py#L1157)（**改名**：旧名 `…解析前馈_不跟着解爬`，因为"逐帧恒等于 `[t_hover,0,0,0]`"**不再是恒等式**）；正控见上 | ⏳ 待 build |
+| 3 符号（`e_z>0` ⟹ ΔF 增） | [`test_mpc_node.py::test_垂直偏置积的是实测位置误差`](../../../src/nmpc/test/test_mpc_node.py#L1202) 判据② | ⏳ 待跑（build 已完成） |
+| 4 抗饱和（夹住 ⟹ 不再累积） | [`test_mpc_node.py::test_垂直偏置顶在界上就不再累积`](../../../src/nmpc/test/test_mpc_node.py#L1268) | ⏳ 待跑（build 已完成） |
+| 5 三个冻结/复位时点 | 闸门关 [`::test_闸门关闭期间垂直偏置冻结`](../../../src/nmpc/test/test_mpc_node.py#L1342)；兜底 [`::test_兜底期间垂直偏置冻结但不清零`](../../../src/nmpc/test/test_mpc_node.py#L1393)；钉锚点（判据⑥，在正控那条里） | ⏳ 待跑（build 已完成） |
+| 6 台架"`ΔF` 不来自上一帧解" | 负控 [`::test_垂直偏置不跟着解爬`](../../../src/nmpc/test/test_mpc_node.py#L1157)（**改名**：旧名 `…解析前馈_不跟着解爬`，因为"逐帧恒等于 `[t_hover,0,0,0]`"**不再是恒等式**）；正控见上 | ⏳ 待跑（build 已完成） |
 | 7 不许拿合成被控对象当判据① 的证据 | 遵守：新增的都是**单测/缝 1**，判据① 仍只认 SITL 真值帧 | — |
 
 **两条**是清单之外补的，理由都在上面：`ki_z ≤ 0` 恒为 0
@@ -422,6 +424,53 @@ python3 tools/px4-sitl/verify_tier_b_seam3.py --tag F1b $COMMON --mismatch mass+
 本张只在那张表里加了一行 `df`，没去动邻行的括号 —— 按"别顺手改别的票"登记在此。
 （同理：`docs/control/tier-a-sitl-hover.md` 与 `docs/control/offline-ocp.md` 里贴的
 `def hold_feedforward(params, N)` 代码块现在是**旧签名**；本张没改那两份文档。）
+
+### 9.6 ★ 订正（12:1x 记）：本张的"build 时点"我写错过，以及"哪一份在飞"的准确说法
+
+**① `d817a16` 的提交信息里"未 build"是错的 —— 写的时候就已经错。**
+
+| 事实 | 读数 | 怎么核的 |
+|---|---|---|
+| build 完成 | `install/nmpc/lib/nmpc/mpc_node.py` mtime = `2026-09-29 12:11:55` | `stat -c '%y  %n'` |
+| 提交时间 | `d817a16` committer = `2026-09-29T12:12:58+00:00` | `git log -1 --format=%cI d817a16` |
+| 内容同一 | `git show d817a16:src/nmpc/nmpc/mpc_node.py \| sha256sum` = `a4e0fa8c…` = `install` 那份 | 同上 |
+
+build **早于** commit 63 s，且 build 读的就是随后提交的那份内容 ⟹ 正确口径是
+**已 build（12:11:55，`install` sha `a4e0fa8c`）、未飞**。本文 §9 的标题与 §9.3 的状态列已按此改。
+**`d817a16` 不 amend**：12:14:51 的 `53d56e9` 已压在它上面，而别人的票正按这个 sha 钉口径。
+
+**② 另一句我写错的**：我曾写「build 时 `src/` 正好停在 HEAD」。同一条时间线上，那一刻 `HEAD` 是
+`82490af`（12:05:07）⟹ `src/` 含**我自己的在制品**。实质主张不变（**无他人 hunk**：`install` 与
+`d817a16` 逐字节一致，而 `d817a16` 是我的提交），但说法要改成
+**"build 时 `src/` 只含本张的在制品，随后原样提交成 `d817a16`"**。
+
+**③ 收回我关于 install 布局的一句话**（原写"`site-packages` 那份也不存在"）：我查的
+`install/nmpc/lib/python3.10/site-packages/` **在本机布局里不存在**；真正的包在
+`install/nmpc/local/lib/python3.10/dist-packages/nmpc/`（**有** `__init__.py`，整个包都在）。
+`install/nmpc/lib/nmpc/` 是 ament 的**脚本目录**（无 `__init__.py`，**不是包**）。
+
+**④ `__main__` 与 `import nmpc` 是两条独立的路 —— 且这条已经有人记过，本张只挂引用。**
+归档 [`tools/px4-sitl/evidence/tier-b/README.md` §4（`:33-57`）](../../../tools/px4-sitl/evidence/tier-b/README.md)
+已经把这件事写全了：**入口脚本永远来自 `install/`**（`ros2 run` 按 `<prefix>/lib/<包>/<名字>` 找文件），
+而**包**解析到哪儿看父进程 `PYTHONPATH` 谁在前（`run_matrix.sh:52` 把 `src/nmpc` 前置、
+`dut_env()` 只加 acados 两个键、不动 `PYTHONPATH` ⟹ 子进程继承）。
+那份 README 还就 `install`(08:59) 与 `src@cff55ae` 的差异做过**逐行核实**并算了数值影响
+（SITL 口径下 `t_max` vs `f_max` 差 0.0027 %）⟹ **本张不重复叙述，F0b/F1b 与该批的可比性以那份记录为准。**
+本张要记的只是**对本张改动面**的那条推论：
+
+**⑤ §8.6 那条☠️**：**原文已经写对了**（"`import nmpc` 走 `PYTHONPATH` 里的 `src/` 正规包
+（所以 `ocp.py`/`node_core.py` 之类的改动**不需要** build），但**入口脚本永远来自 `install/`**"）——
+本张只补一句"没 build 时的**症状指纹**"，因为它能把这种失败与"积分作用没用"一眼分开：
+
+| 改哪儿 | 不 build 会怎样 | 依据 |
+|---|---|---|
+| `mpc_node.py` **自身** | **完全不生效** | `__main__` 来自 `install/` |
+| `node_core.py` / `params.py` / `ocp.py` | 在**跑场脚本**下**照样生效**（从 `src/` 来） | `run_matrix.sh:52` + 继承 env |
+
+⟹ 若没 build 就跑：新 `node_core.py` 的 `df` 形参有缺省 `0.0`，`install` 里那份**旧** `mpc_node.py`
+的调用方（`hold_feedforward(z0, N)`，两参）照样跑得通 ⟹ **日志里连 `df` 列都不会出现**，
+读数与加积分作用之前**逐位相同**。★ 判据：**先看日志有没有 `df` 列**，再看数值 ——
+没有这一列就说明 `__main__` 是旧的，数值没有任何解释力。
 
 ---
 
