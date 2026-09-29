@@ -978,12 +978,26 @@ tick=159 u0=11.800000 df=3.119970  tbz=-0.254845  f_out=11.800000  want=11.80000
 ⟹ 同一个 uORB topic、两条 transport（控制台打印 vs DDS 订阅）。§12.3 第 ② 条据此成立。
 
 **★ 顺带记一条结构性事实（免得后人白试）**：`evidence/tier-b/` 下**七份**控制台日志
-（F0/F0b/F1/F1b/F2/F3/F4）`grep -c "TOPIC: vehicle_local_position_groundtruth"` **全是 0**，
-每份只出现 `actuator_outputs_sim` 与 `vehicle_status`。⟹ **B 档的控制台根本没有订阅真值 topic**，
-**"从控制台重推 B 档真值"这条路不存在**（不是"会掉多少帧"）。根因是设计而非遗漏：
-`seam3` 的 docstring 写着 A 档控制台真值只有 4 Hz（分辨力 2 Hz），判据① 的稳态读数与
-"无持续振荡"都吃不起 ⟹ 真值**必须**桥到 DDS。
+（F0/F0b/F1/F1b/F2/F3/F4）**块头形式**（`^TOPIC: …`，即控制台打印机的订阅块）
+`grep -c` 真值 topic **全是 0**；每份出现的 `TOPIC:` 块只有 `actuator_outputs_sim` 与 `vehicle_status`。
+
+☠️ **但"裸搜那串名字"每份有 1 次命中，必须一起写，否则这条会被读成"这个名字在该文件里不存在"**：
+```
+F0-console.log:45  INFO  [uxrce_dds_client] successfully created
+                   rt/fmu/out/vehicle_local_position_groundtruth data writer, topi…
+```
+（七份都是 `裸搜=1 / 块头=0`；该行在各场的 `:44–:46`。）
+
+★ **这一条不是补漏，是把"缺席论证"升级成"正面实证"**：那个 topic 在 uORB 里**存在**、
+**PX4 亲手把它交给了 DDS**（`uxrce_dds_client` 自报 data writer），而**控制台的打印机一次都没订它**。
+两头合起来读才是结论：**"控制台不订真值"是设计如此，不是漏订** —— 也顺带正面佐证了本张 B 档
+真值**确实**来自 DDS（§12.4 上表那两行）。
+
+⟹ **B 档的控制台根本没有订阅真值 topic**，**"从控制台重推 B 档真值"这条路不存在**
+（不是"会掉多少帧"）。根因：`seam3` 的 docstring 写着 A 档控制台真值只有 4 Hz（分辨力 2 Hz），
+判据① 的稳态读数与"无持续振荡"都吃不起 ⟹ 真值**必须**桥到 DDS。
 ⚠️ 因此并行会话那条"17/17 场命中、`climb_gt` 只挪 ≤0.064 m"的重取实验**只在 A 档成立**。
+（同一事实的另一面记在 12 号票的文档 §3.4；本张只记"它对本张意味着什么"。）
 
 ## Comments
 
