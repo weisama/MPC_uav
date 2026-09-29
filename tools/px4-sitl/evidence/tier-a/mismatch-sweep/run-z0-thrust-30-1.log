@@ -1,0 +1,71 @@
+/home/chen/.local/lib/python3.10/site-packages/matplotlib/projections/__init__.py:63: UserWarning: Unable to import Axes3D. This may be due to multiple versions of Matplotlib being installed (e.g. as a system package and as a pip package). As a result, the 3D projection is not available.
+  warnings.warn("Unable to import Axes3D. This may be due to multiple versions of "
+[verify] param show COM_OF_LOSS_T ⟶ pxh> param show COM_OF_LOSS_T | x   COM_OF_LOSS_T [281,483] : 1.0000
+[verify] param show SIH_MASS ⟶ pxh> param show SIH_MASS | x   SIH_MASS [843,1330] : 0.7500
+[verify] param show SIH_T_MAX ⟶ pxh> param show SIH_T_MAX | x + SIH_T_MAX [845,1332] : 2.0650
+[verify] param show SIH_Q_MAX ⟶ pxh> param show SIH_Q_MAX | x + SIH_Q_MAX [844,1331] : 0.1032
+[verify] param show SIH_IXX ⟶ pxh> param show SIH_IXX | x   SIH_IXX [830,1317] : 0.0022
+[verify] param show SIH_IYY ⟶ pxh> param show SIH_IYY | x   SIH_IYY [833,1320] : 0.0022
+[verify] param show SIH_IZZ ⟶ pxh> param show SIH_IZZ | x   SIH_IZZ [835,1322] : 0.0043
+[verify] param show SIH_T_TAU ⟶ pxh> param show SIH_T_TAU | x   SIH_T_TAU [846,1333] : 0.0500
+[verify] param show MC_ROLLRATE_P ⟶ pxh> param show MC_ROLLRATE_P | x   MC_ROLLRATE_P [540,966] : 0.1500
+[verify] param show MC_PITCHRATE_P ⟶ pxh> param show MC_PITCHRATE_P | x   MC_PITCHRATE_P [532,958] : 0.1500
+[verify] param show MC_YAWRATE_P ⟶ pxh> param show MC_YAWRATE_P | x   MC_YAWRATE_P [548,974] : 0.2000
+[verify] COM_OF_LOSS_T = 1.0
+[verify] param show SYS_HITL ⟶ pxh> param show SYS_HITL | x   SYS_HITL [867,1360] : 0
+[verify] param show EKF2_HGT_MODE ⟶ pxh> param show EKF2_HGT_MODE
+[verify] param show EKF2_GPS_CTRL ⟶ pxh> param show EKF2_GPS_CTRL | x   EKF2_GPS_CTRL [347,549] : 7
+[verify] param show EKF2_EV_CTRL ⟶ pxh> param show EKF2_EV_CTRL | x   EKF2_EV_CTRL [335,537] : 15
+[verify] param show GPS_1_CONFIG ⟶ pxh> param show GPS_1_CONFIG
+[verify] param show SENS_EN_GPSSIM ⟶ pxh> param show SENS_EN_GPSSIM | x   SENS_EN_GPSSIM [815,1294] : 1
+[verify] param show SENS_EN_BAROSIM ⟶ pxh> param show SENS_EN_BAROSIM | x   SENS_EN_BAROSIM [814,1293] : 1
+[verify] param show SENS_EN_MAGSIM ⟶ pxh> param show SENS_EN_MAGSIM | x   SENS_EN_MAGSIM [816,1295] : 1
+[verify] param show SENS_IMU_MODE ⟶ pxh> param show SENS_IMU_MODE | x   SENS_IMU_MODE [821,1307] : 0
+[verify] param show COM_ARM_WO_GPS ⟶ pxh> param show COM_ARM_WO_GPS | x   COM_ARM_WO_GPS [253,455] : 1
+[verify] param show EKF2_BARO_CTRL ⟶ pxh> param show EKF2_BARO_CTRL | x   EKF2_BARO_CTRL [318,520] : 1
+
+=== A 档闭环：hover-1m（状态源 px4）===
+  ·  真值采样 45 点 / 被控对象时间 22.4s（墙钟 23.4s）⟹ 1.97 Hz
+  ·  DUT 2770 帧 / 27.8s ⟹ 99.8 Hz；档位 {'warmup': 5, 'normal': 2765}；饱和 无
+  ·  姿态真值 19 点（命令 23 条 / 白等 3 次 / 残缺 0）—— 判据⑨ 的独立参照
+  ·  OFFBOARD 于 t=0.47s；解锁命令 1 条、模式命令 17 条；末态 armed=1 nav_state=14
+  ·  ★ D6：求解 p50 2.983 / p99 3.623 / 全集最坏 13.626 ms ⟹ 50 Hz（10–20 ms，降档）；去掉 warmup 后（稳态 n=2765）最坏 4.073 ms ⟹ 100 Hz（最坏 ≤10 ms，余量够）
+  ·  ★ 偏航（真值锚点）：真值累计转角 +0.00 rad / 指令 -0.00 rad（残差 -0.00）；换算误差中位数 +0.076 rad
+  ·  末段：电机 m0=+0.476 m1=+0.505 m2=+1.000 m3=+0.000（均值 0.4952 ⟹ 5.844 N）；EKF z=-0.442 m；真值 z=+0.000 m
+  ✅ ⓪ 仪器自检：真值采样没把被控对象卡住（被控对象时间跨度 ≈ 墙钟跨度）：被控对象时间 22.4s / 墙钟 23.4s（95.7%）；采样 45 点 ⟹ 1.97 Hz（目标 4.0 Hz）、命令 77 条 / 白等 3 次。★ 不过 ⟹ **本场不作数**（不是控制器的锅）：控制台输出把 PX4 的主循环（含 SIH 步进）堵住，闭环就在一台时间流速不对的被控对象上跑 —— 见模块 docstring ★★★
+  ✅ ① 中间件：DUT 发得出帧、PX4 解锁并进了 OFFBOARD：DUT 2770 帧（99.8 Hz）、armed=True、OFFBOARD 于 t=0.47s；解锁命令 1 条、模式命令 17 条；末态 armed=1 nav_state=14
+  ✅ ★ 参考锚定：目标全程没跟着测量走（`x_ref0` 钉在锚点上）：`x_ref0[2]` 全程跨度 0.0000 m（该接近 0：锚点 + 偏移是个常量）、水平跨度 0.0000 m；锚点事件 ['anchor']；参考误差（`x0[2] − x_ref0[2]`）头 -0.980 m ⟹ 末段 -1.034 m。★★ 若这一条不过（跨度 ≈ 飞机自己飞过的距离、误差一行不变）⟹ 归因「**参考取法**」：节点在追一个每拍都跟着自己移动的目标，与模型/符号映射都无关
+  ✅ ⑨ 偏航：指令方向与被控对象真的转的方向一致（真值锚点：`dψ_ned/dt == −ω_z_FLU`，**不经过我们的换算**）：配对 13 点（`vehicle_attitude_groundtruth` @ 1.0 Hz）：真值机头累计转角 +0.000 rad、指令累计转角 `∫u[3]dt` -0.004 rad ⟹ 残差 `ψ̇ + ω_z` 的积分 -0.004 rad（该 ≈ 0）。⚠️ **判别力不足**（`|∫u[3]dt|` = -0.004 rad ≤ 0.2）⟹ 这一场的 `✅` **只说明没矛盾，不能证明方向**（悬停得好 ⟹ 指令累计转角本来就小，反过来也过）。**方向证据要引真在转的场次**（第 5 场：`∫u[3]dt` = +7.94 rad、真值 −7.73 rad，反了会给出 −15.7），或者 seam 1 的话题层用例★ 若这一条不过：**指令把飞机往反方向转** ⟹ 归因「符号映射」（`sign-map.md` §5.2 的 yaw 取反）
+  ✅ ⑨ 偏航：我们换算出来的机头朝向 == 教科书那一个（`π/2 − ψ_ned` == 节点换算出来的 ENU 机头朝向）：换算误差中位数 +0.076 rad、全程跨度 0.042 rad（该 ≈ 0 且不随航向变）。★ 若这一条不过（误差 ≈ 2ψ_ned 或随航向线性变）⟹ 归因「符号映射」的**换算那半边**：`px4_quat_to_enu` 的 yaw 分量反了 —— 那时位置环仍可能看着正常
+  ❌ ② 行为：真值高度真的升上去了（起飞后 5 s 内 z < −0.4 m）：真值第一点 z=+0.0002 m（地面）⟹ 第一次越过 −0.15 m 于 t=—s；起飞段最低 — m。★ 若这一条不过（高度不动或往下扎）⟹ 归因「符号映射/推力方向」，与模型无关
+  ❌ ③ 悬停高度 1 m ± 0.15（★ **EKF 帧**：节点日志里 `x0[2]` 的抬升量，末段 3 s 均值）：节点侧：起飞前 +0.268 m ⟹ 末段 +0.414 m（抬升 +0.145 m，末段 up 速度 -0.017 m/s）、末段区间 [+0.204, +0.583] m、2765 帧。★ 为什么判在这一帧：票面的状态源就是 EKF 这两条话题，**「1 m」只有在那一帧里才有定义**（节点没法知道自己相对真值差多少）。真值帧的读数见下一条
+  ℹ️ ③（真值帧，ℹ️ 不计数）：真值抬升了多少 —— 与 EKF 帧的差就是**被控对象自己**的误差：真值：地面段均值 +0.0002 m ⟹ 末段 +0.0002 m（抬升 0.000 m）；末段 8 帧区间 [+0.000, +0.000] m。体检里地面静息的 EKF−真值 高度差见 `--plant-check` 的 dwell 一行（0.4 m 量级、噪声带 ~0.15 m、|最大| ~0.7 m）⟹ 两个帧的读数差里，**主要部分是这台 SITL 的估计器误差**，不是控制器的误差
+  ❌ ④ 无持续振荡（★ EKF 帧，末段 3 s）：高度峰峰值 < 0.35 m 且穿均值频率 < 2 Hz：节点侧末段 3.0s：峰峰值 0.3790 m、标准差 0.1425 m、穿均值 0.17 Hz。★ 这一路是 **100 Hz** 的逐拍日志 ⟹ 判得了 50 Hz 以内的抖（真值采样只有 2.0 Hz，见下一条）
+  ℹ️ ④（真值帧，ℹ️ 不计数）：真值那一路的峰峰值与穿均值频率：末段峰峰值 0.0000 m、穿均值 0.00 Hz（真值采样 1.97 Hz / 8 点 ⟹ 只判得了 2 Hz 以上的抖，★ 这是这台仪器的分辨力上限；而且它把估计器自身的漂移也算进峰峰值里了）
+  ✅ ④ 无持续漂移：末段 3 s 水平位移 < 0.5 m（EKF 帧与真值帧各报一个）：EKF 帧水平净位移 0.293 m；真值帧 0.000 m（x 从 +0.000 到 +0.000 m）
+  ❌ ⑤ 推力标定：PX4 解出的电机均值 ≈ m·g/(4·T_max)（★ 只在末段配平时才算数）：末段电机均值 0.4952 ⟹ 总推力 5.844 N；z0 机型真值 m·g=7.355 N、归一化悬停 = 0.6233（= m·g/(4·`SIH_T_MAX`)）。★ 电机是 **PX4 解出来**的量，不是我们的请求。
+  ✅ ⑤ 归一化常数一致：节点自己的 `HOVER_THRUST` == 机型的 m·g/(4·T_max)：节点参数 `HOVER_THRUST`=0.6233、机型推出 0.6233（两个数来自**各自独立的**来源：`nmpc/params.py` 与 z0 机型文件）
+  ❌ ⑤ 悬停段的推力指令 ≈ 悬停所需（|u[0]| 与 m·g 差 < 25%）：正常帧 `u[0]`（FLU 总推力，**牛顿**）均值 +9.511 N，悬停需 7.355 N ⟹ 归一化 +0.8060（分母是总推力上限 11.80 N）；线上那一列 `|thrust_body_z|`**末段**中位数 = -0.8231，悬停该是 0.6233（整场的取值集合 [-0.9144, -0.9125, -0.9122, -0.9119, -0.9115, -0.9114] —— 起飞那一拍本来就该贴 −1，别拿它当悬停读数）
+  ✅ ⑥ 符号映射：末段滚转/俯仰指令没有长贴上限（|u[1]|,|u[2]| < 上限的 40%）：正常帧指令均值 roll=+0.2438 pitch=-0.1308 yaw=-0.0001 rad/s（上限 3.84/3.84/6.28）；饱和计数 无。★ 长期贴上限说明参考追不上 —— 那是**输入**的问题，不是符号映射的问题（方向错会表现为反着飞，②会先不过）
+  ✅ ⑥b 悬停段机头保持（EKF 帧）：末段机头转速 ≈ 0 且全程没转圈：末段（2.99s）机头转速 +0.0026 rad/s、该段转角 +0.008 rad；**全程累计转角** +0.046 rad；末段 `u[3]` 均值 -0.0005 rad/s。★「机头在转而位置那几条全绿」是**位置参考锚死**的副作用 ⟹ 别拿位置 ✅ 当成机头正常；归因见判据⑨
+  ℹ️ ⑦ D6（结论行，不是通过/不通过）：求解耗时 p50/p99/最坏 —— 冷启动与稳态分账：n=2770 ⟹ p50 2.983 ms / p99 3.623 ms / **全集最坏 13.626 ms**（查最坏 10 ms 的 1 拍、超 20 ms 的 0 拍）；去掉 5 拍 `warmup` 之后（n=2765）：p50 2.983 / p99 3.588 / **稳态最坏 4.073 ms**。按票面字面（全集）⟹ 50 Hz（10–20 ms，降档）；按稳态 ⟹ 100 Hz（最坏 ≤10 ms，余量够）。★ 全集最坏那 13.626 ms 是**第 0 拍**（acados 第一次进内存的一次性开销，不是持续负载）；见 `solve_stats` 的 ★★ 与 `docs/control/tier-a-sitl-hover.md`
+[verify] 控制台全文写到 /tmp/verify_tier_a_console.log
+[verify] 观测写到 tools/px4-sitl/evidence/tier-a/mismatch-sweep/obs-z0-thrust-30-1.json
+[sweep] z0-thrust-30 rep1：A 档 rc=1；覆盖层读回 ✅ 10 项逐条与 `plant_spec` 一致（本场动的是 `SIH_T_MAX / SIH_Q_MAX` ⟹ 旋钮 thrust）
+  ✅ ⑦ 冷启动落在 `warmup` 闸门里（否则那 13.6 ms 会砸在**正在发指令**的一拍上）：第 0 拍 fallback='warmup'、`solve_ms`=13.626；`warmup_cycles` 那几拍（本场 5 拍）不发指令 ⟹ 冷启动的尾巴落在闸门里。★ 稳态档位（D6 定在它上面）的前提就是这一条
+  ✅ ⑦ 这台机器真跑出多少 Hz（逐拍间隔）—— D6 的另一个读数：逐拍间隔 p50 10.007 ms / p99 11.653 ms / 最坏 89.435 ms ⟹ 请求 100.0 Hz、实发 99.8 Hz
+  ✅ ⑧ 复盘面：逐帧日志里有状态源、两条状态的**分龄**、饱和标志与档位：state_source=px4、分龄齐全=True、每帧都带 `sat` 列=True（本场出现过的饱和标志 无，计数 {}）、档位分布 {'warmup': 5, 'normal': 2765}。★ 判的是「**能力在日志里**」而不是「这一场饱和过」—— 没有饱和的一场恰恰是「没顶约束」的证据，判 ❌ 就是把它读反了
+  ℹ️ ⑧ 本档**不用动捕**（票面约束）—— SITL 这一层**不做**这条，判据在话题边界：本场 `-p state_source:=px4`（⑧ 上一行判的就是它）、档位分布 {'warmup': 5, 'normal': 2765}；★ **证伪位置只有一个**：`state_source=px4` 时 `/mocap/pose_enu` 的 `matched_subscribers()` 必须 == 0（「订阅了但不看」在话题上不可证伪，见 `mpc_node` 的 ★）—— 那条在 **seam 1**：`test_mpc_node.py::test_A_档只订_px4_那两条_动捕一帧都不订`。本行**不计入**通过与否（`fallback` 的取值面里本来就没有 mocap 这一项）
+  → 归因：**符号映射 / 推力方向**：进了 OFFBOARD 但飞机没往上去 ⟹ 看 `u[0]` 与线上下发的 `thrust_body_z` 的符号（`sign-map.md` §1）
+
+--- 被控对象体检 ---
+  ✅ 被控对象是 SITL（而非 HITL 模式）：`SYS_HITL` = 0.000 —— ★ 这一条**不**决定三件套在不在跑（那条支路 `rcS:346-353` 只管 `SYS_HITL == 2`）：SITL 走的是 `px4-rc.simulator:21-31`，按 `SENS_EN_*SIM` 起；见下面「传感器仿真的源」那两条
+  ✅ 地面静息：真值高度 ≈ 0（仪器零点）：真值 `z` = +0.0002 m、`vz` = +0.0000 m/s（NED：z 向下为正，所以「在地面」就是 0）
+  ❌ ★ 地面静息：EKF 的高度与真值一致（差 < 0.25 m）：EKF `z` = -0.3157 m、真值 +0.0002 m ⟹ 差 -0.316 m。★ 这一条**不过**就意味着：A 档「稳在 1 m」这个验收项在这台被控对象上首先取决于估计器，而不是控制器
+  ❌ ★ 地面静息：EKF 的水平位置与真值一致（差 < 0.25 m）：EKF (x,y) = (-0.374, -0.014)、真值 (+0.000, +0.000) ⟹ 差 0.374 m
+  ✅ EKF2 至少有一个**高度源**在融合（baro / 测距 / GPS / 外部视觉）：`estimator_status_flags`：高度源 = ['cs_baro_hgt', 'cs_gps_hgt']；完整读数 cs_tilt_align=True cs_yaw_align=True cs_gps=True cs_gps_hgt=True cs_baro_hgt=True cs_rng_hgt=False cs_ev_pos=False cs_ev_hgt=False cs_mag_3d=False cs_vehicle_at_rest=False cs_in_air=False cs_wind=False
+  ✅ EKF2 有水平位置源（GPS / 外部视觉）：cs_gps=True cs_ev_pos=False ⟹ 水平位置有源（没有的话 EKF 的 x/y 只能靠加速度计二次积分）
+  ✅ ★ DDS 上能看到真值话题（`--source px4-gt` 的前提）：`ros2 topic list` 里带 groundtruth 的：['/fmu/out/vehicle_attitude_groundtruth', '/fmu/out/vehicle_local_position_groundtruth']（`src/modules/uxrce_dds_client/dds_topics.yaml` 里没有这几条 ⟹ 没桥接就看不到）
+  ℹ️ ★ 传感器仿真的源（源码一手证据）：喂的是 EKF 自己的输出，不是真值：`sensor_baro_sim`：气压 = f(EKF `vehicle_global_position.alt`) + 1 Pa RMS 噪声（`src/modules/simulation/sensor_baro_sim/SensorBaroSim.cpp:107-118`、`:154-155`；`_baro_drift_pa_per_sec` 默认 0）；`sensor_gps_sim`：lat/lon = EKF + N(0, 0.2 m)、alt = EKF + N(0, 0.5 m)、v = EKF v + σ(0.06, 0.077, 0.158)（`src/modules/simulation/sensor_gps_sim/SensorGpsSim.cpp:117-121`）。⟹ 这台 SITL 上，EKF 的位置/高度**没有任何一路来自 SIH 真值**：助航是自反馈，误差不落地、也没人能纠它
+
+5 项判据不通过

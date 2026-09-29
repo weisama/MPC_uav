@@ -1,0 +1,883 @@
+{
+ "n_runs": 13,
+ "baseline": {
+  "n": 3,
+  "present": true,
+  "warn": null,
+  "climb_ekf": {
+   "n": 3,
+   "median": 0.978062943333333,
+   "min": 0.9697577066666667,
+   "max": 1.0074161466666665,
+   "span": 0.03765843999999974
+  },
+  "e_z_ekf": {
+   "n": 3,
+   "median": -0.02193705666666701,
+   "min": -0.03024229333333328,
+   "max": 0.007416146666666457,
+   "span": 0.03765843999999974
+  },
+  "p2p_ekf": {
+   "n": 3,
+   "median": 0.09261399999999997,
+   "min": 0.07360199999999995,
+   "max": 0.10128400000000015,
+   "span": 0.027682000000000206
+  },
+  "drift_ekf": {
+   "n": 3,
+   "median": 0.16246337663916757,
+   "min": 0.058463914417356634,
+   "max": 0.8533459549004729,
+   "span": 0.7948820404831163
+  },
+  "yaw_span_ekf": {
+   "n": 3,
+   "median": -0.13032133125022272,
+   "min": -0.1729515909630419,
+   "max": -0.10847712926068143,
+   "span": 0.06447446170236049
+  },
+  "solve_steady_max": {
+   "n": 3,
+   "median": 5.879,
+   "min": 5.088,
+   "max": 12.825,
+   "span": 7.736999999999999
+  },
+  "solve_p50": {
+   "n": 3,
+   "median": 2.968,
+   "min": 2.943,
+   "max": 3.07,
+   "span": 0.12699999999999978
+  },
+  "climb_gt": {
+   "n": 2,
+   "median": 1.3814003571428572,
+   "min": 1.3239314285714288,
+   "max": 1.4388692857142855,
+   "span": 0.11493785714285676
+  },
+  "p2p_gt": {
+   "n": 3,
+   "median": 0.09017000000000008,
+   "min": 0.08184000000000013,
+   "max": 0.16571999999999987,
+   "span": 0.08387999999999973
+  }
+ },
+ "by_variant": {
+  "z0": [
+   {
+    "passed": true,
+    "failed_checks": [],
+    "harness_dead": false,
+    "diverged": false,
+    "diverge_why": null,
+    "attribution": "本场没有失败项：EKF 帧内抬升 0.970 m、末段峰峰值 0.074 m ⟹ 控制器在**它能看见的那一帧**里把飞机稳住了；归因表不适用；★ 被控对象那一侧的读数（不参与通过与否）：末段 EKF-vs-真值 高度差 -0.117 m、真值抬升 1.439 m —— 这台 SITL 的估计器自带 0.4 m 量级误差（气压计/GPS 仿真喂的是 EKF 自己的输出）",
+    "climb_ekf": 0.9697577066666667,
+    "e_z_ekf": -0.03024229333333328,
+    "p2p_ekf": 0.07360199999999995,
+    "drift_ekf": 0.058463914417356634,
+    "referr_tail": 0.013983999999999996,
+    "yaw_span_ekf": -0.10847712926068143,
+    "u3_tail": -0.00010519,
+    "climb_gt": 1.4388692857142855,
+    "up_tail": 1.1431384566666667,
+    "p2p_gt": 0.16571999999999987,
+    "solve_p50": 3.07,
+    "solve_p99": 3.601,
+    "solve_max": 9.931,
+    "solve_steady_max": 5.088,
+    "ladder_steady": "100 Hz（最坏 ≤10 ms，余量够）",
+    "frames": 2771,
+    "actual_hz": 99.78,
+    "variant": "z0",
+    "rep": 1,
+    "knob": null,
+    "overlay_ok": true,
+    "status": "稳定",
+    "delta": {
+     "climb_ekf": -0.008305236666666271,
+     "e_z_ekf": -0.008305236666666271,
+     "p2p_ekf": -0.01901200000000003,
+     "drift_ekf": -0.10399946222181095,
+     "yaw_span_ekf": 0.02184420198954129,
+     "solve_steady_max": -0.7909999999999995,
+     "solve_p50": 0.10199999999999987,
+     "climb_gt": 0.05746892857142827,
+     "p2p_gt": 0.07554999999999978
+    }
+   },
+   {
+    "passed": true,
+    "failed_checks": [],
+    "harness_dead": false,
+    "diverged": false,
+    "diverge_why": null,
+    "attribution": "本场没有失败项：EKF 帧内抬升 0.978 m、末段峰峰值 0.093 m ⟹ 控制器在**它能看见的那一帧**里把飞机稳住了；归因表不适用；★ 被控对象那一侧的读数（不参与通过与否）：末段 EKF-vs-真值 高度差 -0.639 m、真值抬升 1.324 m —— 这台 SITL 的估计器自带 0.4 m 量级误差（气压计/GPS 仿真喂的是 EKF 自己的输出）",
+    "climb_ekf": 0.978062943333333,
+    "e_z_ekf": -0.02193705666666701,
+    "p2p_ekf": 0.09261399999999997,
+    "drift_ekf": 0.16246337663916757,
+    "referr_tail": -0.024723999999999968,
+    "yaw_span_ekf": -0.13032133125022272,
+    "u3_tail": -0.00010054999999999999,
+    "climb_gt": 1.3239314285714288,
+    "up_tail": 1.725109643333333,
+    "p2p_gt": 0.08184000000000013,
+    "solve_p50": 2.968,
+    "solve_p99": 3.392,
+    "solve_max": 16.347,
+    "solve_steady_max": 5.879,
+    "ladder_steady": "100 Hz（最坏 ≤10 ms，余量够）",
+    "frames": 2768,
+    "actual_hz": 99.69,
+    "variant": "z0",
+    "rep": 2,
+    "knob": null,
+    "overlay_ok": true,
+    "status": "稳定",
+    "delta": {
+     "climb_ekf": 0.0,
+     "e_z_ekf": 0.0,
+     "p2p_ekf": 0.0,
+     "drift_ekf": 0.0,
+     "yaw_span_ekf": 0.0,
+     "solve_steady_max": 0.0,
+     "solve_p50": 0.0,
+     "climb_gt": -0.05746892857142849,
+     "p2p_gt": -0.008329999999999949
+    }
+   },
+   {
+    "passed": false,
+    "failed_checks": [
+     "④ 无持续漂移：末段 3 s 水平位移 < 0.5 m（EKF 帧与真值帧各报一个）"
+    ],
+    "harness_dead": false,
+    "diverged": false,
+    "diverge_why": null,
+    "attribution": "**模型**：方向对、输入追得上（没有长期饱和）而 **EKF 帧内**的高度/振荡仍不过 ⟹ 轮到「预测模型与代价」这一层；★ 被控对象那一侧的读数（不参与通过与否）：末段 EKF-vs-真值 高度差 -0.682 m、真值抬升 — m —— 这台 SITL 的估计器自带 0.4 m 量级误差（气压计/GPS 仿真喂的是 EKF 自己的输出）",
+    "climb_ekf": 1.0074161466666665,
+    "e_z_ekf": 0.007416146666666457,
+    "p2p_ekf": 0.10128400000000015,
+    "drift_ekf": 0.8533459549004729,
+    "referr_tail": 0.020067500000000016,
+    "yaw_span_ekf": -0.1729515909630419,
+    "u3_tail": -5.091e-05,
+    "climb_gt": null,
+    "up_tail": 1.7433798966666665,
+    "p2p_gt": 0.09017000000000008,
+    "solve_p50": 2.943,
+    "solve_p99": 3.491,
+    "solve_max": 17.39,
+    "solve_steady_max": 12.825,
+    "ladder_steady": "50 Hz（10–20 ms，降档）",
+    "frames": 3568,
+    "actual_hz": 99.68,
+    "variant": "z0",
+    "rep": 3,
+    "knob": null,
+    "overlay_ok": true,
+    "status": "退化",
+    "delta": {
+     "climb_ekf": 0.029353203333333466,
+     "e_z_ekf": 0.029353203333333466,
+     "p2p_ekf": 0.008670000000000178,
+     "drift_ekf": 0.6908825782613054,
+     "yaw_span_ekf": -0.042630259712819196,
+     "solve_steady_max": 6.946,
+     "solve_p50": -0.02499999999999991,
+     "climb_gt": null,
+     "p2p_gt": 0.0
+    }
+   }
+  ],
+  "z0-inertia+30": [
+   {
+    "passed": true,
+    "failed_checks": [],
+    "harness_dead": false,
+    "diverged": false,
+    "diverge_why": null,
+    "attribution": "本场没有失败项：EKF 帧内抬升 0.970 m、末段峰峰值 0.069 m ⟹ 控制器在**它能看见的那一帧**里把飞机稳住了；归因表不适用；★ 被控对象那一侧的读数（不参与通过与否）：末段 EKF-vs-真值 高度差 -0.941 m、真值抬升 1.056 m —— 这台 SITL 的估计器自带 0.4 m 量级误差（气压计/GPS 仿真喂的是 EKF 自己的输出）",
+    "climb_ekf": 0.9704609400000002,
+    "e_z_ekf": -0.02953905999999984,
+    "p2p_ekf": 0.06898899999999997,
+    "drift_ekf": 0.17140096504979194,
+    "referr_tail": -0.01646000000000003,
+    "yaw_span_ekf": -0.03507343083256753,
+    "u3_tail": -8.612e-05,
+    "climb_gt": 1.0563713333333333,
+    "up_tail": 1.7166987400000002,
+    "p2p_gt": 0.0021299999999999653,
+    "solve_p50": 2.935,
+    "solve_p99": 3.423,
+    "solve_max": 17.775,
+    "solve_steady_max": 4.145,
+    "ladder_steady": "100 Hz（最坏 ≤10 ms，余量够）",
+    "frames": 2785,
+    "actual_hz": 96.82,
+    "variant": "z0-inertia+30",
+    "rep": 1,
+    "knob": "inertia",
+    "overlay_ok": true,
+    "status": "稳定",
+    "delta": {
+     "climb_ekf": -0.00760200333333283,
+     "e_z_ekf": -0.00760200333333283,
+     "p2p_ekf": -0.023625000000000007,
+     "drift_ekf": 0.008937588410624364,
+     "yaw_span_ekf": 0.09524790041765518,
+     "solve_steady_max": -1.734,
+     "solve_p50": -0.03299999999999992,
+     "climb_gt": -0.3250290238095239,
+     "p2p_gt": -0.08804000000000012
+    }
+   }
+  ],
+  "z0-inertia-30": [
+   {
+    "passed": true,
+    "failed_checks": [],
+    "harness_dead": false,
+    "diverged": false,
+    "diverge_why": null,
+    "attribution": "本场没有失败项：EKF 帧内抬升 0.974 m、末段峰峰值 0.060 m ⟹ 控制器在**它能看见的那一帧**里把飞机稳住了；归因表不适用；★ 被控对象那一侧的读数（不参与通过与否）：末段 EKF-vs-真值 高度差 -1.110 m、真值抬升 1.056 m —— 这台 SITL 的估计器自带 0.4 m 量级误差（气压计/GPS 仿真喂的是 EKF 自己的输出）",
+    "climb_ekf": 0.974343831561462,
+    "e_z_ekf": -0.02565616843853802,
+    "p2p_ekf": 0.060264000000000095,
+    "drift_ekf": 0.18081429910822872,
+    "referr_tail": -0.013328000000000118,
+    "yaw_span_ekf": -0.06385247052206866,
+    "u3_tail": -8.181e-05,
+    "climb_gt": 1.0559181818181818,
+    "up_tail": 1.783422531561462,
+    "p2p_gt": 0.04848000000000008,
+    "solve_p50": 3.061,
+    "solve_p99": 3.636,
+    "solve_max": 15.168,
+    "solve_steady_max": 6.873,
+    "ladder_steady": "100 Hz（最坏 ≤10 ms，余量够）",
+    "frames": 2768,
+    "actual_hz": 99.69,
+    "variant": "z0-inertia-30",
+    "rep": 1,
+    "knob": "inertia",
+    "overlay_ok": true,
+    "status": "稳定",
+    "delta": {
+     "climb_ekf": -0.0037191117718710087,
+     "e_z_ekf": -0.0037191117718710087,
+     "p2p_ekf": -0.03234999999999988,
+     "drift_ekf": 0.018350922469061143,
+     "yaw_span_ekf": 0.06646886072815406,
+     "solve_steady_max": 0.9940000000000007,
+     "solve_p50": 0.09299999999999997,
+     "climb_gt": -0.3254821753246755,
+     "p2p_gt": -0.041690000000000005
+    }
+   }
+  ],
+  "z0-mass+30": [
+   {
+    "passed": false,
+    "failed_checks": [
+     "③ 悬停高度 1 m ± 0.15（★ **EKF 帧**：节点日志里 `x0[2]` 的抬升量，末段 3 s 均值）",
+     "④ 无持续漂移：末段 3 s 水平位移 < 0.5 m（EKF 帧与真值帧各报一个）",
+     "⑤ 推力标定：PX4 解出的电机均值 ≈ m·g/(4·T_max)（★ 只在末段配平时才算数）",
+     "⑤ 悬停段的推力指令 ≈ 悬停所需（|u[0]| 与 m·g 差 < 25%）"
+    ],
+    "harness_dead": false,
+    "diverged": false,
+    "diverge_why": null,
+    "attribution": "**模型**：方向对、输入追得上（没有长期饱和）而 **EKF 帧内**的高度/振荡仍不过 ⟹ 轮到「预测模型与代价」这一层；★ 被控对象那一侧的读数（不参与通过与否）：末段 EKF-vs-真值 高度差 -0.469 m、真值抬升 0.455 m —— 这台 SITL 的估计器自带 0.4 m 量级误差（气压计/GPS 仿真喂的是 EKF 自己的输出）",
+    "climb_ekf": 0.3423506333333334,
+    "e_z_ekf": -0.6576493666666666,
+    "p2p_ekf": 0.078121,
+    "drift_ekf": 0.7910275707110341,
+    "referr_tail": -0.5985794999999998,
+    "yaw_span_ekf": -0.04260886253183216,
+    "u3_tail": -0.00012845,
+    "climb_gt": 0.45479545454545456,
+    "up_tail": 0.8333895333333333,
+    "p2p_gt": 0.04348999999999992,
+    "solve_p50": 2.899,
+    "solve_p99": 3.495,
+    "solve_max": 13.023,
+    "solve_steady_max": 7.253,
+    "ladder_steady": "100 Hz（最坏 ≤10 ms，余量够）",
+    "frames": 3577,
+    "actual_hz": 99.81,
+    "variant": "z0-mass+30",
+    "rep": 1,
+    "knob": "mass",
+    "overlay_ok": true,
+    "status": "退化",
+    "delta": {
+     "climb_ekf": -0.6357123099999996,
+     "e_z_ekf": -0.6357123099999996,
+     "p2p_ekf": -0.014492999999999978,
+     "drift_ekf": 0.6285641940718666,
+     "yaw_span_ekf": 0.08771246871839056,
+     "solve_steady_max": 1.3740000000000006,
+     "solve_p50": -0.06899999999999995,
+     "climb_gt": -0.9266049025974027,
+     "p2p_gt": -0.046680000000000166
+    }
+   }
+  ],
+  "z0-mass-30": [
+   {
+    "passed": false,
+    "failed_checks": [
+     "③ 悬停高度 1 m ± 0.15（★ **EKF 帧**：节点日志里 `x0[2]` 的抬升量，末段 3 s 均值）",
+     "⑤ 推力标定：PX4 解出的电机均值 ≈ m·g/(4·T_max)（★ 只在末段配平时才算数）",
+     "⑤ 悬停段的推力指令 ≈ 悬停所需（|u[0]| 与 m·g 差 < 25%）"
+    ],
+    "harness_dead": false,
+    "diverged": false,
+    "diverge_why": null,
+    "attribution": "**模型**：方向对、输入追得上（没有长期饱和）而 **EKF 帧内**的高度/振荡仍不过 ⟹ 轮到「预测模型与代价」这一层；★ 被控对象那一侧的读数（不参与通过与否）：末段 EKF-vs-真值 高度差 -0.887 m、真值抬升 — m —— 这台 SITL 的估计器自带 0.4 m 量级误差（气压计/GPS 仿真喂的是 EKF 自己的输出）",
+    "climb_ekf": 1.5871861347176082,
+    "e_z_ekf": 0.5871861347176082,
+    "p2p_ekf": 0.03170700000000015,
+    "drift_ekf": 0.16870426350569806,
+    "referr_tail": 0.6402159999999999,
+    "yaw_span_ekf": 0.0003664980252375827,
+    "u3_tail": -8.498e-05,
+    "climb_gt": null,
+    "up_tail": 1.989382584717608,
+    "p2p_gt": 0.07230000000000003,
+    "solve_p50": 2.834,
+    "solve_p99": 3.143,
+    "solve_max": 8.815,
+    "solve_steady_max": 6.699,
+    "ladder_steady": "100 Hz（最坏 ≤10 ms，余量够）",
+    "frames": 2769,
+    "actual_hz": 99.81,
+    "variant": "z0-mass-30",
+    "rep": 1,
+    "knob": "mass",
+    "overlay_ok": true,
+    "status": "退化",
+    "delta": {
+     "climb_ekf": 0.6091231913842752,
+     "e_z_ekf": 0.6091231913842752,
+     "p2p_ekf": -0.06090699999999982,
+     "drift_ekf": 0.006240886866530487,
+     "yaw_span_ekf": 0.1306878292754603,
+     "solve_steady_max": 0.8200000000000003,
+     "solve_p50": -0.1339999999999999,
+     "climb_gt": null,
+     "p2p_gt": -0.017870000000000053
+    }
+   }
+  ],
+  "z0-rate+30": [
+   {
+    "passed": true,
+    "failed_checks": [],
+    "harness_dead": false,
+    "diverged": false,
+    "diverge_why": null,
+    "attribution": "本场没有失败项：EKF 帧内抬升 0.956 m、末段峰峰值 0.068 m ⟹ 控制器在**它能看见的那一帧**里把飞机稳住了；归因表不适用；★ 被控对象那一侧的读数（不参与通过与否）：末段 EKF-vs-真值 高度差 -0.812 m、真值抬升 0.939 m —— 这台 SITL 的估计器自带 0.4 m 量级误差（气压计/GPS 仿真喂的是 EKF 自己的输出）",
+    "climb_ekf": 0.9564274799999999,
+    "e_z_ekf": -0.043572520000000114,
+    "p2p_ekf": 0.06833700000000009,
+    "drift_ekf": 0.24536875720637288,
+    "referr_tail": -0.016337499999999894,
+    "yaw_span_ekf": -0.09567455295975513,
+    "u3_tail": -9.188999999999999e-05,
+    "climb_gt": 0.9392676190476191,
+    "up_tail": 1.7083853299999998,
+    "p2p_gt": 0.06244000000000005,
+    "solve_p50": 2.878,
+    "solve_p99": 3.268,
+    "solve_max": 16.649,
+    "solve_steady_max": 7.724,
+    "ladder_steady": "100 Hz（最坏 ≤10 ms，余量够）",
+    "frames": 2769,
+    "actual_hz": 99.77,
+    "variant": "z0-rate+30",
+    "rep": 1,
+    "knob": "rate",
+    "overlay_ok": true,
+    "status": "稳定",
+    "delta": {
+     "climb_ekf": -0.021635463333333105,
+     "e_z_ekf": -0.021635463333333105,
+     "p2p_ekf": -0.024276999999999882,
+     "drift_ekf": 0.08290538056720531,
+     "yaw_span_ekf": 0.034646778290467584,
+     "solve_steady_max": 1.8450000000000006,
+     "solve_p50": -0.08999999999999986,
+     "climb_gt": -0.4421327380952381,
+     "p2p_gt": -0.027730000000000032
+    }
+   }
+  ],
+  "z0-rate-30": [
+   {
+    "passed": true,
+    "failed_checks": [],
+    "harness_dead": false,
+    "diverged": false,
+    "diverge_why": null,
+    "attribution": "本场没有失败项：EKF 帧内抬升 0.971 m、末段峰峰值 0.056 m ⟹ 控制器在**它能看见的那一帧**里把飞机稳住了；归因表不适用；★ 被控对象那一侧的读数（不参与通过与否）：末段 EKF-vs-真值 高度差 -0.421 m、真值抬升 0.988 m —— 这台 SITL 的估计器自带 0.4 m 量级误差（气压计/GPS 仿真喂的是 EKF 自己的输出）",
+    "climb_ekf": 0.9705174999999998,
+    "e_z_ekf": -0.02948250000000019,
+    "p2p_ekf": 0.05580600000000002,
+    "drift_ekf": 0.22952007428763171,
+    "referr_tail": -0.020192499999999947,
+    "yaw_span_ekf": -0.11689785034874056,
+    "u3_tail": -9.044e-05,
+    "climb_gt": 0.9878216666666666,
+    "up_tail": 1.5944505999999998,
+    "p2p_gt": 0.1269300000000001,
+    "solve_p50": 2.857,
+    "solve_p99": 3.18,
+    "solve_max": 15.696,
+    "solve_steady_max": 4.658,
+    "ladder_steady": "100 Hz（最坏 ≤10 ms，余量够）",
+    "frames": 2770,
+    "actual_hz": 99.73,
+    "variant": "z0-rate-30",
+    "rep": 1,
+    "knob": "rate",
+    "overlay_ok": true,
+    "status": "稳定",
+    "delta": {
+     "climb_ekf": -0.007545443333333179,
+     "e_z_ekf": -0.007545443333333179,
+     "p2p_ekf": -0.03680799999999995,
+     "drift_ekf": 0.06705669764846414,
+     "yaw_span_ekf": 0.013423480901482154,
+     "solve_steady_max": -1.2209999999999992,
+     "solve_p50": -0.11099999999999977,
+     "climb_gt": -0.39357869047619065,
+     "p2p_gt": 0.036760000000000015
+    }
+   }
+  ],
+  "z0-tau+30": [
+   {
+    "passed": true,
+    "failed_checks": [],
+    "harness_dead": false,
+    "diverged": false,
+    "diverge_why": null,
+    "attribution": "本场没有失败项：EKF 帧内抬升 0.963 m、末段峰峰值 0.073 m ⟹ 控制器在**它能看见的那一帧**里把飞机稳住了；归因表不适用；★ 被控对象那一侧的读数（不参与通过与否）：末段 EKF-vs-真值 高度差 -1.023 m、真值抬升 0.961 m —— 这台 SITL 的估计器自带 0.4 m 量级误差（气压计/GPS 仿真喂的是 EKF 自己的输出）",
+    "climb_ekf": 0.9630623499999998,
+    "e_z_ekf": -0.036937650000000155,
+    "p2p_ekf": 0.0726199999999999,
+    "drift_ekf": 0.27473262487371247,
+    "referr_tail": -0.020643000000000078,
+    "yaw_span_ekf": -0.07443465286760009,
+    "u3_tail": -8.394e-05,
+    "climb_gt": 0.9612666666666667,
+    "up_tail": 1.73092115,
+    "p2p_gt": 0.02138999999999991,
+    "solve_p50": 2.984,
+    "solve_p99": 3.479,
+    "solve_max": 15.822,
+    "solve_steady_max": 4.002,
+    "ladder_steady": "100 Hz（最坏 ≤10 ms，余量够）",
+    "frames": 2768,
+    "actual_hz": 99.76,
+    "variant": "z0-tau+30",
+    "rep": 1,
+    "knob": "tau",
+    "overlay_ok": true,
+    "status": "稳定",
+    "delta": {
+     "climb_ekf": -0.015000593333333145,
+     "e_z_ekf": -0.015000593333333145,
+     "p2p_ekf": -0.019994000000000067,
+     "drift_ekf": 0.1122692482345449,
+     "yaw_span_ekf": 0.05588667838262262,
+     "solve_steady_max": -1.8769999999999998,
+     "solve_p50": 0.016000000000000014,
+     "climb_gt": -0.42013369047619054,
+     "p2p_gt": -0.06878000000000017
+    }
+   }
+  ],
+  "z0-tau-30": [
+   {
+    "passed": false,
+    "failed_checks": [
+     "④ 无持续漂移：末段 3 s 水平位移 < 0.5 m（EKF 帧与真值帧各报一个）"
+    ],
+    "harness_dead": false,
+    "diverged": false,
+    "diverge_why": null,
+    "attribution": "**模型**：方向对、输入追得上（没有长期饱和）而 **EKF 帧内**的高度/振荡仍不过 ⟹ 轮到「预测模型与代价」这一层；★ 被控对象那一侧的读数（不参与通过与否）：末段 EKF-vs-真值 高度差 -0.622 m、真值抬升 1.183 m —— 这台 SITL 的估计器自带 0.4 m 量级误差（气压计/GPS 仿真喂的是 EKF 自己的输出）",
+    "climb_ekf": 1.0046551633333334,
+    "e_z_ekf": 0.004655163333333379,
+    "p2p_ekf": 0.071156,
+    "drift_ekf": 0.6944618451218181,
+    "referr_tail": 0.0425009999999999,
+    "yaw_span_ekf": -0.21113598199190875,
+    "u3_tail": -0.00018847,
+    "climb_gt": 1.182715,
+    "up_tail": 1.5281939133333333,
+    "p2p_gt": 0.07434000000000007,
+    "solve_p50": 2.874,
+    "solve_p99": 3.212,
+    "solve_max": 16.492,
+    "solve_steady_max": 3.704,
+    "ladder_steady": "100 Hz（最坏 ≤10 ms，余量够）",
+    "frames": 3577,
+    "actual_hz": 99.82,
+    "variant": "z0-tau-30",
+    "rep": 1,
+    "knob": "tau",
+    "overlay_ok": true,
+    "status": "退化",
+    "delta": {
+     "climb_ekf": 0.02659222000000039,
+     "e_z_ekf": 0.02659222000000039,
+     "p2p_ekf": -0.021457999999999977,
+     "drift_ekf": 0.5319984684826505,
+     "yaw_span_ekf": -0.08081465074168603,
+     "solve_steady_max": -2.1749999999999994,
+     "solve_p50": -0.09399999999999986,
+     "climb_gt": -0.1986853571428573,
+     "p2p_gt": -0.01583000000000001
+    }
+   }
+  ],
+  "z0-thrust+30": [
+   {
+    "passed": false,
+    "failed_checks": [
+     "③ 悬停高度 1 m ± 0.15（★ **EKF 帧**：节点日志里 `x0[2]` 的抬升量，末段 3 s 均值）",
+     "④ 无持续漂移：末段 3 s 水平位移 < 0.5 m（EKF 帧与真值帧各报一个）",
+     "⑤ 推力标定：PX4 解出的电机均值 ≈ m·g/(4·T_max)（★ 只在末段配平时才算数）"
+    ],
+    "harness_dead": false,
+    "diverged": false,
+    "diverge_why": null,
+    "attribution": "**模型**：方向对、输入追得上（没有长期饱和）而 **EKF 帧内**的高度/振荡仍不过 ⟹ 轮到「预测模型与代价」这一层；★ 被控对象那一侧的读数（不参与通过与否）：末段 EKF-vs-真值 高度差 -0.722 m、真值抬升 — m —— 这台 SITL 的估计器自带 0.4 m 量级误差（气压计/GPS 仿真喂的是 EKF 自己的输出）",
+    "climb_ekf": 1.4530110169435217,
+    "e_z_ekf": 0.45301101694352175,
+    "p2p_ekf": 0.04807500000000031,
+    "drift_ekf": 0.3201085326900862,
+    "referr_tail": 0.4754149999999999,
+    "yaw_span_ekf": -0.058443302464039615,
+    "u3_tail": -8.981e-05,
+    "climb_gt": null,
+    "up_tail": 2.2839049169435217,
+    "p2p_gt": 0.15395000000000003,
+    "solve_p50": 2.875,
+    "solve_p99": 3.203,
+    "solve_max": 19.642,
+    "solve_steady_max": 3.381,
+    "ladder_steady": "100 Hz（最坏 ≤10 ms，余量够）",
+    "frames": 2767,
+    "actual_hz": 99.71,
+    "variant": "z0-thrust+30",
+    "rep": 1,
+    "knob": "thrust",
+    "overlay_ok": true,
+    "status": "退化",
+    "delta": {
+     "climb_ekf": 0.47494807361018876,
+     "e_z_ekf": 0.47494807361018876,
+     "p2p_ekf": -0.04453899999999966,
+     "drift_ekf": 0.15764515605091864,
+     "yaw_span_ekf": 0.0718780287861831,
+     "solve_steady_max": -2.4979999999999998,
+     "solve_p50": -0.09299999999999997,
+     "climb_gt": null,
+     "p2p_gt": 0.06377999999999995
+    }
+   }
+  ],
+  "z0-thrust-30": [
+   {
+    "passed": false,
+    "failed_checks": [
+     "② 行为：真值高度真的升上去了（起飞后 5 s 内 z < −0.4 m）",
+     "③ 悬停高度 1 m ± 0.15（★ **EKF 帧**：节点日志里 `x0[2]` 的抬升量，末段 3 s 均值）",
+     "④ 无持续振荡（★ EKF 帧，末段 3 s）：高度峰峰值 < 0.35 m 且穿均值频率 < 2 Hz",
+     "⑤ 推力标定：PX4 解出的电机均值 ≈ m·g/(4·T_max)（★ 只在末段配平时才算数）",
+     "⑤ 悬停段的推力指令 ≈ 悬停所需（|u[0]| 与 m·g 差 < 25%）"
+    ],
+    "harness_dead": false,
+    "diverged": true,
+    "diverge_why": "末段真值抬升只有 +0.000 m（< 0.4 m ⟹ 末段不在空中）",
+    "attribution": "**符号映射 / 推力方向**：进了 OFFBOARD 但飞机没往上去 ⟹ 看 `u[0]` 与线上下发的 `thrust_body_z` 的符号（`sign-map.md` §1）",
+    "climb_ekf": 0.14547291,
+    "e_z_ekf": -0.8545270899999999,
+    "p2p_ekf": 0.378979,
+    "drift_ekf": 0.29299377605164245,
+    "referr_tail": -1.0341719999999999,
+    "yaw_span_ekf": 0.04560092716907871,
+    "u3_tail": -0.0005440600000000001,
+    "climb_gt": 0.0,
+    "up_tail": 0.41395791,
+    "p2p_gt": 0.0,
+    "solve_p50": 2.983,
+    "solve_p99": 3.623,
+    "solve_max": 13.626,
+    "solve_steady_max": 4.073,
+    "ladder_steady": "100 Hz（最坏 ≤10 ms，余量够）",
+    "frames": 2770,
+    "actual_hz": 99.76,
+    "variant": "z0-thrust-30",
+    "rep": 1,
+    "knob": "thrust",
+    "overlay_ok": true,
+    "status": "发散",
+    "delta": {
+     "climb_ekf": -0.8325900333333329,
+     "e_z_ekf": -0.8325900333333329,
+     "p2p_ekf": 0.28636500000000004,
+     "drift_ekf": 0.13053039941247488,
+     "yaw_span_ekf": 0.17592225841930142,
+     "solve_steady_max": -1.8059999999999992,
+     "solve_p50": 0.015000000000000124,
+     "climb_gt": -1.3814003571428572,
+     "p2p_gt": -0.09017000000000008
+    }
+   }
+  ]
+ },
+ "counts": {
+  "发散": 1,
+  "退化": 5,
+  "稳定": 7
+ },
+ "variants": [
+  "z0",
+  "z0-inertia+30",
+  "z0-inertia-30",
+  "z0-mass+30",
+  "z0-mass-30",
+  "z0-rate+30",
+  "z0-rate-30",
+  "z0-tau+30",
+  "z0-tau-30",
+  "z0-thrust+30",
+  "z0-thrust-30"
+ ],
+ "controller": {
+  "n_sigs": 1,
+  "sigs": {
+   "0aa9aacf4186": [
+    "z0-1",
+    "z0-2",
+    "z0-3",
+    "z0-inertia+30-1",
+    "z0-inertia-30-1",
+    "z0-mass+30-1",
+    "z0-mass-30-1",
+    "z0-rate+30-1",
+    "z0-rate-30-1",
+    "z0-tau+30-1",
+    "z0-tau-30-1",
+    "z0-thrust+30-1",
+    "z0-thrust-30-1"
+   ]
+  },
+  "packages": {
+   "0aa9aacf4186": [
+    "/home/chen/ros_ws/install/nmpc/local/lib/python3.10/dist-packages/nmpc"
+   ]
+  },
+  "warn": null
+ },
+ "harness": {
+  "n_sigs": 1,
+  "sigs": {
+   "（未留档）": [
+    "z0-1",
+    "z0-2",
+    "z0-3",
+    "z0-inertia+30-1",
+    "z0-inertia-30-1",
+    "z0-mass+30-1",
+    "z0-mass-30-1",
+    "z0-rate+30-1",
+    "z0-rate-30-1",
+    "z0-tau+30-1",
+    "z0-tau-30-1",
+    "z0-thrust+30-1",
+    "z0-thrust-30-1"
+   ]
+  },
+  "warn": "★ **本轮没有留扫描器自己的身份**（`harness` 字段是之后才加的）⟹ **归档里查不出「前后两批是不是同一把尺子」**。作者当时的口供是「改动落在两批之间、只往 `run_variant` 里加了 `trace` 的自动落盘」，但**这条口供本身不可复核**（事后 `--attach-trace` 又把前三场的 `trace` 补齐，连字段差别都抹平了）⟹ 引用本轮那 13 场时**按「可能换过尺子」处理**：需要严格同尺的结论，用提交后的同一份代码重跑，别拿这两批硬凑。"
+ },
+ "trace": {
+  "n": 13,
+  "n_runs": 13,
+  "by": {
+   "（未记）": 13
+  },
+  "hz": 5.0
+ },
+ "rank": {
+  "rows": [
+   {
+    "knob": "thrust",
+    "x": null,
+    "flag": "发散（不参与倍数）",
+    "variant": "z0-thrust-30",
+    "rep": null,
+    "key": null,
+    "value": null,
+    "base_median": null
+   },
+   {
+    "knob": "mass",
+    "x": 33.76200979116523,
+    "flag": null,
+    "variant": "z0-mass+30",
+    "rep": 1,
+    "key": "climb_ekf",
+    "value": 0.3423506333333334,
+    "base_median": 0.978062943333333
+   },
+   {
+    "knob": "mass",
+    "x": 32.34988976623989,
+    "flag": null,
+    "variant": "z0-mass-30",
+    "rep": 1,
+    "key": "climb_ekf",
+    "value": 1.5871861347176082,
+    "base_median": 0.978062943333333
+   },
+   {
+    "knob": "thrust",
+    "x": 25.223990882797697,
+    "flag": null,
+    "variant": "z0-thrust+30",
+    "rep": 1,
+    "key": "climb_ekf",
+    "value": 1.4530110169435217,
+    "base_median": 0.978062943333333
+   },
+   {
+    "knob": "rate",
+    "x": 7.693422325521685,
+    "flag": null,
+    "variant": "z0-rate+30",
+    "rep": 1,
+    "key": "climb_gt",
+    "value": 0.9392676190476191,
+    "base_median": 1.3814003571428572
+   },
+   {
+    "knob": "tau",
+    "x": 7.310623338905728,
+    "flag": null,
+    "variant": "z0-tau+30",
+    "rep": 1,
+    "key": "climb_gt",
+    "value": 0.9612666666666667,
+    "base_median": 1.3814003571428572
+   },
+   {
+    "knob": "rate",
+    "x": 6.84854755882581,
+    "flag": null,
+    "variant": "z0-rate-30",
+    "rep": 1,
+    "key": "climb_gt",
+    "value": 0.9878216666666666,
+    "base_median": 1.3814003571428572
+   },
+   {
+    "knob": "inertia",
+    "x": 5.663620036349421,
+    "flag": null,
+    "variant": "z0-inertia-30",
+    "rep": 1,
+    "key": "climb_gt",
+    "value": 1.0559181818181818,
+    "base_median": 1.3814003571428572
+   },
+   {
+    "knob": "inertia",
+    "x": 5.655734879510481,
+    "flag": null,
+    "variant": "z0-inertia+30",
+    "rep": 1,
+    "key": "climb_gt",
+    "value": 1.0563713333333333,
+    "base_median": 1.3814003571428572
+   },
+   {
+    "knob": "tau",
+    "x": 3.4572657274427936,
+    "flag": null,
+    "variant": "z0-tau-30",
+    "rep": 1,
+    "key": "climb_gt",
+    "value": 1.182715,
+    "base_median": 1.3814003571428572
+   }
+  ],
+  "resolvable": true,
+  "note": "★ **这张排序里混了两帧**：`ekf` / `truth` 的倍数分别来自不同的仪器 —— A 档判在 **EKF 帧**（操作者裁定），`climb_gt`/`p2p_gt` 来自 SIH **真值帧**，两者之间夹着这台 SITL 自己的估计器误差，它的量级**会随场次整块漂**（本批实测 `up_tail − climb_gt` 在 -0.30 … +0.77 m 之间，10 场两帧都取得到，且**跨零**）。⟹ **跨帧的倍数不可比**，别把它们排成一条线；判「谁先退化」请只看与判层同帧的那几条（`*_ekf`）。",
+  "frames": [
+   "ekf",
+   "truth"
+  ]
+ },
+ "vertical_gain": {
+  "k": 3.573663947704233,
+  "k_all": [
+   3.470903764629007,
+   3.622413792825034,
+   3.573663947704233
+  ],
+  "rows": [
+   {
+    "variant": "z0-mass+30",
+    "knob": "mass",
+    "d_f_n": 2.206496250000001,
+    "d_z_m": -0.6357123099999996,
+    "k": 3.470903764629007,
+    "flag": null
+   },
+   {
+    "variant": "z0-mass-30",
+    "knob": "mass",
+    "d_f_n": -2.206496250000001,
+    "d_z_m": 0.6091231913842752,
+    "k": 3.622413792825034,
+    "flag": null
+   },
+   {
+    "variant": "z0-thrust+30",
+    "knob": "thrust",
+    "d_f_n": -1.6973048076923078,
+    "d_z_m": 0.47494807361018876,
+    "k": 3.573663947704233,
+    "flag": null
+   },
+   {
+    "variant": "z0-thrust-30",
+    "knob": "thrust",
+    "d_f_n": 3.1521375000000016,
+    "d_z_m": null,
+    "k": null,
+    "flag": "无读数/发散"
+   }
+  ],
+  "note": null,
+  "frame": "ekf",
+  "f_scale_n": 11.8,
+  "hover_force_n": 7.3549875,
+  "resolvable": true,
+  "tol_n": 0.536049592155635,
+  "tol_frac": 0.07288246134417427
+ }
+}
