@@ -146,6 +146,11 @@ F2/F3/F4（延迟、注入兜底）**不在本张的判据里**，除非改动�
 - **`u[0]` 是推力、单位牛顿**，不是归一化油门：[`ocp.py:246/250`](../../../src/nmpc/nmpc/ocp.py#L246)
   的 `lbu = [0, …]` / `ubu = [p.f_max, …]`，`f_max = 11.8 N`（[`params.py:108`](../../../src/nmpc/nmpc/params.py#L108)）。
   ⚠️ `f_max` 与 `t_max` 是**两个**物理量（[`params.py:23`](../../../src/nmpc/nmpc/params.py#L23) 的解耦），**别合回去**。
+  ☠️ **尤其别因为"在本项目的 SITL 口径下两者数值几乎相等"就把 `f_max` 换成 `t_max`**：
+  `hover_thrust = 0.6235` 时 `t_max = 11.8003 N` ≈ `f_max = 11.8 N`（差 0.0027 %），
+  但**默认口径 `0.1589` 下 `t_max = 46.3 N`、是 `f_max` 的 3.92 倍** ——
+  这个"数值恰好相等"是口径带来的巧合，换回 `t_max` 就是把那 3.9 倍宽的推力上限放回来
+  （旧代码的症状，第一手：`node_core.py` 里"顶到电池极限这一档永远不报（假绿）"那段 ⚠️）。
 - 前馈 `u_ref[:,0] = t_hover = m·g = 7.3575 N`（[`params.py:111`](../../../src/nmpc/nmpc/params.py#L111)）；
   归一化只发生在**发出去**那一步：`sign_map.px4_rates_setpoint(rates, F, t_max)` ⟹ `thrust_body_z = −F/t_max`。
 - 真值是 **ENU、z 向上** ⟹ 偏低时 `e_z = z_ref − z_meas > 0` ⟹ 要**加推力** ⟹ `ΔF > 0`。
@@ -255,6 +260,14 @@ python3 tools/px4-sitl/verify_tier_b_seam3.py --tag F1b $COMMON --mismatch mass+
 - **只跑这两场**（裁定 3）：F2/F3/F4 不在本张判据里 —— 若改动意外波及它们，**如实记**，别默认没波及。
 - **逐场记 `controller_code`**（11 号票漏了这个、事后才补，见其 Comments）—— 本轮起是硬要求。
 - **空机 + 判在真值帧 + 沿用 `evaluate_b`**：不另立口径，这样与 11 的数字**可直接比**（同基线，裁定 3）。
+- ☠️ **本仓库没做 `ROS_DOMAIN_ID` 隔离 ⟹ domain 0 是共用的，会互相踩**：
+  并行会话的 SITL 节点、`/fmu/out/*`、真值话题都在同一个 DDS 域里。
+  更要紧的是 [`run_matrix.sh:43`](../../../tools/px4-sitl/evidence/tier-b/run_matrix.sh#L43) 开头会
+  `rm -f /dev/shm/fastrtps_port* /dev/shm/sem.fastrtps_port*`（清残留）—— **在别人正飞的时候跑它，
+  等于把对方的 DDS 拆掉**。
+  ⟹ 铁律两条：① 起跑前确认没有别的会话在飞（**同一时刻只有一个会话能占住这个窗口**）；
+  ② 起飞期间不重建 `install/`（那会改掉别人正在飞的东西）。
+  单条、孤立的 DDS 类怪失败，**先怀疑 `/dev/shm` 被清**，别先怪控制器。
 
 ---
 
