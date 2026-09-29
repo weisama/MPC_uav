@@ -632,6 +632,11 @@ ck("⑤ 推力标定：PX4 解出的电机均值 ≈ m·g/(4·T_max)（★ 只�
    本页只报读数，**不认领这个归因**（那是 B 档真值那条线的事）。
    ⚠️ 边界：以上是 **A 档控制台真值路径**（`truth_hz` 2.0–2.9、`obs["truth"]` 稀疏）；
    B 档真值走 DDS 全速（~230 Hz）—— **本页这些数不框它**（并行会话 2026-09-29 指出）。
+   ⟹ **也别指望"从 B 档控制台日志重推一遍"**：`evidence/tier-b/*-console.log` **七份全查过**，
+   真值**块数 = 0**（那串 topic 名只在 **PX4 自己**的启动行
+   `uxrce_dds_client ... vehicle_local_position_groundtruth data writer` 里出现过一次，
+   在 `:44–:46`）—— 这是**设计如此**、不是漏订：控制台那条 = `verify_tier_a_hover.py:91`，
+   B 档走 `verify_tier_b_seam3.py:112`（`/fmu/out/…`）+ `:203` 订阅**同一个 uORB topic 的另一条 transport**。
    （口径：`climb_gt = gnd.mean − hov.mean`，
    [`mismatch_sweep.py:661`](../../tools/px4-sitl/mismatch_sweep.py#L661)，NED 向上为负；
    真值帧稳态误差 = `climb_gt − 1.0`，与 EKF 帧的 `e_z_ekf = climb_ekf − 1.0` **同口径**
