@@ -726,10 +726,11 @@ SITL 与 CPU 密集测试" ⟹ **第①步已满足**。但 `git status` 实测
 
 ★ **一条由此推出的记录原则**：**"构建时刻"区分不了"从提交构建"还是"从在制品构建"**，
 只有**内容**能。所以本张留档**不再复述**那个构建时点（无论记作 08:47 还是 08:59），
-改记**内容锚**：`install 快照 = f6c1b7f 那份 = 1c7fbd29…`。
+改记**内容锚**。
 （附注：`1c7fbd29` 的内容从 `3ddb145`@09:20:21 起就在提交里，而它的构建时刻记的是 08:47/08:59 ——
 两者**不矛盾**：只要 08:47 时工作区里已经有那处 `hover_thrust` 改动即可，而这正是"从在制品构建"。
 这也说明时点为什么不可靠。）
+⚠️ **那句内容锚我一开始写成了"`install 快照 = f6c1b7f 那份`"—— 说过头了**，下一节订正。
 
 **✅ 顺带采纳 8b 对第三条路径的降级**：他引 `tools/px4-sitl/evidence/tier-b/README.md` §4（`:33-57`）
 —— 我已读过，**写得比我们这轮重构的更准**（入口脚本 `/` 包解析 `/` 五场身份 `src@cff55ae` 逐文件 sha256
@@ -737,3 +738,58 @@ SITL 与 CPU 密集测试" ⟹ **第①步已满足**。但 `git status` 实测
 `install/setup.bash`**（`run_matrix.sh:51`），所以"不带 `PYTHONPATH` ⟹ `import nmpc` 报 `ModuleNotFoundError`"
 **不是一条真会出现的路**，只是排查"忘了 source"的**诊断**。⟹ 身份记录**以 README 的两条为准，我不重构**；
 上面 12:1x 那节的表保留（它多出的只是"谁的 `__init__.py` 在不在"这一层事实），但第三条按**诊断**标注。
+
+### 2026-09-29 12:3x —— ☠️ 订正我自己：快照**不是"一个提交"，是"多提交混合"**；且 `params.py` **永久丢失**
+
+8b 转来一条**比我们这轮推理都早、也更硬**的第一手来源，我读了原文并顺着它往下核，
+结果**把我上一条的说法推翻了一半**（我**说过头**了，这里订正）。
+
+**★ 最硬的来源：归档的 obs JSON 自己就记了。**
+`tools/px4-sitl/evidence/tier-a/mismatch-sweep/obs-z0-1.json`（12 号票 ±30% 扫描的逐场归档）里有：
+```jsonc
+"controller_code": {
+  "probe": "干净子进程（`python -c 'import nmpc'`，环境变量与节点一致）",
+  "package": ".../install/nmpc/local/lib/python3.10/dist-packages/nmpc",
+  "files": { "mpc_node.py": {"sha256": "1c7fbd2947bdb6ce"}, "params.py": {"sha256": "3d4b29cd1bca6f52"}, … 共 11 个 },
+  "entry": { "path": ".../install/nmpc/lib/nmpc/mpc_node.py", "sha256": "1c7fbd2947bdb6ce",
+             "same_as_package_copy": true },
+  "driver_view": "/home/chen/ros_ws/src/nmpc/nmpc",
+  "polluted": true
+}
+```
+⟹ ① `entry` 与包内那份**同 sha** 是**仪器当场测的**（`same_as_package_copy: true`），不是我们推的；
+② `driver_view` + `polluted` 正是"**驱动进程 import 到 `src`、节点在 `install`**"这个混血，也是它测出来的；
+③ `docs/control/mismatch-sweep.md:199` 那张表只是这份 JSON 的**人读版**。
+
+**☠️ 订正：旧快照不是一棵"某提交的树"，是一堆不同提交的混合。**
+我拿归档里 11 个文件的 sha256 当靶子，逐个扫全历史（`git log --all` 里该文件的每个版本），结果：
+
+| 模块 | 归档 sha256(16) | 命中的提交 |
+|---|---|---|
+| `mpc_node.py` | `1c7fbd2947bdb6ce` | `3ddb145`（也 = `f6c1b7f` = `a4cdadc`）|
+| `node_core.py` | `b724bef51dad1dc6` | **`78f373d`** |
+| `ocp.py` | `e49b2e3ef7bb5107` | `aaeb356` |
+| `model.py` / `preflight_check.py` | `65f5565a…` / `8a04e2dc…` | `b7b4881` |
+| `sign_map.py` / `offboard_smoke.py` | `436a32c1…` / `a342a2d1…` | `8c4e014` |
+| `timing.py` / `__init__.py` | `335f7ccd…` / `6c01eeaa…` | `f1ced82` |
+| **`params.py`** | **`3d4b29cd1bca6f52`** | **❌ 全历史 4 个版本里无命中** |
+
+⟹ **"旧快照 = `f6c1b7f`"只对 `mpc_node.py` 成立**（那恰好就是我们关心的那个文件，所以我上一条的
+**结论**没错，但**说法**错了 —— 若照它去取 `ocp.py`/`params.py` 会取到**别的**东西）。
+这堆"每个文件各挂在不同提交上"正好就是**"从脏工作区构建"的指纹**，也再次印证时点不可靠。
+
+**☠️ `params.py` 的字节真的没了（这条最要紧）。**
+除了全历史无命中，我又把**对象库整个**扫了一遍（`git cat-file --batch-all-objects`，**1008 个 blob，含 dangling/不可达**）：
+`3d4b29cd1bca6f52` **仍然零命中**（同时 `1c7fbd29→2969bf22…`、`b724bef5→a80b0e37…` 都命中，
+说明方法有效）。⟹ `params.py` **只能知道"是哪一份"，拿不到内容**。
+**后果（属 12 号票的域，本张只报不改）**：那 ±30% 扫描的 13 场飞的就是这套包，
+**11 个模块里 10 个能从 git 取回、`params.py` 永久丢失** ⟹ 那批数字**可识别、但不可完整复现**。
+（旁证：`mismatch-sweep.md` 记 `src` vs `install` 的 `params.py` 差 **54 行**，是各文件里最大的 ——
+那正是"改到一半被构建进去"的那个文件。）
+
+**✅ 我们关心的结论仍然成立**（这条不变）：`mpc_node.py` 的 `1c7fbd29…` =
+`git show f6c1b7f:src/nmpc/nmpc/mpc_node.py`（对象库 blob `2969bf22…`），
+`git diff f6c1b7f cff55ae -- …mpc_node.py` = **1 行 / 1 hunk**（`:130` 的 `T_max`→`f_max`）
+⟹ tier-b README §4 那句"只差 1 行"**从断言变成可复现命令**。
+（⚠️ **`78f373d` 对 `mpc_node.py` 不是那份快照** —— `78f373d→cff55ae` 的 `mpc_node.py` 是 8 行/3 hunk，
+会多出 7 行假差异；**但它恰好是 `node_core.py` 的正确锚**，别一概否掉。这条已回信给 8b。）
