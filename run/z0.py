@@ -63,7 +63,7 @@
    敲别的菜单项。看进度请在**另一个终端** `run/z0.py rec_status`。
    ★ 有意**不让本脚本自己压包 / 自己拉飞控日志**：压缩是 `ros2 bag record` 收口时自己做的事，
    飞控日志由操作者**拔 SD 卡**直接拷（mavros 独占串口 ⟹ 本机没有第二条 MAVLink 通道走 FTP），
-   拷进 `bag/<日期>/fcu/` 之后总表会自己列出来。
+   拷进 `bag/<场景>/fcu/` 之后总表会自己列出来。
 """
 
 from __future__ import annotations
@@ -455,21 +455,28 @@ ACTIONS: Tuple[Action, ...] = (
     #   ★ **没有"停止录制"这一项了**（操作者 2026-09-29 拍定删掉 12/13 两项）：
     #     录制是**前台**的一条流程 —— 这一项要**占住终端**，倒计时摆在屏幕上，
     #     录满 120 s 自己收口，想提前停按 Ctrl-C（同一条 SIGINT 收口路）。
-    #     飞控日志（`.ulg`）同理改成**手工**：拔 SD 卡直接拷进 `bag/<日期>/fcu/`。
+    #     飞控日志（`.ulg`）同理改成**手工**：拔 SD 卡直接拷进该场景自己的 `bag/<场景>/fcu/`。
     Action("rec_start", "★ 开始录制（选场景 1–4）", None,
            "★ **它占住终端**：屏幕上是倒计时，录满 120 s **自己收口**（不用再敲「停」），"
            "提前停按 Ctrl-C —— 同一条收口路（SIGINT ⟹ 压包 ⟹ `ros2 bag info` 逐条回对 ⟹ 写 "
-           "`session.json` + 更新 `bag/MANIFEST.md`）；只**订阅**（`ros2 bag record`，"
-           "话题走白名单正则）⟹ 包落 `bag/<日期>/<场景>/`；起录后约 1 s 才订上话题，"
-           "要紧的动作稍等一下"),
-    # ★ 这两条**不进菜单**：录制的入口就 11 那一项，而"现在在录什么"在它那一屏里
-    #   已经摆着了（前台倒计时）；"重算清单"每次收口都会顺手做一次。
-    #   留着它们是为了**另一个终端**（`run/z0.py rec_status`）与排障时单独重算。
+           "`session.json` + 更新 `bag/MANIFEST.md`；**收口那十几秒里 Ctrl-C 无效**，"
+           "为的是别再丢收口记录）；只**订阅**（`ros2 bag record`，"
+           "话题走白名单正则）⟹ 包落 `bag/<场景>/`（**扁平，没有日期层**）；"
+           "起录后约 1 s 才订上话题，要紧的动作稍等一下"),
+    # ★ 这三条**不进菜单**：录制的入口就 11 那一项，而"现在在录什么"在它那一屏里
+    #   已经摆着了（前台倒计时）；"重算清单"每次收口都会顺手做一次；
+    #   "收编"只在出事之后用一次（给缺 `session.json` 的包补一份事后重建的记录）。
+    #   留着它们是为了**另一个终端**（`run/z0.py rec_status`）与排障。
     Action("rec_status", "现在在录什么（只读）", None,
            "读状态文件 + 按名字扫一眼录制进程；**不发信号、不动文件**",
            read_only=True, menu=False),
     Action("rec_manifest", "重算 bag/MANIFEST.md", None,
-           "从 `bag/**/session.json` 与 `bag/**/fcu/*.ulg` 重算清单（纯读盘 + 写一个 md）",
+           "从 `bag/*/session.json` 与 `bag/*/fcu/*.ulg` 重算清单（纯读盘 + 写一个 md）",
+           menu=False),
+    Action("rec_adopt", "★ 收编缺 session.json 的包（事后重建）", None,
+           "只对**没有 `session.json`** 的包动手：从包自己的 `metadata.yaml` 与旁边那份 "
+           "`<场景>.log` 反推，补一份**事后重建**的 `session.json`（取不到的字段写 null，"
+           "**不猜**）并重算清单；已入账的包一个字节都不碰，包内容也不改",
            menu=False),
 
     # ★★ 下面两条**不进菜单**（`menu=False`，不占菜单号）。操作者 2026-09-23 拍定把菜单里
@@ -1443,14 +1450,14 @@ TAKES_ARGS: Tuple[str, ...] = ("rec_start",)
 def in_process_command(key: str) -> Callable[[], int]:
     """按名字**现取**（不是 import 期就绑死）—— 这样用例能把它们替换掉。
 
-    ★ 录制那三条在 `rec.py` 里，**函数里 import**（不是模块顶层）：这样 `z0.py`
+    ★ 录制那四条在 `rec.py` 里，**函数里 import**（不是模块顶层）：这样 `z0.py`
     本身不依赖录制层，顶层的 import 面保持不变（`test_z0_menu.py` 只 import z0 就能跑）。
     """
     import rec                                     # noqa: PLC0415（理由见上）
     return {"env": cmd_env, "check": cmd_check, "up": cmd_up, "up_manual": cmd_up_manual,
             "down": cmd_down,
             "rec_start": rec.cmd_start, "rec_status": rec.cmd_status,
-            "rec_manifest": rec.cmd_manifest}[key]
+            "rec_manifest": rec.cmd_manifest, "rec_adopt": rec.cmd_adopt}[key]
 
 
 def dry_run_note(key: str, extra: Sequence[str] = ()) -> str:

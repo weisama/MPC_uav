@@ -172,13 +172,13 @@ B 档）要的"真实动捕 rosbag"**从来没录过** —— 2026-09-28 那次�
 | 录什么 | 话题走白名单正则 `^/(mavros\|mocap\|traj\|control\|vrpn)/`，**不是 `-a`**；压缩 `zstd`（在**收口那一刻**压） |
 | 到点 | **`Scenario.expect_s`（四份统一 120 s）到了就自己收口**；想提前停按 **Ctrl-C**，两条来路合成同一条 SIGINT 收口路 |
 | 收口 | **SIGINT**（与我们替你发的**同一条路**）⟹ 等它写缓存、压包、关库（≤45 s）⟹ 等不到才 SIGTERM / SIGKILL；然后 `ros2 bag info` 的**实测帧数**逐条回对 `Scenario.expect` ⟹ 写 `session.json`（时长/大小/话题/频率/sha256/**缺了什么**、**为什么收的**）+ 重算 `bag/MANIFEST.md` |
-| 飞控日志 | **手工**（2026-09-29 拍定）：拔 SD 卡，把 `<卡根>/log/sessNNN/logMMM.ulg` 直接拷进 `bag/<日期>/fcu/` —— 本层**不拷、不删、不猜**，只在总表里把那个目录里已有的东西列出来 |
+| 飞控日志 | **手工**（2026-09-29 拍定）：拔 SD 卡，把 `<卡根>/log/sessNNN/logMMM.ulg` 直接拷进 `bag/<场景>/fcu/` —— 本层**不拷、不删、不猜**，只在总表里把那个目录里已有的东西列出来 |
 
 **五条第一手/设计取舍**（改之前先读）：
 
 1. **`rosbag2` 拒绝往已经存在的目录里录**（`Output folder '…' already exists.`，**不覆盖也不接着录**）
    ⟹ 包目录**只由 `rosbag2` 自己建**，录制自己的日志（`<场景>.log`）因此落在包目录**旁边**
-   （`bag/<日期>/<场景>.log`；`session.json` 的 `log` 字段就是它的实际路径）。
+   （`bag/<场景>.log`；`session.json` 的 `log` 字段就是它的实际路径）。
    目录已存在时 `rec_start` **只报不动**，**从不替你删包**。
 2. **收口只发单个 pid、`killpg` 只在确认"这个组是我们起的"时才用**（`getpgid(pid) == pid`
    ⟸ `start_new_session=True`）。兜底那条路（按名字扫）**不碰进程组** ——
@@ -266,7 +266,7 @@ B 档）要的"真实动捕 rosbag"**从来没录过** —— 2026-09-28 那次�
 
 ```bash
 python3 -m pytest run/tests/test_z0_menu.py -q          # 纯函数 + 命令行拼装 + 安全不变式 + 两条一键/清除编排（不需要 ROS，66 例）
-python3 -m pytest run/tests/test_rec.py -q              # ★ 录制层：命令拼装/解析/前台倒计时/收口/核对/安全边界（不需要 ROS、不碰飞机，53 例）
+python3 -m pytest run/tests/test_rec.py -q              # ★ 录制层：命令拼装/解析/前台倒计时/收口/核对/安全边界（不需要 ROS、不碰飞机，66 例）
 python3 -m pytest run/tests/test_operation_manual.py -q   # ★ 现场那一页的守卫：菜单号/命令/话题/degrade token 都钉在代码上（不需要 ROS，5 例）
 
 # ★ 正控：对着台架夹具（假 mavros）跑一遍 check，读数必须真的读到东西（5 例）
@@ -280,7 +280,7 @@ python3 -m pytest run/tests/test_z0_check_live.py -q
 ⚠️ **要一次跑整个 `run/tests/`，必须先 source**（上面那两行）。没 source 时
 `test_z0_check_live.py` 会在**模块级** `importorskip` 上跳掉，而 pytest 6.2.5 在那种情形下
 **连这一整个目录的其余用例一起收集不到**（第一手：未 source 跑 `pytest run/tests -q` ⟹
-`1 skipped`、0 例；source 后同样一条命令 ⟹ **`129 passed`**）——
+`1 skipped`、0 例；source 后同样一条命令 ⟹ **`142 passed`**）——
 ★ 所以"跑整个目录是绿的"这句**只有在 source 过的环境里才成立**，未 source 时那是**空收集**，不是绿。
 
 ★ `test_rec.py` 有一条自己盯自己的纪律：**所有会起进程 / 发信号 / 写仓库的路径都被指到 tmp 上**

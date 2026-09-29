@@ -831,16 +831,17 @@ def test_菜单十一条_号与表里的顺序一致_隐藏的四条不占号():
       （菜单 11 占住终端、倒计时到 120 s 自己收口），"停"不再是独立动作；飞控日志改回
       **拔 SD 卡手工拷**。菜单从此 **11 项**。
     ★ 隐藏的那四条**命令/功能**没删，只是 `menu=False`（不显示、不占号）：`fly` 是一键流程的第 6 步，
-    `bringup` 是 `DOWN_TARGETS` 取包名的地方，`rec_status`/`rec_manifest` 是排障时的命令行入口 ——
+    `bringup` 是 `DOWN_TARGETS` 取包名的地方，`rec_status`/`rec_manifest`/`rec_adopt` 是排障时的命令行入口
+        （`rec_adopt` = 给缺 `session.json` 的包补一份事后重建的记录）——
     删了它们，"唯一入口是 `ACTIONS`"就破了个口。
     """
     assert [a.key for a in z0.MENU_ACTIONS] == [
         "env", "check", "mavros", "vrpn", "mocap", "traj", "control", "up_manual", "up", "down",
         "rec_start"]
     assert [a.key for a in z0.ACTIONS] == [a.key for a in z0.MENU_ACTIONS] + [
-        "rec_status", "rec_manifest", "bringup", "fly"], \
+        "rec_status", "rec_manifest", "rec_adopt", "bringup", "fly"], \
         "菜单项应当排在前面、`menu=False` 的排在后面（号 = 位置 ⟹ 别让隐藏项插队）"
-    for key in ("bringup", "fly", "rec_status", "rec_manifest"):
+    for key in ("bringup", "fly", "rec_status", "rec_manifest", "rec_adopt"):
         assert not z0.ACTION_BY_KEY[key].menu
         assert z0.ACTION_BY_KEY[key].title not in z0.menu_text(), f"{key} 不该出现在菜单里"
     assert not z0.MENU_ACTIONS[9].read_only, "它会停进程 ⟹ 不能算只读（否则 --dry-run 会撒谎）"

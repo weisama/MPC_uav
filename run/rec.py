@@ -16,8 +16,14 @@
 一份包的生命周期就圈在这一条命令里，"录着的同时去按另一项"这件事不存在了。
 
 ★ **飞控日志（`.ulg`）不在本层。** 操作者 2026-09-29 拍定飞控日志"**拔 SD 卡直接拷**"，
-所以归档是**手工动作**（拷进 `bag/<日期>/fcu/`）；`render_manifest` 只负责把那个目录里
-已经有的东西列进总表 —— 它不拷、不删、不猜。
+所以归档是**手工动作**（拷进**该场景自己的目录** `bag/<场景>/fcu/`）；`render_manifest`
+只负责把那个目录里已经有的东西列进总表 —— 它不拷、不删、不猜。
+
+★★ **布局是"一个场景一个目录、不带日期层"**（操作者 2026-09-29 现场拍定，见 `session_dir`）：
+`bag/1_static/` … `bag/4_traj3_lemniscate/`，每份包自己的 `started_utc` 就写在
+`session.json` 与 `MANIFEST.md` 里 ⟹ 日期从目录名挪到了**每一份产物自己的记录里**。
+⚠️ 代价是明说过的：**同名场景再录一次会撞上已有目录**（`rosbag2` 拒绝往已有目录里录，
+`start` 也从不替你删包）—— 重录必须由人先把旧那份挪走。
 
 ★★ **为什么要有这一层**（第一手，不是"顺手录一下"）：
 [`ticket 11`](../.scratch/phase2/issues/11-sitl-tier-b-seam3.md) 的输入是「Phase 1 实飞录下的真实动捕 rosbag」，
@@ -36,7 +42,7 @@
 
 ★ **压缩**取 `file` + `zstd`（`ros-humble-rosbag2-compression-zstd` 0.15.17 已装，第一手：
 `ls /opt/ros/humble/lib/librosbag2_compression_zstd.so`）。压缩发生在**收口那一刻**
-（录制自己的日志 `bag/<日期>/<场景>.log` 里是 `Compressing file: …`）⟹ `STOP_GRACE_S` 按它定。
+（录制自己的日志 `bag/<场景>.log` 里是 `Compressing file: …`）⟹ `STOP_GRACE_S` 按它定。
 ⚠️ 压出来的 `*.db3.zstd` 用 `ros2 bag info` / `play` 读都没问题（第一手已验），
 但**拿 sqlite3 直接开 `.db3` 的第三方脚本读不了** —— 要用就走 `rosbag2_py`。
 
@@ -135,24 +141,24 @@ class Scenario:
 
 
 SCENARIOS: Tuple[Scenario, ...] = (
-    Scenario(1, "s1-static", "静止基线（动捕+mavros，飞机不动）", "up_manual",
+    Scenario(1, "1_static", "静止基线（动捕+mavros，飞机不动）", "up_manual",
              "什么都不做：飞机摆好、**静止**（别碰、别挡动捕）；录满 120 s 自动收口",
              ("/mocap/pose_enu", "/vrpn/.*/pose", "/mavros/vision_pose/pose",
               "/mavros/local_position/pose", "/mavros/state"),
              120.0),
-    Scenario(2, "s2-manual-takeoff", "定点模式缓慢推摇杆起飞", "up_manual",
+    Scenario(2, "2_manual_takeoff", "定点模式缓慢推摇杆起飞", "up_manual",
              "ch6 拨 **Position** 档 → 摇杆手势解锁 → **缓慢**推油门到 ~1 m →"
              "稳住十几秒 → 缓慢落回、等自动上锁",
              ("/mocap/pose_enu", "/vrpn/.*/pose", "/mavros/rc/in",
               "/mavros/local_position/pose", "/mavros/state"),
              120.0),
-    Scenario(3, "s3-traj1-hover", "执行轨迹 1（原地悬停 60 s）", "up",
+    Scenario(3, "3_traj1_hover", "执行轨迹 1（原地悬停 60 s）", "up",
              "`fly.py` 选 **1** → ch6 拨第 6 档（Offboard）→ 开始键①（解锁+起飞）→"
              "判稳后开始键②松手（进 TRACK）→ 跑完自动降落",
              ("/mocap/pose_enu", "/vrpn/.*/pose", "/traj/reference", "/traj/progress",
               "/control/state", "/mavros/setpoint_raw/local", "/mavros/state"),
              120.0),
-    Scenario(4, "s4-traj3-lemniscate", "执行轨迹 3（0.5 m 八字）", "up",
+    Scenario(4, "4_traj3_lemniscate", "执行轨迹 3（0.5 m 八字）", "up",
              "`fly.py` 选 **3** → 开始键①（解锁+起飞）→ 判稳后开始键②松手 ——"
              "同一趟里继场景 3 之后再来一次，**不用重启任何节点**",
              ("/mocap/pose_enu", "/vrpn/.*/pose", "/traj/reference", "/traj/progress",
@@ -205,21 +211,27 @@ def record_command(out_dir: Path, include: str = INCLUDE_REGEX,
     return " ".join(shlex.quote(a) for a in record_argv(out_dir, include, exclude, compression))
 
 
-def day_dir(now: Optional[_dt.datetime] = None, root: Optional[Path] = None) -> Path:
-    """当天那一层：`bag/<YYYY-MM-DD>/`（**本地日期** —— 现场人对表用的是墙上那个钟）。
-
-    ★ `root` 的默认值写成 `None` 再在这里取 `BAG_ROOT`（**不是**写成默认参数值）：
-    默认参数在 `def` 那一刻就绑死了，用例把 `rec.BAG_ROOT` 指到 tmp 上时它不会跟着动 ——
-    那意味着"测试里跑一下收口"有可能去动**真的**那份录制状态。
+def bag_root(root: Optional[Path] = None) -> Path:
+    """`bag/` 本身 —— ★ `root` 的默认值写成 `None` 再在这里取 `BAG_ROOT`（**不是**写成
+    默认参数值）：默认参数在 `def` 那一刻就绑死了，用例把 `rec.BAG_ROOT` 指到 tmp 上时
+    它不会跟着动 —— 那意味着"测试里跑一下收口"有可能去动**真的**那份录制状态。
     """
-    now = now or _dt.datetime.now()
-    return (root or BAG_ROOT) / now.strftime("%Y-%m-%d")
+    return root or BAG_ROOT
 
 
-def session_dir(scenario: Scenario, now: Optional[_dt.datetime] = None,
-                root: Optional[Path] = None) -> Path:
-    """一份包一个目录：`bag/<日期>/<slug>/`（同名再来一次会被 `rec_start` 拒掉）。"""
-    return day_dir(now, root) / scenario.slug
+def session_dir(scenario: Scenario, root: Optional[Path] = None) -> Path:
+    """一份包一个目录：**`bag/<slug>/`，没有日期层**（操作者 2026-09-29 现场拍定）。
+
+    ★ 为什么去掉日期层：现场按场景找东西（"把场景 3 的包发我"），
+      `bag/3_traj1_hover/` 比 `bag/2026-09-29/s3-traj1-hover/` 少一层要记的东西；
+      日期没有丢 —— 每份包自己的 `started_utc` 写在 `session.json` 与 `MANIFEST.md` 里。
+    ⚠️ 代价（明说过的）：**同名场景再录一次会撞上已有目录**，而 `rosbag2` 拒绝往已有目录里录、
+      `start` 也从不替你删包 ⟹ 重录必须由人先把旧那份挪走。现场只录一轮时这条不咬人。
+
+    目录名就是 slug，同时是**收编时的唯一线索**（见 `adopt`：靠目录名回认场景号）。
+    同名再来一次会被 `start` 拒掉。
+    """
+    return bag_root(root) / scenario.slug
 
 
 def utc_stamp(now: Optional[_dt.datetime] = None) -> str:
@@ -364,7 +376,7 @@ def _rel(path: Path) -> str:
 
 
 def write_state(state: Dict, path: Optional[Path] = None) -> None:
-    path = path or STATE_FILE                  # ★ 同 `day_dir`：默认值在调用时取，不在 def 时绑
+    path = path or STATE_FILE                  # ★ 同 `bag_root`：默认值在调用时取，不在 def 时绑
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(state, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
@@ -451,7 +463,7 @@ def start(n: int, now: Optional[_dt.datetime] = None) -> int:
         return 1
 
     now = now or _dt.datetime.now()
-    out_dir = session_dir(scenario, now)
+    out_dir = session_dir(scenario)
     # ⚠️ **`rosbag2` 拒绝往已经存在的目录里录**（第一手 2026-09-29，离线排练时撞到：
     #   `[ERROR] [ros2bag]: Output folder '…' already exists.` 而它**不覆盖、也不接着录**）。
     #   所以：① 这个目录**不能由我们预先建**（日志因此挪到旁边去，见下）；
@@ -464,11 +476,10 @@ def start(n: int, now: Optional[_dt.datetime] = None) -> int:
             print("  里面**没有** `metadata.yaml` ⟹ 上一次没收干净（或被 SIGKILL 掉了）。"
                   "先看一眼它的日志，确认没用了再手工 `mv` 走 —— **本脚本不替你删包**。")
         return 1
-    day = day_dir(now)
-    day.mkdir(parents=True, exist_ok=True)
-    # ★ 日志落在**包目录旁边**（`bag/<日期>/<场景>.log`）：它不能放进包里 ——
+    bag_root().mkdir(parents=True, exist_ok=True)
+    # ★ 日志落在**包目录旁边**（`bag/<场景>.log`）：它不能放进包里 ——
     #   一旦预先建了那个目录，`rosbag2` 就一句 "already exists" 直接退出（上面那条）。
-    log_path = day / f"{scenario.slug}.log"
+    log_path = bag_root() / f"{scenario.slug}.log"
 
     # ★ 卡片印在**起之前**：那几句"你要做的"是给人**照着做**的，
     #   印在起之后等于"都录起来了，他才开始读"—— 而那几秒正是要紧的那几秒。
@@ -616,13 +627,22 @@ STOP_REASON: Dict[str, str] = {
 
 @contextlib.contextmanager
 def _sigint_ignored():
-    """收口这一小段里**忽略 Ctrl-C**。
+    """收口这**一整段**里忽略 Ctrl-C（一直管到 `session.json` 与清单都落地）。
 
     ★ 不是洁癖：告诉操作者"想停就按 Ctrl-C"之后，他多半会**连按两下**
     （第一下之后屏幕上有好几秒在"收口中（写缓存 → 压 zstd）"，看起来像没反应）。
     第二下若把我们打断，`ros2 bag info` 与 `session.json` 就都不会跑了 ——
     而 `rosbag2` 那边其实正在好好收尾。代价（丢掉那几秒的可见性）远小于收益。
-    ⚠️ 只包住"等它退出"这一段；核对与写清单不包，那时 Ctrl-C 想打断就打断。
+
+    ★★ **范围放宽过**（2026-09-29 现场，有代价）：旧版的窗口只包住"等它退出"那一段，
+    核对与写清单**不**在里面（旧注释原话是"那时 Ctrl-C 想打断就打断"）。现场结果：
+    四份包里 **3 份没有 `session.json`** —— 操作者按了 Ctrl-C（很可能是连按），
+    后面那几秒被第二下打断。包本身是好的，**丢的是收口记录**：这份包是什么场景、
+    预期话题缺没缺、sha256 是多少，全没了（`MANIFEST.md` 也看不见它）。
+    ⟹ 现在的取舍：**宁可人在收口那十几秒里觉得"按了没反应"**（屏幕上会明说
+    "收口期间 Ctrl-C 无效"），也不能再让一份包缺收口记录。
+    ⚠️ 代价照实说：`ros2 bag info` + sha256 在 30 MB 级的包上要十几秒，这一整段都按不动
+    Ctrl-C；真想中断只能在**收口开始之前**按。
     """
     try:
         old = signal.signal(signal.SIGINT, signal.SIG_IGN)
@@ -649,12 +669,23 @@ def finalize(out_dir: Path, *, state: Optional[Dict], outcome: str,
     **逐字相同**，而 `bag/README.md` 正是拿这两个时间戳去和飞控日志对表 —— 照它读会得出
     "这份包只有 0 秒长"。参数留着只为用例能钉住收口时刻。）
     """
+    with _sigint_ignored():                # ★ 整段书务都不许被 Ctrl-C 打断，见那个 ★★
+        print("  收口期间 **Ctrl-C 无效**（写缓存 → 压 zstd → 核对 → 写 session.json + 清单）")
+        return _finalize_locked(out_dir, state=state, outcome=outcome, now=now)
+
+
+def _finalize_locked(out_dir: Path, *, state: Optional[Dict], outcome: str,
+                     now: Optional[_dt.datetime] = None) -> Dict:
+    """`finalize` 的本体 —— ★ **只在 SIGINT 被忽略的窗口里被调用**（见 `_sigint_ignored`）。
+
+    单独拆一层是为了那个窗口的范围能**一眼看出来**：这一整个函数里的每一行
+    （发信号、核对、写 `session.json`、重算清单）都在窗口里。
+    """
     now = now or _dt.datetime.now()
     pid = int((state or {}).get("pid") or 0) or None
     if pid is not None and process_alive(pid):
         print("  收口中（写缓存 → 压 zstd）… ", end="", flush=True)
-        with _sigint_ignored():
-            used = _stop_pid(pid)
+        used = _stop_pid(pid)
         print(f"好（{used}）")
         signal_text = STOP_REASON.get(outcome, "SIGINT")
         if used != "SIGINT":               # 升级过就得如实说，别让表上只留一句"SIGINT"
@@ -717,8 +748,13 @@ def _wait_gone(pid: int, limit_s: float) -> bool:
 
 
 def summarize(out_dir: Path, *, state: Optional[Dict], now: Optional[_dt.datetime] = None,
-              stop_signal: Optional[str] = None) -> Dict:
-    """把一个收好口的包读成一份 `session.json`（**唯一的写入口**）。"""
+              stop_signal: Optional[str] = None,
+              stopped_utc: Optional[str] = None) -> Dict:
+    """把一个收好口的包读成一份 `session.json`（**唯一的写入口**）。
+
+    `stopped_utc` 只在**收编**（`adopt`）时给：那时候收口时刻不是"现在"，而是从
+    `rosbag2` 自己那份日志里读回来的（`Recording stopped` 那一行）。给了就用它，`now` 就不再管这个字段。
+    """
     metadata = out_dir / "metadata.yaml"
     clean = metadata.exists()
     if not clean:                      # 被 SIGKILL 掉 / 没收干净：先把索引补回来再读
@@ -736,7 +772,7 @@ def summarize(out_dir: Path, *, state: Optional[Dict], now: Optional[_dt.datetim
     session = dict(state or {})
     session.update({
         "dir": _rel(out_dir),
-        "stopped_utc": utc_stamp(now),
+        "stopped_utc": stopped_utc or utc_stamp(now),
         "stop_signal": stop_signal,
         "closed_cleanly": clean,
         "duration_s": info["duration_s"],
@@ -824,6 +860,172 @@ def _dir_size(path: Optional[Path]) -> str:
         return "**目录不在**"
     total = sum(p.stat().st_size for p in path.rglob("*") if p.is_file())
     return f"{total / 1e6:.1f} MB"
+
+
+# ───────────────── 收编：给缺 `session.json` 的包补一份（**事后重建**） ─────────────────
+#
+# ★ 为什么要有这一层（2026-09-29 现场，第一手）：收口的后段原先不挡 Ctrl-C，
+#   操作者在那几秒里又按了一下 ⟹ 四份包里 **3 份的 `session.json` 没写成**
+#   （包本身是好的）。那一层丢的正好是"这份包是什么、缺没缺话题、sha256 是多少"，
+#   而 `MANIFEST.md` 只认 `session.json` ⟹ 三份包在总表里**整个隐形**。
+#   收口那条路已经堵上了（见 `_sigint_ignored` 的 ★★），但**已经丢掉的那三份不会自己回来**，
+#   所以另给一条重建的路 —— 它**只读包与日志**，一个字节都不改包内容。
+
+
+#: `rosbag2` 自己那份日志里两行的形状（真输出，见 `bag/*.log`）：
+#:   `[INFO] [1790666342.763571339] [rosbag2_storage]: Opened database '…' for READ_WRITE.`
+#:   `[INFO] [1790667119.462906380] [rosbag2_recorder]: Recording stopped`
+_LOG_OPENED = re.compile(r"\[INFO\]\s+\[([\d.]+)\]\s+\[rosbag2_storage\]:\s+Opened database")
+_LOG_STOPPED = re.compile(r"\[INFO\]\s+\[([\d.]+)\]\s+\[rosbag2_recorder\]:\s+Recording stopped")
+
+
+def parse_record_log(text: str) -> Dict[str, Optional[float]]:
+    """`bag/<场景>.log` 的原文 → `{"opened_epoch": …, "stopped_epoch": …}`（**纯函数**）。
+
+    ★ 这两个时刻是**包真的开始/停止写**的时刻（`rosbag2` 自己报的），比
+      `metadata.yaml` 的 `starting_time`（那是**第一条消息**的时刻）更贴近"起录"。
+      取不到就 `None` —— **不拿别的东西顶替**，更不拿"现在"顶替。
+    """
+    out: Dict[str, Optional[float]] = {"opened_epoch": None, "stopped_epoch": None}
+    for line in text.splitlines():
+        m = re.search(_LOG_OPENED, line)
+        if m and out["opened_epoch"] is None:
+            out["opened_epoch"] = float(m.group(1))
+            continue
+        m = re.search(_LOG_STOPPED, line)
+        if m:
+            out["stopped_epoch"] = float(m.group(1))
+    return out
+
+
+def scenario_by_slug(slug: str) -> Optional[Scenario]:
+    """目录名 → 场景。★ 收编**只认这一条线索**（布局是扁平的，目录名就是 slug）。"""
+    for scenario in SCENARIOS:
+        if scenario.slug == slug:
+            return scenario
+    return None
+
+
+#: 收编时**取不到就写 `None`** 的那些字段（清单里印成 `?`）。★ 一个都不许猜：
+#: `pid` / `git_head` / `git_dirty` 只在起录那一刻存在，包里没有它们的影子；
+#: `ros_domain_id` 同理。留 `None` 比留一个"看着像真的"的值安全。
+ADOPT_UNKNOWN: Tuple[str, ...] = ("pid", "git_head", "git_dirty", "ros_domain_id")
+
+ADOPT_STOP_SIGNAL = "（事后重建：`.log` 里没有可用的开→停跨度，看不出是到点还是人按的）"
+
+#: ★ 判定"到点自动收口"还是"人按的 Ctrl-C"的余量（秒）。
+#: 理由（第一手）：到点收口发生在 `start()` 之后 `expect_s` 秒，而 `rosbag2` 是**起进程之后**才
+#: 开库的 ⟹ `.log` 里的开→停跨度**比 `expect_s` 短一点**。这个开销实测约 2～2.5 s
+#: （2026-09-29 现场：`.recorder.json` 记的起录时刻 07:31:17 与 s4 那份 `.log` 的
+#: `Opened database` 07:31:19 差 2 s）。取 5 s 是给启动抖动留的余量。
+ADOPT_STOP_MARGIN_S = 5.0
+
+
+def adopt_stop_signal(span_s: Optional[float], scenario: Scenario) -> str:
+    """从 `.log` 的开→停跨度反推**是怎么停的**（纯函数）。
+
+    ★ 这是**推导**不是猜：`expect_s` 是本仓自己定的倒计时（四个场景统一 120 s），而跨度是
+      `rosbag2` 自己报的。跨度贴近 `expect_s` ⟹ 到点自己收的；明显短一截 ⟹ 只可能是人按的。
+
+    ★ 这条推导在**有实测记录的那一份上验过**：场景 1 的 `session.json` 是当时活着写下的，
+      上面写着"录满到点，自动收口"，而它的 `.log` 跨度是 119.5 s —— 与下面这条判据一致。
+    """
+    if span_s is None:
+        return ADOPT_STOP_SIGNAL
+    if span_s >= scenario.expect_s - ADOPT_STOP_MARGIN_S:
+        return (f"SIGINT（录满到点，自动收口 —— 事后从 `.log` 开→停 {span_s:.1f} s ≈ "
+                f"倒计时 {scenario.expect_s:.0f} s 反推）")
+    return (f"SIGINT（操作者按的 Ctrl-C —— 事后从 `.log` 开→停 {span_s:.1f} s，"
+            f"比到点应有的 ~{scenario.expect_s:.0f} s 短一截，反推）")
+
+
+def adopt_state(out_dir: Path, scenario: Scenario,
+                log_path: Optional[Path] = None,
+                root: Optional[Path] = None) -> Tuple[Dict, Optional[str], str]:
+    """把一个**没有 `session.json`** 的包读成一份 `state`（纯逻辑，不写盘）。
+
+    返回 `(state, stopped_utc, stop_signal)`；`state` 里取不到的那几项是 `None`
+    （见 `ADOPT_UNKNOWN`），另附一个 `reconstructed` 字符串**把来路写清楚**。
+    """
+    log_path = log_path if log_path is not None else bag_root(root) / f"{scenario.slug}.log"
+    log = {}
+    if log_path.exists():
+        log = parse_record_log(log_path.read_text(encoding="utf-8", errors="replace"))
+    if log.get("opened_epoch") is not None:
+        opened = _dt.datetime.fromtimestamp(log["opened_epoch"])      # 朴素本地，交给 utc_stamp 换算
+        source = "`.log` 里 `Opened database` 那一行（rosbag2 自己报的写盘时刻）"
+    else:
+        opened = None
+        source = "（**没有**起录时刻：`.log` 不在或读不出 `Opened database`）"
+    stopped_utc = (utc_stamp(_dt.datetime.fromtimestamp(log["stopped_epoch"]))
+                   if log.get("stopped_epoch") is not None else None)
+    span_s = (log["stopped_epoch"] - log["opened_epoch"]
+              if None not in (log.get("opened_epoch"), log.get("stopped_epoch")) else None)
+    state: Dict = {
+        "scenario": scenario.n, "slug": scenario.slug, "title": scenario.title,
+        "chain": scenario.chain, "dir": _rel(out_dir),
+        "started_utc": utc_stamp(opened) if opened else None,
+        "started_local": opened.strftime("%Y-%m-%d %H:%M:%S") if opened else None,
+        "include_regex": INCLUDE_REGEX, "exclude_regex": EXCLUDE_REGEX,
+        "compression": "/".join(COMPRESSION),
+        "argv": record_argv(out_dir),
+        "log": _rel(log_path) if log_path.exists() else None,
+    }
+    for key in ADOPT_UNKNOWN:
+        state[key] = None
+    state["reconstructed"] = (
+        "由 `run/z0.py rec_adopt` 事后重建：这份包的 `session.json` 在 2026-09-29 那次收口里"
+        "**没写成**（收口后段被打断）。起录时刻取自" + source + "；"
+        "`stopped_utc` 与 `stop_signal` 取自 `.log` 的 "
+        + (f"`Opened database` → `Recording stopped` 跨度 {span_s:.1f} s（`adopt_stop_signal` 反推）"
+           if span_s is not None else "`Recording stopped`（跨度取不到，停止方式看不出来）") + "；"
+        f"**{('、'.join(ADOPT_UNKNOWN))} 取不到，一律 null —— 不猜**。"
+        "包本身没有被这一层改动过（sha256 是现在现算的）。")
+    return state, stopped_utc, adopt_stop_signal(span_s, scenario)
+
+
+def adopt(now: Optional[_dt.datetime] = None, root: Optional[Path] = None) -> int:
+    """把 `bag/` 下**缺 `session.json`** 的包收编进清单（`run/z0.py rec_adopt`）。
+
+    返回码：`0` = 该收编的都收编了（**没有可收编的也算 0** —— 那是"本来就齐"）；
+    `1` = 有目录**认不出场景**（目录名不是任何 `Scenario.slug`）⟹ **不猜、不动它**。
+
+    ⚠️ 它**只在缺 `session.json` 时动**：已经入账的包一个字节都不碰
+      （`session.json` 在 = 那份是收口那一刻的实测读数，比事后重建可信）。
+    ⚠️ 它**不改包内容**：不重命名、不重压、不动 `metadata.yaml`。
+    """
+    root = bag_root(root)
+    adopted, unknown, already = [], [], []
+    if root.exists():
+        for path in sorted(p for p in root.iterdir() if p.is_dir()):
+            if (path / "session.json").exists():
+                already.append(path.name)
+                continue
+            scenario = scenario_by_slug(path.name)
+            if scenario is None:
+                unknown.append(path.name)
+                continue
+            state, stopped_utc, signal_text = adopt_state(path, scenario, root=root)
+            summarize(path, state=state, now=now, stop_signal=signal_text,
+                      stopped_utc=stopped_utc)
+            adopted.append((scenario.n, path.name))
+    print(f"收编完毕：{_rel(root)}")
+    if already:
+        print(f"  已经入账（没碰）：{', '.join(already)}")
+    if adopted:
+        for n, name in adopted:
+            print(f"  场景 {n}：`{name}` —— 补了一份 `session.json`（**事后重建**，"
+                  "取不到的字段写 null，见里面那个 `reconstructed`）")
+    else:
+        print("  没有需要收编的包。")
+    if unknown:
+        print(f"  ⚠️ 认不出场景的目录（**没动**）：{', '.join(unknown)} —— "
+              "目录名要对得上 `SCENARIOS` 的 slug；认不出就不猜，请人工看一眼。")
+    write_manifest(root)
+    print(f"清单已更新：{_rel(root / 'MANIFEST.md')}")
+    return 1 if unknown else 0
+
+
 # ─────────────────────────── 清单（入库的那一份） ───────────────────────────
 
 
@@ -832,9 +1034,9 @@ def render_manifest(root: Optional[Path] = None) -> str:
 
     ★ 这张表是**给人回查的入口**：哪一份包、多长、多大、sha256、缺了什么。
     """
-    root = root or BAG_ROOT
+    root = bag_root(root)                     # ★ 与别处**同一出处**，别在这里另写一遍默认值
     sessions: List[Dict] = []
-    for path in sorted(root.glob("*/*/session.json")):
+    for path in sorted(root.glob("*/session.json")):
         try:
             sessions.append(json.loads(path.read_text(encoding="utf-8")))
         except (OSError, ValueError):
@@ -870,13 +1072,14 @@ def render_manifest(root: Optional[Path] = None) -> str:
             lines.append(f"| `{_rel(path)}` | {path.stat().st_size / 1e6:.2f} MB |"
                          f" `{_sha256_file(path)}` |")
     else:
-        lines.append("（还没有 `.ulg` —— 拔 SD 卡、手工拷进 `bag/<日期>/fcu/`，这里就会列出来）")
+        lines.append("（还没有 `.ulg` —— 拔 SD 卡、手工拷进那个场景自己的 "
+                     "`bag/<场景>/fcu/`，这里就会列出来）")
     lines.append("")
     return "\n".join(lines)
 
 
 def write_manifest(root: Optional[Path] = None) -> Path:
-    root = root or BAG_ROOT
+    root = bag_root(root)
     root.mkdir(parents=True, exist_ok=True)
     path = root / "MANIFEST.md"
     path.write_text(render_manifest(root), encoding="utf-8")
@@ -929,9 +1132,14 @@ def cmd_manifest(argv: Sequence[str] = ()) -> int:
     return 0
 
 
+def cmd_adopt(argv: Sequence[str] = ()) -> int:
+    """收编 `bag/` 下缺 `session.json` 的包（**不进菜单**：只在出事之后用一次）。"""
+    return adopt()
+
+
 #: 本模块提供的**进程内动作**名（与 `z0.ACTIONS` 的 key 逐字对齐）—— `z0.in_process_command`
 #: 就是照这几个名字取的；`z0.TAKES_ARGS` 里那一条吃位置参数。
-IN_PROCESS_KEYS: Tuple[str, ...] = ("rec_start", "rec_status", "rec_manifest")
+IN_PROCESS_KEYS: Tuple[str, ...] = ("rec_start", "rec_status", "rec_manifest", "rec_adopt")
 
 
 def _sourced(cmd: str) -> str:
@@ -955,5 +1163,9 @@ def dry_run_note(key: str, argv: Sequence[str] = ()) -> str:
     if key == "rec_manifest":
         return (f"（`--dry-run`：清单**不写**。真跑会读 {_rel(BAG_ROOT)} 下的 `session.json` 与 "
                 f"`fcu/*.ulg`，重算 `{_rel(BAG_ROOT / 'MANIFEST.md')}`。）")
+    if key == "rec_adopt":
+        return (f"（`--dry-run`：**一个字节都不写**。真跑会给 {_rel(BAG_ROOT)} 下"
+                f"**缺 `session.json`** 的包补一份（事后重建，取不到的字段写 null），"
+                f"并重算 `{_rel(BAG_ROOT / 'MANIFEST.md')}`；已入账的包不碰。）")
     return f"（`{key}` 是只读动作：本进程里直接跑，没有命令可打印；`--dry-run` 不执行）"
 

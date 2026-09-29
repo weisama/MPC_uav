@@ -389,7 +389,7 @@ run/z0.py rec_manifest  # 只重算 bag/MANIFEST.md
 2. **包目录已存在 ⟹ 起录只报不动**（`rosbag2` 拒绝往已有目录里录，它不覆盖也不接着录）。
    要重录，人自己先把那一份挪走 —— 脚本**从不替你删包**。
 3. **飞控日志（`.ulg`）是手工动作**：mavros **独占**串口，本机没有第二条 MAVLink 通道走 FTP
-   ⟹ **拔 SD 卡**，把 `log/sessNNN/logMMM.ulg` 直接拷进 `bag/<日期>/fcu/`（拷完
+   ⟹ **拔 SD 卡**，把 `log/sessNNN/logMMM.ulg` 直接拷进 `bag/<场景>/fcu/`（拷完
    `run/z0.py rec_manifest` 一次，总表就会把它们列出来）。
    `SDLOG_MODE = 2` ⟹ **一趟电只有一份** `.ulg`（四个场景若同一趟电做完就只有一份，
    它包住全部场景 —— 靠 `session.json` 里的 `started_utc` 对表）。

@@ -119,13 +119,19 @@ def test_排除正则为空时不许出现_x(tmp_path):
     assert "-x" in rec.record_argv(tmp_path / "x", exclude="^/mavros/imu/")
 
 
-def test_四份场景落盘目录各不相同_且都在_bag_当天目录下(tmp_path):
-    moment = datetime.datetime(2026, 9, 29, 10, 30)
-    dirs = [rec.session_dir(s, moment, tmp_path) for s in rec.SCENARIOS]
+def test_四份场景落盘目录各不相同_且都直接在_bag_下(tmp_path):
+    """★ 布局是**扁平**的（操作者 2026-09-29 现场拍定）：`bag/<slug>/`，**没有日期层**。
+    日期没丢 —— 每份包自己的 `started_utc` 写在 `session.json` 与 `MANIFEST.md` 里，
+    现场按场景找东西时目录名就是要记的那一个。
+    ⚠️ 代价：同名场景再录一次会撞上已有目录（`rosbag2` 拒绝往已有目录里录）。
+    """
+    dirs = [rec.session_dir(s, tmp_path) for s in rec.SCENARIOS]
     assert len(set(dirs)) == 4
     for scenario, path in zip(rec.SCENARIOS, dirs):
-        assert path == tmp_path / "2026-09-29" / scenario.slug
+        assert path == tmp_path / scenario.slug
         assert rec.record_argv(path)[4] == str(path)         # `-o` 就是那个目录
+        assert rec.scenario_by_slug(path.name) is scenario, \
+            "★ 目录名必须能回认出场景号 —— 收编（`adopt`）只有这一条线索"
 
 
 # ─────────────────────────── 解析 `ros2 bag info` ───────────────────────────
@@ -173,9 +179,9 @@ def test_算频率_没读到时长就不给数字():
 
 def _session(**over):
     base = {
-        "scenario": 3, "title": rec.SCENARIO_BY_N[3].title, "dir": "bag/2026-09-29/s3-traj1-hover",
+        "scenario": 3, "title": rec.SCENARIO_BY_N[3].title, "dir": "bag/3_traj1_hover",
         "duration_s": 150.0, "size_text": "12.3 MiB", "messages": 12345,
-        "files": ["s3-traj1-hover_0.db3.zstd"], "sha256": "deadbeef",
+        "files": ["3_traj1_hover_0.db3.zstd"], "sha256": "deadbeef",
         "stop_signal": "SIGINT", "closed_cleanly": True,
         "topics": [{"topic": "/mocap/pose_enu", "type": "geometry_msgs/msg/PoseStamped",
                     "count": 30000},
@@ -306,8 +312,8 @@ class _FakeProc:
 
 #: 收口之后那份 `session.json` 的替身（**收口本身**另有用例，这里只求 `start` 能跑完）
 _FAKE_SESSION = {
-    "scenario": 1, "title": rec.SCENARIO_BY_N[1].title, "dir": "bag/2026-09-29/s1-static",
-    "duration_s": 120.0, "size_text": "1.0 MiB", "files": ["s1-static_0.db3.zstd"],
+    "scenario": 1, "title": rec.SCENARIO_BY_N[1].title, "dir": "bag/1_static",
+    "duration_s": 120.0, "size_text": "1.0 MiB", "files": ["1_static_0.db3.zstd"],
     "sha256": "deadbeef", "topics": [], "missing_expected": [],
     "messages": 123, "closed_cleanly": True, "stop_signal": "SIGINT（测试）",
 }
@@ -358,7 +364,7 @@ def test_起录不预先建包目录_日志落在它旁边(tmp_path, monkeypatch
     seen, states = _fake_start(monkeypatch, tmp_path)
     assert rec.start(1) == 0
     (argv, kw), = seen
-    bag_dir = rec.session_dir(rec.SCENARIO_BY_N[1], datetime.datetime.now(), tmp_path / "bag")
+    bag_dir = rec.session_dir(rec.SCENARIO_BY_N[1], tmp_path / "bag")
     assert not bag_dir.exists(), "预先建了包目录 ⟹ rosbag2 会一句 already exists 直接退出"
     assert kw.get("start_new_session") is True, "它自成一个会话 ⟹ 终端 Ctrl-C 传不到它（要转交）"
     assert argv[:2] == ["bash", "-c"] and shlex.quote(rec.INCLUDE_REGEX) in argv[2]
@@ -373,14 +379,14 @@ def test_起录不预先建包目录_日志落在它旁边(tmp_path, monkeypatch
 def test_包目录已经存在就只报不动(tmp_path, monkeypatch, capsys):
     """★ 两种成因都要说清，而且**都不许删**：一份是已经入账的包，另一份是没收干净的。"""
     _fake_start(monkeypatch, tmp_path)
-    bag_dir = rec.session_dir(rec.SCENARIO_BY_N[1], datetime.datetime.now(), tmp_path / "bag")
+    bag_dir = rec.session_dir(rec.SCENARIO_BY_N[1], tmp_path / "bag")
     bag_dir.mkdir(parents=True)
     PRECIOUS = "已经录好的东西".encode()
-    (bag_dir / "s1-static_0.db3").write_bytes(PRECIOUS)
+    (bag_dir / "1_static_0.db3").write_bytes(PRECIOUS)
     (bag_dir / "metadata.yaml").write_text("收好口了\n", encoding="utf-8")
     assert rec.start(1) == 1
     assert "不覆盖已入账的包" in capsys.readouterr().out
-    assert (bag_dir / "s1-static_0.db3").read_bytes() == PRECIOUS
+    assert (bag_dir / "1_static_0.db3").read_bytes() == PRECIOUS
 
     (bag_dir / "metadata.yaml").unlink()            # 换一个成因：没收干净的那种
     assert rec.start(1) == 1
@@ -504,7 +510,7 @@ def _fake_finalize_env(monkeypatch, tmp_path, *, session=None, used="SIGINT", al
     monkeypatch.setattr(rec, "BAG_ROOT", tmp_path / "bag")
     monkeypatch.setattr(rec, "STATE_FILE", tmp_path / "bag" / ".recorder.json")
     rec.write_state({"scenario": 1, "title": "静止基线", "pid": 4321,
-                     "dir": "bag/2026-09-29/s1-static"})
+                     "dir": "bag/1_static"})
     killed, seen = [], {}
 
     def fake_summarize(out_dir, **kw):
@@ -523,7 +529,7 @@ def test_收口发给录制进程的是信号_并且记下来为什么(tmp_path,
     """★ 收口只有一条路：SIGINT（与操作者自己按 Ctrl-C 同一条）。
     表里还要看得见**为什么收的** —— "到点" / "人按的" / "它自己没的"在现场含义完全不同。"""
     killed, seen = _fake_finalize_env(monkeypatch, tmp_path)
-    rec.finalize(tmp_path / "bag/2026-09-29/s1-static",
+    rec.finalize(tmp_path / "bag/1_static",
                  state=rec.read_state(), outcome="timeup")
     assert killed == [4321], "收口要发给**录制进程自己**那个 pid"
     assert seen["stop_signal"] == rec.STOP_REASON["timeup"]
@@ -533,7 +539,7 @@ def test_收口发给录制进程的是信号_并且记下来为什么(tmp_path,
 
 def test_进程已经退了的收口不假装是我们收的(tmp_path, monkeypatch):
     killed, seen = _fake_finalize_env(monkeypatch, tmp_path, alive=False)
-    rec.finalize(tmp_path / "bag/2026-09-29/s1-static",
+    rec.finalize(tmp_path / "bag/1_static",
                  state=rec.read_state(), outcome="gone")
     assert killed == [], "它已经死了，不许再发信号"
     assert seen["stop_signal"] == rec.STOP_REASON["gone"]
@@ -543,7 +549,7 @@ def test_升级到_SIGKILL_要如实写在表里(tmp_path, monkeypatch):
     """★ SIGINT 被无视、升级到 SIGTERM/SIGKILL 时，表上不能只剩一句 "SIGINT" ——
     那种包**不是干净收口**，回查的人必须一眼看出差别。"""
     _killed, seen = _fake_finalize_env(monkeypatch, tmp_path, used="SIGKILL")
-    rec.finalize(tmp_path / "bag/2026-09-29/s1-static",
+    rec.finalize(tmp_path / "bag/1_static",
                  state=rec.read_state(), outcome="timeup")
     assert "SIGKILL" in seen["stop_signal"] and "升级" in seen["stop_signal"]
 
@@ -551,7 +557,7 @@ def test_升级到_SIGKILL_要如实写在表里(tmp_path, monkeypatch):
 def test_空包必须当场喊出来(tmp_path, monkeypatch, capsys):
     _killed, _seen = _fake_finalize_env(
         monkeypatch, tmp_path, session={"messages": 0, "closed_cleanly": True})
-    rec.finalize(tmp_path / "bag/2026-09-29/s1-static",
+    rec.finalize(tmp_path / "bag/1_static",
                  state=rec.read_state(), outcome="timeup")
     assert "一条消息都没有" in capsys.readouterr().out
 
@@ -564,6 +570,35 @@ def test_收口那一段忽略_ctrl_c():
     with rec._sigint_ignored():
         assert signal.getsignal(signal.SIGINT) is signal.SIG_IGN
     assert signal.getsignal(signal.SIGINT) is before, "出了这一小段要装回去"
+
+
+def test_收口的每一件事都在忽略_ctrl_c_的窗口里(tmp_path, monkeypatch):
+    """★★ 回归（2026-09-29 现场丢了东西）：旧版的窗口**只包住"等它退出"那一段**，
+    核对与写清单在外面 ⟹ 操作者第二下 Ctrl-C 打断的就是那几秒 ⟹ **3 份包没有
+    `session.json`**（`rosbag2` 那边其实收得好好的，丢的全是收口记录）。
+
+    判据：收口这条路里的**每一步**（停进程 / 量包 / 写清单 / 清状态文件）都在窗口里 ——
+    逐点取 `signal.getsignal` 来看，而不是只测那个上下文管理器（那样测不出范围）。
+    """
+    monkeypatch.setattr(rec, "BAG_ROOT", tmp_path / "bag")
+    monkeypatch.setattr(rec, "STATE_FILE", tmp_path / "bag" / ".recorder.json")
+    rec.write_state({"scenario": 1, "title": "静止基线", "pid": 4321, "dir": "bag/1_static"})
+    seen: Dict[str, object] = {}
+    note = lambda name: seen.__setitem__(name, signal.getsignal(signal.SIGINT))  # noqa: E731
+
+    monkeypatch.setattr(rec, "process_alive", lambda pid: True)
+    monkeypatch.setattr(rec, "_stop_pid", lambda pid: (note("停录制进程"), "SIGINT")[1])
+    monkeypatch.setattr(rec, "summarize",
+                        lambda out_dir, **kw: (note("量包核对"), dict(_FAKE_SESSION))[1])
+    monkeypatch.setattr(rec, "write_manifest",
+                        lambda *a, **k: (note("写清单"), tmp_path / "MANIFEST.md")[1])
+    rec.finalize(tmp_path / "bag/1_static", state=rec.read_state(), outcome="timeup")
+    assert set(seen) == {"停录制进程", "量包核对", "写清单"}, f"收口这几步没全走到：{set(seen)}"
+    for step, handler in seen.items():
+        assert handler is signal.SIG_IGN, \
+            f"「{step}」不在忽略 Ctrl-C 的窗口里 —— 第二下就会把它打断（2026-09-29 就是这么丢的）"
+    assert not rec.STATE_FILE.exists(), "清状态文件也在同一段里，不该留着"
+    assert signal.getsignal(signal.SIGINT) is not signal.SIG_IGN, "收完口要装回去"
 
 
 def test_起录不把自己的时刻塞给收口(tmp_path, monkeypatch):
@@ -587,7 +622,7 @@ def test_收口时刻由收口这一刻自己取(tmp_path, monkeypatch):
     _killed, seen = _fake_finalize_env(monkeypatch, tmp_path)
     state = rec.read_state()
     state["started_utc"] = "2020-01-01T00:00:00Z"       # 假装这份包是 2020 年起录的
-    rec.finalize(tmp_path / "bag/2026-09-29/s1-static", state=state, outcome="timeup")
+    rec.finalize(tmp_path / "bag/1_static", state=state, outcome="timeup")
     stamped = rec.utc_stamp(seen["now"])
     assert stamped != state["started_utc"], "收口时刻被起录时刻顶替了"
     assert stamped > state["started_utc"], f"收口应当晚于起录（{stamped}）"
@@ -618,10 +653,10 @@ def test_没有报文段时摘要不冒充哈希(tmp_path):
     """★ 复核 2026-09-29：原先对**一个报文段都没有**的目录返回 `sha256("")`，
     也就是 `e3b0c442…` —— 那玩意儿**长得就像一个正经哈希**，摆在表里会被读成
     "这份包算过了"。没有东西可算就说没有。"""
-    bag = tmp_path / "bag/2026-09-29/s1-static"
+    bag = tmp_path / "bag/1_static"
     bag.mkdir(parents=True)
     assert rec.sha256_of_bag(bag) == "", "空目录不许返回那个「空输入的哈希」"
-    (bag / "s1-static_0.db3").write_bytes(b"x")
+    (bag / "1_static_0.db3").write_bytes(b"x")
     assert len(rec.sha256_of_bag(bag)) == 64, "有报文段了才该给出真摘要"
 
 
@@ -708,20 +743,189 @@ def test_录制那几条与_z0_的进程内动作表对齐():
     assert set(z0.TAKES_ARGS) <= set(rec.IN_PROCESS_KEYS)
     for key in z0.TAKES_ARGS:
         assert callable(getattr(rec, f"cmd_{key.removeprefix('rec_')}"))
+
+
+# ─────────── 收编：给缺 `session.json` 的包补一份（2026-09-29 现场，事后重建） ───────────
+#
+# ★ 现场第一手：收口后段原先不挡 Ctrl-C，操作者在那几秒里又按了一下 ⟹ 四份包里
+#   **3 份的 `session.json` 没写成**（包本身是好的）。丢的正好是"这份包是什么、
+#   缺没缺话题、sha256 是多少" ⟹ `MANIFEST.md` 只认 `session.json`，那三份整个隐形。
+
+#: `bag/2026-09-29/s4-traj3-lemniscate.log` 里那两行**原文照抄**（`grep -a` 抄的，
+#: 时间戳就是 `rosbag2` 自己报的 epoch 秒）。
+_REAL_LOG_OPENED = ("[INFO] [1790667079.353559012] [rosbag2_storage]: Opened database "
+                    "'/home/chen/ros_ws/bag/2026-09-29/s4-traj3-lemniscate/"
+                    "s4-traj3-lemniscate_0.db3' for READ_WRITE.")
+_REAL_LOG_STOPPED = "[INFO] [1790667119.462906380] [rosbag2_recorder]: Recording stopped"
+_REAL_LOG_OPENED_EPOCH = 1790667079.353559012
+_REAL_LOG_STOPPED_EPOCH = 1790667119.462906380
+
+
+def test_从_rosbag2_自己的日志里读出起停时刻():
+    """★ 这两个时刻是**包真的开始/停止写盘**的时刻（`rosbag2` 自己报的），
+    比 `metadata.yaml` 的 `starting_time`（那是**第一条消息**的时刻）更贴近"起录"。"""
+    got = rec.parse_record_log("\n".join(["别的行", _REAL_LOG_OPENED, "", _REAL_LOG_STOPPED]))
+    assert got["opened_epoch"] == 1790667079.353559012
+    assert got["stopped_epoch"] == 1790667119.462906380
+    assert got["stopped_epoch"] - got["opened_epoch"] == pytest.approx(40.11, abs=0.01)
+
+
+def test_日志里读不出时刻就写_None_不拿别的东西顶():
+    """★ 本仓为"静默为空"交过三次学费：取不到就说取不到。**不许**拿"现在"或不完整的行
+    冒充 —— 那会让重建出来的 `started_utc` 看起来是真的。"""
+    for text in ("", "\n", "这根本不是 rosbag2 的日志\n",
+                 "[1790667079.353559012] 少了正经的那一段头\n",
+                 "[INFO] [1790667079.353559012] [rosbag2_recorder]: Recording st\n"):
+        assert rec.parse_record_log(text) == {"opened_epoch": None, "stopped_epoch": None}, \
+            f"凭空造出了数字：{text!r}"
+
+
+def test_认得的那一行不要求写全路径():
+    """★ 刻意**只认到 `Opened database` 为止**：我们要的是那一行的 epoch，不是路径
+    （路径在包目录旁边、还随布局改过名）。认死整行的话，`rosbag2` 换个引号写法就全读不出来了。"""
+    got = rec.parse_record_log("[INFO] [1790667079.353559012] [rosbag2_storage]: Opened database")
+    assert got["opened_epoch"] == _REAL_LOG_OPENED_EPOCH
+
+
+def _fake_adopt_env(monkeypatch, tmp_path, *, log=""):
+    """`adopt` 的假环境：量包（`summarize`）换成记录下来的空跑，返回收编时**交给它**的东西。"""
+    monkeypatch.setattr(rec, "BAG_ROOT", tmp_path / "bag")
+    root = tmp_path / "bag"
+    root.mkdir(parents=True, exist_ok=True)
+    if log:
+        (root / "4_traj3_lemniscate.log").write_text(log, encoding="utf-8")
+    seen = []
+    monkeypatch.setattr(rec, "summarize",
+                        lambda out_dir, **kw: (seen.append((out_dir, kw)), {})[1])
+    return root, seen
+
+
+def test_收编只碰没有_session_json的包(tmp_path, monkeypatch):
+    """★ 一条纪律：`session.json` 在 = 那份包**已经入账**了，而那是**收口那一刻的实测读数**
+    —— 比事后重建可信 ⟹ 收编一个字节都不许碰它。"""
+    root, seen = _fake_adopt_env(monkeypatch, tmp_path)
+    (root / "1_static").mkdir()
+    rec.write_state(_session(), root / "1_static" / "session.json")
+    keep = (root / "1_static" / "session.json").read_bytes()
+    (root / "2_manual_takeoff").mkdir()
+    (root / "README.md").write_text("x", encoding="utf-8")      # 文件不是包目录，别管它
+    assert rec.adopt(root=root) == 0
+    assert (root / "1_static" / "session.json").read_bytes() == keep, "已入账的包被动了"
+    assert [p.name for p, _ in seen] == ["2_manual_takeoff"]
+
+
+def test_收编认不出场景的目录不动_并如实报出来(tmp_path, monkeypatch, capsys):
+    """★ 目录名不是任何 `Scenario.slug` 时**不猜**（认错场景比不收编更坏：那份包会被
+    贴上别人的场景名、别人的预期话题）。返回非零，并把它点名。"""
+    root, seen = _fake_adopt_env(monkeypatch, tmp_path)
+    (root / "随手建的东西").mkdir()
+    assert rec.adopt(root=root) == 1
+    assert seen == [], "认不出的目录不许量、更不许写"
+    out = capsys.readouterr().out
+    assert "随手建的东西" in out and "认不出" in out
+
+
+def test_收编的起录时刻取自日志里_rosbag2_自己报的那一行(tmp_path, monkeypatch):
+    """★ 判据要**与本机时区无关**：拿日志里的 epoch 秒经 `utc_stamp` 换算，
+    不许直接把 epoch 贴个 `Z`（本机恰好本地==UTC，那种写法在别的机器上就是错的）。"""
+    root, seen = _fake_adopt_env(
+        monkeypatch, tmp_path, log="\n".join([_REAL_LOG_OPENED, _REAL_LOG_STOPPED]) + "\n")
+    (root / "4_traj3_lemniscate").mkdir()
+    assert rec.adopt(root=root) == 0
+    _path, kw = seen[0]
+    state = kw["state"]
+    # `dir` / `log` 走 `_rel`（相对仓库根）—— 用例跑在 `tmp_path` 里，所以是绝对路径
+    assert state["scenario"] == 4 and state["dir"].endswith("bag/4_traj3_lemniscate")
+    assert state["started_utc"] == rec.utc_stamp(
+        datetime.datetime.fromtimestamp(_REAL_LOG_OPENED_EPOCH)), "起录时刻没落到那一步"
+    assert kw["stopped_utc"] == rec.utc_stamp(
+        datetime.datetime.fromtimestamp(_REAL_LOG_STOPPED_EPOCH)), "收口时刻没落到那一步"
+    assert "反推" in kw["stop_signal"], \
+        "收编出来的 `stop_signal` 要写明是**事后反推**的 —— 表里不能看上去像收口那一刻记的"
+    assert "事后重建" in state["reconstructed"]
+    assert state["log"].endswith("bag/4_traj3_lemniscate.log")
+
+
+def test_收编取不到的字段一律写_null_不猜(tmp_path, monkeypatch):
+    """★ `pid` / `git_head` / `git_dirty` / `ros_domain_id` 只在**起录那一刻**存在，
+    包里没有它们的影子 ⟹ 一律 `null`。留一个"看着像真的"的值比留 null 坏得多
+    （回查的人分不出哪个数是实测的）。"""
+    root, seen = _fake_adopt_env(
+        monkeypatch, tmp_path, log="\n".join([_REAL_LOG_OPENED, _REAL_LOG_STOPPED]) + "\n")
+    (root / "4_traj3_lemniscate").mkdir()
+    rec.adopt(root=root)
+    state = seen[0][1]["state"]
+    for key in rec.ADOPT_UNKNOWN:
+        assert state[key] is None, f"`{key}` 取不到，不许拿别的东西顶"
+    assert set(rec.ADOPT_UNKNOWN) == {"pid", "git_head", "git_dirty", "ros_domain_id"}
+
+
+def test_收编时日志不在就说没有起录时刻_不是编一个(tmp_path, monkeypatch):
+    """★ 日志被删/被移走时，`started_utc` 只能是 `None` —— 不许退回"现在"，
+    否则重建出来的表会声称一份三天前的包是刚刚起录的。"""
+    root, seen = _fake_adopt_env(monkeypatch, tmp_path)          # 不写 log
+    (root / "4_traj3_lemniscate").mkdir()
+    rec.adopt(root=root)
+    state = seen[0][1]["state"]
+    assert state["started_utc"] is None and state["started_local"] is None
+    assert state["log"] is None
+    assert "没有" in state["reconstructed"], "取不到起录时刻这件事要写在来路里"
+    assert seen[0][1]["stopped_utc"] is None
+
+
+def test_收编从日志跨度反推是怎么停的():
+    """★ 这是**推导**不是猜：`expect_s` 是本仓自己定的倒计时（四个场景统一 120 s），跨度是
+    `rosbag2` 自己报的 ⟹ 跨度贴近 120 s = 到点自己收的，明显短一截 = 人按的 Ctrl-C。
+
+    ★ 判据拿**有实测记录的那一份**校准：场景 1 的 `session.json` 是当时活着写下的，
+      写着"录满到点，自动收口"，而它的 `.log` 跨度是 119.5 s ⟹ 这条判据必须把 119.5 判成"到点"。
+    """
+    one = rec.SCENARIO_BY_N[1]
+    assert "到点" in rec.adopt_stop_signal(119.5, one), \
+        "场景 1 实际就是到点收的（有当时活着写下的 session.json 作证），这条判据得把它判对"
+    for span, want in ((74.6, "Ctrl-C"), (106.6, "Ctrl-C"), (40.1, "Ctrl-C")):
+        got = rec.adopt_stop_signal(span, one)
+        assert want in got and f"{span:.1f} s" in got, f"{span} s 该判成「{want}」：{got}"
+    assert rec.adopt_stop_signal(None, one) == rec.ADOPT_STOP_SIGNAL, \
+        "跨度取不到时要说「看不出来」，不许挑一个"
+
+
+def test_收编的_stop_signal_写清是根据什么反推的(tmp_path, monkeypatch):
+    """★ 推导得出的结论必须**带着依据**落地 —— 回查的人要能自己复核这条反推。"""
+    root, seen = _fake_adopt_env(
+        monkeypatch, tmp_path, log="\n".join([_REAL_LOG_OPENED, _REAL_LOG_STOPPED]) + "\n")
+    (root / "4_traj3_lemniscate").mkdir()
+    rec.adopt(root=root)
+    _path, kw = seen[0]
+    assert "40.1 s" in kw["stop_signal"], "跨度这个数要写在结论里：%r" % kw["stop_signal"]
+    assert "Ctrl-C" in kw["stop_signal"], "40.1 s 远短于 120 s ⟹ 人按的"
+    assert "40.1 s" in kw["state"]["reconstructed"], "来路那段也要写清跨度"
+
+
+def test_收编会把清单重算(tmp_path, monkeypatch):
+    """★ `MANIFEST.md` 只认 `session.json` ⟹ 补完必须重算，否则那几份包还是隐形。"""
+    root, _seen = _fake_adopt_env(monkeypatch, tmp_path)
+    (root / "2_manual_takeoff").mkdir()
+    called = []
+    monkeypatch.setattr(rec, "write_manifest", lambda *a, **k: called.append(a) or root)
+    rec.adopt(root=root)
+    assert called == [(root,)]
+
+
 # ─────────────────────────── 清单（`bag/MANIFEST.md`） ───────────────────────────
 
 
 def test_清单把每份包与缺了什么摊开(tmp_path):
-    day = tmp_path / "2026-09-29"
-    rec.write_state(_session(), day / "s3-traj1-hover" / "session.json")
+    """★ 飞控日志归到**该场景自己的** `fcu/` 下（扁平布局），清单要能一并列出来。"""
+    rec.write_state(_session(), tmp_path / "3_traj1_hover" / "session.json")
     rec.write_state(_session(scenario=4, title=rec.SCENARIO_BY_N[4].title,
-                             dir="bag/2026-09-29/s4-traj3-lemniscate",
+                             dir="bag/4_traj3_lemniscate",
                              missing_expected=["/traj/progress"]),
-                    day / "s4-traj3-lemniscate" / "session.json")
-    (day / "fcu").mkdir(parents=True)
-    (day / "fcu" / "sess001-log001.ulg").write_bytes(b"ULOG" * 10)
+                    tmp_path / "4_traj3_lemniscate" / "session.json")
+    (tmp_path / "3_traj1_hover" / "fcu").mkdir(parents=True)
+    (tmp_path / "3_traj1_hover" / "fcu" / "sess001-log001.ulg").write_bytes(b"ULOG" * 10)
     text = rec.render_manifest(tmp_path)
-    assert "s3-traj1-hover" in text and "s4-traj3-lemniscate" in text
+    assert "3_traj1_hover" in text and "4_traj3_lemniscate" in text
     assert "`deadbeef`" in text                      # sha256 要能被人回验
     assert "/traj/progress" in text                  # ★ 缺的那条点名，不是一句"基本通过"
     assert "sess001-log001.ulg" in text
@@ -731,7 +935,8 @@ def test_一份包都没有时清单说实话(tmp_path):
     text = rec.render_manifest(tmp_path)
     assert "还没有收好口的包" in text
     assert "还没有 `.ulg`" in text
-    assert "手工拷进 `bag/<日期>/fcu/`" in text, "空的时候要说清**怎么才能有**（飞控日志是手工动作）"
+    assert "手工拷进那个场景自己的" in text, "空的时候要说清**怎么才能有**（飞控日志是手工动作）"
+    assert "bag/<场景>/fcu/" in text
 
 
 def test_清单是确定性输出_重算逐字相同(tmp_path):
@@ -739,10 +944,10 @@ def test_清单是确定性输出_重算逐字相同(tmp_path):
     而这张表是**入库**的 ⟹ 每录完一份就脏一次，验收那条"`rec_manifest` 重算得一致"
     用 `git diff` 永远对不上。起点时间在表里（`started_utc`），回查不缺东西。
     """
-    day = tmp_path / "2026-09-29"
-    (day / "s1-static").mkdir(parents=True)
-    (day / "s1-static" / "session.json").write_text(json.dumps({
-        "scenario": 1, "title": "静止基线", "dir": "2026-09-29/s1-static",
+    day = tmp_path / "1_static"
+    day.mkdir(parents=True)
+    (day / "session.json").write_text(json.dumps({
+        "scenario": 1, "title": "静止基线", "dir": "bag/1_static",
         "started_utc": "2026-09-29T01:00:00", "duration_s": 90.0, "size_text": "1.0 MB",
         "messages": 100, "topics": [], "sha256": "deadbeef", "missing_expected": [],
     }, ensure_ascii=False), encoding="utf-8")
@@ -754,17 +959,17 @@ def test_清单是确定性输出_重算逐字相同(tmp_path):
 
 def test_清单里零时长与没读到分开说(tmp_path):
     """同上那条，只是换到**入库的那张表**上（`MANIFEST.md`）：`?` 只能代表"没读到"。"""
-    for slug, duration in (("s1-static", 0.0), ("s2-manual-takeoff", None)):
-        day = tmp_path / "2026-09-29" / slug
+    for slug, duration in (("1_static", 0.0), ("2_manual_takeoff", None)):
+        day = tmp_path / slug
         day.mkdir(parents=True)
         (day / "session.json").write_text(json.dumps({
-            "scenario": 1, "title": "静止基线", "dir": f"2026-09-29/{slug}",
+            "scenario": 1, "title": "静止基线", "dir": f"bag/{slug}",
             "started_utc": "2026-09-29T01:00:00", "duration_s": duration,
             "size_text": "1.0 MB", "messages": 0, "topics": [], "sha256": "",
             "missing_expected": [],
         }, ensure_ascii=False), encoding="utf-8")
     row_zero = [ln for ln in rec.render_manifest(tmp_path).splitlines()
-                if "s1-static" in ln]
+                if "1_static" in ln]
     # 每个 slug 各一行；0.0 那种要写成 "0.0 s"，不能是 "?"
     assert any("| 0.0 s |" in ln for ln in row_zero), f"真的 0.0 s 被写成问号：{row_zero}"
     assert "| ? |" in rec.render_manifest(tmp_path), "没读到的才写问号"
@@ -774,6 +979,35 @@ def test_写清单会建目录(tmp_path, monkeypatch):
     monkeypatch.setattr(rec, "BAG_ROOT", tmp_path / "bag")
     path = rec.write_manifest()
     assert path.exists() and path.name == "MANIFEST.md"
+
+
+# ─────────────────────── ★ 入库产物的完整性（别靠人眼） ───────────────────────
+
+
+def test_参数存档与拷进_docs_的那份正文逐字相同():
+    """★ 回归（2026-09-29 现场抓到，差点静默入库）：`docs/assets/z0.params` 是
+    **中文头 + 那份从飞控导出的原文件**，而原文件**不是 UTF-8**
+    （`# Vehicle:` 那行是 GBK 的"多旋翼"）。
+
+    ⟹ 任何"把整个文件解码成字符串、改一处、再写回"的工具都会把那 6 个字节换成 6 个 U+FFFD，
+    而 `file`（照样报 Non-ISO）、参数条数（照样 911）、UTF-8 校验（照样合法）**全都不报错**。
+    当时就是这么坏的，隔了一次 `endswith` 复核才发现。这条用例把它钉在源码树上：
+    **正文必须与 `bag/z0-params-2026-09-29.params` 逐字相同**。
+    """
+    repo = RUN_DIR.parent
+    head = (repo / "docs/assets/z0.params").read_bytes()
+    body = (repo / "bag/z0-params-2026-09-29.params").read_bytes()
+    assert head.endswith(body), (
+        "`docs/assets/z0.params` 的**正文**必须与 `bag/z0-params-2026-09-29.params` 逐字相同"
+        "（后者是那份原文件的存档）—— 多半是被哪个编辑器按 UTF-8 往返了一遍，"
+        "把那句 GBK 车名换成了 U+FFFD")
+    assert b"# Vehicle: \xb6\xe0\xd0\xfd\xd2\xed" in body, (
+        "GBK 的 `# Vehicle: 多旋翼` 是这份原文件的特征字节 —— 不许「顺手」改成 UTF-8")
+    assert len(head) > len(body), "前面还要有那段中文头（只拷正文 = 出处没了）"
+    prefix = head[:len(head) - len(body)]
+    assert "真身" in prefix.decode("utf-8"), "中文头要在（它写着出处与那次 914→911 的差别）"
+    assert b"\r\n" not in prefix, "★ 中文头是 LF —— 与正文的 CRLF 混着，这是**有意**的（正文逐字）"
+    assert b"\xef\xbf\xbd" not in head, "U+FFFD 一个都不许有：有就是坏了（正文原样是 GBK）"
 
 
 # ─────────────────────────── ★ 安全边界 ───────────────────────────
