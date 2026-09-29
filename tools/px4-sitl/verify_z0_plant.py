@@ -73,9 +73,22 @@ U_FRAC = 3.45
 # 0.97 是「别把电机信号顶到 1.0」的留白（留给混控器/分配器的余量），不是 z0 读数。
 U_MAX = 0.97
 
+#: 一个数的写法 —— `5` / `-1.5` / `.5` / `5.` / `1.5e-3`。**至少要有一个数字**。
+#:
+#: ☠️ 不能图省事写 `-?[0-9.eE+-]+`：那个字符类**本身**能只匹配到一个 `-`（或 `e`/`E`/`.`/`+`），
+#:    于是 `float('-')` 抛 `ValueError`。本脚本的窗口是**文本偏移**
+#:    （`marker = len(px.text())` → `px.text()[marker:]`），而 `px4_console.text()` /
+#:    `wait_for()` 的 docstring 自己就把"文本偏移当游标"判为**无效**（渲染不是增量的，
+#:    切片可能从 token 中间开始）⟹ 窗口边界可以落在数值中间。
+#:    2026-09-29 [ticket 23] 点名此处（与 `verify_offboard_smoke.field()` 同一类修法）。
+#:    第一手：`param_value(" x * SIH_MASS [843,1330] : -", "SIH_MASS")` 与
+#:    `field("    z: -", "z")` 修前**都抛** `ValueError`；完整行分别给 `0.75` / `-0.01408`。
+#:    ⚠️ **"可达"不是"已发生"** —— 没有证据说真跑里被咬过。
+_NUM = r"-?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?"
+
 # `param show` 一行是 `%c %c %s [i,j] : v` —— **两列状态**（used + saved/unsaved），
 # 即 `x * SIH_MASS [843,1330] : 0.7500` / `x   SENS_EN_GPSSIM [..] : 1`（默认值那列是空格）。
-PARAM_RE = re.compile(r"^\s*[x+*]?\s+[+* ]?\s*([A-Z0-9_]+)\s+\[[^\]]*\]\s*:\s*(-?[0-9.eE+-]+)", re.M)
+PARAM_RE = re.compile(rf"^\s*[x+*]?\s+[+* ]?\s*([A-Z0-9_]+)\s+\[[^\]]*\]\s*:\s*({_NUM})", re.M)
 OUT_RE = re.compile(r"^\s*output:\s*\[([^\]]*)\]", re.M)
 QT_RE = re.compile(r"^\s*q:\s*\[([^\]]*)\]", re.M)
 
@@ -88,8 +101,13 @@ def param_value(text: str, name: str):
 
 
 def field(text: str, name: str):
-    """取 `名字: 数` 一行（真值话题的字段）。"""
-    m = re.search(rf"^\s*{name}:\s*(-?[0-9.eE+-]+)", text, re.M)
+    """取 `名字: 数` 一行（真值话题的字段）。
+
+    ★ 数用 `_NUM`（**至少一个数字**）：半截窗口里的裸 `-`/`e`/`.`/`+` 一律取不到 ⟹ 返回
+      `None`、**绝不抛**。旧字符类 `-?[0-9.eE+-]+` 会在这种半截值上 `float('-')` 抛
+      （见 `_NUM` 上方那段；ticket 23）。
+    """
+    m = re.search(rf"^\s*{name}:\s*({_NUM})", text, re.M)
     return float(m.group(1)) if m else None
 
 

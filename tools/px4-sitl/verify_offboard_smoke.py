@@ -872,8 +872,12 @@ class World:
         print(f"[verify] param show {name} ⟶ " + " | ".join(c.strip() for c in cands)
               if cands else f"[verify] param show {name} ⟶ （没打印）", file=sys.stderr)
         for text in cands:
-            m = (re.search(r"\]\s*:\s*(-?[0-9.eE+-]+)", text)
-                 or re.search(rf"{re.escape(name)}\s*[:=]\s*(-?[0-9.eE+-]+)", text))
+            # ★ 数与 `field()` 同一个 `_NUM`：**至少一个数字**。旧字符类 `-?[0-9.eE+-]+`
+            #   在**半截窗口**（`text_since(mark)` 的字节边界落在数值中间）上能只匹配到
+            #   一个裸 `-` ⟹ `float('-')` 抛、整场作废 —— 与 `field()` 是同一类崩点
+            #   （ticket 23 点名；本处的 `drain(0.5)` 只把风险压低、不消除这个机制）。
+            m = (re.search(rf"\]\s*:\s*({_NUM})", text)
+                 or re.search(rf"{re.escape(name)}\s*[:=]\s*({_NUM})", text))
             if m:
                 return float(m.group(1))
         return None

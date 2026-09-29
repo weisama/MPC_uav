@@ -1,16 +1,18 @@
 # 12: ±30% 参数失配扫描与参数一致对照组
 
-Status: ready-for-human
+Status: done
 Type: research
 
-> ★ 2026-09-29 收口：六条验收项**全部勾上**（结论见下 `## Comments`）。
-> **加密档已补跑**（操作者裁决"现在处理" + "加法式改 08 的夹具"）→ 见 Comments 第 10 条；
-> 第 7 条那条未决**已关闭**。
-> 仍落 `ready-for-human` 而不是 `done`：本仓规矩（`triage-labels.md`）要求 `done` 的
-> **未决事项已另开票**，而现在还剩两条**不在本张射程内**的点名项：
-> ① [§附.8](../../../docs/control/mismatch-sweep.md) 末列的**同类字符类残留处**（`verify_z0_plant.py:78/:92`、
-> `verify_offboard_smoke.py:443/862/863/892`）**是否要开票** —— 我已点名、**未擅自开票，等裁定**；
-> ② **帧偏移在批次之间换号**未解释（属 [11](11-sitl-tier-b-seam3.md)/B 档真值那条线，不是本张）。
+> ★★ **【2026-09-29 关闭】本状态块已作废并关闭 —— 票已收 `done`（下方逐项点名两条点名项的去向）：**
+> - 六条验收项**全部勾上**（结论见下 `## Comments`）；**加密档已补跑**（操作者裁决"现在处理"
+>   + "加法式改 08 的夹具"）→ 见 Comments 第 10 条；第 7 条那条未决**已关闭**。
+> - ⚠️ 下面这几句"仍落 `ready-for-human` 而不是 `done`"**已作废**（保留为如实记录）。当初压着 `done`
+>   的两条**不在本张射程内**的点名项，**现均已处置**：
+>   ① [§附.8](../../../docs/control/mismatch-sweep.md) 末列的**同类字符类残留处**（`verify_z0_plant.py:78/:92`、
+>      `verify_offboard_smoke.py:443/862/863/892`）**是否要开票** —— ★ **已裁定：开票 →
+>      [ticket 23](23-charclass-residue-float-crash.md)**（原句"我已点名、**未擅自开票，等裁定**"**已作废**）；
+>   ② **帧偏移在批次之间换号**未解释 —— ★ **已裁定：归 [11](11-sitl-tier-b-seam3.md)**
+>      （B 档真值那条线，不是本张）。
 
 **What to build:** 把"这个 MPC（模型预测控制）是否依赖精确模型"从**假设**变成**可测结论**。
 
@@ -230,3 +232,21 @@ Type: research
 
 **验**：`pytest tools/px4-sitl/` = **188 passed**（其中本张的
 `test_mismatch_sweep.py` 单独跑 = **83 passed**；两个数别混着引）。
+
+---
+
+**11. 2026-09-29 收口 → `Status: done`（本张原来那两条"不在射程内的点名项"的去向）**
+
+本张此前压在 `ready-for-human`（票头那段已加作废标记）的唯一原因是：
+本仓规矩要求 `done` 的**未决事项已另开票**。这两条现已处置：
+
+| 点名项 | 裁定 | 去向 |
+|---|---|---|
+| ① [§附.8](../../../docs/control/mismatch-sweep.md) 末列的**同类字符类残留处**（`verify_z0_plant.py:78/:92`、`verify_offboard_smoke.py:443/862/863/892`）**是否要开票** | 操作者 2026-09-29 裁定"**开票**" | **已开 → [ticket 23](23-charclass-residue-float-crash.md)**（`23-charclass-residue-float-crash.md`，编号 23 = `issues/` 下一个空闲号；已注明"若并行会话另开同题材票则以先入库者为准"） |
+| ② **帧偏移在批次之间换号**未解释（属 11 号票/B 档真值那条线） | 操作者 2026-09-29 裁定 | **归 [11](11-sitl-tier-b-seam3.md)**，不是本张；本张**只如实记录**（见 `mismatch-sweep.md` §3.4 末"没测到 ③"） |
+
+★ **本张自身一行未改**：ticket 23 落的改动全在 `tools/px4-sitl/verify_z0_plant.py` /
+`verify_offboard_smoke.py`，**不碰本张的归档、判据、工具**（`mismatch_sweep.py` 与 13 场证据原样）。
+所以本张的结论与 `obs-*.json` 一概不受影响。
+（本张原 Comments 第 7 条那段"**请裁定**"里"剩一条未决：±10 %/±5 %"已由第 10 条的加密档落地关闭；
+"另一条不是本张的未决（判据④ 不可重复）"仍**只如实记录、不另开票**，与操作者"不单开"的裁定一致。）
