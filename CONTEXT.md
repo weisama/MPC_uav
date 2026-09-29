@@ -90,7 +90,7 @@
 | **BLASFEO** | acados 使用的高性能线性代数库，**按 CPU 微架构编译**（Jetson 上需指定 ARM 目标）。 |
 | **SQP_RTI** | **Real-Time Iteration** —— 每周期只做一次 SQP 迭代（分 preparation / feedback 两相），延迟极低，适合硬实时 MPC。本项目的选择。 |
 | **OCP** | Optimal Control Problem，最优控制问题。 |
-| **Tera / `t_renderer`** | acados 代码生成用的模板引擎二进制，**安装缺失时报 `EOFError`**，是 acados 最常见的坑。 |
+| **Tera / `t_renderer`** | acados 代码生成用的模板引擎二进制。☠️ 旧话「安装缺失时报 `EOFError`」**在 v0.6.0 上不成立**（那是 v0.5.x 及以前交互式 `input()` 提问、非交互读到 EOF 的内建异常）。**真身是三种落点，其中「在、但渲染不出东西」完全静默** —— 静默两层后才炸成 `.so: cannot open shared object file`。详见 [`docs/control/acados-orin-build.md`](docs/control/acados-orin-build.md) §4 |
 
 ## 五、状态估计与接入
 

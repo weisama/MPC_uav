@@ -1,6 +1,6 @@
 # 13: 清扫仍在流传的「Tera 缺失报 `EOFError`」
 
-Status: ready-for-agent
+Status: done
 Type: task
 
 **What to build:** ticket [02](02-acados-orin-build.md) 在 2026-09-28 **实测推翻**了
@@ -17,6 +17,7 @@ Type: task
 | 3 | [`PROJECT.md:408`](../../../docs/PROJECT.md) | `…、Tera 渲染器缺失会报 EOFError` |
 | 4 | [`PROJECT.md:453`](../../../docs/PROJECT.md) | `无官方 Jetson 文档；t_renderer 缺失报 EOFError` |
 | 5 | [`open-source-survey.md:61`](../../../docs/reference/open-source-survey.md) | `报 EOFError —— 这是 acados 最常见的坑` |
+| 6 | [`CONTEXT.md:93`](../../../CONTEXT.md) | `…模板引擎二进制，**安装缺失时报 EOFError**，是 acados 最常见的坑。` |
 
 ★ **`hardware.md:278` 与 `open-source-survey.md:61` 是「acados 要点」那两节，是后来者最先看到的地方 —— 优先改。**
 
@@ -33,10 +34,10 @@ Type: task
 
 **Blocked by:** 无。
 
-- [ ] 上表 5 个文件 6 处**全部**对齐到新口径
-- [ ] 按仓库纪律：**被推翻的原话用 ☠️ 标记保留**（写成「换了版本，这句话不再成立」），**不静默删除** —— 它在 v0.5.x 时代是**对的**
-- [ ] 每处都指向权威出处 `docs/control/acados-orin-build.md` §4
-- [ ] 判据：`grep -rn "EOFError" docs/ README.md` 的结果里，**未带 ☠️ 标记的引述归零**
+- [x] 上表 5 个文件 6 处**全部**对齐到新口径
+- [x] 按仓库纪律：**被推翻的原话用 ☠️ 标记保留**（写成「换了版本，这句话不再成立」），**不静默删除** —— 它在 v0.5.x 时代是**对的**
+- [x] 每处都指向权威出处 `docs/control/acados-orin-build.md` §4
+- [x] 判据：`grep -rn "EOFError" docs/ README.md CONTEXT.md` 的结果里，**未带 ☠️ 标记的引述归零**
       （即：不再有任何一处把 `EOFError` 当作"会发生的症状"来写）
 
 ## Comments
@@ -63,3 +64,46 @@ Type: task
   **教训**：这两句"被推翻的话"其实**都被关在施工图 §S2 一个地方**，`grep` 一下就清楚 ——
   我却是靠记忆列的清单。**列"还有哪儿写着"这种清单，必须 `grep` 出来，不能凭印象。**
   （这也解释了为什么 02 当时只是"不越界"，而不是"漏了一大片"。）
+
+- **2026-09-29（agent，收口）**：`Status: done`。全部验收项勾选。
+
+  **实际改了 6 处**（票面表格 5 个文件 6 处，含本票立项时漏进表的 `CONTEXT.md`）：
+
+  | file:line | 备注 |
+  |---|---|
+  | `docs/reference/hardware.md:293` | ★「acados 要点」节，优先改 |
+  | `docs/reference/open-source-survey.md:61` | ★「Jetson 要点」表行，优先改 |
+  | `docs/reference/code-inventory.md:239` | Orin NX 要点表行 |
+  | `docs/PROJECT.md:413` | 词汇表行 |
+  | `docs/PROJECT.md:458` | 风险表行 |
+  | `CONTEXT.md:93` | ★ 仓库根术语表（非 `docs/` 下），见下方方法论 |
+
+  六处一律：**原话用 ☠️ 保留**、指向权威出处 `docs/control/acados-orin-build.md` §4、
+  重点落在「**三种落点，其中「在、但渲染不出东西」完全静默**」（而非「报什么异常」）；
+  表格行用 inline code / ☠️ 前缀，`|` 语法未破坏。
+
+  **判据原始输出**（`grep -rn "EOFError" docs/ README.md CONTEXT.md`）：
+  6 处目标命中现已**全部带 ☠️**；剩余**未带 ☠️** 的命中**只出现在权威出处本身**
+  `docs/control/acados-orin-build.md`（第 80/87/104/106/109/114/115/119/120/273 行）——
+  那是讨论/推翻这句话的**源文档**，不是引述；第 80 行的表行虽无 ☠️，但同一格里就写着
+  「**在 v0.6.0 上不成立**」。票面自身不在本判据的 grep 范围内（在 `.scratch/` 下）。
+  ⟹ **判据通过：「把 `EOFError` 当症状写」的引述归零。**
+
+  ★ **方法论一条（`CONTEXT.md` 这处的由来）**：票面原判据的 grep 形式是
+  `grep -rn "EOFError" docs/ README.md` —— **照不到仓库根的 `CONTEXT.md`**，
+  所以施工第一轮 5 处改完后判据"按字面通过"，但 `CONTEXT.md:93` 这第 6 处仍原样漏网。
+  **换宽搜法**（把 `CONTEXT.md` 加进 grep 形式）才命中它；而它一旦命中，
+  票面的「5 个文件 6 处」就从**自相矛盾**（表里只列 5 行）**升级成自洽**
+  （5 文件 = `hardware.md` / `code-inventory.md` / `PROJECT.md` / `open-source-survey.md` / `CONTEXT.md`；
+  6 处 = 前四者 5 行 + `CONTEXT.md` 1 行）—— **票面的计数本来是对的，漏的是表格里的一行**，
+  本票已补上该行。这是「**缺席论证的强度等于你写下的那个 grep 形式**」的又一例：
+  原形式的"只剩权威出处"是**真的**，但它证明的范围也**只有 `docs/` 与 `README.md`**。
+
+  ★ **如实点名一处"不动的"**：`docs/control/acados-orin-build.md:273` 的遗留表也登记了本处清扫，
+  它写「这句话还在 **5 个文件**里原样重复」，却**只枚举了 4 个**
+  （`hardware.md` / `code-inventory.md` / `PROJECT.md` / `open-source-survey.md`）——
+  **同样漏了 `CONTEXT.md`**。那行是**那份文档自己的账**，按仓库纪律「收口一张票时不要顺带改另一张」，
+  **本票不改它**，仅在此点名，提醒后续读者：该行枚举与 2026-09-29 的事实已不一致。
+
+  **行号漂移**（票面 2026-09-28 快照 → 2026-09-29 实测）：`hardware.md:278→293`、
+  `PROJECT.md:408→413`、`PROJECT.md:453→458`；`code-inventory.md:239` 与 `open-source-survey.md:61` 未漂。

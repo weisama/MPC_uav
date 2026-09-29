@@ -172,11 +172,24 @@ PX4 官方 Offboard 文档明确列出每种 setpoint 需要什么估计：
 
 **⚠️ 在 PX4 v1.15 及以前，`px4_msgs` 与固件版本不匹配会导致静默失败**——话题名或字段错位**不会报错**，只是消息发出去没人收 / 收到的是垃圾。
 
-**核对方法**（PX4 官方脚本）：
+**核对方法**（本项目脚本 `tools/px4-sitl/check_msg_compat.py`，跑法见 [`../control/px4-sitl-baseline.md`](../control/px4-sitl-baseline.md) §4）：
 
 ```bash
-./scripts/check-message-compatibility.py -v <你的 px4_msgs 目录> <PX4-Autopilot 目录>
+python3 tools/px4-sitl/check_msg_compat.py \
+    --px4-tree <PX4-Autopilot 目录> --px4-msgs <你的 px4_msgs 目录> \
+    --interface-lib <px4-ros2-interface-lib 目录>
 ```
+
+☠️ ~~**（PX4 官方脚本）**：`./scripts/check-message-compatibility.py -v <你的 px4_msgs 目录> <PX4-Autopilot 目录>`~~
+—— ★ **这个路径是错的，而且照着改也还是会错**：该脚本**不在 PX4-Autopilot 里**（`Tools/` 下只有
+`generate_msg_docs.py` / `px_generate_uorb_topic_files.py` / `px_generate_uorb_topic_helper.py`，仓库根**没有 `scripts/` 目录**；
+v1.14.3 / v1.15.0 / v1.16.0 / fork `5ba2e91f` / `px4_msgs` 逐棵树查过，**全无**）。它的真身在
+**`auterion/px4-ros2-interface-lib`** 的 `scripts/` 下 —— 但**直接跑它对本项目会报假 FAILED**：
+它的待查类型清单取自**它自己那个仓库**（`message_compatibility_check.hpp`），而该仓**没有 `release/1.14` 分支**，
+拿它查 v1.14 这一对会报 **20 个 v1.14 里根本不存在的类型**为「缺失」，报错原文里**没有** `Some files differ` 那一段
+（即：**零个字段不符**）。上面那条 `check_msg_compat.py` **复用官方那份 `message_hash` 算法**，但把类型换成两侧
+`msg/` 的**并集（184 个全覆盖）**，**严格强于官方脚本的子集检查**。权威出处见
+[`../control/px4-sitl-baseline.md`](../control/px4-sitl-baseline.md) §2.3。
 
 **必须选的版本**：**`release/1.14` @ `ffb6e80e`**（★ 2026-09-21 用户签字）。
 它对应的是 **z0 固件真身** = `Minderring/PX4-Autopilot` @ `4a0e65f2`（**v1.14.3 系**的 MicoAir **厂商构建**，
@@ -281,7 +294,7 @@ if (last_transform_stamp == stamp) { /* dropped */ return; }
 - [ ] `COM_RC_OVERRIDE = 3` 生效：打杆能踢出 Offboard（**实飞前用低油门验证一次**）
 - [ ] 遥控器链路确认（`COM_RC_IN_MODE` 含义已核实，见 params-analysis 3.9）
 - [ ] `UXRCE_DDS_CFG` 已打开，`ros2 topic list | grep /fmu` 能看到话题
-- [ ] `px4_msgs` 钉在 **`release/1.14` @ `ffb6e80e`**（与真身 `4a0e65f2` 的 `msg/` blob 全同；跑过 `check-message-compatibility.py`）
+- [ ] `px4_msgs` 钉在 **`release/1.14` @ `ffb6e80e`**（与真身 `4a0e65f2` 的 `msg/` blob 全同；跑过 `tools/px4-sitl/check_msg_compat.py`，见 [`../control/px4-sitl-baseline.md`](../control/px4-sitl-baseline.md) §4）。☠️ 原记「跑过官方 `check-message-compatibility.py`」**作废**：那份**不在 PX4-Autopilot 里**，真身在 `auterion/px4-ros2-interface-lib`，**直接跑会给假 FAILED**，见 [`../control/px4-sitl-baseline.md`](../control/px4-sitl-baseline.md) §2.3
 - [ ] `/fmu/in/offboard_control_mode` 心跳 ≥ 2 Hz 且持续 ≥ 1 s
 - [ ] **推力数值范围写死为 `[-1, 1]`**，在代码里有断言
 - [ ] 角速率符号（FRD）经实机验证
