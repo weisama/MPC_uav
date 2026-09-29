@@ -124,12 +124,29 @@ Type: task
       ① **事后补写会销毁"前后有差别"这条证据**；② **不留痕的改动，事后只能靠口供**。
       本张重跑扫描/重搭时，凡"事后补进去的"都要带上**谁补的、哪一次**（照它 `trace.attached_by`
       的做法），并在引用时按"**可能换过尺子**"处理
-- [ ] ★ **本张自己也要面对"entry 与包是两份"这件事**（`tickets 212` 提请，本会话已核）：
-      `install/nmpc/lib/nmpc/mpc_node.py`（**`ros2 run` exec 的那份**）与
-      `install/nmpc/local/lib/python3.10/dist-packages/nmpc/mpc_node.py`（**被 import 的那份**）
-      是**两个文件**，而 `test_mpc_node.py` 的 DUT 是前者（`DUT = ("nmpc", "mpc_node.py")`）。
-      ⟹ build 之后这两份**同时变**，12 号票那张身份签名（`entry.sha256` + 11 个 `.py`）必然翻转 ——
-      引它的表时**先核签名**
+- [ ] ★ **"exec 的那份" vs "import 的那份" —— 方向要说准**（`tickets 212` 提请，本会话已核并**订正其表述**）：
+      `install/` 下 `mpc_node.py` 是**两个文件**：
+      `install/nmpc/lib/nmpc/mpc_node.py`（**`ros2 run` exec 它 ⟹ 飞的是这份**）与
+      `install/nmpc/local/lib/python3.10/dist-packages/nmpc/mpc_node.py`
+      （**`import nmpc.mpc_node` 拿的是这份 ⟹ 单测 import 的是这份**）。
+      实测两份**字节相同**（`sha256 = 1c7fbd2947bdb6ce…`，也正是 12 号票归档里的
+      `entry.sha256`——两边对得上 ✓），且 `lib/` 那份是**自足脚本**（自己 `import rclpy`、
+      自带入口）⟹ **不是"飞的走后者"**，而是：**飞 = `lib/`，import = `dist-packages/`**。
+      ⚠️ 真正的风险在这里：**同一个 `test_mpc_node.py` 里两种都用到**（它 `import nmpc.mpc_node`
+      取 `QOS_PUB_FMU`、又 `ros2 run` 起 DUT）⟹ 只有 build 让两份同步时两边才可比；
+      **半途而废的 build（只刷新一份）会让"单测绿"与"飞的那份"脱钩**。
+      build 后两份**同时翻**，引 12 那张身份签名（`entry.sha256` + 11 个 `.py`）时**先核签名**
+- [ ] ★★ **重跑前先确认 pytest 不是"静默跳过"**（`tickets 212` 的第一手，本会话**已复现**）：
+      `tools/px4-sitl/` 的测试开头有 `pytest.importorskip("rclpy"/"px4_msgs"/"nmpc")`，
+      而 **`px4_msgs` 不在本工作区**（在 `/home/chen/px4_msgs_ws/install`）⟹
+      只 source 本仓 `install/setup.bash` 时**不报错、直接跳过**：
+      实测 **`1 skipped in 0.09s`**（看着像"测试不存在"）；补上 source 后
+      **`162 tests collected`** ⟹ 别把这个"绿"当成全绿。
+      正确姿势（本张重跑扫描/重搭时照用）：
+      `source /opt/ros/humble/setup.bash` + `source /home/chen/px4_msgs_ws/install/setup.bash`
+      + `source install/setup.bash` ⟹ `python3 -m pytest tools/px4-sitl -q`
+      ⚠️ 但 `src/nmpc/test/` **没有** `importorskip`（实测 grep 无命中）⟹ 那边缺 `px4_msgs`
+      会**硬报错**而非静默跳过，两棵树的失败模式不同
 - [ ] **按下面的《失效清单》逐份记「基线已换」**（见末节）：每份写明"这组数字出自旧机型"
       并给出旧机型常数（`SIH_T_MAX = 2.95 N`），**不许只改其中一份**
 - [ ] ⚠️ **不改 `src/nmpc/nmpc/params.py`** —— 「11 补、10 不动」的裁定**仍然在效**

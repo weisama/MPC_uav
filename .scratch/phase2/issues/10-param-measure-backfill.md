@@ -626,3 +626,13 @@ acados 自报 max ≤ 10 ms（不是墙钟），并发下也过了 ⟹ 是**偏�
 SITL 与 CPU 密集测试" ⟹ **第①步已满足**。但 `git status` 实测
 `src/nmpc/nmpc/mpc_node.py` **正的脏**（`+79/−9`）—— 20 号票的积分器正在写。
 ⟹ **此刻 build 会烤出半成品快照**，所以本张按排期**等 8b 落完 `src/` 再 build**。
+
+### 2026-09-29 12:1x —— 全量测试的一个"假绿"陷阱（已复现，本张收尾时要防）
+
+`tools/px4-sitl/` 的测试开头有 `pytest.importorskip("px4_msgs")`，而 **`px4_msgs` 不在本工作区**
+（在 `/home/chen/px4_msgs_ws/install`）⟹ 只 source 本仓 `install/setup.bash` 时
+**不报错、直接静默跳过**：实测 **`1 skipped in 0.09s`**；补上
+`source /home/chen/px4_msgs_ws/install/setup.bash` 后 **`162 tests collected`**。
+⟹ 本张收尾的"全量测试"必须：① 三条 setup 都 source；② **报出收集到的条数**，而不是只说"全绿"
+（`src/nmpc/test/` 没有 `importorskip`，实测 grep 无命中 ⟹ 那边缺 `px4_msgs` 会**硬报错**，
+两棵树的失败模式不同）。
