@@ -225,7 +225,9 @@ class NodeParams:
     heartbeat_always: bool = True
     #: 求解用的模型参数（`t_max` 由 `hover_thrust` 导出，**不能**单独给 —— 见 `params.py`）
     mass: float = 0.75
-    hover_thrust: float = 0.6235
+    #: ★ 实测值（满电口径，2026-09-29 ticket 10 回填）—— 与 `params.HOVER_THRUST` **必须同值**，
+    #: 漂了不报错：节点按下面 `_PARAMS` 表飞、测试按这里断言 ⟹ 测试全绿而飞机是错的。
+    hover_thrust: float = 0.1589
     #: 状态外推 τ [s]（票面 50 ms）
     tau_s: float = 0.05
     #: ★ **测量从哪里来**（ticket 09）：`mocap`（默认，B 档）或 `px4`（A 档）。
@@ -971,7 +973,7 @@ _PARAMS = (
     ("viz_hz", 10.0, float),
     ("heartbeat_always", True, bool),
     ("mass", 0.75, float),
-    ("hover_thrust", 0.6235, float),
+    ("hover_thrust", 0.1589, float),
     ("tau_s", 0.05, float),
     ("state_source", "mocap", str),
     ("px4_position_topic", TOPIC_PX4_POS, str),

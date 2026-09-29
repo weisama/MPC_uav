@@ -18,7 +18,7 @@ hover_thrust ≡ T_hover / T_max = m·g / T_max
 |---|---|
 | 悬停需要多少推力 | `F = m·g`（受力平衡），而 NED/FRD 下机体 z 朝**下** ⟹ `thrust_body[2]` 为**负** |
 | `thrust_body` 怎么变成推力 | `MulticopterRateControl.cpp:182` **原样透传** → `ControlAllocator` 伪逆混合，推力轴按**各执行器 `ct` 的均值**归一化（`ControlAllocationPseudoInverse.cpp:134`）⟹ `1.0` ≡ 所有执行器满输出 |
-| 满输出是多少牛顿 | **电池能给的**，不是电机堵转能给的 ⟹ `T_max` 按电池，见 [`phase2-implementation.md`](../../docs/control/phase2-implementation.md) §3.3 |
+| 满输出是多少牛顿 | **实测的归一化上限**（满电口径 46.3 N，2026-09-29 回填），见 [`phase2-implementation.md`](../../docs/control/phase2-implementation.md) §3.3。⚠️ 它**不再**按"电池可持续"那个口径 —— 那两个角色要解耦，见 §3.3.3 末段 |
 | 所以 | `hover_thrust = m·g / T_max` = 满输出时的那**一个归一化数** |
 
 ### 为什么这不是"把参数又念了一遍"
@@ -76,7 +76,7 @@ float collective_thrust = _acc_sp(2) * (_hover_thrust / CONSTANTS_ONE_G) - _hove
 python3 tools/prereq-evidence/mavlink_probe.py --help     # 见该工具的纪律说明
 
 # 2) 反推（--model-hover 只用来打印与模型当前值的差距）
-python3 tools/hover-thrust/hover_thrust_from_ulog.py <悬停日志.ulg> --model-hover 0.6235
+python3 tools/hover-thrust/hover_thrust_from_ulog.py <悬停日志.ulg> --model-hover 0.1589
 
 # 若手上有独立已知值（SITL 同构机那种），当场对一下
 python3 tools/hover-thrust/hover_thrust_from_ulog.py <log.ulg> --expect 0.62330
@@ -111,15 +111,20 @@ topic 整个不在 = 「这份日志没数据」（干净结论）；topic 在�
 |---|---|
 | 合成信号上的判据与读数 | ✅ 36 条自检 |
 | SITL 同构机（解析真值已知） | ✅ 单份端到端偏差 **2.6 × 10⁻⁸**；175 份批跑 **50 份**可用读数极差 **0.0000%**；4 档判据下**只出现过 1 个读数** |
-| **真机 z0 悬停日志** | ✅ **已跑（2026-09-29，四段真机 ulog）**：两段可用 **`0.22199` / `0.22088`**（互差 0.50 %），倾角 ≤ 1.75°；★ 读数**尚未回填模型** —— 电池口径待操作者裁定（[ticket 10](../../.scratch/phase2/issues/10-param-measure-backfill.md) 的 **O8**），原始分析记在该票 Comments 第二轮 |
+| **真机 z0 悬停日志** | ✅ **已跑并已回填（2026-09-29，四段真机 ulog）**：两段可用 **`0.221992`**（@ 20.474 V）/ **`0.220884`**（@ 20.526 V），互差 0.50 %，倾角 ≤ 1.75°。★ 电池口径由操作者裁定为**满电**（[ticket 10](../../.scratch/phase2/issues/10-param-measure-backfill.md) 的 O8）⟹ 按实测律 `thrust ∝ V^1.608` 归一到 25.2 V 得 `0.15896` / `0.15882` ⟹ **`0.1589`**，已回填 `params.py` / `mpc_node.py` ×2。原始分析记在该票 Comments 第二 ~ 四轮 |
 
 ## 7. 它能与不能证明什么
 
 - ✅ 能把被控对象**自己的**悬停油门从日志里读回来，且读数不随判据移动。
-- ⚠️ SITL 那份真值里 `T_max = 11.8 N` **正是 §3.3 的占位值** ⟹ 验证的是**管线**，
-  **不是** z0 的电机/电池能力。真值必须来自 z0 自己的 P1 日志。
+- ⚠️ SITL 那份真值 `0.6233` 是**同构机自己的解析真值**（`m·g/(4·SIH_T_MAX)`），
+  它当初与 §3.3 的**占位值**一致纯属巧合（同构机就是照占位搭的）⟹ 那份验证的是**管线**，
+  **不是** z0 的电机/电池能力。★ 2026-09-29 真机回填后**两者不再相等**（0.1589 vs 0.6233），
+  这恰好把"读数来自日志、不是抄参数"这件事反证了一遍。
 - ❌ **不修正竖直加速度**（`vehicle_local_position` 的 `ax/ay/az` 不读，自检里有用例钉住）。
-- ⚠️ SITL 上"干净得过分"（无气动阻力、无掉压、无振动）；**真机已跑过四段**（见 §6 与 ticket 10 的 Comments），
-  但真机读数**还没经拉力台/多电池复核**，也**还没回填模型**。
+- ⚠️ SITL 上"干净得过分"（无气动阻力、无掉压、无振动）；**真机已跑过四段并已回填**（见 §6 与 ticket 10 的 Comments），
+  但真机读数**还没经拉力台复核**，且**满电那一点是外推的**（实测点都在 20.5 V 附近）——
+  换成直接读数只需在满电包上再悬停 ~30 s。
+- ⚠️ 回填 0.1589 后 **SITL 同构机（`SIH_T_MAX` 那套）不再与模型同构**：它自己的悬停油门仍是解析的 `0.6233`。
+  本目录的 SITL 证据不受影响（它证明的是工具管线），但**基于同构机的 SITL 测试会被这个失配影响** —— 见 ticket 10 的 Comments。
 
 完整交代、原始输出与复跑命令：[`evidence/README.md`](evidence/README.md)。
