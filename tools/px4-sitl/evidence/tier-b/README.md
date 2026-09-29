@@ -32,9 +32,18 @@
    的默认值（种子默认 `20260929`）。
 4. **代码身份**：每份 `<tag>-summary.json` 里的 `controller_code` 块记的是这五场实际 import 到的
    控制器源码 —— `src/nmpc` @ `cff55ae`（2026-09-29 09:40:49），逐文件 sha256 也在里面。
-   为什么会解析到 `src/` 而不是 `install/`：`run_matrix.sh:52` 设了
-   `PYTHONPATH=/home/chen/ros_ws/src/nmpc`，而节点用 `subprocess.Popen(cmd, …)`
-   （[`verify_offboard_smoke.py:239`](../../verify_offboard_smoke.py#L239)）**不传 `env=`** ⟹ 继承。
+   为什么**包**解析到 `src/` 而不是 `install/`：`run_matrix.sh:52` 设了
+   `PYTHONPATH=/home/chen/ros_ws/src/nmpc`，而 DUT 子进程继承它 —— `ta.MpcDut.start` 把
+   `env = dict(os.environ)` 再叠 `dut_env()` 交给 `Popen`，而 `dut_env()`
+   （[`verify_tier_a_hover.py:370`](../../verify_tier_a_hover.py#L370)、
+   [`:339`](../../verify_tier_a_hover.py#L339)）**只加 acados 两个键、不动 `PYTHONPATH`**。
+   ☠️ **但入口脚本（`__main__`）来自 `install/`，这与"包来自 `src`"是两件事**：
+   DUT 是 `ros2 run nmpc mpc_node.py` 起的 ⟹ `ros2 run` 按 `<prefix>/lib/<包>/<名字>` 找文件
+   ⟹ 跑的是 `install/nmpc/lib/nmpc/mpc_node.py`（2026-09-29 当场查
+   `get_package_prefix('nmpc')` = `/home/chen/ros_ws/install/nmpc`）。
+   ⚠️ 这份与 `src/` 那份**逐行 diff 只差 1 行**（`:130` 的 docstring 里 `T_max` vs `f_max`）
+   ⟹ 行为一致、**本批读数不受影响**；但**"改了 `src/` 就等于改了飞的东西"是错的** ——
+   `mpc_node.py` 里的改动必须 `colcon build` 之后才会飞（20 号票的落地就卡在这条上）。
    ⚠️ **`install/nmpc` 是 09-29 08:59 的构建快照、与这份不是同一份代码**
    （ticket 12 的 ±30% 扫描跑的就是那份）。
    ★ 但**这一处差异对本批的数字是数值无感的**（2026-09-29 经 12 号会话提出后逐行核实）：

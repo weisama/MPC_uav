@@ -236,14 +236,16 @@ F0/F1 只差被控对象，F3/F4 只差被控对象 —— 没有这两对对照
 
 ★ 这条由 **12 号票的会话**指出（跨会话）：`src/nmpc/nmpc/*.py` 在 09:27–09:40 被改过，
 而本票的五场大约在 09:50 —— **如果五场跨了那几次改动，这张裁决表就不是一个实验**。
-**核实结论：没有跨，五场是同一份代码。** 证据三条：
+**核实结论：没有跨，五场是同一份代码。** 证据五条：
 
 | # | 事实 | 出处 |
 |---|---|---|
-| 1 | `run_matrix.sh:52` 设 `PYTHONPATH=/home/chen/ros_ws/src/nmpc` ⟹ 解析到**活的 `src/`**，不是 `install/` | [`run_matrix.sh:52`](../../../tools/px4-sitl/evidence/tier-b/run_matrix.sh#L52) |
-| 2 | 节点用 `subprocess.Popen(cmd, …)` **不传 `env=`** ⟹ 继承上面那个 `PYTHONPATH` | [`verify_offboard_smoke.py:239`](../../../tools/px4-sitl/verify_offboard_smoke.py#L239) |
+| 1 | `run_matrix.sh:52` 设 `PYTHONPATH=/home/chen/ros_ws/src/nmpc` ⟹ **`import nmpc`** 解析到**活的 `src/`**，不是 `install/` | [`run_matrix.sh:52`](../../../tools/px4-sitl/evidence/tier-b/run_matrix.sh#L52) |
+| 2 | DUT 子进程继承那个 `PYTHONPATH`：`ta.MpcDut.start` 把 `env = dict(os.environ)` 再叠 `dut_env()` 交给 `Popen`，而 `dut_env()` **只加 acados 两个键、不动 `PYTHONPATH`** | [`verify_tier_a_hover.py:370-374`](../../../tools/px4-sitl/verify_tier_a_hover.py#L370)、[`:339-355`](../../../tools/px4-sitl/verify_tier_a_hover.py#L339) |
+| 2b | ☠️ **本行是 2026-09-29 11:55 更正过的**：初版引的是 [`verify_offboard_smoke.py:239`](../../../tools/px4-sitl/verify_offboard_smoke.py#L239)，**那是 ticket 05 冒烟节点 `v.Dut` 的启动器**（起的是 `offboard_smoke.py`），不是 B 档的 DUT。结论（继承 `PYTHONPATH`）不变，**机制与出处都写错了** | 同上 |
 | 3 | 五场落盘 **09:50:48–09:53:17**，全在 `src/nmpc` 最后一次改动（`cff55ae` **09:40:49**）**之后**；此后 `src/nmpc` 无改动、`git status src/` 干净 | `/tmp/tier-b/F0..F4.json` 的 mtime（☠️ 该路径 2026-09-29 10:40 重启后消失，见下）；`git log -1 -- src/nmpc/nmpc/` |
 | 4 | **按真实启动顺序复现 import 解析**：脚本目录 → [`mpc_node.py:150`](../../../src/nmpc/nmpc/mpc_node.py#L150) 的 `sys.path.insert(0, parents[1])` → `PYTHONPATH` ⟹ 本票环境解析到 **`src/nmpc/nmpc`**；把 `src/nmpc` 从 `PYTHONPATH` 里去掉则解析到 `install/…/dist-packages/nmpc` | 本票当场跑的探针（两种环境各一次） |
+| 5 | ★ **入口脚本（`__main__`）来自 `install/`，与"包来自 `src`"是两回事**：DUT 是 `ros2 run nmpc mpc_node.py` 起的（[`verify_tier_a_hover.py:370`](../../../tools/px4-sitl/verify_tier_a_hover.py#L370)），`ros2 run` 按 `<prefix>/lib/<包>/<名字>` 找 ⟹ 跑的是 `install/nmpc/lib/nmpc/mpc_node.py`（当场查 `get_package_prefix('nmpc')` = `/home/chen/ros_ws/install/nmpc`）。⚠️ **但两份 `mpc_node.py` 逐行 diff 只差 1 行**（`:130` 的 docstring 写 `T_max` vs `f_max`）⟹ 行为一致，**本票读数不受影响** | `diff` 逐行比对；`ament_index` 查 prefix |
 
 ★ 第 4 条顺手排掉一个**很容易误判**的细节：入口脚本自己那句
 `if __package__ in (None, ""): sys.path.insert(0, parents[1])` 乍看像是"谁被执行谁赢"、

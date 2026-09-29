@@ -242,6 +242,15 @@ F2/F3/F4（延迟、注入兜底）**不在本张的判据里**，除非改动�
 
 ### 8.6 复跑（只两场，必须空机）
 
+☠️ **前置：`colcon build --packages-select nmpc`**（2026-09-29 11:55 补，是个硬前置、别漏）——
+DUT 是 `ros2 run nmpc mpc_node.py` 起的，而 `ros2 run` 按 `<prefix>/lib/<包>/<名字>` 找文件
+⟹ 跑的是 **`install/nmpc/lib/nmpc/mpc_node.py`**；本张的积分器状态正写在 `mpc_node.py` 里
+⟹ **不 build，改的东西一行都不飞**（而且症状是"读数毫无变化"，最容易被误读成"积分作用没用"）。
+★ 两侧的关系要分清：`import nmpc` 走的是 `PYTHONPATH` 里的 **`src/` 正规包**（所以 `ocp.py`/`node_core.py`
+之类的改动**不需要** build），但**入口脚本永远来自 `install/`**。依据与实测见
+[11 号票 Comments 证据表第 5 条](11-sitl-tier-b-seam3.md)。
+⚠️ build 是**全局动作**：它会换掉别人正在飞的 DUT ⟹ 只在窗口归自己、且机上没有别的 `mpc_node` 时做。
+
 沿用 11 号票的配方（[`run_matrix.sh`](../../../tools/px4-sitl/evidence/tier-b/run_matrix.sh)），**只跑两场**：
 
 ```bash
