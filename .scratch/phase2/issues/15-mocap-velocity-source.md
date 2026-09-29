@@ -158,3 +158,26 @@ test_独立速度话题优先于位姿里内嵌的_twist PASSED
 （未决事项必须**另开票**并在本文点名），这张票**只点名、未开票** ⟹ 严格说 `done` 尚不完整。
 复核已把它排进"等并行会话（ticket 16）改完 `ocp.py` 之后的一次 `nmpc` build"，
 **跑绿之前，这条欠账都记在这里**。
+
+**⑨ ✅ ⑧ 的欠账已了（2026-09-29，ticket 16 落地并提交之后）**
+
+排期条件（并行线改完 `ocp.py`）已满足，`colcon build --packages-select nmpc` 已跑
+（1.62s，`install/` 是**拷贝式**安装、非软链：`install/nmpc/local/lib/python3.10/dist-packages/nmpc/node_core.py`
+与源码 `diff` 逐字相同 ⟹ 测的就是当前源码，不是旧快照）。
+
+⑤ 那条 seam 1 用例（`test_mpc_node.py:1127`
+`test_B_档_速度从_velocity_enu_进外推_表现为推力低于悬停`）**首次实跑：PASSED**（10.19s）。
+
+★ **顺手做了变异测试，确认它不是空绿**（这是本票新增的唯一一条 B 档数据通路用例，
+"跑绿"本身不足以说明它有鉴别力）：把 `_mocap_velocity()` 改成恒返回 `(0,0,0)`
+（= 假装 ticket 15 之前的样子）后重跑 ⟹ **FAILED**，且红在**意图内的那条断言**上：
+
+    test_mpc_node.py:1158  assert fz > hover + min_delta
+    AssertionError: 向上 1 m/s ⟹ 外推点比参考高 ⟹ 该减推力，
+                    实测 -0.1589（悬停 -0.1589、要求高出 0.0127）—— /mocap/velocity_enu 的速度没进外推？
+
+**关键旁证**：同一条用例里紧挨着的 `sc.mocap_source.matched_velocity_subscribers() >= 1`
+（QoS 接线那条）**在变异下仍然通过** ⟹ 这条用例能分开"接线对了"与"数据真的进了外推"两件事，
+红的确实是后者。变异在 `install/` 快照上做、已原样还原（`diff` 校验 IDENTICAL），**源码未动**。
+
+⟹ ⑧ 记的那条欠账**已清**。本票的 `done` 现在完整。
