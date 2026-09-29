@@ -115,13 +115,16 @@ def check_params(p, z0: Optional[Z0Params] = None) -> List[Check]:
                      f"走到那儿说明又按了电机）。★ 归一化常数是另一回事："
                      f"t_max = {z0.t_max:.3f} N（须 = 实测满量程）"))
 
-    # ★ 这两条把"两个角色"钉在一起：`F` 上限够悬停（否则连平飞都规划不出来），
-    #   且**不许超过**归一化满量程（否则 `F/t_max > 1`，`thrust_body` 会被截到 −1）。
-    ok = z0.t_hover <= z0.f_max <= z0.t_max
-    out.append(Check(g, "F 上限夹在悬停与满量程之间", ok,
-                     f"t_hover = {z0.t_hover:.4f} N ≤ f_max = {z0.f_max:.3f} N ≤ "
+    # ★ 这条把"两个角色"钉在一起：`F` 上限够悬停（否则连平飞都规划不出来），
+    #   且**严格小于**归一化满量程。
+    # ⚠️ 右端**必须是严格的不等号**（2026-09-29 复核订正）：写成 `<=` 时，把两个角色**合回一个
+    #   常数**（`f_max = t_max`）照样绿 —— 而那正是本张要防的那个错误。物理上也不可能相等：
+    #   `t_max` 是电机/桨的满量程，`f_max` 是电池可持续的那一档，电池永远先见底。
+    ok = z0.t_hover <= z0.f_max < z0.t_max
+    out.append(Check(g, "F 上限夹在悬停与满量程之间（且严格小于满量程）", ok,
+                     f"t_hover = {z0.t_hover:.4f} N ≤ f_max = {z0.f_max:.3f} N < "
                      f"t_max = {z0.t_max:.3f} N（f_max 低于悬停 ⟹ 规划不出平飞；"
-                     f"高于 t_max ⟹ F/t_max > 1 被截，且说明又拿归一化当上限了）"))
+                     f"不小于 t_max ⟹ 两个角色又被合回一个常数了 —— 那是本张修掉的那个错）"))
 
     ok = p.heartbeat_hz >= 2.0
     out.append(Check(g, "心跳 ≥2 Hz", ok,
