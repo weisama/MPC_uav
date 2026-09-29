@@ -255,6 +255,12 @@ python3 tools/px4-sitl/verify_tier_b_seam3.py --tag F1b $COMMON --mismatch mass+
 
 - ⚠️ **`--plant-param` 不存在**（那是 A 档 harness 的钩子）；B 档选被控对象用 **`--mismatch {none, mass+30, …}`**
   （[`verify_tier_b_seam3.py:1157`](../../../tools/px4-sitl/verify_tier_b_seam3.py#L1157)，取值 = `MISMATCHES`）。
+- ☠️ **本仓库有同名不同物的函数，找符号要带文件名**：`plant_hover_thrust` 有两份 ——
+  [`verify_tier_b_seam3.py:390`](../../../tools/px4-sitl/verify_tier_b_seam3.py#L390) 的是
+  `(param_file)`、按你给的那个 `.param` 读（本张的判据④ 预测值靠它）；
+  [`mismatch_sweep.py:99`](../../../tools/px4-sitl/mismatch_sweep.py#L99) 的是 `()`、**写死读标称 `z0`**。
+  两者同名、不同签名、**不同行为** ⟹ 21 号票重搭后要动本文件时，**别照"新签名"把它改成 `()`**
+  （那会让 `--mismatch mass+30` 静默退回标称口径）。21 号票已据此把"按符号名找"改成"按**文件**+符号名找"。
 - ☠️ **`--model` 不用传了（2026-09-29 11:30 起）**：`/tmp` 是 **tmpfs**，机器 **10:40 重启**后
   `/tmp/mocap-model-3.json` 与 `/tmp/tier-b/*` **全没了**（12 号票会话通报，本张已核实：
   `ls` 两处皆 no such file、`uptime -s` = 10:40:36）。模型现在**以归档里那份为准**
