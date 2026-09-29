@@ -15,6 +15,7 @@
 
 from __future__ import annotations
 
+import subprocess
 import sys
 
 import numpy as np
@@ -105,11 +106,19 @@ def test_no_ros_import_leaks_in():
     """OCP 单元必须是**零 ROS** 的（`nmpc/__init__.py` 的分层承诺）——
     离线 OCP 与假 PX4 夹具都要能直接 import 它，而"能 import"只有靠零依赖才守得住。
 
-    与 `test_sign_map.py::test_no_ros_import_leaks_in` 同一手法、同一理由；分在两个文件里
-    是因为两边测的是不同的模块。
+    ★★ 判据在**子进程**里取（ticket 22 改的；手法与 ticket 06 复核轮在
+      `test_sign_map.py` / `test_node_core.py` 上的改法一致 —— 只改取法、不改结论）：
+      `sys.modules` 是整个 pytest 进程的，而同目录的 `test_mpc_node.py` /
+      `test_preflight_check.py`（ticket 06 新增）会 import `px4_msgs` / `rclpy` ⟹ 直接查
+      `sys.modules` 时本断言在 `pytest src/nmpc/test/` 下**假红**，而在 `colcon test`
+      （一个文件一个进程）下绿。子进程里"只 import nmpc.ocp"问的是同一个契约，
+      且与谁先跑无关。
     """
-    for module in ("rclpy", "px4_msgs"):
-        assert module not in sys.modules, f"nmpc.ocp 把 {module} 带进来了 —— 它必须是零 ROS 的"
+    code = ("import sys, nmpc.ocp;"
+            " assert 'rclpy' not in sys.modules, 'ocp 把 rclpy 带进来了';"
+            " assert 'px4_msgs' not in sys.modules, 'ocp 把 px4_msgs 带进来了'")
+    done = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)
+    assert done.returncode == 0, f"nmpc.ocp 不再是纯模块：{done.stderr.strip()[-300:]}"
 
 
 def test_prediction_false_without_explicit_u_ref_is_rejected(ocp: OfflineOcp):
