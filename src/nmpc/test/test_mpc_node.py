@@ -1696,7 +1696,7 @@ def test_动捕那条话题没有速度字段_所以拍不出_tau_的黑盒测�
     都按名字引用它，改名要一起动；改动前先确认是否值得）。下面这段原文**保留**为当时的第一手推导。
 
     第一手：`/mocap/pose_enu` 是 `geometry_msgs/PoseStamped`
-    （`mocap_rel_pose_node.cpp:93`），而 `PoseStamped` **没有** `twist` 字段
+    （`mocap_rel_pose_node.cpp:110`），而 `PoseStamped` **没有** `twist` 字段
     ⟹ 节点侧的 `v` 每拍都退化成 0（`node_core.cycle()` 里那条"缺字段"的路**一直在走**）
     ⟹ `x + v·τ` 在地面上恒等于恒等变换，**任何** τ 都能通过台架测试。
 

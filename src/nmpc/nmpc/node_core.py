@@ -850,7 +850,7 @@ class NodeCore:
              也兼容将来上游换成带速度的位姿类型）。
           ③ 两条都没有 ⟹ `(0,0,0)`：**缺字段的退化是刻意的** —— 不许崩、也不许瞎猜一个速度
              出来（ticket 15 的裁定逐字）。`PoseStamped` **本来就没有** `twist` 字段
-             （`mocap_rel_pose_node.cpp:93`），而台架上的纯逻辑用例喂的正是这种形状
+             （`mocap_rel_pose_node.cpp:110`），而台架上的纯逻辑用例喂的正是这种形状
              ⟹ 这条退化路径**必须**保留（`test_node_core.py::test_动捕缺_twist_时退化成不外推`）。
 
         ★ **两条来源的形状是同一个** `…twist.linear`（`TwistStamped` 与"带 twist 的位姿"都如此）

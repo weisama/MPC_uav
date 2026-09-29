@@ -14,7 +14,7 @@
 
 | 方向 | 话题 | QoS | 依据 |
 |---|---|---|---|
-| 订阅 | `/mocap/pose_enu`（**ENU/FLU**，B 档；`state_source=mocap` 时才有这一条） | 可靠 / depth 10 | `mocap_rel_pose_node.cpp:93` `QoS(10)` |
+| 订阅 | `/mocap/pose_enu`（**ENU/FLU**，B 档；`state_source=mocap` 时才有这一条） | 可靠 / depth 10 | `mocap_rel_pose_node.cpp:110` `QoS(10)` |
 | 订阅 | `/mocap/velocity_enu`（`geometry_msgs/TwistStamped`，**ENU**，B 档；`state_source=mocap` 时才有） | 可靠 / depth 10 | `mocap_rel_pose_node.cpp` 的 `QoS(10)`；★ 速度来源（ticket 15）—— `PoseStamped` 没有 `twist` 字段，`v` 必须走这条独立话题才能进 `x + v·τ` |
 | 订阅 | `/fmu/out/vehicle_local_position` + `/fmu/out/vehicle_attitude`（**NED/FRD**，A 档；`state_source=px4` 时才有这两条） | **BEST_EFFORT** / depth 1 | 发布方实测 best_effort + TRANSIENT_LOCAL（2026-09-28，z0 SITL，A 档探针）⟹ 订阅侧写 RELIABLE 就**一个回调都不进** |
 | 订阅 | `/fmu/out/vehicle_status` | **BEST_EFFORT** / depth 1 | PX4 的 writer 是 best_effort（`utilities.hpp:59-63`）⟹ 订阅侧写 RELIABLE 就**一个回调都不进** |
@@ -33,7 +33,7 @@
 
 | 档 | 测量 | 话题（**参数可换**） | 用在 |
 |---|---|---|---|
-| `mocap`（默认） | 动捕，**原生 ENU/FLU** | `/mocap/pose_enu`（上游定死，`mocap_rel_pose_node.cpp:93`） | B 档（动捕闭环）—— 默认档，不给参数就**不改变任何现有行为** |
+| `mocap`（默认） | 动捕，**原生 ENU/FLU** | `/mocap/pose_enu`（上游定死，`mocap_rel_pose_node.cpp:110`） | B 档（动捕闭环）—— 默认档，不给参数就**不改变任何现有行为** |
 | `px4` | 飞控自己的估计，**NED/FRD** | `-p px4_position_topic` / `px4_attitude_topic` | A 档（ticket 09）—— 闭环第一次**只用了飞控自己给的东西** |
 
 ★ 为什么 A 档**不订阅**动捕（而不是"订阅了但不看"）：票面验收项写着"本档**不使用动捕输入**"，
@@ -188,7 +188,7 @@ QOS_PUB_FMU = QoSProfile(history=HistoryPolicy.KEEP_LAST, depth=1,
                          reliability=ReliabilityPolicy.BEST_EFFORT,
                          durability=DurabilityPolicy.TRANSIENT_LOCAL)
 #: `/mocap/pose_enu` 是 `mocap` 节点用 `QoS(10)`（**可靠**）发的
-#: （`mocap_rel_pose_node.cpp:93`，与 `bench/vrpn_source.py` 的 `mocap_qos()` 一致）。
+#: （`mocap_rel_pose_node.cpp:110`，与 `bench/vrpn_source.py` 的 `mocap_qos()` 一致）。
 QOS_MOCAP = QoSProfile(history=HistoryPolicy.KEEP_LAST, depth=10,
                        reliability=ReliabilityPolicy.RELIABLE)
 

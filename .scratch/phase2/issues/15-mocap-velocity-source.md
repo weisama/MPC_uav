@@ -3,6 +3,11 @@
 Status: done
 Type: task
 
+> ⚠️ **`done` 的先决（本票正文点名）**：本票的 /code-review 复核反转出一条**未决事项** ——
+> B 档的 `q` 与 `p`/`v` 不在同一个旋转系（`yaw_zeroed` 归零了姿态，模型假定 `q` 是 body→世界），
+> 已另开 **[ticket 24](24-mocap-attitude-yawzeroed-vs-world-frame.md)**（`needs-triage`）。
+> 本票自己的验收项**已全部完成**，故维持 `done`；24 号票是**独立**的裁定，见 Comments ⑩。
+
 **发现于** [ticket 06](06-mpc-node-fake-px4-fixture.md) 实现期间（2026-09-28）。**不是** 06 的验收项缺失，
 是 06 落地"状态外推 `x + v·τ`"这条时，顺着 `v` 往上找，发现**上游没有这个量**。
 
@@ -13,7 +18,7 @@ Type: task
    [`phase2-implementation.md`](../../../docs/control/phase2-implementation.md) §2.4 的 `x = vertcat(p, v, q)`）。
 2. **状态源 `/mocap/pose_enu` 只有位姿**：
    `create_publisher<geometry_msgs::msg::PoseStamped>(pose_enu_topic_, rclcpp::QoS(10))`
-   —— [`mocap_rel_pose_node.cpp:93`](../../../src/mocap/src/mocap_rel_pose_node.cpp)。
+   —— [`mocap_rel_pose_node.cpp:110`](../../../src/mocap/src/mocap_rel_pose_node.cpp)。
    `PoseStamped` 里**没有** `twist`。
 3. **于是节点侧只能拿到 `v ≡ 0`**：`node_core.cycle()` 用 `getattr(mocap, "twist", None)` 取速度，
    缺字段就退化成一串 0（[`node_core.py`](../../../src/nmpc/nmpc/node_core.py) 里 `velocity` 那三行）。
@@ -181,3 +186,25 @@ test_独立速度话题优先于位姿里内嵌的_twist PASSED
 红的确实是后者。变异在 `install/` 快照上做、已原样还原（`diff` 校验 IDENTICAL），**源码未动**。
 
 ⟹ ⑧ 记的那条欠账**已清**。本票的 `done` 现在完整。
+
+**⑩ ⚠️ 复核轮反转出的一条未决事项 —— 已另开 → [ticket 24](24-mocap-attitude-yawzeroed-vs-world-frame.md)
+（`needs-triage`），本文按仓规**点名**：**
+
+`/code-review` 复核（2026-09-29）指出：`mocap` 节点在阶段 B 把**姿态**做了 `yaw_zeroed`
+（左乘 `Rz(−yaw0)`，`mocap_rel_pose.hpp:134/282-283`），而 `/mocap/velocity_enu` 与其**位置**
+都是未旋转的世界系。我逐行核实：**代码事实成立**。
+
+**本票那句「与 pose 同一个 frame ⟹ 零变换」不用改判 —— 但要收窄读法**：
+- 它**站得住**的部分：`relative_position` 只做平移 ⟹ 速度与位姿的**位置**同系，
+  而这条正是 10 状态里 `ṗ = v` 需要的东西，也正是本票要论证的；
+- 它**读起来会误导**的部分：显得像在说"pose 整体是世界系"，而**姿态不是**。
+  真正错配的是 `q` ↔ (`p`, `v`) —— 模型 `v̇ = R(q)[0,0,F]/m + g` 假定 `q` 与 `v` 同系
+  （`model.py:180-182`、`q_to_rot_mat` 的契约、`g` 是 ENU）。
+
+**三条边界，避免把这条算到本票头上**（详见 24 号票）：
+1. **不是本票引入的**：`yaw_zeroed` 早于本票；本票之前 B 档 `v ≡ 0`，是**本票给了 `v` 之后**
+   这条耦合才承重。
+2. **台架不受影响**：`bench/vrpn_source.py` 发的是原始 `PoseStamped`/`TwistStamped`，两路都没归零。
+3. **未定性**：复核未能静态证明实飞致偏（需要真 `yaw0`）；本票同样不下结论。
+
+⟹ 本票的 `done` **仍然成立**（⑨ 的欠账已清），但**多了一条先决**：24 号票的裁定。

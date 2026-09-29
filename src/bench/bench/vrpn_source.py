@@ -12,7 +12,7 @@
 
 ★★ QoS：两条话题都必须是**可靠**（`rclcpp::QoS(10)`）。依据：
    · `vrpn_listener.cpp:142` `create_publisher<PoseStamped>(pose_topic_name, 10)`
-   · `mocap_rel_pose_node.cpp:93` `create_publisher<PoseStamped>(pose_enu_topic_, QoS(10))`
+   · `mocap_rel_pose_node.cpp:110` `create_publisher<PoseStamped>(pose_enu_topic_, QoS(10))`
    而下游的订阅方（`mocap` / `control`）也是 `QoS(10)` ⟹ 用 `SensorDataQoS()`（best_effort）
    发会让它们**永远收不到**，且没有任何报错。
 

@@ -110,6 +110,14 @@ yaw_quat(2π − ψ) = [−cos(ψ/2), 0, 0, sin(ψ/2)]     ← 只有 w 差一�
 
 实测（纯代价函数，无求解器）：两者代价**都恰好 = `0.000000`**（新测试 `test_the_cost_cannot_tell_the_reference_heading_from_its_mirror` 守住这条，并同时守住前提 `q_diag[6:10] == (0.0, 0.1, 0.1, 0.1)`）。
 
+> ★★ **2026-09-29 订正（ticket 16 落地后）**：上面那句里的「并同时守住**前提**」**已过期**。
+> ticket 16 把这条用例改成了**显式反事实**配置（`OcpConfig(q_diag=(1e1,)*6+(0.0,0.1,0.1,0.1))`，
+> 见 `src/nmpc/test/test_ocp_cost_ref.py:166`）—— 它守的现在是**「参考实现那组权重」这个反事实**，
+> **不再**守默认值前提。默认权重已成 `qw = 0.1`（井已消掉），由新用例
+> `test_the_default_cost_separates_the_reference_heading_from_its_mirror`（同文件 `:184`）来钉。
+> 本节其余结论（收敛解下偏航通道是死的、倾斜→偏航泄漏）**是旧权重下的读数**，
+> 与 ticket 16 的权重组不是同一组 —— 详见 `.scratch/phase2/issues/16-ocp-yaw-weights-mirror-well.md`。
+
 **后果（收敛解下偏航通道是死的）**：0.40 rad（23°）的机头误差只换来 `−1.9e-5 rad/s`，0.15 rad 只换来 `−7e-6 rad/s` ⟹ 按这个速度要 20000 s 才转回来。**第 8 场机头没漂，是"没人推它"，不是"它修回来了"。**
 在线（1 次 RTI 迭代）还带一点**依赖热启动**的倾斜→偏航泄漏（roll 0.08 rad ⟹ `−0.018378 rad/s`；收敛后是 0）—— 那正是棘轮能把它放大成 runaway 的原料。
 

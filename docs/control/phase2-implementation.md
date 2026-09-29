@@ -313,7 +313,7 @@ ubu = np.array([+Fmax,     wmax,       wmax,      +0.5*wmax])
 >
 > | 编号 | 落地位置 | 一手依据 |
 > |---|---|---|
-> | **M7** | `mpc_node.py:284-287` 只订阅 `/mocap/pose_enu`（`geometry_msgs/PoseStamped`）+ `/fmu/out/vehicle_status`；状态由 `node_core.pose_to_state` 直接组装，**没有一行坐标系转换** | `/mocap/pose_enu` 是 `mocap_rel_pose_node.cpp:93` 用 `QoS(10)` 发的 **ENU/FLU**（节点里的引文见 `mpc_node.py:155-158`）⟹ §2.3(a) 那段手写 NED→ENU 四元数变换**整段删掉**。测试：`test_mpc_node.py::test_接口与_QoS_与票面一致`（夹具的动捕源上有订阅者）、`test_node_core.py::test_pose_to_state_不做任何坐标系转换` |
+> | **M7** | `mpc_node.py:284-287` 只订阅 `/mocap/pose_enu`（`geometry_msgs/PoseStamped`）+ `/fmu/out/vehicle_status`；状态由 `node_core.pose_to_state` 直接组装，**没有一行坐标系转换** | `/mocap/pose_enu` 是 `mocap_rel_pose_node.cpp:110` 用 `QoS(10)` 发的 **ENU/FLU**（节点里的引文见 `mpc_node.py:155-158`）⟹ §2.3(a) 那段手写 NED→ENU 四元数变换**整段删掉**。测试：`test_mpc_node.py::test_接口与_QoS_与票面一致`（夹具的动捕源上有订阅者）、`test_node_core.py::test_pose_to_state_不做任何坐标系转换` |
 > | **M8** | `mpc_node.py:286-287` 只有**一个** `VehicleStatus` 订阅（`TOPIC_STATUS`），全仓没有 `_v1` 后缀话题 | z0 真身的 `msg/` 与**上游 v1.14.3 逐字节相同**，而 `_v1` / `msg/versioned/` 是 **v1.16 才有**的机制 ⟹ 那段兼容代码在我们这里是死代码（[`refs-manifest.md`](../reference/refs-manifest.md) §2.6）。测试：`test_接口与_QoS_与票面一致` 里的 `matched_subscribers("status") == 1` —— **恰好一个**订阅者，多一个 `_v1` 变体这条就红 |
 > | **M9** | 全仓**没有**定义了却不用的 horizon 常量：`OcpConfig.N = 50`（`ocp.py:51`）在 `ocp.py:225/256/281-283`（内步长、`N_horizon`、参考的 reshape）与节点侧的 RViz 点数上**都在用** | 参考实现那个死变量：`mpc_quadrotor.py:142` 的 `MPC_HORIZON = 15` —— 它只被**注释掉**的那段代码（`:149` `N=MPC_HORIZON,`）引用，真正 spawn 的控制器（`:145`）用的是自己的缺省 horizon ⟹ 定义了却不起作用。测试：`test_mpc_node.py::test_RViz_的预测轨迹与参考点` 断言的 51 点 = `N+1`，把"用了没用的 N"这件事钉在话题上 |
 >

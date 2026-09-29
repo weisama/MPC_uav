@@ -58,7 +58,7 @@ python3 -m pytest src/nmpc/test/test_mpc_node.py        # 14 条；多数用例�
 
 | 方向 | 话题 | 类型 | QoS | 依据 |
 |---|---|---|---|---|
-| 订阅 | `/mocap/pose_enu` | `geometry_msgs/PoseStamped` | 可靠 / depth 10 | `mocap_rel_pose_node.cpp:93` 的 `QoS(10)`；**ENU/FLU 原生**（M7） |
+| 订阅 | `/mocap/pose_enu` | `geometry_msgs/PoseStamped` | 可靠 / depth 10 | `mocap_rel_pose_node.cpp:110` 的 `QoS(10)`；**ENU/FLU 原生**（M7） |
 | 订阅 | `/fmu/out/vehicle_status` | `px4_msgs/VehicleStatus` | **`BEST_EFFORT`** / depth 1 | PX4 的 writer 是 `TRANSIENT_LOCAL` + best_effort（`utilities.hpp:57-65` 的 datawriter QoS 块；`:113-120` 是 **reader**，别引错） |
 | 发布 | `/fmu/in/offboard_control_mode` | `px4_msgs/OffboardControlMode` | `BEST_EFFORT + TRANSIENT_LOCAL` / depth 1 | 照抄 `px4-mpc`（§2.6） |
 | 发布 | `/fmu/in/vehicle_rates_setpoint` | `px4_msgs/VehicleRatesSetpoint` | 同上 | 同上 |
@@ -182,7 +182,7 @@ python3 -m pytest src/nmpc/test/test_mpc_node.py        # 14 条；多数用例�
 
 - `node_core.cycle()` 的外推逻辑本身有单测（`test_node_core.py::test_外推只动位置且正好是_v_乘_tau` 等两条）；
 - 但**端到端**做不了：`/mocap/pose_enu` 是 `geometry_msgs/PoseStamped`
-  （`mocap_rel_pose_node.cpp:93`），而 `PoseStamped` **没有** `twist` 字段 ⟹ 节点侧的 `v` 每拍
+  （`mocap_rel_pose_node.cpp:110`），而 `PoseStamped` **没有** `twist` 字段 ⟹ 节点侧的 `v` 每拍
   都退化成 0（"缺字段"那条路**一直在走**）⟹ `x + v·τ` 在地面上恒等于恒等变换，**任何** τ 都能通过台架测试。
 - 速度其实一直在 `/vrpn/<刚体>/twist`（`vrpn_listener.cpp:46-65`），只是没人把它接到 Phase 2 这一侧
   ⟹ [issue 15](../../.scratch/phase2/issues/15-mocap-velocity-source.md)。
