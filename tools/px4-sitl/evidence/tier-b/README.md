@@ -13,9 +13,12 @@
 | `<tag>-replay.json` | 回放夹具自己的收尾统计（发帧数、实测延迟、σ） |
 | `mocap-model-3.json` | **夹具的模型**（134 KiB）：来自真实 Phase 1 包，含逐轴 σ 与成簇帧间隔 ⟹ 有了它才能重放出"同样脾气"的动捕流 |
 | `run_matrix.sh` | 跑这五场的脚本（含**等空机**闸门与 `pgrep -x` 的教训） |
+| `u-ref-authority-*.json` | **ticket 20 的离线探针产物**（不是飞行）：`probe_u_ref_authority.py` 的输出，见下节 |
 
 `<tag>` = `F0`(标称) / `F1`(mass+30，判据①) / `F2`(mass+30 + 50 ms，判据③) /
 `F3`(mass+30 + 注入求解失败，判据④) / `F4`(标称 + 注入，判据④的对照)。
+★ 另有两场是 **ticket 20 的复跑**（同一套脚本：`run_matrix.sh` 的 `F0b)` / `F1b)`）：
+`F0b`(标称 + 垂直积分作用) / `F1b`(mass+30 + 垂直积分作用) —— 见下节。
 
 ## ⚠️ 四件读这份归档必须知道的事
 
@@ -63,12 +66,38 @@
 
 ```bash
 TAGS="F0 F1 F2 F3 F4" bash tools/px4-sitl/evidence/tier-b/run_matrix.sh
+# ticket 20 的复跑（垂直通道加了外层积分作用）：
+TAGS="F0b F1b" bash tools/px4-sitl/evidence/tier-b/run_matrix.sh
+# 定性用的离线探针（几秒，不占机器窗口 ⟹ **不用等空机**）：
+python3 tools/px4-sitl/probe_u_ref_authority.py --frames /tmp/tier-b/F1b-dut.jsonl
 ```
+
+### ticket 20 复跑的两场（2026-09-29 13:0x）
+
+同一脚本、同一判层、同一口径，唯一差别是**控制器带 `ki_z = 1.0 N/(m·s)` 的垂直积分作用**。
+结论（全程读数见 [20 号票](../../../../.scratch/phase2/issues/20-vertical-channel-mismatch-offset.md) §10）：
+
+| 场 | 被控对象 | 垂直误差均值 | 判据① | `ΔF` 稳态 |
+|---|---|---|---|---|
+| `F0b` | `mass±0` | −0.0083 m | ✅ | 0.582 N |
+| `F1b` | `mass+30` | **−0.7200 m** | ❌ | **顶夹 4.4425 N** |
+
+⟹ 积分作用**没有**消掉失配偏差，反而让两场都同向差了 ~0.01 / ~0.08 m。
+**根因已离线量到**：`d u[0]/d u_ref[0] = −0.0616 N/N`（反号 ⟹ 正反馈），
+而环路真正撑住高度的是 `d u[0]/d e_z = +3.45 N/m` 那条通路。
+⚠️ 前四场（F0–F4）的 `controller_code` 是 `src@cff55ae`；**这两场是 `a4e0fa8c…`**（本张的新代码）——
+两组**不可混在一张表里比**，只能按"同一对（有无积分器）"比。
+
+
 
 产出落在 `/tmp/tier-b/`。**必须先空机**：这套数字里有一条是"实测最坏求解耗时"，
 机上多几个进程就能把它从 5.7 ms 抬到 11 ms（A 档 §5.1 量过）；脚本的等空机闸门就是干这个的。
 
-☠️ **`/tmp` 是 tmpfs —— 重启即失，而且已经真丢过一次。** 机器 2026-09-29 10:40 重启后，
+☠️ **`/tmp` 过不了重启，而且已经真丢过一次。**（2026-09-29 订正：**机制不是 tmpfs** ——
+`findmnt -T /tmp` 显示它就是根盘 `ext4` 上的普通目录，没有独立挂载；真原因是
+`/usr/lib/tmpfiles.d/tmp.conf:11` 的 `D /tmp 1777 root root -`，即 **systemd-tmpfiles 每次开机清空它**。
+⟹ **同一次开机内 `/tmp` 是持久的**，重启才没。原因写对要紧：照"tmpfs"去理解的人会以为
+`df /tmp` 一看在根盘上就安全了。）机器 2026-09-29 10:40 重启后，
 五场的原始逐帧（`/tmp/tier-b/*.jsonl`，48 MB）与当时 dump 出来的 `/tmp/mocap-model-3.json`
 **都没了**；本归档里剩下的就是全部。⟹ **回放夹具的模型输入现在以本目录里那份
 `mocap-model-3.json` 为准**（内容与当时同一份：`F*-replay.json` 的 `sigma_m` 与
