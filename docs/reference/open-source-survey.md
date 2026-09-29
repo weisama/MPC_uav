@@ -58,7 +58,7 @@
 | **无 `nvcc` / TensorRT**（已实测） | acados 的 CPU 路线不需要；但**不要走 CUDA 后端** |
 | Orin NX 是 **Cortex-A78AE**，**acados/BLASFEO 没有 A78 目标** | `BLASFEO_TARGET = ARMV8A_ARM_CORTEX_A76` |
 | HPIPM 目标 | `HPIPM_TARGET = GENERIC` |
-| **缺 Tera 渲染器** | ☠️ 旧话「报 **`EOFError`**」**在 v0.6.0 上不成立**（v0.5.x 及以前交互式 `input()` 的内建异常）。**真身是三种落点，其中「在、但渲染不出东西」完全静默**，静默两层后才炸成 `.so: cannot open shared object file`（`utils.py:396-397` 用 `os.system` 只查退出码、不校验产物）。详见 [`../control/acados-orin-build.md`](../control/acados-orin-build.md) §4 |
+| **缺 Tera 渲染器** | ☠️ 旧话「报 **`EOFError`**」**在 v0.6.0 上不成立**（v0.5.x 及以前交互式 `input()` 的内建异常）。★ **但「必须装」这件事不变**：**真身是三种落点，其中「在、但渲染不出东西」完全静默**，静默两层后才炸成 `.so: cannot open shared object file`（`utils.py:396-397` 用 `os.system` 只查退出码、不校验产物）。详见 [`../control/acados-orin-build.md`](../control/acados-orin-build.md) §4 |
 | 运行时路径 | 必须设置 `ACADOS_SOURCE_DIR` 与 `LD_LIBRARY_PATH` |
 
 **求解器配置（参考 `px4-mpc` 的做法）**：

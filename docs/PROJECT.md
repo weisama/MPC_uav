@@ -410,7 +410,7 @@ PX4 官方 Offboard 文档明确标注了每种 setpoint 所需的**状态估计
 
 | 项目 | 定位 | 本项目怎么用 |
 |---|---|---|
-| **`acados`** | 基于 CasADi 的嵌入式 MPC 求解器，生成 C 代码 | ✅ **核心依赖**。注意 Jetson 上的 `BLASFEO_TARGET=ARMV8A_ARM_CORTEX_A76`（Orin NX 是 A78AE，**acados 无 A78 目标**）、`HPIPM_TARGET=GENERIC`、☠️ Tera 渲染器缺失**不再报** `EOFError`（v0.6.0 起；真身是三种落点，其中「在、但渲染不出东西」**完全静默**，见 [`control/acados-orin-build.md`](control/acados-orin-build.md) §4） |
+| **`acados`** | 基于 CasADi 的嵌入式 MPC 求解器，生成 C 代码 | ✅ **核心依赖**。注意 Jetson 上的 `BLASFEO_TARGET=ARMV8A_ARM_CORTEX_A76`（Orin NX 是 A78AE，**acados 无 A78 目标**）、`HPIPM_TARGET=GENERIC`、☠️ Tera 渲染器缺失**不再报** `EOFError`（v0.6.0 起）—— ★ **但「必须装」这件事不变**；真身是三种落点，其中「在、但渲染不出东西」**完全静默**，见 [`control/acados-orin-build.md`](control/acados-orin-build.md) §4） |
 | **`agilicious`** | ETH/UZH 敏捷飞行框架 | ⚠️ **公开仓库无任何源码**（只有 README + docs + bib），代码需向 UZH 申请。**只参考其文档架构 + 论文理论** |
 | **`Fast-Drone-XI35`** | ★ **同硬件**的 ROS1 自主飞行栈（控制器是 PID） | ✅ **重点参考**。取 `thrust_calibrate.py`（推力标定）、`px4ctrl` 的 FSM 状态机、`motion_capture` 的时延对齐；**ego-planner 规划链留到第二阶段** |
 | **`OmniNxt`** | **全向视觉感知**的常规四旋翼（★ 构型已更正，见下） | ❌ **零可复用代码**：仓库里**只有 4 个文件**（README + LICENSE + 论文 PDF + 一张图），16 MB 里 15 MB 是 PDF。**且 `OmniNxt-03.params` 根本不在仓库里**——README 指向 OneDrive 链接，需浏览器登录才能下。**真正的产出是它的硬件线**：`Nxt-FC` 与配套 PX4 fork |
@@ -455,7 +455,7 @@ PX4 官方 Offboard 文档明确标注了每种 setpoint 所需的**状态估计
 | **`px4_msgs` 版本不匹配** ★★ **已经踩到，不是假设** | v1.15 及以前**静默失败**（topic 名或字段错位不报错；`msg/versioned/` 机制 v1.16 才有）→ **DDS 话题名一致但线格式不符 = 无报错的静默失败**。**2026-09-21 定案的基准**：与真身 `4a0e65f2` 共用 184 个 `msg/` 文件上，`px4_msgs` `release/1.14` @ `ffb6e80e` **blob 全同**（唯一集合差异 `msg/CMakeLists.txt`，那是 PX4 自己的构建文件）。☠️ **原判「`release/1.14` 与 z0 固件不兼容（184 里 28 个字段不同）」作废** —— 那是拿 **fork `5ba2e91f`** 比出来的 | ★ **`px4_msgs` = `release/1.14` @ `ffb6e80e`**（**用户已签字**）；**不要从任何 fork 生成**。核对工具用 `tools/px4-sitl/check_msg_compat.py`（跑法见 [`control/px4-sitl-baseline.md`](control/px4-sitl-baseline.md) §4）。☠️ ~~官方脚本 `./scripts/check-message-compatibility.py -v <px4_msgs> <PX4-Autopilot>`~~ —— **这个路径是错的**：该脚本**不在 PX4-Autopilot 里**，真身在 `auterion/px4-ros2-interface-lib`，**直接跑会给假 FAILED**（见 [`control/px4-sitl-baseline.md`](control/px4-sitl-baseline.md) §2.3）。详见 [`reference/refs-manifest.md`](reference/refs-manifest.md) §2.5(d) 与 §2.6 执行版 |
 | ~~★★ **固件版本标签错误（"1.14.x"）**~~ | ✅ **【已撤销】该风险不存在** —— 「z0 是 PX4 1.14.x」**这个标签一直是对的**（真身 `4a0e65f2` 属 **v1.14.3 系**，飞控自报 `flight_sw_version = 1.14.3`）。☠️ **2026-09-20 那条「`5ba2e91f` 是 v1.15 世代 ⟹ 1.14 标签是错的」判定本身才是错的** —— 它拿 **fork** 当了 z0 的固件，而**飞控不跑 fork**（`5ba2e91f` 的 `OffboardControlMode` 带 `thrust_and_torque` 是事实，但那描述的是 fork）。⟹ **因这条误判而"打折"的下游结论可以恢复**：`msg/` 已实测与上游 v1.14.3 逐字节相同（185/185），凡依赖"1.14 消息布局/默认值"的判断**按上游 v1.14.3 走即可** | **不需要缓解措施。** 详见 [`reference/refs-manifest.md`](reference/refs-manifest.md) §2.5(d) / §2.6 执行版，以及 [`reference/params-changes.md`](reference/params-changes.md) §H |
 | **noetic 容器镜像版本不匹配** | 镜像 `l4t-r35.4.1`（JetPack 5）vs 宿主 `R36.5.0`（JetPack 6） | 使用前实测验证；优先用 Humble 原生环境 |
-| **acados 在 Jetson 上的编译** | 无官方 Jetson 文档；☠️ `t_renderer` 缺失**不再报** `EOFError`（v0.6.0 起；真身是三种落点，其中「在、但渲染不出东西」**完全静默**，见 [`control/acados-orin-build.md`](control/acados-orin-build.md) §4） | 见 5.2 的要点；`BLASFEO_TARGET` 必须手动指定 |
+| **acados 在 Jetson 上的编译** | 无官方 Jetson 文档；☠️ `t_renderer` 缺失**不再报** `EOFError`（v0.6.0 起）—— ★ **但「必须装」这件事不变**；真身是三种落点，其中「在、但渲染不出东西」**完全静默**，见 [`control/acados-orin-build.md`](control/acados-orin-build.md) §4） | 见 5.2 的要点；`BLASFEO_TARGET` 必须手动指定 |
 
 ### 7.2 开放问题（待确认）
 

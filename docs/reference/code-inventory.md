@@ -236,7 +236,7 @@ low_voltage: 18.0     # ← 6S 电池
 |---|---|
 | 取舍 | ✅ **Phase 2 必用**（Phase 1 不需要） |
 | 安装方式 | 源码编译（aarch64） |
-| ★ Orin NX 要点 | `BLASFEO_TARGET = ARMV8A_ARM_CORTEX_A76`（无 A78 目标）、`HPIPM_TARGET = GENERIC`、☠️ 缺 Tera 渲染器**不再报** `EOFError`（v0.6.0 起；真身是三种落点，其中「在、但渲染不出东西」**完全静默**，见 [`../control/acados-orin-build.md`](../control/acados-orin-build.md) §4）、必须设 `ACADOS_SOURCE_DIR` 与 `LD_LIBRARY_PATH` |
+| ★ Orin NX 要点 | `BLASFEO_TARGET = ARMV8A_ARM_CORTEX_A76`（无 A78 目标）、`HPIPM_TARGET = GENERIC`、☠️ 缺 Tera 渲染器**不再报** `EOFError`（v0.6.0 起）—— ★ **但「必须装」这件事不变**；真身是三种落点，其中「在、但渲染不出东西」**完全静默**，见 [`../control/acados-orin-build.md`](../control/acados-orin-build.md) §4）、必须设 `ACADOS_SOURCE_DIR` 与 `LD_LIBRARY_PATH` |
 
 详细配置与求解器参数见 [`../control/mpc-roadmap.md`](../control/mpc-roadmap.md)。
 

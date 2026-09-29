@@ -290,7 +290,7 @@ VTC6 内阻 13 mΩ/节 → 6S1P 整包 ≈ 78 mΩ：
 
 - Orin NX 是 **Cortex-A78AE**，但 **acados/BLASFEO 没有 A78 目标** → 用 `ARMV8A_ARM_CORTEX_A76`
 - `HPIPM_TARGET=GENERIC`
-- ☠️ 旧话「缺 Tera 渲染器会报 `EOFError`」**在 v0.6.0 上不成立**（那是 v0.5.x 及以前 acados 交互式 `input()` 提问、非交互读到 EOF 的内建异常）。**该记的不是"报什么异常"，而是三种落点，其中「在、但渲染不出东西」完全静默** —— 静默两层后才炸成 `…libacados_ocp_solver_….so: cannot open shared object file`。详见 [`../control/acados-orin-build.md`](../control/acados-orin-build.md) §4
+- ☠️ 旧话「缺 Tera 渲染器会报 `EOFError`」**在 v0.6.0 上不成立**（那是 v0.5.x 及以前 acados 交互式 `input()` 提问、非交互读到 EOF 的内建异常）。★ **但「t_renderer 必须装」这件事不变**：**该记的不是"报什么异常"，而是三种落点，其中「在、但渲染不出东西」完全静默** —— 静默两层后才炸成 `…libacados_ocp_solver_….so: cannot open shared object file`。详见 [`../control/acados-orin-build.md`](../control/acados-orin-build.md) §4
 
 ---
 
