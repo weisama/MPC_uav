@@ -17,6 +17,13 @@ acados_ocp.json
 # run/z0.py up（一键起链）每步的日志，现场产物不入库
 run/logs/
 
+# 录制层（run/rec.py，菜单 11）：
+#   ★ `bag/` 里的**包与飞控日志是要入库的产物**（操作者 2026-09-29 拍定），这里**不排除整个目录**；
+#   只排除"正录着的那一份状态"—— 它是本机现场的瞬时态，换台机器/换一次录制就没意义了。
+#   （顺带：`bag/<日期>/*.log` 是 `ros2 bag record` 自己的输出，**留着入库** ——
+#    "包为什么是空的"这一问，答案就在它里面。）
+bag/.recorder.json
+
 # 设备树改动的中间产物（dtb_pio_fix.sh build 生成；可由脚本从 /boot 的 dtb 重新生成，不入库）
 tools/prereq-evidence/dtb-work/
 

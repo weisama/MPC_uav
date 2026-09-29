@@ -13,10 +13,14 @@ run/z0.py up             # ★ 一键启动全部（第 9 项；run/up.sh 是它
 run/z0.py up_manual      # ★ 一键启动动捕+mavros（第 8 项）—— 手动遥控飞
 run/z0.py down           # ★ 清除后台节点（第 10 项；run/down.sh 是它的一行别名）
 run/down.sh --dry-run    # 只扫一眼"会停谁"，**一个信号都不发**
+run/z0.py rec_start 3    # ★ 开始录制（第 11 项；场景 1–4，不给号会问一句）
+                         #   ★ **它占住终端**：屏幕上是倒计时，录满 120 s 自己收口，提前停按 Ctrl-C
+run/z0.py rec_status     # 现在在录什么（只读，不进菜单；在**另一个终端**看）
+run/z0.py --dry-run rec_start   # 四条场景与它们会跑的命令全列出来，**一个进程都不起**
 run/z0.py --dry-run up   # 把顺序、每条命令、每步判据全列出来，**一条都不起**
 run/z0.py --dry-run mocap   # 只打印将要执行的命令，**不执行**
 run/z0.py mavros|vrpn|mocap|traj|control   # 单条起（前台）
-run/z0.py bringup|fly    # 两条**不进菜单**的（见下）；直接点名仍可跑
+run/z0.py bringup|fly|rec_status|rec_manifest   # 四条**不进菜单**的（见下）；直接点名仍可跑
 ```
 
 ★ `--dry-run` 对**所有**动作都是"只打印、不执行" —— `env` / `check` 这两条只读动作**也不例外**
@@ -46,13 +50,16 @@ source /opt/ros/humble/setup.bash && source ~/mavros_ws/install/setup.bash && so
 | 8 | ★ **一键启动（动捕+mavros，手动遥控飞）** | 本进程编排 + 前台守着 | mavros → vrpn → mocap **按序**起齐、每步等判据；★ **不起 `traj`/`control`** ⟹ 没有任何程序在上位控制飞机，起完**直接用遥控器手动起飞**。详见下节 |
 | 9 | ★ **一键启动全部（选轨迹 → 按开始键）** | 本进程编排 + 前台守着 | 把 3→4→5→6→7 五步**按序**起齐（`bench-runbook.md` 的「起链（顺序不能反）」），每步**等判据成立**；起完把**终端让给操作台 `fly.py`** 选轨迹，然后打印核对表 + 起飞提示。详见下节 |
 | 10 | ★ **清除后台节点** | 本进程编排 | 与第 9 项相反的**另一头**：**按名字扫**（`DOWN_TARGETS`）在跑的节点 ⟹ 先摊开清单、问一句 y/N，再按 SIGINT→SIGTERM→SIGKILL 停；停完**再扫一遍**并报串口状态。详见下下节 |
+| 11 | ★ **开始录制（选场景 1–4）** | 本进程编排（起 `ros2 bag record`，**前台占住终端**） | 只**订阅**；选之前只报一行短名单，**选定后、起录之前**把那一场的"起哪条链 + 你要做什么 + 预期话题"整张卡摊开；然后屏幕上走倒计时，**录满 120 s 自己收口**（收口 = SIGINT ⟹ 压包 ⟹ `ros2 bag info` 的**实测帧数**逐条回对预期 ⟹ 写 `session.json` + 重算 `bag/MANIFEST.md`），提前停按 Ctrl-C；包目录已存在就**只报不动** |
 
-★ **两条不进菜单**（`menu=False`：不显示、不占号，但命令仍在动作表里 ⟹ 安全不变式一条没松）：
+★ **四条不进菜单**（`menu=False`：不显示、不占号，但仍在动作表里 ⟹ 安全不变式一条没松）：
 
 | key | 谁在用 | 位置 |
 |---|---|---|
 | `bringup` | `z0.launch.py` 一键起 mocap+traj+control —— `DOWN_TARGETS` 要从它取包名 | 照 [`bringup/README.md`](../src/bringup/README.md) 手打，或 `run/z0.py bringup`（会问一句 `use_vrpn:=false`） |
 | `fly` | 操作台 —— 第 9 项起齐后**前台**跑它选轨迹（`UP_HANDOFF`） | 第 9 项里自动起；想单独再跑：`run/z0.py fly` |
+| `rec_status` | 排障：**现在在录什么**（只读：读状态文件 + 按名字扫一眼录制进程） | `run/z0.py rec_status` |
+| `rec_manifest` | 排障：从 `bag/**/session.json` **重算总表**（每次收口都会顺手写一次；手工拷完 `.ulg` 之后也值得跑一次） | `run/z0.py rec_manifest` |
 
 ## ★ 一键（第 8 / 9 项，`run/up.sh` = 第 9 项）
 
@@ -140,6 +147,61 @@ run/down.sh --dry-run    # 只扫一眼"会停谁"，**一个信号都不发**
 （那张表里不许出现 `ros2 service call` / `ros2 param set` / `ros2 topic pub` / `ros2 action send_goal`——
 守卫扫的是"最终送进 `bash` 的东西"，这里是**另一条把字符串送出去的路径**，所以单独扫一遍）。
 
+## ★ 录制（第 11 项，`run/rec.py`）
+
+```bash
+run/z0.py rec_start          # 菜单 11：不给场景号会问一句（1–4）
+run/z0.py rec_start 3        # 直接点名场景 3
+run/z0.py rec_status         # 另开一个终端：现在在录什么、录了多久
+run/z0.py rec_manifest       # 手工拷完 .ulg 之后重算一次总表
+```
+
+★ **一份包的生命周期就圈在这一条命令里**（操作者 2026-09-29 现场拍定）：菜单 11
+**占住终端** —— 屏幕上走倒计时，**录满 120 s 自己收口**，想提前停按 **Ctrl-C**
+（转手发给录制进程同一路 SIGINT）。⚠️ 因此**没有**"停止录制"这一项了，"录着的同时去按
+另一项"这件事不存在；要看进度请**另开一个终端** `run/z0.py rec_status`。
+
+**为什么有这一层**：[ticket 11](../.scratch/phase2/issues/11-sitl-tier-b-seam3.md)（Phase 2 的
+B 档）要的"真实动捕 rosbag"**从来没录过** —— 2026-09-28 那次真机自由飞一个包都没留。
+理想轨迹替不了真实噪声与真实延迟，所以四个场景是按**用途**反推出来的最小集合
+（噪声基线 / 起飞瞬态 / 悬停判据 / 有机动的激励）。逐条见 [ticket 19](../.scratch/phase2/issues/19-record-four-flight-scenarios.md)。
+
+| 它做什么 | 具体 |
+|---|---|
+| 起录 | 起 `ros2 bag record`，本进程**前台**守着（倒计时就在屏幕上）；判据：**已经在录就不起第二个**、包目录已存在就**只报不动** |
+| 录什么 | 话题走白名单正则 `^/(mavros\|mocap\|traj\|control\|vrpn)/`，**不是 `-a`**；压缩 `zstd`（在**收口那一刻**压） |
+| 到点 | **`Scenario.expect_s`（四份统一 120 s）到了就自己收口**；想提前停按 **Ctrl-C**，两条来路合成同一条 SIGINT 收口路 |
+| 收口 | **SIGINT**（与我们替你发的**同一条路**）⟹ 等它写缓存、压包、关库（≤45 s）⟹ 等不到才 SIGTERM / SIGKILL；然后 `ros2 bag info` 的**实测帧数**逐条回对 `Scenario.expect` ⟹ 写 `session.json`（时长/大小/话题/频率/sha256/**缺了什么**、**为什么收的**）+ 重算 `bag/MANIFEST.md` |
+| 飞控日志 | **手工**（2026-09-29 拍定）：拔 SD 卡，把 `<卡根>/log/sessNNN/logMMM.ulg` 直接拷进 `bag/<日期>/fcu/` —— 本层**不拷、不删、不猜**，只在总表里把那个目录里已有的东西列出来 |
+
+**五条第一手/设计取舍**（改之前先读）：
+
+1. **`rosbag2` 拒绝往已经存在的目录里录**（`Output folder '…' already exists.`，**不覆盖也不接着录**）
+   ⟹ 包目录**只由 `rosbag2` 自己建**，录制自己的日志（`<场景>.log`）因此落在包目录**旁边**
+   （`bag/<日期>/<场景>.log`；`session.json` 的 `log` 字段就是它的实际路径）。
+   目录已存在时 `rec_start` **只报不动**，**从不替你删包**。
+2. **收口只发单个 pid、`killpg` 只在确认"这个组是我们起的"时才用**（`getpgid(pid) == pid`
+   ⟸ `start_new_session=True`）。兜底那条路（按名字扫）**不碰进程组** ——
+   理由与 `down` 那条**逐字相同**（扫出来的人可能与别人终端的 shell 同组）。
+3. **录制进程自成一个会话，所以终端 Ctrl-C 传不到它**（`start_new_session=True` 的另一面）
+   ⟹ 倒计时期间按下的 Ctrl-C 落在**本进程**，我们接住它、**转手发给录制进程**；
+   收口那几秒（写缓存 → 压包）里刻意**忽略 Ctrl-C** —— 连按两下会把 `ros2 bag info` 与
+   `session.json` 一起打断，而 `rosbag2` 那边正在好好收尾。
+4. **`--dry-run` 对这两条也是"什么都不做"**：不起进程、不发信号、不写字节。
+   `--dry-run rec_start` 会把四条场景与它们会跑的命令全摊开。
+5. **它不碰 ROS 的进程内环境**（录制层不调 `ensure_sourced`）：要 `source` 的是**子进程**
+   （那条命令本来就带三条 `source` 前缀），父进程的环境一点用不上。
+
+⚠️ **它不是降落，也不解锁、不切模式、不发帧**：飞机还在空中时，先按开始键 / 拨 ch6 接管 ——
+与第 10 项 `down` 同一句警告。产物目录的布局、字段、坑都在 [`bag/README.md`](../bag/README.md)。
+
+★ 这一层**不进 `ACTIONS` 的命令列**（三条的 `cmd` 都是 `None`，本进程里编排），
+所以另有守卫：[`test_rec.py`](tests/test_rec.py) 用 **AST** 扫 `create_publisher`/`create_service`/
+`create_client` 与那四个禁字（"只许订阅"这条边界对录制层同样成立），另有"文件头引用的菜单号
+必须与 `ACTIONS[N-1]` 对得上"那一条（与 `operation_manual.md` 的守卫同一个形状）。
+★ 倒计时的判据（`watch` / `render_progress`）是**纯逻辑**：用例拿假时钟把 120 s 瞬间跑完 ——
+**能离线验的判据不留到现场**（那条纪律与 `test_z0_menu.py` 同一条）。
+
 ## ★ 它**不**做什么（安全边界）
 
 **没有任何"让飞机动"的入口**：解锁 / 起飞 / 切模式 / 改参数 / 发任何帧，一个都没有。
@@ -203,7 +265,8 @@ run/down.sh --dry-run    # 只扫一眼"会停谁"，**一个信号都不发**
 ## 测试
 
 ```bash
-python3 -m pytest run/tests/test_z0_menu.py -q          # 纯函数 + 命令行拼装 + 安全不变式 + 两条一键/清除编排（不需要 ROS，64 例）
+python3 -m pytest run/tests/test_z0_menu.py -q          # 纯函数 + 命令行拼装 + 安全不变式 + 两条一键/清除编排（不需要 ROS，66 例）
+python3 -m pytest run/tests/test_rec.py -q              # ★ 录制层：命令拼装/解析/前台倒计时/收口/核对/安全边界（不需要 ROS、不碰飞机，53 例）
 python3 -m pytest run/tests/test_operation_manual.py -q   # ★ 现场那一页的守卫：菜单号/命令/话题/degrade token 都钉在代码上（不需要 ROS，5 例）
 
 # ★ 正控：对着台架夹具（假 mavros）跑一遍 check，读数必须真的读到东西（5 例）
@@ -211,11 +274,15 @@ source /opt/ros/humble/setup.bash && source install/setup.bash
 python3 -m pytest run/tests/test_z0_check_live.py -q
 ```
 
-`run/` **不是 colcon 包** ⟹ 不进 `colcon test`；上面三条是它自己的入口。
+`run/` **不是 colcon 包** ⟹ 不进 `colcon test`；上面四条是它自己的入口。
 （★ 夹具的域号由 `bench/pytest_support.py` 定，默认 73 —— 那条纪律的理由见它的文件头。）
 
 ⚠️ **要一次跑整个 `run/tests/`，必须先 source**（上面那两行）。没 source 时
 `test_z0_check_live.py` 会在**模块级** `importorskip` 上跳掉，而 pytest 6.2.5 在那种情形下
 **连这一整个目录的其余用例一起收集不到**（第一手：未 source 跑 `pytest run/tests -q` ⟹
-`1 skipped`、0 例；source 后同样一条命令 ⟹ **`74 passed`**）——
+`1 skipped`、0 例；source 后同样一条命令 ⟹ **`129 passed`**）——
 ★ 所以"跑整个目录是绿的"这句**只有在 source 过的环境里才成立**，未 source 时那是**空收集**，不是绿。
+
+★ `test_rec.py` 有一条自己盯自己的纪律：**所有会起进程 / 发信号 / 写仓库的路径都被指到 tmp 上**
+（`rec.BAG_ROOT`、`rec.STATE_FILE`、`rec.find_recorders`、`rec.process_alive`）。这不是洁癖 ——
+**现场可能正录着**，而收口的判据是"给那个 pid 发 SIGINT"，指错地方就会掐掉真录制。

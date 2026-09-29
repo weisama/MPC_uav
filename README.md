@@ -45,7 +45,8 @@
 **怎么跑起来**：构建命令见下面[目录](#目录)末尾的引用块；起链与现场操作看
 [`run/README.md`](run/README.md)（菜单）与 [`operation_manual.md`](operation_manual.md)（★ 真机飞之前必读）。
 **怎么跑测试**：`python3 -m pytest run/tests/test_operation_manual.py -q`（文档守卫，逐文件跑 ——
-★ **`pytest run/tests` 整个目录跑会一条都收不到**，这不是"全绿"）；ROS 侧的
+★ **没 source 时 `pytest run/tests` 整个目录一条都收不到**，这不是"全绿"；
+source 过之后是 **129 passed**，见 [`run/README.md`](run/README.md) 的「测试」一节）；ROS 侧的
 `colcon test` 用法与已知抖动见 [`src/bench/README.md`](src/bench/README.md)。
 
 ---
@@ -93,11 +94,17 @@
 │   └── assets/
 │       ├── z0.params                 z0 飞控参数（928 行，待上机核实）
 │       └── papers/                   6 篇参考文献 + 中文索引
-├── run/                              ★ **人工启动层**：`z0.py` 交互菜单（起链 + 每步核对，
-│                                          含两条「一键」——全部程序 `up` / `up.sh`（起完把终端
+├── run/                              ★ **人工启动层**：`z0.py` 交互菜单（起链 + 每步核对 +
+│                                          录制，含两条「一键」——全部程序 `up` / `up.sh`（起完把终端
 │                                          让给操作台选轨迹）与手动遥控飞 `up_manual`——
 │                                          以及它们的另一头「清除后台节点」`down` / `down.sh`）
 │                                          —— 不含飞行逻辑，也不替代台架清单 —— 见 [`run/README.md`](run/README.md)
+│   └── rec.py                        ★ **录制层**（菜单 11，ticket 19）：`ros2 bag record`
+│                                          四个场景，**前台倒计时、到点自动收口** ——
+│                                          **只订阅**，不解锁/不起飞/不发帧
+├── bag/                              ★ **录制产物**（数据，不是代码；**随 git 入库**）：`<日期>/<场景>/`
+│                                          的功能包 + `fcu/` 里的飞控日志 + 自动生成的 `MANIFEST.md`
+│                                          —— 布局与坑见 [`bag/README.md`](bag/README.md)
 ├── tools/prereq-evidence/            ★ 前置条件取证脚本（只读）—— 服务 ticket 01
 └── src/                              ★ ROS2 工作区（**colcon 根 = 仓库根**，构建产物已被 .gitignore 挡住）
     ├── vrpn_listener/                ✅ 动捕链路，vendored 原样 —— 读它的 VENDORED.md，**别读它的 README.md**

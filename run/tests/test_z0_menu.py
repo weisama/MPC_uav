@@ -572,7 +572,9 @@ def test_日志尾巴读的是最后几行(tmp_path):
     assert "第20行" in tail and "第18行" in tail and "第17行" not in tail
 
 
-# ─────────────── 清除后台节点（第 11 项，ticket 22 §八，2026-09-23） ───────────────
+# ─────────────── 清除后台节点（第 10 项 `down`，ticket 22 §八，2026-09-23） ───────────────
+# ⚠️ 这个节标题原先写"第 11 项"（**早就写错了**，`down` 一直是第 10 项）；2026-09-29 复核时
+#    顺手改成对的 —— 因为同一趟里第 11 项变成了 `rec_start`，留着它会指着别人。
 
 
 def _launch_package(key: str) -> str:
@@ -817,21 +819,61 @@ def test_dry_run_down_只看不停(capsys, monkeypatch):
     assert "不" in out
 
 
-def test_菜单十条_号与表里的顺序一致_隐藏的两条不占号():
+def test_菜单十一条_号与表里的顺序一致_隐藏的四条不占号():
     """★ 菜单号被跨文件钉死了（`operation_manual.md` 逐条引用、
     `test_operation_manual.py` 拿 `ACTIONS[N-1].title` 对）⟹ 动号要三处一起动。
 
-    2026-09-23 操作者拍定的形状：菜单里**去掉** 8= bringup / 9= 操作台 `fly.py`，
-    8= 一键启动动捕+mavros（手动遥控飞），9= 一键启动全部，10= 清除后台节点。
-    ★ 那两条**命令**没删，只是 `menu=False`（不显示、不占号）：`fly` 是一条键流程的第 6 步，
-    `bringup` 是 `DOWN_TARGETS` 取包名的地方 —— 删了它们，"命令的唯一出处是 `ACTIONS`"就破了个口。
+    形状（三个时点，都是操作者拍定的）：
+    · 2026-09-23：菜单里**去掉** 8= bringup / 9= 操作台 `fly.py`，
+      8= 一键启动动捕+mavros（手动遥控飞），9= 一键启动全部，10= 清除后台节点；
+    · 2026-09-29（ticket 19 落地）：11= 开始录制 / 12= 停止录制并收口 / 13= 归档飞控日志（从 SD 卡）；
+    · 2026-09-29（同日现场复盘后）：★ **12 与 13 连功能一起删掉** —— 录制改成**前台一条流程**
+      （菜单 11 占住终端、倒计时到 120 s 自己收口），"停"不再是独立动作；飞控日志改回
+      **拔 SD 卡手工拷**。菜单从此 **11 项**。
+    ★ 隐藏的那四条**命令/功能**没删，只是 `menu=False`（不显示、不占号）：`fly` 是一键流程的第 6 步，
+    `bringup` 是 `DOWN_TARGETS` 取包名的地方，`rec_status`/`rec_manifest` 是排障时的命令行入口 ——
+    删了它们，"唯一入口是 `ACTIONS`"就破了个口。
     """
     assert [a.key for a in z0.MENU_ACTIONS] == [
-        "env", "check", "mavros", "vrpn", "mocap", "traj", "control", "up_manual", "up", "down"]
-    assert [a.key for a in z0.ACTIONS] == [a.key for a in z0.MENU_ACTIONS] + ["bringup", "fly"], \
+        "env", "check", "mavros", "vrpn", "mocap", "traj", "control", "up_manual", "up", "down",
+        "rec_start"]
+    assert [a.key for a in z0.ACTIONS] == [a.key for a in z0.MENU_ACTIONS] + [
+        "rec_status", "rec_manifest", "bringup", "fly"], \
         "菜单项应当排在前面、`menu=False` 的排在后面（号 = 位置 ⟹ 别让隐藏项插队）"
-    for key in ("bringup", "fly"):
+    for key in ("bringup", "fly", "rec_status", "rec_manifest"):
         assert not z0.ACTION_BY_KEY[key].menu
         assert z0.ACTION_BY_KEY[key].title not in z0.menu_text(), f"{key} 不该出现在菜单里"
     assert not z0.MENU_ACTIONS[9].read_only, "它会停进程 ⟹ 不能算只读（否则 --dry-run 会撒谎）"
     assert "down" in z0.IN_PROCESS_KEYS and "up_manual" in z0.IN_PROCESS_KEYS
+    # ★ 录制这一项也**不是**只读：它会起进程、发信号、写文件 —— `--dry-run` 对它
+    #   必须真的什么都不做（判据在 test_rec.py 的 `dry_run_note` 逐条用例里）。
+    assert not z0.ACTION_BY_KEY["rec_start"].read_only, "它会起录制进程，不能算只读"
+    assert z0.ACTION_BY_KEY["rec_status"].read_only, "它只读状态文件 + 扫一眼进程"
+
+
+# ─────────────── 位置参数管道（`rec_start N` 必须真的收得到） ───────────────
+
+
+def test_rec_start_收得到场景号(capsys, monkeypatch):
+    """★ 回归（2026-09-29 复核抓到，第一手复现）：`main` 原先用 `parse_args`，
+    于是动作自带的 `--` 参数会被 argparse 拒掉（当时撞上的是 `rec_fcu … --since <ISO>`）。
+    改成 `parse_known_args` 之后，多出来的参数**原样**交给动作自己（`rec.cmd_start`）。
+    ⚠️ 这一条现在守着的是那个**口子**本身：`TAKES_ARGS` 缩到只剩 `rec_start` 之后，
+    将来任何带 `--flag` 的动作都靠它才收得到参数。
+    """
+    seen = []
+    monkeypatch.setattr(z0, "in_process_command",
+                        lambda key: (lambda argv: (seen.append((key, list(argv))), 0)[1]))
+    assert z0.main(["rec_start", "3"]) == 0
+    assert seen == [("rec_start", ["3"])], "场景号应当原样落到 `rec.cmd_start` 手里"
+
+
+def test_不吃参数的动作多给了就报错(capsys):
+    """★ `parse_known_args` 的代价要挡住：打错字不许被静默吞掉。
+    只有 `TAKES_ARGS` 那一条能收下"不认识"的参数，别的动作多给一个就当场报错。"""
+    assert z0.TAKES_ARGS == ("rec_start",)
+    assert "check" not in z0.TAKES_ARGS
+    with pytest.raises(SystemExit) as excinfo:
+        z0.main(["check", "--since", "2026-09-29T00:00:00"])
+    assert excinfo.value.code == 2                     # argparse 的用法错误
+    assert "--since" in capsys.readouterr().err        # 得把多出来的那个原样报出来

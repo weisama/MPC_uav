@@ -5,8 +5,13 @@
     run/z0.py --list          # 只列菜单，不进入交互（给脚本/记录用）
     run/z0.py --dry-run mavros  # 只打印将要执行的命令，不执行
     run/z0.py env|check|mavros|vrpn|mocap|traj|control|up|up_manual|down
-                              # ↑ 菜单里那 10 项（`up` = 全部程序、`up_manual` = 手动遥控飞）
-    run/z0.py bringup|fly     # ↓ 两条**不进菜单**的（命令仍在 ACTIONS 里，见下面的注释）
+                              # ↑ 菜单里前 10 项（`up` = 全部程序、`up_manual` = 手动遥控飞）
+    run/z0.py rec_start 3     # ↑ 第 11 项：开始录制（场景 1–4）
+                              #   （实现在 `run/rec.py` —— **只订阅**，见那一份的文件头）
+                              #   ⚠️ 它**占住终端**：屏幕上是倒计时，录满 120 s 自己收口，
+                              #      想提前停按 Ctrl-C。**没有**"停止录制"这个菜单项了。
+    run/z0.py bringup|fly|rec_status|rec_manifest
+                              # ↓ 四条**不进菜单**的（命令仍在 ACTIONS 里，见下面的注释）
 
 ★ 它替你做掉的三件事：
 
@@ -48,6 +53,17 @@
    顺序是**先列清单 ⟹ 一次 y/N ⟹ SIGINT →（超时）SIGTERM →（超时）SIGKILL**，只发**单个 pid**
    不发进程组（按名字扫出来的进程可能与别人终端的 shell 同组）。⚠️ **停进程不是降落**：
    空中先按 `operation_manual.md` **§1.2**（两条软路径）处置，理由写在 `DOWN_WARNING` 里。
+
+★ **第 11 项「录制」（ticket 19）**：开始录制（选场景 1–4）。实现在 [`rec.py`](rec.py)，
+   是**订阅侧**的动作 —— `ros2 bag record`，**没有多出任何"让飞机动"的入口**（不解锁、
+   不切模式、不发帧、不改参数），所以上面那条安全边界原样成立。为什么要有这一层写在
+   `rec.py` 的文件头：B 档（ticket 11）要的那份真实动捕 bag **从来没录过**，理想轨迹替不了它。
+   ★ **它占住终端**（操作者 2026-09-29 拍定）：屏幕上是倒计时，录满 120 s 自己收口，
+   想提前停按 Ctrl-C —— 因此菜单里**没有**"停止录制"这一项；录制期间也不该在同一个终端里
+   敲别的菜单项。看进度请在**另一个终端** `run/z0.py rec_status`。
+   ★ 有意**不让本脚本自己压包 / 自己拉飞控日志**：压缩是 `ros2 bag record` 收口时自己做的事，
+   飞控日志由操作者**拔 SD 卡**直接拷（mavros 独占串口 ⟹ 本机没有第二条 MAVLink 通道走 FTP），
+   拷进 `bag/<日期>/fcu/` 之后总表会自己列出来。
 """
 
 from __future__ import annotations
@@ -432,6 +448,29 @@ ACTIONS: Tuple[Action, ...] = (
     Action("down", "★ 清除后台节点（扫 mavros/vrpn/mocap/traj/control 并停掉）", None,
            "按**名字**扫（`DOWN_TARGETS`）⟹ 别人会话起的同类节点也在清单里；先列清单再问一句 y/N；"
            "先 SIGINT 超时才升级 ⟹ **它不是降落**，空中先按 runbook §1.2 处置"),
+
+    # ★★ 录制一项（第 11 项，ticket 19）—— 实现在 `run/rec.py`。
+    #   它是**订阅侧**的动作：`ros2 bag record`，**一个会动飞机的入口都没多**
+    #   （不解锁、不切模式、不发帧；`run/tests/test_rec.py` 有一条 AST 用例盯着）。
+    #   ★ **没有"停止录制"这一项了**（操作者 2026-09-29 拍定删掉 12/13 两项）：
+    #     录制是**前台**的一条流程 —— 这一项要**占住终端**，倒计时摆在屏幕上，
+    #     录满 120 s 自己收口，想提前停按 Ctrl-C（同一条 SIGINT 收口路）。
+    #     飞控日志（`.ulg`）同理改成**手工**：拔 SD 卡直接拷进 `bag/<日期>/fcu/`。
+    Action("rec_start", "★ 开始录制（选场景 1–4）", None,
+           "★ **它占住终端**：屏幕上是倒计时，录满 120 s **自己收口**（不用再敲「停」），"
+           "提前停按 Ctrl-C —— 同一条收口路（SIGINT ⟹ 压包 ⟹ `ros2 bag info` 逐条回对 ⟹ 写 "
+           "`session.json` + 更新 `bag/MANIFEST.md`）；只**订阅**（`ros2 bag record`，"
+           "话题走白名单正则）⟹ 包落 `bag/<日期>/<场景>/`；起录后约 1 s 才订上话题，"
+           "要紧的动作稍等一下"),
+    # ★ 这两条**不进菜单**：录制的入口就 11 那一项，而"现在在录什么"在它那一屏里
+    #   已经摆着了（前台倒计时）；"重算清单"每次收口都会顺手做一次。
+    #   留着它们是为了**另一个终端**（`run/z0.py rec_status`）与排障时单独重算。
+    Action("rec_status", "现在在录什么（只读）", None,
+           "读状态文件 + 按名字扫一眼录制进程；**不发信号、不动文件**",
+           read_only=True, menu=False),
+    Action("rec_manifest", "重算 bag/MANIFEST.md", None,
+           "从 `bag/**/session.json` 与 `bag/**/fcu/*.ulg` 重算清单（纯读盘 + 写一个 md）",
+           menu=False),
 
     # ★★ 下面两条**不进菜单**（`menu=False`，不占菜单号）。操作者 2026-09-23 拍定把菜单里
     #   原来那两项（8= bringup / 9= 操作台 fly.py）去掉，换成两条一键流程；但它们的**命令**
@@ -1394,31 +1433,48 @@ def launch_action(action: Action) -> int:
 #: 上面那条 `READ_ONLY_KEYS` 用的是同一个套路 ⟹ 加一项菜单不用记着来这里改。
 IN_PROCESS_KEYS: Tuple[str, ...] = tuple(a.key for a in ACTIONS if a.cmd is None)
 
+#: 进程内动作里**吃位置参数**的那一条 —— `run/z0.py rec_start 3`（不给就问一句）。
+#: ★ 只有它被喂 `extra`：其余几条（含 `env`/`check`/`up`/`down`）保持**零参数签名**，
+#:   因为既有用例拿 `lambda: …` 当假替身（`test_z0_menu.py`）—— 改签名会连带打红一片，
+#:   而"加一条菜单"不该动那些。
+TAKES_ARGS: Tuple[str, ...] = ("rec_start",)
+
 
 def in_process_command(key: str) -> Callable[[], int]:
-    """按名字**现取**（不是 import 期就绑死）—— 这样用例能把它们替换掉。"""
-    return {"env": cmd_env, "check": cmd_check,
-            "up": cmd_up, "up_manual": cmd_up_manual, "down": cmd_down}[key]
+    """按名字**现取**（不是 import 期就绑死）—— 这样用例能把它们替换掉。
+
+    ★ 录制那三条在 `rec.py` 里，**函数里 import**（不是模块顶层）：这样 `z0.py`
+    本身不依赖录制层，顶层的 import 面保持不变（`test_z0_menu.py` 只 import z0 就能跑）。
+    """
+    import rec                                     # noqa: PLC0415（理由见上）
+    return {"env": cmd_env, "check": cmd_check, "up": cmd_up, "up_manual": cmd_up_manual,
+            "down": cmd_down,
+            "rec_start": rec.cmd_start, "rec_status": rec.cmd_status,
+            "rec_manifest": rec.cmd_manifest}[key]
 
 
-def dry_run_note(key: str) -> str:
+def dry_run_note(key: str, extra: Sequence[str] = ()) -> str:
     """`--dry-run` 对**在本进程里做**的动作说什么 —— 各有各的话。"""
     if key in CHAIN_BY_KEY:
         return render_chain(key)
     if key == "down":
         # ★ 这一条**只看不停**：`--dry-run` 在这里格外要紧 —— 看一眼会停谁，然后什么都不发。
         return render_down(scan_down_targets()) + "\n（`--dry-run`：只扫一眼，**一个信号都不发**）"
+    if key.startswith("rec_"):
+        import rec                                 # noqa: PLC0415（同上）
+        return rec.dry_run_note(key, extra)
     return f"（`{key}` 是只读动作：本进程里直接跑，没有命令可打印；`--dry-run` 不执行）"
 
 
-def dispatch(key: str, dry_run: bool = False) -> int:
+def dispatch(key: str, dry_run: bool = False, extra: Sequence[str] = ()) -> int:
     if key in IN_PROCESS_KEYS:
         # ★ `--dry-run` 对**所有在本进程里做**的动作都是"不执行" —— 否则它就名不副实了
         # （`--dry-run check` 会真起一个 5 s 的探测，`--dry-run up` 会真把五个进程拉起来）。
         if dry_run:
-            print(dry_run_note(key))
+            print(dry_run_note(key, extra))
             return 0
-        return in_process_command(key)()
+        fn = in_process_command(key)
+        return fn(extra) if key in TAKES_ARGS else fn()
     action = ACTION_BY_KEY.get(key)
     if action is None:
         print(f"不认识的动作：{key}（用 `run/z0.py --list` 看有哪些）")
@@ -1461,17 +1517,28 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         prog="run/z0.py",
         description="z0 起链菜单 —— 常用启动 + 每步核对（不含任何会动飞机的入口）")
     parser.add_argument("action", nargs="?",
-                        help="动作名（env/check/mavros/vrpn/mocap/traj/control/up_manual/up/down，"
-                             "另有不进菜单的 fly）；不给就进交互菜单")
+                        help="动作名（env/check/mavros/vrpn/mocap/traj/control/up_manual/up/down/"
+                             "rec_start，另有不进菜单的 fly 与 rec_status/"
+                             "rec_manifest）；不给就进交互菜单")
+    parser.add_argument("extra", nargs="*",
+                        help="动作的参数（`rec_start 3`）—— 除它以外都不吃参数")
     parser.add_argument("--list", action="store_true", help="只列菜单，不进入交互")
     parser.add_argument("--dry-run", action="store_true", help="只打印将要执行的命令，不执行")
-    args = parser.parse_args(argv)
+    # ★ `parse_known_args` 而不是 `parse_args`：这条放行是给"动作自带 `--` 参数"留的口子。
+    #   第一手（2026-09-29）：`z0.py --dry-run rec_fcu /tmp/x --since <ISO>` 撞到
+    #   `error: unrecognized arguments: --since` —— 那一刻 `TAKES_ARGS` 里还有 `rec_fcu`。
+    #   现在吃位置参数的只剩 `rec_start`，但这个口子**留着**（删了它，将来任何带
+    #   `--flag` 的动作都会重蹈覆辙，而那种报错出现在**动作根本没法开始**的时候）。
+    #   ⚠️ 只对 `TAKES_ARGS` 那一条放行：别的动作多给一个参数仍然要报错（打错字不许静默吞掉）。
+    args, unknown = parser.parse_known_args(argv)
 
     if args.list:
         print(menu_text())
         return 0
     if args.action:
-        return dispatch(args.action, dry_run=args.dry_run)
+        if unknown and args.action not in TAKES_ARGS:
+            parser.error(f"`{args.action}` 不吃参数，但收到了：{' '.join(unknown)}")
+        return dispatch(args.action, dry_run=args.dry_run, extra=list(args.extra) + unknown)
     # ★ **进菜单之前**就把 source 重入走完（2026-09-23 现场反馈，第一手复现见下面这段）。
     #   `ensure_sourced()` 是把**本进程 `exec` 掉**重开 ⟹ 它必须发生在**读 stdin 之前**。
     #   原先它只在动作里做，而菜单是"先读完一行再派发"的 —— 于是用户敲的那一行
