@@ -424,7 +424,7 @@ F3/F4 的逐帧日志里档位分布是 `{warmup: 5, normal: 700, hold: 10, hove
 
 | 项 | 值 |
 |---|---|
-| DUT 代码树 | `/home/chen/ros_ws`，本票收口 commit（`ticket 11` 那条；量测时 HEAD = `efe01fd`，其后的差异只有本票自己的文件） |
+| DUT 代码树 | `/home/chen/ros_ws` @ **`238236b`**（`ticket 11 —— B 档闭环跑完…`）。★ 这是本票的**收口提交**；量测时的工作树 HEAD 是 `efe01fd`，量测与收口之间只差本票自己的文件（`git diff efe01fd 238236b --stat` 可自查）。之后若还有追补提交，**只动文档/归档**，被测代码不变。 |
 | PX4 + SIH | `/home/chen/refs/px4-v1.14.3-build` @ `1dacb4cdef`（tag `v1.14.3`），机型 `sihsim_z0`（`SYS_AUTOSTART=10046`），SIH 250 Hz |
 | 消息包 | `/home/chen/px4_msgs_ws/src/px4_msgs` @ `ffb6e80` |
 | acados | 源码 `/home/chen/refs/acados` @ `00947ddc3`（`v0.6.0-41-g00947ddc3`）；**安装** `/home/chen/acados` |
