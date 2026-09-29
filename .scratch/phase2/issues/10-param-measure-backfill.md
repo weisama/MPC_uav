@@ -606,3 +606,23 @@ A 档要不要重跑一遍，属 [09](09-sitl-tier-a-closed-loop.md) 的地盘�
 acados 自报 max ≤ 10 ms（不是墙钟），并发下也过了 ⟹ 是**偏保守的通过**；
 但那次 **print 出来的墙钟数不引用**（本仓已知"空机 3.995 ms vs 跑 pytest 时 11.297 ms"），
 等 build 后的空机窗口重跑。
+
+### 2026-09-29 12:0x —— 复验前必须先钉死"这次跑的是哪棵树"
+
+**本张那次 DUT 复验（`test_mpc_node.py` 的三条容差）本身有个身份歧义，先记下来**：
+
+`test_mpc_node.py` 的 DUT 是 `DUT = ("nmpc", "mpc_node.py")`，注释写明就是
+`lib/nmpc/mpc_node.py`（`install(PROGRAMS …)` 产生的那份）⟹ **入口脚本来自 `install/`**；
+而我们跑测试时 `PYTHONPATH=$PWD/src/nmpc` 在前 ⟹ **被 import 的 `nmpc` 包来自 `src/`**。
+⚠️ 实测 `install/` 下 `mpc_node.py` 是**两份**：
+`lib/nmpc/mpc_node.py`（`ros2 run` exec 的）与
+`local/lib/python3.10/dist-packages/nmpc/mpc_node.py`（被 import 的），
+两份都是 **08:47** 的快照 ⟹ 不 build 的话，这次复验跑的是
+**"08:47 的入口脚本 + 当前 `src` 的包"**这种混血。
+⟹ **规矩**：复验必须在 build 之后跑，并在结论里写明 `entry.sha256` 与包身份（`src@<sha>`）。
+（旁证：11/20 号会话的 F0–F4 也是"install 入口 + src 包"，它记到两者只差 1 行 docstring ⟹ 行为同纯 src。）
+
+**当前卡点（2026-09-29 12:0x）**：`tickets 212` 已答"3 场基准不重跑了、窗口此刻是空的、此后不再起
+SITL 与 CPU 密集测试" ⟹ **第①步已满足**。但 `git status` 实测
+`src/nmpc/nmpc/mpc_node.py` **正的脏**（`+79/−9`）—— 20 号票的积分器正在写。
+⟹ **此刻 build 会烤出半成品快照**，所以本张按排期**等 8b 落完 `src/` 再 build**。

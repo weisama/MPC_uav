@@ -112,12 +112,24 @@ Type: task
 - [ ] **跑一次冒烟**证明"不传覆盖也能悬停"：至少 A 档那条最简闭环（`verify_tier_a_hover.py`）
       + B 档一场，读数与 `m·g` 对得上
 - [ ] ★ **归档要记 harness 自身的身份，不能只记 DUT 与 overlay**
-      （`ros-ws-d6` 在核本轮扫描时撞见的口子）：现在 `obs-*.json` 记 `controller_code`／
-      `entry.sha256`／`overlay_sha256`，**唯独不记跑场脚本自己** —— 而
-      `mismatch_sweep.py` 未入库、mtime 实测 `11:32:31` 正落在两批之间。
-      本轮**没出事**（10 份 obs 的控制器身份全同），但"评判者换了版本、归档里看不出来"
-      这条路是通的。本张要重跑扫描 ⟹ 先把 `mismatch_sweep.py` 的 sha256 记进 obs
-      （**别把 `overlay_sha256` 逐档不同读成漂移** —— 那正是被扫描的机型，设计使然）
+      （`ros-ws-d6` 撞见的口子，`tickets 212` 已核实并**补好了**）：原 `obs["sweep"]` 只记被测对象
+      （`controller_code`），不记扫描器自己 —— 而 `mismatch_sweep.py` 未入库、mtime 实测
+      `11:32:31` 正落在两批之间。现在已加 `obs["sweep"]["harness"] = {file, sha256, mtime}`，
+      `summarise()` 在两批签名不同时报"**不是同一个实验**"、**没留档时明说"查不出"**。
+      ⟹ 本张**只需沿用**（重跑时确认这个字段在）；⚠️ 别把 `overlay_sha256` 逐档不同读成漂移
+      —— 那正是被扫描的机型，设计使然
+- [ ] ★ **重跑要留痕：别用"事后补写"去对齐两批的字段**（`tickets 212` 的第一手教训，值得本张照抄）：
+      它本想拿"前 3 场没有 `trace` 字段、第 4 场起才有"当旁证，结果事后跑 `--attach-trace`
+      给前 3 场补齐，**把这条旁证自己抹平了**（现在 13 场的字段集合完全一致）⟹
+      ① **事后补写会销毁"前后有差别"这条证据**；② **不留痕的改动，事后只能靠口供**。
+      本张重跑扫描/重搭时，凡"事后补进去的"都要带上**谁补的、哪一次**（照它 `trace.attached_by`
+      的做法），并在引用时按"**可能换过尺子**"处理
+- [ ] ★ **本张自己也要面对"entry 与包是两份"这件事**（`tickets 212` 提请，本会话已核）：
+      `install/nmpc/lib/nmpc/mpc_node.py`（**`ros2 run` exec 的那份**）与
+      `install/nmpc/local/lib/python3.10/dist-packages/nmpc/mpc_node.py`（**被 import 的那份**）
+      是**两个文件**，而 `test_mpc_node.py` 的 DUT 是前者（`DUT = ("nmpc", "mpc_node.py")`）。
+      ⟹ build 之后这两份**同时变**，12 号票那张身份签名（`entry.sha256` + 11 个 `.py`）必然翻转 ——
+      引它的表时**先核签名**
 - [ ] **按下面的《失效清单》逐份记「基线已换」**（见末节）：每份写明"这组数字出自旧机型"
       并给出旧机型常数（`SIH_T_MAX = 2.95 N`），**不许只改其中一份**
 - [ ] ⚠️ **不改 `src/nmpc/nmpc/params.py`** —— 「11 补、10 不动」的裁定**仍然在效**
