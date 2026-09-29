@@ -238,7 +238,27 @@ Type: task
 | [`tier-b-sitl-seam3.md`](../../../docs/control/tier-b-sitl-seam3.md)（[11](11-sitl-tier-b-seam3.md) 的交付） | 五场读数、四条判据的通过/未达标结论 | 同上；且它记的 3.92× 记账会**归零** |
 | [`mismatch-sweep.md`](../../../docs/control/mismatch-sweep.md)（[12](12-mismatch-sweep.md) 的交付） | **整张扫描表**（11 变体 × N 轮）| 扫描的被控对象换了 ⟹ 整表不可复现 |
 | [20](20-vertical-channel-mismatch-offset.md) 的验收数字 | 它的两场复跑读数 | 见抬头的"顺序是承重的" |
+| [08](08-sitl-z0-airframe.md) 的验收证据（`verify_z0_plant.py --variants-all`，12 变体 × 53 项 = 636 项） | 里面**写死的读数**（`SIH_T_MAX = 2.95 N` 等）变成历史 —— ⚠️ **但复跑仍应全绿，见下面那条** | 它验的就是这台机型 |
 | `test_mismatch_sweep.py` 的三条断言 | 见清单里那条（是**机器可读**的失效记录） | 它断言的就是"两者不同口径"这件事本身 |
+
+⚠️ **08 那一行与前几行性质不同 —— 别读成"重搭后 08 的验收会红"**（2026-09-29 核）：
+`verify_z0_plant.py:139 expected_params()` 的期望值**直接取自 `plant_spec.all_variants()` 与
+`plant_spec.ROWS`（`scope == "airframe"` 那几行）** ⟹ 本张改 `plant_spec.py` 时，
+**期望值与生成的 `.param` 是同步变的**，"SITL 与规格一致"这条**性质不受影响**。
+所以重搭后它**应该仍然全绿**；若真红了，那才是"机型号搭错了"的信号，不是"基线换了"。
+
+⚠️ 复跑它时**先知这工具自己的两处副作用**，免得把**工具故障**读成**机型故障**：
+① `:184` / `:198` 用的是**文本偏移游标**（`marker = len(px.text())` → `px.text()[marker:]`），
+   而 `px4_console.text_since()` 的 docstring（`:190-199`）**恰好把这个模式判为无效**
+   —— 这是**已定位、故意未修**的残留（[05](05-sitl-offboard-smoke.md):106/150 与
+   `docs/control/sitl-offboard-smoke.md:415` 都点名"不代改 08 的文件"）。
+② `:78` / `:92` 的字符类 `-?[0-9.eE+-]+` **本身能只匹配到一个 `-`** ⟹ `float('-')` 抛。
+   2026-09-29 由 `tickets 212` 在**共用夹具** `verify_offboard_smoke.field()` 上抓到并修掉，
+   我顺它那句"还可能**静默**给出被截短的值"扫了全仓、**当场验过** `verify_z0_plant.py` 这两个函数：
+   `param_value(" x * SIH_MASS [843,1330] : -", "SIH_MASS")` 与 `field("    z: -", "z")` 两处**都抛
+   `ValueError`**；完整行分别给 `0.75` / `-0.01408`。
+   ⚠️ **"可达"不是"已发生"** —— 没有证据说真跑里被咬过（212 的原话，我同意；别把它写成"曾出错"）。
+   修不修属 08 的票面（08 已 `done`），本张**只记不修**。
 
 ⚠️ 抬头的 `Blocked by` 正是为了这份清单里 [12](12-mismatch-sweep.md)／[20](20-vertical-channel-mismatch-offset.md)
 两行 —— **先让它们在旧基线上量完归档，再来换基线**。
