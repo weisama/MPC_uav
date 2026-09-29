@@ -243,7 +243,7 @@ F2/F3/F4（延迟、注入兜底）**不在本张的判据里**，除非改动�
 
 ```bash
 # 沿用归档脚本的 COMMON 与环境（★ PYTHONPATH 那行不能少，否则飞的是 install 快照）
-export PYTHONPATH=/home/chen/ros_ws/src/nmpc:$PYTHONPATH          # run_matrix.sh:49
+export PYTHONPATH=/home/chen/ros_ws/src/nmpc:$PYTHONPATH          # run_matrix.sh:52
 COMMON="--hold-s 15 --dut-timeout-s 90 \
         --offboard-timeout-s 45 --outdir /tmp/tier-b"
 python3 tools/px4-sitl/verify_tier_b_seam3.py --tag F0b $COMMON --mismatch none      …
@@ -251,7 +251,7 @@ python3 tools/px4-sitl/verify_tier_b_seam3.py --tag F1b $COMMON --mismatch mass+
 ```
 
 - ⚠️ **`--plant-param` 不存在**（那是 A 档 harness 的钩子）；B 档选被控对象用 **`--mismatch {none, mass+30, …}`**
-  （[`verify_tier_b_seam3.py:1149`](../../../tools/px4-sitl/verify_tier_b_seam3.py#L1149)，取值 = `MISMATCHES`）。
+  （[`verify_tier_b_seam3.py:1157`](../../../tools/px4-sitl/verify_tier_b_seam3.py#L1157)，取值 = `MISMATCHES`）。
 - ☠️ **`--model` 不用传了（2026-09-29 11:30 起）**：`/tmp` 是 **tmpfs**，机器 **10:40 重启**后
   `/tmp/mocap-model-3.json` 与 `/tmp/tier-b/*` **全没了**（12 号票会话通报，本张已核实：
   `ls` 两处皆 no such file、`uptime -s` = 10:40:36）。模型现在**以归档里那份为准**
@@ -265,9 +265,9 @@ python3 tools/px4-sitl/verify_tier_b_seam3.py --tag F1b $COMMON --mismatch mass+
   ⟹ 归档里那份就是五场当时用的那份模型。
   ⟹ **原始逐帧（`/tmp/tier-b/*.jsonl`）确已不可复得**，但归档里的固化判定行不受影响。
 - ⚠️ `--tag` 不能直接交给 `run_matrix.sh`：它的 `case` 只认 `F0…F4`
-  （[`run_matrix.sh:65-72`](../../../tools/px4-sitl/evidence/tier-b/run_matrix.sh#L65)）
+  （[`run_matrix.sh:68-75`](../../../tools/px4-sitl/evidence/tier-b/run_matrix.sh#L68)）
   ⟹ 要么把 `F0b`/`F1b` 加进那个 `case`，要么直接敲上面两条（**自己带全 `COMMON` 与 `PYTHONPATH`**）。
-- `--hover-thrust` 的 **argparse 默认值本来就是 0.6235**（`:1151`），显式传只是把口径写在命令里；
+- `--hover-thrust` 的 **argparse 默认值本来就是 0.6235**（`:1159`），显式传只是把口径写在命令里；
   **`params.py` 一个字不动**（操作者裁定）。
 - **只跑这两场**（裁定 3）：F2/F3/F4 不在本张判据里 —— 若改动意外波及它们，**如实记**，别默认没波及。
 - **逐场记 `controller_code`**（11 号票漏了这个、事后才补，见其 Comments）—— 本轮起是硬要求。
@@ -299,7 +299,7 @@ python3 tools/px4-sitl/verify_tier_b_seam3.py --tag F1b $COMMON --mismatch mass+
 - **空机 + 判在真值帧 + 沿用 `evaluate_b`**：不另立口径，这样与 11 的数字**可直接比**（同基线，裁定 3）。
 - ☠️ **本仓库没做 `ROS_DOMAIN_ID` 隔离 ⟹ domain 0 是共用的，会互相踩**：
   并行会话的 SITL 节点、`/fmu/out/*`、真值话题都在同一个 DDS 域里。
-  更要紧的是 [`run_matrix.sh:43`](../../../tools/px4-sitl/evidence/tier-b/run_matrix.sh#L43) 开头会
+  更要紧的是 [`run_matrix.sh:46`](../../../tools/px4-sitl/evidence/tier-b/run_matrix.sh#L46) 开头会
   `rm -f /dev/shm/fastrtps_port* /dev/shm/sem.fastrtps_port*`（清残留）—— **在别人正飞的时候跑它，
   等于把对方的 DDS 拆掉**。
   ⟹ 铁律两条：① 起跑前确认没有别的会话在飞（**同一时刻只有一个会话能占住这个窗口**）；

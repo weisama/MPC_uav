@@ -32,7 +32,7 @@
    的默认值（种子默认 `20260929`）。
 4. **代码身份**：每份 `<tag>-summary.json` 里的 `controller_code` 块记的是这五场实际 import 到的
    控制器源码 —— `src/nmpc` @ `cff55ae`（2026-09-29 09:40:49），逐文件 sha256 也在里面。
-   为什么会解析到 `src/` 而不是 `install/`：`run_matrix.sh:49` 设了
+   为什么会解析到 `src/` 而不是 `install/`：`run_matrix.sh:52` 设了
    `PYTHONPATH=/home/chen/ros_ws/src/nmpc`，而节点用 `subprocess.Popen(cmd, …)`
    （[`verify_offboard_smoke.py:239`](../../verify_offboard_smoke.py#L239)）**不传 `env=`** ⟹ 继承。
    ⚠️ **`install/nmpc` 是 09-29 08:59 的构建快照、与这份不是同一份代码**

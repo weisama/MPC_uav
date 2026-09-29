@@ -240,7 +240,7 @@ F0/F1 只差被控对象，F3/F4 只差被控对象 —— 没有这两对对照
 
 | # | 事实 | 出处 |
 |---|---|---|
-| 1 | `run_matrix.sh:49` 设 `PYTHONPATH=/home/chen/ros_ws/src/nmpc` ⟹ 解析到**活的 `src/`**，不是 `install/` | [`run_matrix.sh:49`](../../../tools/px4-sitl/evidence/tier-b/run_matrix.sh#L49) |
+| 1 | `run_matrix.sh:52` 设 `PYTHONPATH=/home/chen/ros_ws/src/nmpc` ⟹ 解析到**活的 `src/`**，不是 `install/` | [`run_matrix.sh:52`](../../../tools/px4-sitl/evidence/tier-b/run_matrix.sh#L52) |
 | 2 | 节点用 `subprocess.Popen(cmd, …)` **不传 `env=`** ⟹ 继承上面那个 `PYTHONPATH` | [`verify_offboard_smoke.py:239`](../../../tools/px4-sitl/verify_offboard_smoke.py#L239) |
 | 3 | 五场落盘 **09:50:48–09:53:17**，全在 `src/nmpc` 最后一次改动（`cff55ae` **09:40:49**）**之后**；此后 `src/nmpc` 无改动、`git status src/` 干净 | `/tmp/tier-b/F0..F4.json` 的 mtime（☠️ 该路径 2026-09-29 10:40 重启后消失，见下）；`git log -1 -- src/nmpc/nmpc/` |
 | 4 | **按真实启动顺序复现 import 解析**：脚本目录 → [`mpc_node.py:150`](../../../src/nmpc/nmpc/mpc_node.py#L150) 的 `sys.path.insert(0, parents[1])` → `PYTHONPATH` ⟹ 本票环境解析到 **`src/nmpc/nmpc`**；把 `src/nmpc` 从 `PYTHONPATH` 里去掉则解析到 `install/…/dist-packages/nmpc` | 本票当场跑的探针（两种环境各一次） |
