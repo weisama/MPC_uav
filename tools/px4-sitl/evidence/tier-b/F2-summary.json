@@ -320,5 +320,26 @@
    "counts": true
   }
  ],
- "checks_note": "本 `checks` 由**当前判层** `verify_tier_b_seam3.evaluate_b` 跑在**完整产物**上得到（飞行当时写下的那一份有过两个 bug：⑧ 误读了 A 档的分龄列、判据① 缺「正常帧总长够不够 8 s」的前置三判定）。整个五场据此**重判过一次**，裁决表见 `docs/control/tier-b-sitl-seam3.md`。★ 逐帧数组 `frames`/`truth` 未随本文件归档 ⟹ **拿这份文件单独重跑 `evaluate_b` 会少掉若干依赖逐帧数组的行**（那是判层的优雅降级，不是这些行不通过）。要重判请带全套 `tools/px4-sitl/run_matrix.sh` 重飞。"
+ "checks_note": "本 `checks` 由**当前判层** `verify_tier_b_seam3.evaluate_b` 跑在**完整产物**上得到（飞行当时写下的那一份有过两个 bug：⑧ 误读了 A 档的分龄列、判据① 缺「正常帧总长够不够 8 s」的前置三判定）。整个五场据此**重判过一次**，裁决表见 `docs/control/tier-b-sitl-seam3.md`。★ 逐帧数组 `frames`/`truth` 未随本文件归档 ⟹ **拿这份文件单独重跑 `evaluate_b` 会少掉若干依赖逐帧数组的行**（那是判层的优雅降级，不是这些行不通过）。要重判请带全套 `tools/px4-sitl/run_matrix.sh` 重飞。",
+ "controller_code": {
+  "★ 为什么要有这一块": "票面/文档里的每个数都挂在『哪一份控制器代码』上。没有它，两轮不同代码的飞行在表里长得一模一样。",
+  "src_last_commit": "cff55ae146ff698366215ea5799cd7e925c14377",
+  "src_last_commit_at": "2026-09-29 09:40:49",
+  "resolved_from": "src/nmpc（活的源码）",
+  "evidence": [
+   "run_matrix.sh:49  export PYTHONPATH=/home/chen/ros_ws/src/nmpc:$PYTHONPATH",
+   "verify_offboard_smoke.py:239  subprocess.Popen(cmd, …) 不传 env= ⟹ 继承 ⟹ import 解析到 src/nmpc/nmpc 而非 install/",
+   "五场落盘 09:50:48–09:53:17，全在 src 最后一次改动（cff55ae 09:40:49）之后；此后 src/nmpc 无改动、git status 干净"
+  ],
+  "本归档五场": "全部同一份代码（没有跨代码的场次）",
+  "⚠️ 与本仓库另一份控制器的关系": "install/nmpc 是 09-29 08:59 的构建快照，与这份不同（ticket 12 的扫描跑的正是那份）⟹ 两份的数字不可直接比较。",
+  "sha256": {
+   "node_core.py": "1348237f6e5b9e14060332c8230a08b46be91107879ae5ce79d90b7c5167df5c",
+   "mpc_node.py": "0b635995093393c8d57df54f70f59c2f7254e3adfc225c866ed8a86d189a20a0",
+   "params.py": "f46fb47efb9c1becfe814bc7d8558d814c3e50a47dfe5c9ec63c85f15c34b81f",
+   "sign_map.py": "362a9391974241d59596870aac8b2b09a234faee662af4dc0b8bb6f81bfc71c7",
+   "ocp.py": "30403cd1b9bb36a36809cc5be418bb185a418f2b6d75748ebee2f6a3b22ac57e",
+   "preflight_check.py": "5f969520f5a4b1ee00cfea8b071ce1cacd3ea647895f2ec178f2710726a0416b"
+  }
+ }
 }

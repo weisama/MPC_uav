@@ -17,7 +17,7 @@
 `<tag>` = `F0`(标称) / `F1`(mass+30，判据①) / `F2`(mass+30 + 50 ms，判据③) /
 `F3`(mass+30 + 注入求解失败，判据④) / `F4`(标称 + 注入，判据④的对照)。
 
-## ⚠️ 三件读这份归档必须知道的事
+## ⚠️ 四件读这份归档必须知道的事
 
 1. **逐帧数组（`frames` / `truth`，原始 48 MB）没有入库。** 因此 `checks` 是**固化下来的**判定结果 ——
    拿 `-summary.json` 单独重跑 `evaluate_b` **会少掉若干依赖逐帧数组的行**（那是判层的优雅降级，
@@ -30,6 +30,16 @@
    （改了口径、拿旧 JSON 重判，这一行不会跟着变）—— 要它按新口径重算，得整场重飞。
 3. **`params` 只记了 ROS 参数，没记 harness 的 argv**（`--seed` 等）⟹ 复现靠 `run_matrix.sh`
    的默认值（种子默认 `20260929`）。
+4. **代码身份**：每份 `<tag>-summary.json` 里的 `controller_code` 块记的是这五场实际 import 到的
+   控制器源码 —— `src/nmpc` @ `cff55ae`（2026-09-29 09:40:49），逐文件 sha256 也在里面。
+   为什么会解析到 `src/` 而不是 `install/`：`run_matrix.sh:49` 设了
+   `PYTHONPATH=/home/chen/ros_ws/src/nmpc`，而节点用 `subprocess.Popen(cmd, …)`
+   （[`verify_offboard_smoke.py:239`](../../verify_offboard_smoke.py#L239)）**不传 `env=`** ⟹ 继承。
+   ⚠️ **`install/nmpc` 是 09-29 08:59 的构建快照、与这份不是同一份代码**
+   （ticket 12 的 ±30% 扫描跑的就是那份）⟹ **两份的数字不可直接比较**。
+   ★ 这一块是事后补的（ticket 12 的会话指出「13 行照样印得整整齐齐、但可能不是同一个实验」，
+   而这批归档原先确实没记代码身份）。补的只是元数据：五份 JSON 除新增 `controller_code` 外
+   **逐键全等**、判定行分布仍是 10/1、9/2、10/2、10/2、11/1。
 
 ## 怎么重新跑出来
 
