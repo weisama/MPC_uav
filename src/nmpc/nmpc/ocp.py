@@ -244,7 +244,10 @@ class OfflineOcp:
         # ── 约束：★ 换成 z0 的实测参数，且**偏航上限单独给**（M3） ──
         w_max = np.array(p.rate_max)
         ocp.constraints.lbu = np.concatenate([[0.0], -w_max])          # F ≥ 0（FLU 下推力非负）
-        ocp.constraints.ubu = np.concatenate([[p.t_max], w_max])       # F ≤ T_max（★ 按电池，M4）
+        # ★ `F` 上限用 **`f_max`（按电池，M4/D5）**，不是 `t_max`：
+        #   `t_max` 是**归一化**常数（= 实测满量程 46.3 N），拿它当上限等于按电机（46.3 vs 11.8 差 3.9 倍），
+        #   而且**不报错** —— 求解器会规划出电池兑现不了的推力。两者的解耦见 `params.py` 的 `F_MAX_BATTERY`。
+        ocp.constraints.ubu = np.concatenate([[p.f_max], w_max])       # F ≤ f_max（★ 按电池，M4）
         ocp.constraints.idxbu = np.arange(NU)
         # ⚠️ 参考实现这里是 `[0, -w, -w, -0.5*w]` / `[Fmax, w, w, +0.5*w]`：
         #    ① `w_max = 0.5` 是占位符；② 偏航被写成横滚的**一半**，而 z0 的偏航上限比横滚**更大**（6.28 > 3.84）。

@@ -1044,10 +1044,14 @@ def test_饱和标志认得出顶在约束上_且不把擦边当饱和():
     """
     p = P
     # 顶在四条约束上（推力上限 + 三轴角速率上限，符号按 lbu/ubu）
-    sat = saturated_bounds([p.t_max, -p.roll_rate_max, p.pitch_rate_max, -p.yaw_rate_max], p)
+    sat = saturated_bounds([p.f_max, -p.roll_rate_max, p.pitch_rate_max, -p.yaw_rate_max], p)
     assert set(sat) == {"F_max", "wx", "wy", "wz"}, sat
+    # ★ `F_max` 认的是 **`f_max`（按电池 11.8 N）**，不是归一化常数 `t_max`（46.3 N）——
+    #   接错的话"顶到电池极限"这一档**永远不报**（假绿），而 46.3 N 那一档才是真到不了
+    assert "F_max" not in saturated_bounds([p.t_max, 0.0, 0.0, 0.0], p), \
+        "`F_max` 判据接成了归一化常数 `t_max`"
     # 擦边（差 1‰ 以上）不算饱和
-    assert saturated_bounds([0.99 * p.t_max, 0.9, 0.9, 0.9], p) == ()
+    assert saturated_bounds([0.99 * p.f_max, 0.9, 0.9, 0.9], p) == ()
     # 零推力 = 顶在下界（FLU 下推力非负，下界就是 0）
     assert saturated_bounds([0.0, 0.0, 0.0, 0.0], p) == ("F_min",)
 

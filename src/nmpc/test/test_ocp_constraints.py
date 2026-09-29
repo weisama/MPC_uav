@@ -41,18 +41,21 @@ def test_unreachable_target_saturates_rate_without_violating(solve_warm, const_r
 
 def test_thrust_pins_at_both_bounds_without_violating(solve_warm, const_ref, u_zero,
                                                       ocp: OfflineOcp):
-    """推力的两个边界都**够得着**，且都不越：要"又远又高"⟹ `F = T_max`；要往下降 ⟹ `F = 0`。
+    """推力的两个边界都**够得着**，且都不越：要"又远又高"⟹ `F = f_max`；要往下降 ⟹ `F = 0`。
 
     ★ 实测纠正了一个想当然（`phase2-implementation.md` §4 S3 的表原来写的是"目标 +x 10 m ⟹
-    F 打满 T_max"）：**纯水平**的远目标**不会**把推力顶到上限 —— 它只要倾斜，
-    垂直分量仍≈悬停，实测只到 **11.4044 N**（上限 11.8003）。要顶到上限得**同时要求爬升**
-    （`[10, 0, 10]` 与 `[10, 0, 5]` 都精确停在 11.8003）。
+    F 打满上限"）：**纯水平**的远目标**不会**把推力顶到上限 —— 它只要倾斜，
+    垂直分量仍≈悬停，实测只到 **11.4721 N**（上限 11.8）。要顶到上限得**同时要求爬升**
+    （`[10, 0, 10]` 与 `[10, 0, 5]` 都精确停在 11.8）。
+    ⚠️ 上限是 **`f_max`（按电池 11.8 N）**，不是归一化常数 `t_max`（46.3027 N）——
+    2026-09-29 解耦前两者是一个数，回填 `hover_thrust` 把这里悄悄抬到 46.3 N 时，
+    这条用例以 `38.51527316195475 == 46.302706104468214` 红过一次（**该红**：它抓到的正是那个抬升）。
     """
     p = Z0Params()
     x0 = ocp.hover_state()
 
     sol = solve_warm(x0, const_ref([10.0, 0.0, 10.0]), u_zero)
-    assert sol.u[0] == pytest.approx(p.t_max, rel=1e-9), "又远又高的目标该把推力顶到上限"
+    assert sol.u[0] == pytest.approx(p.f_max, rel=1e-9), "又远又高的目标该把推力顶到上限"
     assert sol.u[2] == pytest.approx(p.pitch_rate_max, rel=1e-9), "同时角速率也打满"
     assert sol.info.u_bound_violation <= SolveInfo.BOUND_TOL, sol.info.line()
 
@@ -60,9 +63,9 @@ def test_thrust_pins_at_both_bounds_without_violating(solve_warm, const_ref, u_z
     assert sol.u[0] == pytest.approx(0.0, abs=ZERO_TOL), "要快速下降 ⟹ 推力落到非负下界"
     assert sol.info.u_bound_violation <= SolveInfo.BOUND_TOL, sol.info.line()
 
-    # 对照组：纯水平的远目标**不会**顶到推力上限（11.40 < 11.80）
+    # 对照组：纯水平的远目标**不会**顶到推力上限（11.47 < 11.80）
     sol = solve_warm(x0, const_ref([10.0, 0.0, 0.0]), u_zero)
-    assert sol.u[0] < p.t_max, "纯水平目标只需倾斜，垂直分量仍≈悬停"
+    assert sol.u[0] < p.f_max, "纯水平目标只需倾斜，垂直分量仍≈悬停"
     assert sol.u[2] == pytest.approx(p.pitch_rate_max, rel=1e-9)
 
 
@@ -72,11 +75,17 @@ def test_wired_bounds_use_per_axis_rate_limits(ocp: OfflineOcp):
     参考实现写的是 `[0, -w, -w, -0.5*w]` / `[Fmax, w, w, +0.5*w]`（`w = 0.5` 占位符），
     而 z0 的偏航上限（6.28）比横滚（3.84）**更大** —— 折半会把它压成 1.92，
     也就是把偏航机动砍掉三分之二，而且**没有任何东西会报错**。
+    ★ 下半段还钉住**`F` 上限用的是 `f_max`（按电池），不是归一化常数 `t_max`**
+    （2026-09-29 解耦；此前两者是一个数，回填 `hover_thrust` 时把上限从 11.8 N 抬到 46.3 N 而不报错）。
     """
     p = Z0Params()
     lb = np.asarray(ocp.acados_ocp.constraints.lbu)
     ub = np.asarray(ocp.acados_ocp.constraints.ubu)
-    assert lb[0] == 0.0 and ub[0] == pytest.approx(p.t_max, rel=1e-12), "F 的上下界"
+    assert lb[0] == 0.0 and ub[0] == pytest.approx(p.f_max, rel=1e-12), "F 的上下界"
+    # ★ 解耦的**接线**证据：上限既不是归一化常数，也没被谁顺手改回它
+    assert ub[0] != pytest.approx(p.t_max, rel=0.01), \
+        "F 上限被接成了归一化常数 t_max（= 实测满量程 46.3 N）—— 那是按电机，不是按电池"
+    assert ub[0] == pytest.approx(11.8, abs=0.05), "F 上限该是电池可持续口径（≈11.8 N）"
     assert np.allclose(lb[1:], -np.array(p.rate_max), rtol=1e-12)
     assert np.allclose(ub[1:], np.array(p.rate_max), rtol=1e-12)
     assert ub[3] == pytest.approx(p.yaw_rate_max, rel=1e-12)

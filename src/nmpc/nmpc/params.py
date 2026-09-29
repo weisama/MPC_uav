@@ -6,6 +6,7 @@
 |---|---|---|
 | **实测** | `mass`、`hover_thrust`（⟹ `t_max`） | `mass`： [`hardware.md`](../../../docs/reference/hardware.md) §9 汇总表「用户实测」，0.750 kg。`hover_thrust`：**从 z0 自己的悬停日志反推**（[ticket 10](../../../.scratch/phase2/issues/10-param-measure-backfill.md)，2026-09-29），见下 |
 | **已对账的飞控参数** | 三轴角速率上限 | `z0.params` 与飞控真身对账过（[`params-analysis.md`](../../../docs/reference/params-analysis.md) 的 `MC_*RATE_MAX`）—— 是**飞控现状**，不是我们量的，但也不是占位 |
+| **电池口径的引数** | `f_max` | `hardware.md` §6.2 的 Mooch 持续放电 15 A 外推（≈11.8 N）—— 是**引数**，不是我们量的 |
 | ~~占位值~~ | ~~`hover_thrust`、`t_max`~~ | ✅ **2026-09-29 已全部实测**（ticket 10 的 P1/P2 回填），本表已无占位 |
 
 ⚠️ 归一化常数（参考实现里硬编码的 `0.07`）**不在本文件里**：它在
@@ -19,9 +20,14 @@ PX4 的 offboard 分支对 `thrust_body` **不做任何悬停油门重标定、�
 这里用 `T_max = m·g / hover_thrust` 这条**导出**关系把它锁死：只有 `hover_thrust` 是自由的，
 `T_max` 跟着它走，改一个不可能忘改另一个。
 
+★★ **`t_max` 与 `f_max` 是两个物理量，别再合回去**（2026-09-29 裁定解耦）：
+`t_max` 是**归一化**常数（必须 = 实测满量程 46.3 N，悬停工况量的），`f_max` 是 **`F` 上限**
+（电池可持续 ≈11.8 N，满油门工况问的）。合用一个常数的后果已经踩过一次 —— 回填 `hover_thrust`
+把 `ocp.py` 的 `F ≤ T_max` 从"按电池"悄悄抬成"按电机"（差 3.9 倍，测试全绿）。
+
 **回填口 = [ticket 10](../../../.scratch/phase2/issues/10-param-measure-backfill.md)**：
 `hover_thrust` 是 §5 里 P1（唯一"测不准就飞不起来"的参数，从 Phase 1 悬停日志反推 PX4 实际输出的
-归一化推力）。P1 出数后**只改这一个字段**，`t_max` 自动跟着变。
+归一化推力）。P1 出数后**只改这一个字段**，`t_max` 自动跟着变（`f_max` 不跟着动 —— 它是另一件事）。
 """
 
 from __future__ import annotations
@@ -64,6 +70,21 @@ ROLL_RATE_MAX = 3.84
 PITCH_RATE_MAX = 3.84
 YAW_RATE_MAX = 6.28
 
+#: ★★ **`F` 上限** [N] —— 电池**可持续**口径（M4/D5），**与上面的归一化常数是两个物理量**
+#: （2026-09-29 操作者裁定**解耦**：`hover_thrust`/`t_max` 只负责归一化，这里负责"能要多少推力"）。
+#:
+#: 出处 [`hardware.md`](../../../docs/reference/hardware.md) §6.2：Mooch 实测持续放电 **15 A** ⟹ 单电机
+#: 299.5 gf ⟹ 4 × 299.5 g = 1198 g ⟹ **11.75 N**（`T/W` 1.60）；本文件取三位 **11.8 N**，与票面口径一致。
+#: ⚠️ 旧占位时代那个 `m·g/0.6235 = 11.8003 N` 与它只差 ~0.4 % —— **是巧合**（SITL 同构机当初照占位搭的），
+#: **不要**因为"对得上"就把两个角色又混回一个常数。
+#:
+#: ⚠️ 它**不是**"飞机最多能推出多少力"——那是归一化那一侧的事（`t_max` = 实测满量程 46.3 N）。
+#: 它回答的是另一个问题：**电池能持续兑现多少**。规划出超过它的推力，飞控/电池兑现不了，
+#: 现象是"指令下去飞机不动"。所以它进 `ocp.py` 的 `ubu`（`F ≤ f_max`），**不进**归一化。
+#: ⚠️ 它随**电量**掉（满电 → 截止：`hover_thrust(V) = 0.1589×(25.2/V)^1.608`，见 `t_max` 那段），
+#: 现在是个定值 —— 按电压缩放它要等倾角/电池约束那张票（本张只把它从归一化里拆出来）。
+F_MAX_BATTERY = 11.8
+
 
 @dataclass(frozen=True)
 class Z0Params:
@@ -81,6 +102,11 @@ class Z0Params:
     pitch_rate_max: float = PITCH_RATE_MAX
     yaw_rate_max: float = YAW_RATE_MAX
 
+    #: `F` 上限 [N] —— ★ **电池可持续口径**（M4/D5），进 `ocp.py` 的 `ubu`；
+    #: **不是**归一化常数（那是 `t_max`）。两者的解耦是 2026-09-29 的裁定，
+    #: 出处的完整交代见模块常量 `F_MAX_BATTERY` 那段。
+    f_max: float = F_MAX_BATTERY
+
     @property
     def t_hover(self) -> float:
         """悬停所需总推力 [N]。"""
@@ -88,14 +114,15 @@ class Z0Params:
 
     @property
     def t_max(self) -> float:
-        """推力上限 [N] —— ★ **归一化上限**：满电口径下实测 **46.3 N**（T/W 6.29）。
+        """**归一化**上限 [N] —— 满电口径下实测 **46.3 N**（T/W 6.29）。
         由 `hover_thrust` 导出 ⟹ 与它自洽；这也是参考实现的算法（`max_thrust = mass*9.81/hover_thrust`）。
 
-        ⚠️ **2026-09-29 P1 回填后，这个字段的身份变得有歧义**：M4/D5 说 `T_max` 该"**按电池**"
-        （可持续电流 15 A ⟹ ≈11.8 N），但 §3.3.2 的自洽条件要求它**等于实测满输出**（46.3 N）。
-        一个常数兼不了两个角色 ⟹ 需要解耦，裁定见
-        [`phase2-implementation.md`](../../../docs/control/phase2-implementation.md) §3.3.3 末段。
-        ★ 在那之前**别**为了让它 < 40 N 去动 `hover_thrust`（那是把测量改小去迁就判据）。
+        ★ **它只负责一件事：把 `F` 换算成 `thrust_body`**（`sign_map.px4_rates_setpoint` 的 `t_max_n`）。
+        §3.3.2 的自洽条件要求它**等于实测满量程**，填别的值悬停前馈就错。
+        ⚠️ **别拿它当 `F` 上限** —— 那是 `f_max`（按电池 ≈11.8 N）。
+        2026-09-29 之前这两个角色兼在一个常数上：回填后它变成 46.3 N，
+        于是 `ocp.py` 的 `F ≤ T_max` 悄悄从"按电池"漂成了"按电机"（差 3.9 倍，且不报错）。
+        ★ 也**别**为了让它 < 40 N 去动 `hover_thrust`（那是把测量改小去迁就判据）。
         """
         return self.t_hover / self.hover_thrust
 

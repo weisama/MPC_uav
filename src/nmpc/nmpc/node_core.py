@@ -293,8 +293,10 @@ def px4_stamp_s(msg) -> Optional[float]:
 def saturated_bounds(u, params: Z0Params) -> Tuple[str, ...]:
     """`u = [F, ωx, ωy, ωz]` **顶在哪几条约束上** → 名字元组（空元组 = 一条都没顶）。
 
-    名字与 OCP 的 `lbu/ubu` 一一对应（`ocp.py`：`lbu = [0, −rate_max]`、`ubu = [t_max, rate_max]`）
+    名字与 OCP 的 `lbu/ubu` 一一对应（`ocp.py`：`lbu = [0, −rate_max]`、`ubu = [f_max, rate_max]`）
     ⟹ **判据用的是生产阈值**（`Z0Params`），不是另抄一份数。
+    ⚠️ `F_max` 比的是 **`f_max`（按电池）**，不是 `t_max`：`t_max` 是归一化常数（46.3 N），
+    拿它比会让"顶到电池极限"这一档**永远不报**（假绿）—— 2026-09-29 之前就是这样。
 
     ★ 它是**日志面**：票面要"约束饱和标志"，而"它在顶约束"与"它在正常工作"必须分得开 ——
       节点不做任何裁剪（见 `mpc_node` 的「饱和表现为打满」），所以这里看到的就是求解器真的
@@ -306,7 +308,7 @@ def saturated_bounds(u, params: Z0Params) -> Tuple[str, ...]:
     # 照抄上面那条的模板，读的人会以为下界可配 —— 它不可配，`lbu[0]` 写死是 0）
     if abs(f) <= SAT_TOL_REL:
         out.append("F_min")
-    elif abs(f - params.t_max) <= SAT_TOL_REL * max(1.0, abs(params.t_max)):
+    elif abs(f - params.f_max) <= SAT_TOL_REL * max(1.0, abs(params.f_max)):
         out.append("F_max")
     for name, w, w_max in (("wx", wx, params.roll_rate_max),
                            ("wy", wy, params.pitch_rate_max),

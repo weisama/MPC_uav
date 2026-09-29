@@ -106,10 +106,22 @@ def check_params(p, z0: Optional[Z0Params] = None) -> List[Check]:
                      f"悬停 F = {z0.t_hover:.4f} N"
                      + ("" if ok else "（≥1 表示悬停就要打满：没有爬升余量）")))
 
-    ok = z0.t_max < 40.0
-    out.append(Check(g, "推力上限按**电池**取值", ok,
-                     f"T_max = {z0.t_max:.3f} N（电机上限 40 N 是 M4 说的那个**不该**用的数；"
-                     f"走到那儿说明又按了电机）"))
+    # ★ 判据对象是 **`f_max`（`F` 上限，按电池）**，不是 `t_max` —— 后者是**归一化**常数，
+    #   按定义必须 = 实测满量程（46.3 N），拿它比会一直红，而那红**指错了东西**。
+    #   2026-09-29 解耦前这条守卫报的 `T_max = 46.3 N` 正是"两个角色被混成一个数"的症状。
+    ok = z0.f_max < 40.0
+    out.append(Check(g, "F 上限按**电池**取值", ok,
+                     f"f_max = {z0.f_max:.3f} N（电机上限 40 N 是 M4 说的那个**不该**用的数；"
+                     f"走到那儿说明又按了电机）。★ 归一化常数是另一回事："
+                     f"t_max = {z0.t_max:.3f} N（须 = 实测满量程）"))
+
+    # ★ 这两条把"两个角色"钉在一起：`F` 上限够悬停（否则连平飞都规划不出来），
+    #   且**不许超过**归一化满量程（否则 `F/t_max > 1`，`thrust_body` 会被截到 −1）。
+    ok = z0.t_hover <= z0.f_max <= z0.t_max
+    out.append(Check(g, "F 上限夹在悬停与满量程之间", ok,
+                     f"t_hover = {z0.t_hover:.4f} N ≤ f_max = {z0.f_max:.3f} N ≤ "
+                     f"t_max = {z0.t_max:.3f} N（f_max 低于悬停 ⟹ 规划不出平飞；"
+                     f"高于 t_max ⟹ F/t_max > 1 被截，且说明又拿归一化当上限了）"))
 
     ok = p.heartbeat_hz >= 2.0
     out.append(Check(g, "心跳 ≥2 Hz", ok,
