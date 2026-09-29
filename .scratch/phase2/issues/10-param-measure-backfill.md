@@ -650,3 +650,48 @@ SITL 与 CPU 密集测试" ⟹ **第①步已满足**。但 `git status` 实测
 **另起子进程**（`subprocess.run([sys.executable, "-c", …])`）⟹ 不受导入顺序影响；
 `test_ocp_health.py` 用**进程内** `sys.modules` ⟹ 会。两种写法并存，后者是脆弱的那一种。
 **要不要为它开票，交给操作者**（本张不擅自开）。
+
+### 2026-09-29 12:1x —— 复验身份**已钉死**（别人的 build，我已第一手复核）
+
+`ros-ws-8b` 落 ticket 20 时**已经 build 过一次**，所以本张**不需要自己 build**。
+下面四条**都是我当场跑命令核的**，不是转述：
+
+| 项 | 第一手结果 |
+|---|---|
+| `git status --short` | 只有 `?? .claude/` / `?? .vscode/` ⟹ **`src/` 干净**（无 ` M`）|
+| `HEAD` | **`d817a16`**（20 号票：垂直通道加纯积分前馈偏置）|
+| 三份 DUT `sha256` | `src/nmpc/nmpc/mpc_node.py` = `install/nmpc/lib/nmpc/mpc_node.py` = `install/nmpc/local/lib/python3.10/dist-packages/nmpc/mpc_node.py` = **`a4e0fa8c…`** |
+| 与提交的关系 | `git show d817a16:src/nmpc/nmpc/mpc_node.py \| sha256sum` = **同一个 `a4e0fa8c…`** ⟹ 三份**就是** `d817a16` 的产物 |
+
+⟹ **本张收尾复验的留档口径写死为 `src@d817a16 / install@a4e0fa8c`**。
+⚠️ 上面 12:0x 那节里的 `1c7fbd2947bdb6ce…`（08:47）和 `c39d433a…` 都被**取代**了 ——
+前者是我自己那次收口 build 的快照，后者是 8b **未提交**的工作区（现已提交成 `d817a16`）。
+引用时别抄这两个，抄 `a4e0fa8c`。
+
+⚠️ **两条随之而来的注意**：
+
+1. **被测对象已经不止是本张的改动。** 现在的 DUT 是 `d817a16`，里面**含 20 号票的积分器**。
+   ⟹ 若 `test_mpc_node.py` 跑红，**先归因再定责**：本张动的是
+   `ubu[0] → f_max` 与那三条容差断言，20 号票动的是垂直通道前馈偏置，两者不是一处。
+   （这也正是"复验必须在 build 之后、并写明入口 sha 与包身份"那条规矩的用处。）
+2. **此刻没有窗口，本张的 DUT 复验**照旧要等：
+   `tickets 212` 正在跑 `python3 -m pytest tools/px4-sitl src/nmpc/test -q`（pid `38143`，
+   外层 `timeout 900` pid `38136`，12:12:58 起；`uptime` load 2.31）。**我不起 DUT 类测试**。
+
+⚠️ **顺带一条要回给 8b 的订正**（他说"site-packages 那份也不存在"）—— 我 `ls` 了，**不成立**：
+
+| 路径 | `__init__.py` | 是什么 |
+|---|---|---|
+| `install/nmpc/lib/nmpc/` | **没有** ✅（他对）| ament 的脚本目录，**不是包**；`ros2 run nmpc mpc_node.py` **exec** 这里 |
+| `install/nmpc/local/lib/python3.10/dist-packages/nmpc/` | **有**（2838 B，与 `src` 同大小）❌（他错）| **是包**，`import nmpc` 拿到的那份 |
+
+补一条**解析实测**（只解路径、不起 DUT）：`PYTHONPATH=<repo>/src/nmpc` 在前时
+`import nmpc` → `src/nmpc/nmpc/__init__.py`；**不带 `PYTHONPATH` 时 `import nmpc` = `ModuleNotFoundError`**
+⟹ 那份 install 包**只有 source 过 `install/setup.bash` 才在 `sys.path` 上**。
+所以 install 那一侧的引用要**分成两条**写（入口脚本 vs 包成员），不能合成一个"install 里的包"。
+
+⚠️ **第三条：`d817a16` 的提交信息里"未 build"是错的（写的时候就已经错了）。**
+`install/…/mpc_node.py` 的 mtime = **12:11:55**，而 `d817a16` 的 `%cI` = **12:12:58**
+⟹ build **早于** commit **63 秒**；内容又与提交逐字节一致 ⟹ 那次 build 读的就是要提交的那份。
+下一句读票的人会照"未 build"以为 `install/` 是陈的 —— 而这恰恰是今天花了几个小时才弄清的那个混淆。
+**已回信让 8b 在 20 号票的留档里改成"已 build（12:11:55，install sha `a4e0fa8c`）、未飞"。**
