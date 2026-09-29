@@ -573,8 +573,36 @@ A 档要不要重跑一遍，属 [09](09-sitl-tier-a-closed-loop.md) 的地盘�
    **不只是口径问题，它会直接变成一条 3.9 倍宽的推力上限**。这正是本张 §3.3.3 的结论，独立复现了。
 
 **本张还剩什么**（与上面第 3 条无关的那些）：
-- **一个空机窗口**（等 `tickets 212` 的 13 场 SITL 跑完，它通告 ≈11:48）：
-  `colcon build --packages-select nmpc`（**这个现在是别人的拦路石**：20 号票 §4 的积分器要 respect
-  `f_max`，而它要 `install/` 里有解耦后的代码）→ `test_mpc_node.py` 那三条改了量纲的容差
-  （**本张唯一没有 DUT 复验过的东西**）→ 全量测试。
+- **一个空机窗口**：`colcon build --packages-select nmpc` → `test_mpc_node.py` 那三条改了量纲的
+  容差（**本张唯一没有 DUT 复验过的东西**）→ 全量测试。
 - **一次台架/悬停推力裕度测量**（只有人能产），见 §3.3.4。
+
+### 2026-09-29 11:5x —— 三处订正与排期（三条都是别人当场纠的，不当假设收）
+
+1. ★ **我把 build 的"为什么需要"说错了，已订正**。我原写"20 号票的积分器要 respect `f_max`，
+   而它要 `install/` 里有解耦后的代码"—— **不成立**（`ros-ws-8b` 指出并给出第一手）：
+   B 档飞行 import 的包来自 `src/`（`run_matrix.sh:52` 设 `PYTHONPATH=src/nmpc`，而
+   `src/nmpc/nmpc/` 是**有 `__init__.py` 的正规包** ⟹ 胜过 `install/nmpc/lib/nmpc/`
+   那个 PEP 420 命名空间段）⟹ 解耦在它那边**一直生效**。
+   **真理由在入口脚本**：`ros2 run nmpc mpc_node.py` 执行的是
+   `install/nmpc/lib/nmpc/mpc_node.py`（`get_package_prefix('nmpc')` 实测
+   `/home/chen/ros_ws/install/nmpc`）—— 而 20 的**积分器状态正写在 `mpc_node.py` 里**
+   ⟹ **不 build，它改的东西一行都不会飞**。
+   ⚠️ 记这条是**防止下一个人照我的错理由排期**。
+2. **排期改为三方共用一次 build**（`ros-ws-8b` 提议、本张接受）：
+   ① 12 号会话交还窗口 → ② 8b 把改动落进 `src/`（不占窗口）→ ③ **本会话 build 一次**
+   → ④ 8b 飞两场 → ⑤ 本会话跑 `test_mpc_node.py` 的三条容差。
+   本张的约束：**第③步 build 完要拿到 `src@<sha>`**（DUT 复验必须钉在代码身份上）。
+3. **build 之前必须等 pytest 停**（`ros-ws-8b` 提请，认同）：`test_mpc_node.py` 那类会拉起
+   `mpc_node` 子进程，而它跑的正是 `install/` 里那个文件 ⟹ **并发 build 等于当场换掉别人正在执行的 DUT**。
+
+**已能先做的部分（不占窗口、不 build）—— 已做并过**：
+`PYTHONPATH=$PWD/src/nmpc` 下跑**零 ROS** 的那几支，验的正是解耦本身
+（`test_ocp_constraints.py`／`test_node_core.py`／`test_preflight_check.py` 等）：
+**122 passed**（36.29 s）+ **38 passed**（23.27 s）。
+⟹ 解耦的三处断言（`ubu[0] == f_max`、`ub[0] != t_max`、`f_max` 预检夹逼）**在 `src` 上成立**；
+剩下的只有**必须起 DUT 的**那部分（`test_mpc_node.py`）。
+⚠️ 后一批含 `test_ocp_timing.py`，与并行会话的 pytest **并发** —— 它的**断言**打在
+acados 自报 max ≤ 10 ms（不是墙钟），并发下也过了 ⟹ 是**偏保守的通过**；
+但那次 **print 出来的墙钟数不引用**（本仓已知"空机 3.995 ms vs 跑 pytest 时 11.297 ms"），
+等 build 后的空机窗口重跑。
