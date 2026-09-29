@@ -637,6 +637,9 @@ ck("⑤ 推力标定：PX4 解出的电机均值 ≈ m·g/(4·T_max)（★ 只�
    `uxrce_dds_client ... vehicle_local_position_groundtruth data writer` 里出现过一次，
    在 `:44–:46`）—— 这是**设计如此**、不是漏订：控制台那条 = `verify_tier_a_hover.py:91`，
    B 档走 `verify_tier_b_seam3.py:112`（`/fmu/out/…`）+ `:203` 订阅**同一个 uORB topic 的另一条 transport**。
+   ⚠️ **两处口径各留各的、不互相搬运**：本节留的是**仪器事实**（控制台这条路取不到真值）；
+   同一条事实对 B 档判据意味着什么记在
+   [20 号票 §12.4](../../.scratch/phase2/issues/20-vertical-channel-mismatch-offset.md)。
    （口径：`climb_gt = gnd.mean − hov.mean`，
    [`mismatch_sweep.py:661`](../../tools/px4-sitl/mismatch_sweep.py#L661)，NED 向上为负；
    真值帧稳态误差 = `climb_gt − 1.0`，与 EKF 帧的 `e_z_ekf = climb_ekf − 1.0` **同口径**
