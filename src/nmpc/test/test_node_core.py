@@ -190,10 +190,9 @@ def test_保持前馈是参考自己的平衡点_也就是解析前馈的定义(
     assert u_ref.shape == (N, 4)
     assert u_ref[0].tolist() == pytest.approx([P.t_hover, 0.0, 0.0, 0.0])
     assert (u_ref == u_ref[0]).all(), "解析前馈在时域上必须处处一样（参考是静止的）"
-    # ★ ticket 20 往这个函数上加了**可选**的偏置形参 `df` ⟹ 这里顺手把"不传 == 传 0"
-    #   逐位钉住（`==` 不是 `approx`）：默认行为一字不改是那个形参的存在条件。
-    assert (hold_feedforward(P, N, 0.0) == u_ref).all(), \
-        "`df` 的默认值改变了默认返回值 ⟹ 改的就不只是「加一个可选参数」了"
+    # ☠️ 2026-09-29：这里**曾经**钉过 `hold_feedforward(P, N, 0.0) == u_ref` —— 那是为 ticket 20
+    #   加进来的 `df` 形参写的。那条落点已被实测证伪、形参已删（见 `hold_feedforward` 的 ☠️）
+    #   ⟹ 本用例回到"`f(x_ref, u_ref) = 0` **无条件**成立"，比"不传 == 传 0"强。
 
     from nmpc.model import Z0MultirotorRateModel
     model = Z0MultirotorRateModel(P)
@@ -203,48 +202,18 @@ def test_保持前馈是参考自己的平衡点_也就是解析前馈的定义(
             "参考 + 解析前馈不是模型的平衡点 ⟹ 前馈算错了（飞机一定会被它推着走）"
 
 
-def test_垂直偏置只进推力那一路_且偏离量正好是_df_over_m():
-    """★ ticket 20 §4 第 1 条的"**重新表述**"：`df ≠ 0` 时参考**故意不再是模型的解**。
-
-    原来那条不变量是"`f(x_ref, u_ref) = 0`"（参考自己就是模型的一条解）。ticket 20 给前馈加了
-    垂直偏置之后，这半句只在 `df == 0` 时成立 —— 而且**必须**让它不成立：
-    `df` 存在的全部理由就是"模型算出来的悬停推力（`t_hover = m·g`）不是被控对象真正需要的那个"
-    （B 档实测 `mass+30` 稳定偏差 −0.6406 m）。让参考继续当模型的解，等于继续信那个错的模型。
-
-    ⟹ 把"偏离"本身写成**可精确复算**的一条：静止水平参考下只有竖直通道动，且
-
-        `ẍ_z = (u[0] − t_hover)/m = df/m`     （其余 5 个自由度一步都不许动）
-
-    数值上 RK4 对"常加速度"是**精确**的 ⟹ 这里用 `abs=1e-12`，不是松带宽。
-    第一手（2026-09-29 本机，`df = 1.0 N, m = 0.75 kg, dt = 0.02 s`）：实测
-    `Δv_z = +0.02666666666666667`、`Δz = +0.000266666666666667`，与 `df/m·dt`、`df/m·dt²/2`
-    逐位相同（差 ≤ 1e-17）。符号也跟着钉：`df > 0` ⟹ 往上（推力加多了）。
-    """
-    from nmpc.model import Z0MultirotorRateModel
-
-    yaw = 0.4
-    x_ref = hold_reference(pose_to_state((1.0, 2.0, 3.0), yaw_quat(yaw)),
-                           ControlConfig(hold_offset=(0.0, 0.0, 1.0), hold_yaw=yaw), N)
-    model = Z0MultirotorRateModel(P)
-    dt = 0.02
-
-    for df in (1.0, -0.5):
-        u_ref = hold_feedforward(P, N, df)
-        assert u_ref.shape == (N, 4)
-        assert u_ref[0][0] == pytest.approx(P.t_hover + df, rel=1e-15), \
-            f"偏置没加在推力那一路：u_ref[0] = {u_ref[0]}（t_hover = {P.t_hover}）"
-        assert np.allclose(u_ref[0][1:], 0.0, atol=1e-15), \
-            f"偏置漏进了角速率那三路：u_ref[0][1:] = {u_ref[0][1:]}"
-        assert (u_ref == u_ref[0]).all(), "偏置必须铺满时域（参考是静止的）"
-
-        x = np.asarray(x_ref[0], float)
-        d = model.step_rk4(x, np.asarray(u_ref[0], float), dt) - x
-        assert d[5] == pytest.approx(df / P.mass * dt, abs=1e-12), \
-            f"竖直速度的增量不是 df/m·dt（df={df}）：Δv_z = {d[5]!r}"
-        assert d[2] == pytest.approx(df / P.mass * dt ** 2 / 2.0, abs=1e-12), \
-            f"竖直位移的增量不是 df/m·dt²/2（df={df}）：Δz = {d[2]!r}"
-        assert np.allclose(np.delete(d, [2, 5]), 0.0, atol=1e-12), \
-            f"偏置不该动这 5 个自由度：{d}"
+# ☠️ 这里**曾经**有 `test_垂直偏置只进推力那一路_且偏离量正好是_df_over_m`：它钉的是
+#   ticket 20 第一版把垂直积分偏置加进 `u_ref[:,0] = t_hover + df` 的那条落点
+#   （当时"参考故意不再是模型的解"被写成了设计意图）。
+#   2026-09-29 实测证伪：`u_ref` 是**代价参考**，`d u[0]/d u_ref[0] = −0.0616 N/N`（反号）
+#   ⟹ 那条路是正反馈，可行域是空集（`mass+30` 从 −0.6406 恶化到 −0.7200 m）。
+#   落点搬到**发出去的指令**上之后 `hold_feedforward` 的 `df` 形参整个删掉，
+#   上面那条 `f(x_ref, u_ref) = 0` **无条件**成立 ⟹ 本用例没有存在的理由了。
+#   ★ 新落点的判据在台架上，而且是**专门为它写的一条**
+#   （`test_mpc_node.py::test_垂直偏置加在发出去的指令上_不在代价参考上`）：
+#   那里能同时看到 `u_ref0`（不该含 ΔF）、`u`（求解器输出）、`−thrust_body_z·t_max`（该含 ΔF）三列，
+#   而且那一场 `df` 从 0 长到几牛顿 ⟹ 断言有鉴别力（正控）；负控里 `df ≡ 0`，加不加都一样。
+#   量法与完整读数：`tools/px4-sitl/probe_u_ref_authority.py` / ticket 20 §10。
 
 
 def test_参考的姿态是水平的而不是照抄测量姿态():

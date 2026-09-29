@@ -126,6 +126,36 @@ def _读日志(path: Path) -> list:
             if line.strip()]
 
 
+def _发出去的推力(r: dict, z0: Z0Params) -> float:
+    """一帧日志 → **真正发出去的那个推力** [N]（ticket 20 的落点判据要读它）。
+
+    `thrust_body_z = −F / t_max`（[`sign_map.py:73`](../nmpc/sign_map.py#L73)，PX4 机体 z 朝下
+    ⟹ 那一位是负的）⟹ 反解要**带负号**。⚠️ 2026-09-29 本张第一版在散文里写成 `thrust_body_z·t_max`
+    （漏了负号），三处一起错 —— 所以这个反解**只在函数里写一遍**，用例不许自己再写。
+
+    ★ 为什么落点判据非它不可：`u` 是**求解器原样输出**、`df` 是**积分器状态**，两者都不含"加没加上"
+      这个信息；只有这一列是"写进那一帧的数"。
+    ★ 容差 `abs=1e-4`：`thrust_body_z` 与 `u` 都各自四舍五入到 6 位小数，而 `F = −thrust_body_z·t_max`
+      把 `1e-6` 放大成 `t_max·1e-6`（默认口径 `t_max ≈ 46.3` ⟹ ~5e-5），加上 `u[0]` 那 `1e-6`
+      ⟹ 比 1e-4 更紧会偶发假红。**这一档由调用方给**（见下面两个用它的用例）。
+    """
+    return -float(r["thrust_body_z"]) * z0.t_max
+
+
+def _该发出去的推力(r: dict, z0: Z0Params, df_used: float) -> float:
+    """`_发出去的推力` 的**期望值**：`clip(u[0] + ΔF_used, 0, f_max)`（发布点那次夹取）。
+
+    ★ 夹取写在这里、不写进 `_发出去的推力`：一个是"实际读到的"、一个是"该是的"，
+      两边口径不同才分得出"夹错了"与"加错了"。
+    ☠️ **`df_used` 必须由调用方给，而且给的是"这一帧发出去时用的那个 ΔF"** —— 它是
+      **上一拍**日志行里的 `df`，不是同一拍的那一列（`_normal_frame` 用上一拍积完的值，
+      `_integrate_bias_z` 排在它后面）。2026-09-29 台架实测：拿同一拍的 `df` 去算，
+      差 `ki_z·e_z·Δt`（`ki=20, e_z=0.15, 100 Hz` ⟹ **0.0300 N**），远大于 `1e-4` 的容差。
+      ⟹ 谁把 `df` 这一格写成 `r["df"]`，就会得到一个**系统性差一拍**的断言。
+    """
+    return float(np.clip(r["u"][0] + df_used, 0.0, z0.f_max))
+
+
 def _arm_and_offboard(sc: Scenario) -> None:
     """注入"已解锁 + 已切 OFFBOARD"—— 走 `Timeline`（夹具**唯一**那条注入面）。
 
@@ -1163,15 +1193,23 @@ def test_垂直偏置不跟着解爬(tmp_path):
     `offline-ocp.md` §4.4 离线记过"单调上爬、不收敛"，真 PX4 闭环里放大成 runaway
     （`u[3]` 从 0 爬到 **+4.696 rad/s**、EKF 帧转了 **13.6 圈**）。
 
-    ☠️ **ticket 20 推翻了原来那条断言**：垂直通道加了积分偏置之后，`u_ref0` 的推力那一路
-    变成 `t_hover + ΔF`（时变）⟹ "`u_ref0` 逐帧恒等于 `[t_hover,0,0,0]`"**不再是恒等式**。
-    要守的不变量换成更本质的那条：**`ΔF` 只来自实测位置误差、不来自 `sol.u`**。
+    ☠️ **ticket 20 两次改过这条断言，别照抄旧版**：
+      ① 第一版把积分偏置加进 `u_ref[:,0] = t_hover + ΔF` ⟹ "`u_ref0` 逐帧恒等于
+         `[t_hover,0,0,0]`" 不再是恒等式；
+      ② 2026-09-29 落点搬到**发出去的指令**上之后，`u_ref0` 又**真的是常量**了（`__init__` 建一次）
+         —— 于是这一列对"偏置别跟着解爬"**没有鉴别力**：它常量是结构使然，与 `ΔF` 无关。
+      ⟹ 现在守的是**两列**：`df` 必须逐帧严格为 0，**且**发出去的推力必须逐帧等于
+         `clip(u[0] + ΔF, 0, f_max)`（`ΔF` 既没漏加、也没从别处来）。要守的不变量还是那条：
+         **`ΔF` 只来自实测位置误差、不来自 `sol.u`**。
 
     ★ 这条用例是**负控**（正控见 `test_垂直偏置积的是实测位置误差`）：
       任务 `hold_offset = (10, 0, 0)` ⟹ **`e_z ≡ 0`** ⟹ 积分器没有任何东西可积
-      ⟹ `ΔF` 必须**逐帧严格为 0**，`u_ref0[0]` 恒等于 `t_hover`（用 `==`，不是 `approx`）。
+      ⟹ `ΔF` 必须**逐帧严格为 0**，`u_ref0` 恒等于 `[t_hover,0,0,0]`（用 `==`，不是 `approx`）。
       而同段里 `u[1]` 顶满（> 1 rad/s）、`u[0]` 也在动 ⟹ "**解在动、前馈纹丝不动**"
       就是"偏置不来自解"的直接读数。
+    ⚠️ `ΔF ≡ 0` 这一场里"落点对不对"是**量不出来**的（加 0 与不加 0 一样）⟹ 落点那条判据的
+      真读数在正控里（那边 `df ≠ 0`）。这里留着它只为"落点搬了一半"（比如加在了 `u` 上
+      却又乘了系数）能当场红。
     ★ 任务用 `hold_offset_x = 10 m`：位置误差大到把 roll 顶满 ⟹ 解明显非零。
       少了"同一段里 `u` 真的在动"这半条，测试就没有鉴别力（静态悬停时旧代码也看不出爬）。
     """
@@ -1188,13 +1226,17 @@ def test_垂直偏置不跟着解爬(tmp_path):
     z0 = Z0Params()
     want = [z0.t_hover, 0.0, 0.0, 0.0]
     for r in normal:
-        # ★ 两列一起断言：`df` 是积分器的**状态**，`u_ref0` 是它**发出去的样子**
-        #   （`df > 0` 而 `u_ref0[0] == t_hover` 这种不一致就是"加进前馈的那一步漏了"）。
+        # ★ 三列一起断言：`df` 是积分器的**状态**、`u_ref0` 是代价参考、发出去的推力是**落点**。
         assert r["df"] == 0.0, \
             f"第 {r['tick']} 拍的垂直偏置不是 0：df = {r['df']}（e_z = x_ref0[2]−x0[2] = " \
             f"{r['x_ref0'][2] - r['x0'][2]:.3e}，这一场它必须恒为 0）"
         assert r["u_ref0"] == pytest.approx(want), \
             f"第 {r['tick']} 拍的控制参考变成了 {r['u_ref0']}（角速率三路该恒为 0、推力该是 {want}）"
+        # ☠️ 这一场 `df ≡ 0` ⟹"上一拍的 ΔF"与"同一拍的 ΔF"都是 0，差一拍那件事在这里**无感**
+        #   （差一拍的实测与正确口径见 `test_垂直偏置加在发出去的指令上_不在代价参考上`）。
+        assert _发出去的推力(r, z0) == pytest.approx(_该发出去的推力(r, z0, r["df"]), abs=1e-4), \
+            (f"第 {r['tick']} 拍发出去的推力不是 `clip(u[0] + ΔF)`：实测 {_发出去的推力(r, z0):.5f} N、"
+             f"该是 {_该发出去的推力(r, z0):.5f} N ⟹ 落点搬错了（或加了两遍）")
     assert max(abs(r["u"][1]) for r in normal) > 1.0, \
         "同段的解没动过 ⟹ 这条测试证明不了「前馈没跟着解爬」（任务参数失效？）"
 
@@ -1246,11 +1288,25 @@ def test_垂直偏置积的是实测位置误差(tmp_path):
     df = [r["df"] for r in normal]
     assert all(b > a for a, b in zip(df, df[1:])), \
         f"ΔF 没有逐帧严格上升（前 10 拍：{[round(v, 4) for v in df[:10]]}）"
-    assert max(abs(r["u_ref0"][1]) for r in normal) == 0.0 and \
-        all(r["u_ref0"][2:] == [0.0, 0.0] for r in normal), \
-        "偏置漏进了角速率那三路（那三路必须恒为 0）"
     assert max(abs(r["u"][1]) for r in normal) > 1.0, \
         "同段的解没动过 ⟹ 正控不成立（任务参数失效？）"
+
+    # ★★ 落点判据里**能在这一场判**的那半：`u_ref0` 必须仍是常量（代价参考里没有 ΔF）。
+    #   ☠️ 实测（2026-09-29，"只加一半 ΔF"的变异把本条以外的断言全放过之后回查）：
+    #   **这一场 `u[0]` 逐帧恒 = `f_max` = 11.8 N** —— `hold_offset_z = 2.0` 太大，求解器自己
+    #   就把推力顶满了 ⟹ `clip(u[0] + ΔF)` 与 `clip(u[0] + 0.5ΔF)` **都是 11.8**。
+    #   所以"发出去的 == `clip(u[0] + ΔF)`"这条等式**在这里是恒等式、量不出落点**
+    #   （本张第一版就把它写在这儿，是**假绿**）。落点等式改在专门的用例里量，工况取
+    #   **不饱和**的小误差：`test_垂直偏置加在发出去的指令上_不在代价参考上`。
+    #   ⚠️ 取反要写 `not (… == approx)`，别写 `… != approx`（后者的取反语义不在 pytest 的契约里）。
+    _u_ref_want = [z0.t_hover, 0.0, 0.0, 0.0]
+    _u_ref_bad = [(r["tick"], r["u_ref0"]) for r in normal
+                  if not r["u_ref0"] == pytest.approx(_u_ref_want)]
+    assert not _u_ref_bad, \
+        (f"代价参考 `u_ref0` 不是常量了（四路该恒为 `[t_hover,0,0,0]`）：{_u_ref_bad[:3]}\n"
+         f"    若推力那一路随 `df` 在动 ⟹ 落点又被搬回 `u_ref` 了（那是一条正反馈，见 §10）")
+    assert all(0.0 <= _发出去的推力(r, z0) <= z0.f_max + 1e-6 for r in normal), \
+        f"发出去的推力出界（执行器界 [0, {z0.f_max}]）"
 
     hi = z0.f_max - z0.t_hover
     assert max(df) < hi - 1e-6, \
@@ -1279,17 +1335,103 @@ def test_垂直偏置积的是实测位置误差(tmp_path):
          f"    那就必须补上⑥「锚点拍 df == 0」（现在因为量不到而撤掉了，见上面的 ☠️）")
 
 
+def test_垂直偏置加在发出去的指令上_不在代价参考上(tmp_path):
+    """★★ **落点判据**（ticket 20，2026-09-29 裁定 1 被证伪之后换的新落点）。
+
+    守的是这条不变量：`ΔF` 加在**发出去的指令**上（`u_cmd[0] = clip(u[0] + ΔF, 0, f_max)`，
+    `mpc_node._normal_frame`），**不**在 OCP 的代价参考 `u_ref[:,0]` 上。
+    为什么后者必须被挡住：`u_ref` 是**代价参考**而不是指令，实测 `d u[0]/d u_ref[0] = −0.0616 N/N`
+    —— **符号是反的** ⟹ 把位置误差积进 `u_ref` 是一条**正反馈**（越沉 ⟹ ΔF 越大 ⟹ 推力越小），
+    可行域是**空集**（`mass+30` 飞成 −0.7200 m，比不加还差）。量法见
+    `tools/px4-sitl/probe_u_ref_authority.py`、完整读数见 ticket 20 §10/§10.7。
+
+    ☠️ **为什么单独一条用例、而且工况必须"小误差"**：落点等式
+    `−thrust_body_z·t_max == clip(u[0] + ΔF, 0, f_max)` 只有在**求解器那份 `u[0]` 没顶到 `f_max`**
+    时才有鉴别力。`hold_offset_z = 2.0`（正控用的那个）会让 `u[0]` **逐帧恒 = 11.8 N**（实测），
+    于是等式两边都成常量、**什么错法都拦不住** —— 本张第一版就是这么写的（假绿），
+    2026-09-29 用"只加一半 ΔF"的变异实测才发现 ⟹ 拆成这条：`hold_offset_z = 0.15`
+    ⟹ `u[0] ≈ t_hover + 环路刚度×0.15 ≈ 7.9 N`，**远离** `f_max`。
+
+    | # | 判据 | 为什么它有牙齿 |
+    |---|---|---|
+    | ① | `u_ref0` 四路恒为 `[t_hover, 0, 0, 0]` | 落点被搬回 `u_ref` 时，推力那一路会随 `ΔF` 走（变异实测：`[7.469102, …]` → 当场红） |
+    | ② | 未顶夹的帧上 `发出去 == clip(u[0] + ΔF)`（容差 `1e-4`） | 漏加 / 加在 `u_ref` 上 / **加了一半** / 加两遍，全都过不了 |
+    | ③ | 该场 `df` 长到 `> 1 N`、且**未顶夹的帧 ≥ 30 拍** | **鉴别力的自检**：夹具或增益一失效，①② 就退化成恒等式（本张栽过一次，所以这条必须有） |
+    | ④ | 全程发出去的推力 ∈ `[0, f_max]` | 夹取那一步还在（执行器界） |
+
+    ★ 增益取 `ki_z = 20`：小误差 ⟹ `ΔF` 涨得慢（`ki·e_z = 3 N/s`），20 才够在 1 s 内到 `> 1 N`。
+      这条用例量的是**落点**，与增益怎么标定无关（§8.3 的起测点仍是 1）。
+    """
+    log_path = tmp_path / "mpc.jsonl"
+    ki, e_z = 20.0, 0.15
+    with _scenario(state_source="px4", hold_offset_z=e_z, ki_z=ki,
+                   log_file=str(log_path)) as sc:
+        _wait_dut_up(sc)
+        _arm_and_offboard(sc)
+        sc.wait_for(lambda: len(sc.px4.published_frames("rates")) >= 100, timeout_s=15.0,
+                    message="解锁后没攒到 100 帧 setpoint（1 s，够 ΔF 长到 1 N 以上）")
+
+    z0 = Z0Params()
+    normal = [r for r in _读日志(log_path) if r["fallback"] == "normal"]
+    assert len(normal) >= 60, f"正常帧只有 {len(normal)} 拍"
+
+    # ① 代价参考里**没有** ΔF：四路恒为常量
+    _u_ref_want = [z0.t_hover, 0.0, 0.0, 0.0]
+    _u_ref_bad = [(r["tick"], r["u_ref0"]) for r in normal
+                  if not r["u_ref0"] == pytest.approx(_u_ref_want)]
+    assert not _u_ref_bad, \
+        (f"代价参考 `u_ref0` 不是常量了（四路该恒为 `[t_hover,0,0,0]`）：{_u_ref_bad[:3]}\n"
+         f"    推力那一路随 `df` 在动 ⟹ 落点又被搬回 `u_ref` 了：那是一条**正反馈**"
+         f"（实测 `d u[0]/d u_ref[0] = −0.0616 N/N`），别搬 —— 见 ticket 20 §10")
+
+    # ② 落点等式：逐个"（上一拍, 这一帧）"配对来判。
+    #   ☠️ **`ΔF` 取上一拍日志行的 `df`**：这一帧发出去时用的是**上一拍积完**的值
+    #   （`_normal_frame` 排在 `_integrate_bias_z` 之前，见 `_tick` 的 ★★）。取同一拍会**系统性**
+    #   差一个 `ki_z·e_z·Δt`——本场实测 **0.0300 N**，2026-09-29 就是这么揪出那个差一拍的。
+    #   ★ 配对取**相邻日志行**（不限于正常帧）：兜底/闸门关着的那几拍 `ΔF` 冻结不积，
+    #     所以"上一行的 `df`"在各段里都等于"这一拍真正用掉的那个值"。
+    _rows = _读日志(log_path)
+    _idx = {r["tick"]: i for i, r in enumerate(_rows)}
+    _pairs = [(_rows[_idx[r["tick"]] - 1], r) for r in normal if _idx[r["tick"]] > 0]
+
+    # ③ **先自检鉴别力**，再判等式：否则下面那条可能只是在比两个常量
+    df = [r["df"] for r in normal]
+    assert df[-1] > 1.0, \
+        (f"这一场 ΔF 只长到 {df[-1]:.4f} N（该以 `ki·e_z = {ki * e_z} N/s` 长）"
+         f"⟹ 落点等式没有鉴别力（夹具/增益失效？）")
+    _unclipped = [(p, r) for p, r in _pairs if r["u"][0] + p["df"] < z0.f_max - 1e-6]
+    assert len(_unclipped) >= 30, \
+        (f"未顶夹的帧只有 {len(_unclipped)} 拍（该场 `u[0]` 应远离 `f_max`："
+         f"最大 `u[0]` = {max(r['u'][0] for r in normal):.5f}、`ΔF` 最大 {max(df):.5f}）\n"
+         f"    ⟹ 顶夹之后等式两边都是 `f_max`，**落点错成什么样它都绿** ⟹ 工况选错了（本张栽过）")
+
+    for p, r in _unclipped:
+        f_out = _发出去的推力(r, z0)
+        want = _该发出去的推力(r, z0, p["df"])
+        assert f_out == pytest.approx(want, abs=1e-4), \
+            (f"第 {r['tick']} 拍发出去的推力不是 `clip(u[0] + 上一拍的ΔF)`：实测 {f_out:.5f} N、"
+             f"该是 {want:.5f} N（`u[0]` = {r['u'][0]:.5f}、上一拍 `df` = {p['df']:.5f}、"
+             f"同一拍 `df` = {r['df']:.5f}）"
+             f"⟹ 落点错了（漏加 / 加在 `u_ref` 上 / 加了一半 / 加了两遍）")
+    # ④ 夹取还在（执行器界）—— 读的同样是"写进那一帧的数"
+    assert all(0.0 <= _发出去的推力(r, z0) <= z0.f_max + 1e-6 for r in normal), \
+        (f"发出去的推力出界：{[round(_发出去的推力(r, z0), 5) for r in normal if not 0.0 <= _发出去的推力(r, z0) <= z0.f_max + 1e-6][:3]}"
+         f"（界 [0, {z0.f_max}]）")
+
+
 def test_垂直偏置顶在界上就不再累积(tmp_path):
     """★ **抗积分饱和**：夹的是**状态** ⟹ 饱和段里 `ΔF` 必须**逐帧恒等**。
 
     手法：`ki_z := 200`、`hold_offset_z = 5` ⟹ 几拍就顶到上界 `f_max − t_hover = 4.4425 N`。
 
-    判据（全部读日志的 `df` 列）：
+    判据（读日志的 `df` 列与**发出去的那一列**）：
       · 每一帧 `ΔF ≤ f_max − t_hover`（**不出界**）；
       · 达到上界之后 `ΔF` **逐帧 `==`**（不是"还在长、只是输出被夹"）——
-        这正是"夹状态"与"只夹输出"唯一能从外部区分的地方：
-        只夹输出的话这一列会继续单调长，而 `u_ref0[0]` 照样恒 = `f_max`（**看不出来**）；
-      · `u_ref0[0]` 逐帧 ≤ `f_max`（状态在界内 ⟹ 发出去的也在界内）。
+        这正是"夹状态"与"只夹输出"唯一能从外部区分的地方：只夹输出的话这一列会继续单调长；
+      · 发出去的推力 `−thrust_body_z·t_max` 逐帧 ∈ `[0, f_max]`（状态在界内 + 发布点那次夹取）。
+        ⚠️ 读数**不能**用 `u_ref0[0]`：ticket 20 的落点搬到指令上之后它恒为 `t_hover`
+        （☠️ 本张第一版这里写的就是 `u_ref0[0]`，落点一搬它就变成一句废话 —— 断言不报错、
+        只是不再测任何东西，这正是最难发现的那种退化）。
 
     ★ 上界口径：`f_max = 11.8 N`（电池可持续推力，`params.py:108`），**不是** `t_max`
       （那是归一化常数 `t_hover / hover_thrust`，默认口径下 46.3 N）—— 见 ticket 20 §8.1 的 ☠️。
@@ -1310,8 +1452,15 @@ def test_垂直偏置顶在界上就不再累积(tmp_path):
     assert len(normal) >= 30, f"正常帧只有 {len(normal)} 拍"
     assert all(lo <= r["df"] <= hi for r in normal), \
         f"ΔF 出界了（界 [{lo:.4f}, {hi:.4f}]）：{[r['df'] for r in normal if not lo <= r['df'] <= hi][:3]}"
-    assert all(r["u_ref0"][0] <= z0.f_max + 1e-6 for r in normal), \
-        f"发出去的推力参考超过了 f_max：{max(r['u_ref0'][0] for r in normal):.6f} > {z0.f_max}"
+    # ★ 输出侧：夹取在 `_normal_frame` 那一次 `clip(u[0] + ΔF, 0, f_max)` 上（`u_ref0` 是常量，
+    #   拿它当"发出去多少"会变成一句废话 —— 见 docstring 的 ⚠️）。
+    assert all(0.0 <= _发出去的推力(r, z0) <= z0.f_max + 1e-6 for r in normal), \
+        (f"发出去的推力出界了：{[round(_发出去的推力(r, z0), 6) for r in normal if not 0.0 <= _发出去的推力(r, z0) <= z0.f_max + 1e-6][:3]}"
+         f"（界 [0, {z0.f_max}]；这一场 ΔF 顶在上界 ⟹ 夹取必须真的在起作用）")
+    # 这一场故意积到顶 ⟹ 夹取一定被吃到：`u[0]` 自己也会顶到 `f_max`，两者相加必然超 ⟹ 未夹的话这里必红
+    assert max(_发出去的推力(r, z0) for r in normal) == pytest.approx(z0.f_max, abs=1e-3), \
+        (f"发出去的推力从没到过 f_max（最大 {max(_发出去的推力(r, z0) for r in normal):.5f}）"
+         f"⟹ `clip(…, 0, f_max)` 没在起作用（或这一场 `ΔF` 没顶到界）")
 
     sat = [r for r in normal if r["df"] > hi - 1e-6]
     assert len(sat) >= 10, \
@@ -1332,7 +1481,9 @@ def test_关掉积分增益时垂直偏置恒为0(tmp_path):
     —— 两边比出来的差就不是"积分作用的效果"了，而且**从话题上完全看不出来**。
 
     判据：`ki_z := 0` + `hold_offset_z = 2.0`（足够大的正误差）下，`df` 列**逐帧严格 0.0**、
-    `u_ref0` 逐帧恒等 `[t_hover, 0, 0, 0]` ⟹ 行为与 ticket 20 之前**逐位相同**。
+    **发出去的推力逐帧 `== u[0]`**（求解器输出原样，不加任何偏置）⟹ 行为与 ticket 20 之前**逐位相同**。
+    ⚠️ 这里**不能**拿 `u_ref0` 当"没加偏置"的判据：落点搬到指令上之后它恒为 `[t_hover,0,0,0]`，
+      与 `ki_z` 取什么值无关 ⟹ 用它断言等于什么都没测（本张第一版就是这么写的，本轮改掉）。
     """
     log_path = tmp_path / "mpc.jsonl"
     with _scenario(state_source="px4", hold_offset_z=2.0, ki_z=0.0,
@@ -1349,6 +1500,12 @@ def test_关掉积分增益时垂直偏置恒为0(tmp_path):
         f"关掉之后 ΔF 不是 0：{[r['df'] for r in normal if r['df'] != 0.0][:3]}"
     assert all(r["u_ref0"] == pytest.approx([z0.t_hover, 0.0, 0.0, 0.0]) for r in normal), \
         "关掉之后控制参考不再是 `[t_hover,0,0,0]` ⟹ 「关掉」没有回到旧行为"
+    # ★ **这条才是"关掉"的输出侧判据**（`u_ref0` 那一列现在恒为常量，见 docstring 的 ⚠️）：
+    #   偏置为 0 ⟹ 发出去的推力必须**逐位等于**求解器输出（`u[0]` 本身在 `[0, f_max]` 内 ⟹ 夹取不动它）
+    _biased = [(r["tick"], round(_发出去的推力(r, z0), 5), r["u"][0]) for r in normal
+               if abs(_发出去的推力(r, z0) - r["u"][0]) > 1e-4]
+    assert not _biased, \
+        f"关掉积分增益之后发出去的推力仍不等于 `u[0]` ⟹ 还有偏置在加：(tick, 发出去, u[0]) = {_biased[:3]}"
     assert all(r["x_ref0"][2] - r["x0"][2] == pytest.approx(2.0, abs=1e-5) for r in normal), \
         "这一场本该有 +2 m 的垂直误差（正控：不是「没东西可积」才保持 0）"
 
