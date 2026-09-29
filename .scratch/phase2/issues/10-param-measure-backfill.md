@@ -637,6 +637,19 @@ SITL 与 CPU 密集测试" ⟹ **第①步已满足**。但 `git status` 实测
 （`src/nmpc/test/` 没有 `importorskip`，实测 grep 无命中 ⟹ 那边缺 `px4_msgs` 会**硬报错**，
 两棵树的失败模式不同）。
 
+★★ **同一类陷阱还有第二个，而且是"随机器负载"变的**（2026-09-29 核出，`ros-ws-8b` 先提）：
+`src/nmpc/test/test_ocp_timing.py:52` 有一条**按负载自跳**的闸门 ——
+```python
+if load1 is not None and load1 >= ncpu / 2:
+    pytest.skip(f"机器有负载（load1={load1:.2f} / {ncpu} 核），耗时读数无效 …")
+```
+本机 `os.cpu_count() = 6` ⟹ **`load1 ≥ 3.0` 就跳**。而并行会话（8b / 212）跑测试时 load1 常态 ≈ 2，
+**再加一轮就过线** ⟹ 跳过的是 `test_worst_case_solve_fits_the_100hz_budget`（100 Hz 求解预算），
+**它一跳，"全绿"就不再覆盖计时预算**，而报告上只多一个 `s`。
+⟹ 本张收尾的全量**必须在空机上跑**（不只是"domain 0 没 DUT"—— 那是 DDS 维度，这是 **CPU 维度**），
+并且留档要同时记 **`load1` 读数 + skipped 条数**，不能只写"全绿/162 passed"。
+⚠️ 因此本张的验收轮**不能与 8b / 212 并跑**（是"读数无效"而不是"结果错"，更隐蔽）。
+
 ### 2026-09-29 12:2x —— 全量测试里会看到一条**既有**的 `1 failed`，别把它当成我的回归
 
 `ros-ws-8b` 在验 20 时撞见：整目录跑时
