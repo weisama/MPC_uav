@@ -687,7 +687,9 @@ SITL 与 CPU 密集测试" ⟹ **第①步已满足**。但 `git status` 实测
 
 补一条**解析实测**（只解路径、不起 DUT）：`PYTHONPATH=<repo>/src/nmpc` 在前时
 `import nmpc` → `src/nmpc/nmpc/__init__.py`；**不带 `PYTHONPATH` 时 `import nmpc` = `ModuleNotFoundError`**
-⟹ 那份 install 包**只有 source 过 `install/setup.bash` 才在 `sys.path` 上**。
+⟹ 那份 install 包**只有 source 过 `install/setup.bash` 才在 `sys.path` 上**
+（⚠️ **8b 纠正**：真实 DUT 路径都先 source 过 `run_matrix.sh:51`，所以这条**不是一条真会出现的路**，
+只当**诊断**用 —— 见下面 12:2x 那节）。
 所以 install 那一侧的引用要**分成两条**写（入口脚本 vs 包成员），不能合成一个"install 里的包"。
 
 ⚠️ **第三条：`d817a16` 的提交信息里"未 build"是错的（写的时候就已经错了）。**
@@ -695,3 +697,43 @@ SITL 与 CPU 密集测试" ⟹ **第①步已满足**。但 `git status` 实测
 ⟹ build **早于** commit **63 秒**；内容又与提交逐字节一致 ⟹ 那次 build 读的就是要提交的那份。
 下一句读票的人会照"未 build"以为 `install/` 是陈的 —— 而这恰恰是今天花了几个小时才弄清的那个混淆。
 **已回信让 8b 在 20 号票的留档里改成"已 build（12:11:55，install sha `a4e0fa8c`）、未飞"。**
+
+### 2026-09-29 12:2x —— ★ 旧 install 快照**没有丢**：可从 `f6c1b7f` **逐字节**取回
+
+`ros-ws-8b` 提了一条警告（前半对、后半**错**，我核过后订正）：
+
+> "08:59 那份 install 快照的字节，盘上已经没有了 … ⟹ 要复核'08:59 与 `cff55ae` 差哪几行'，
+> **只能回 git 比（`78f373d`→`cff55ae`）**"
+
+**✅ 前半成立**：我把 `ros_ws` 与 `/tmp` 下所有 ≤200 KB 的 `.py`/`.pyc` 全哈希了一遍，
+`1c7fbd2947bdb6ce…` **零命中** ⟹ 盘上那份确实已被 12:11:55 的 build 就地覆盖。
+
+**❌ 后半不成立 —— 那份快照在 git 里，而且逐字节可取回**（三条都是当场跑的）：
+
+| 命令 | 结果 |
+|---|---|
+| `git show f6c1b7f:src/nmpc/nmpc/mpc_node.py \| sha256sum` | **`1c7fbd2947bdb6ce…`** ⟸ 就是旧快照 |
+| `git show a4cdadc:…` / `git show 3ddb145:…` | 同字节（三份完全一致）|
+| `git diff --numstat f6c1b7f cff55ae -- src/nmpc/nmpc/mpc_node.py` | **`1  1`** ⟹ **1 行 / 1 hunk** |
+
+最后一行还顺手**正面证实**了 tier-b 归档 README §4 那句"这份与 `src/` 那份逐行 diff 只差 1 行"——
+原先它只是**断言**，现在有了可复现的命令：差异就是 `:130` 的 `` `F ∈ [0, T_max]` `` → `` `F ∈ [0, f_max]` ``。
+
+☠️ **`78f373d` 不是那份快照，当替身会引进假差异**（这点必须写下来，因为它已经在别处被传播）：
+`78f373d` 的 mpc_node.py 是 **`72222 B` / `fb6c07ee…`**（既非快照的 72463 B，也非 `cff55ae`），
+`git diff --stat 78f373d cff55ae` = **8 行 / 3 个 hunk**（多出 `hover_thrust 0.6235 → 0.1589` 两处）。
+照着它复核"08:59 与 `cff55ae` 差哪几行"，会得到 **1 行真差异 + 7 行假差异**。
+
+★ **一条由此推出的记录原则**：**"构建时刻"区分不了"从提交构建"还是"从在制品构建"**，
+只有**内容**能。所以本张留档**不再复述**那个构建时点（无论记作 08:47 还是 08:59），
+改记**内容锚**：`install 快照 = f6c1b7f 那份 = 1c7fbd29…`。
+（附注：`1c7fbd29` 的内容从 `3ddb145`@09:20:21 起就在提交里，而它的构建时刻记的是 08:47/08:59 ——
+两者**不矛盾**：只要 08:47 时工作区里已经有那处 `hover_thrust` 改动即可，而这正是"从在制品构建"。
+这也说明时点为什么不可靠。）
+
+**✅ 顺带采纳 8b 对第三条路径的降级**：他引 `tools/px4-sitl/evidence/tier-b/README.md` §4（`:33-57`）
+—— 我已读过，**写得比我们这轮重构的更准**（入口脚本 `/` 包解析 `/` 五场身份 `src@cff55ae` 逐文件 sha256
+`/` 逐行核过 0.0027 % 的数值影响，全都在）。他的反驳成立：**任何真实 DUT 路径都先 source 过
+`install/setup.bash`**（`run_matrix.sh:51`），所以"不带 `PYTHONPATH` ⟹ `import nmpc` 报 `ModuleNotFoundError`"
+**不是一条真会出现的路**，只是排查"忘了 source"的**诊断**。⟹ 身份记录**以 README 的两条为准，我不重构**；
+上面 12:1x 那节的表保留（它多出的只是"谁的 `__init__.py` 在不在"这一层事实），但第三条按**诊断**标注。
