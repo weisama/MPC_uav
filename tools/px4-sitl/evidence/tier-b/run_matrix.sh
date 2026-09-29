@@ -71,6 +71,14 @@ for tag in ${TAGS:-F0 F1 F2 F3 F4}; do
     F2) fly F2 --mismatch mass+30 --extra-delay-ms 50 ;;
     F3) fly F3 --mismatch mass+30 --inject-solve-fail-after-frames 700 ;;
     F4) fly F4 --mismatch none --inject-solve-fail-after-frames 700 ;;
+    # ── ticket 20 的两场重跑（垂直通道加了积分作用之后，只重跑判据① 那一对）──
+    # ★ 与 F0/F1 **同基线、同参数**，所以新数字与那五场可直接比（裁定 3：本张不重搭被控对象）。
+    #   标签加 `b` 是为了**不覆盖**归档里的 F0/F1（它们的读数属于 08:59 那份 `install/` 快照）。
+    # ☠️ 跑之前先 `colcon build --packages-select nmpc`：积分器写在 `mpc_node.py` 里，
+    #   而 DUT 的**入口脚本**来自 `install/` ⟹ 不 build 的话改的东西一行都不飞、
+    #   症状是"读数毫无变化"（ticket 20 §8.6）。
+    F0b) fly F0b --mismatch none ;;
+    F1b) fly F1b --mismatch mass+30 ;;
     *)  say "不认识的场次 $tag"; exit 2 ;;
   esac
 done

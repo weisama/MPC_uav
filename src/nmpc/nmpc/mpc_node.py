@@ -230,6 +230,15 @@ class NodeParams:
     hover_thrust: float = 0.1589
     #: 状态外推 τ [s]（票面 50 ms）
     tau_s: float = 0.05
+    #: ★★ **垂直通道外层前馈偏置的积分增益** [N/(m·s)]（ticket 20）：`ΔF ← ΔF + ki_z·e_z·Δt`，
+    #: 最终进 `u_ref[:,0] = t_hover + ΔF`。`≤0` = **硬关掉**（退回"纯前馈 + OCP 反馈"的旧行为，
+    #: 且把已经攒下的 `ΔF` 一起清零 ⟹ A/B 里"关掉"那一组不会带着前一组的学习量起飞）。
+    #: ☠️ 这个数**没有可信的解析式**：环路不是"双积分器 + PI"（`m s³ + Kp s + Ki = 0` 的
+    #: `s²` 项系数为 0 ⟹ Routh 第一列出现 0 ⟹ 按那个模型**任何** `Ki > 0` 都不稳），
+    #: 真实阻尼来自 OCP 代价里的**速度项**（`OcpConfig.q_diag` 前置 6 项都是 1e1，位置与速度同权）
+    #: ⟹ 只能**标定**：下界由"8 s 窗口内积够 2.207 N"给出（≈0.9），上界要**量到振荡起始**。
+    #: 1.0 是保守的起测点（刚压住下界）。依据与推导（含被推翻的那版）见 ticket 20 §8.3。
+    ki_z: float = 1.0
     #: ★ **测量从哪里来**（ticket 09）：`mocap`（默认，B 档）或 `px4`（A 档）。
     #: 两档的差别**只在**"测量"这一段，见模块 docstring 的表；校验在 `_validate`。
     state_source: str = "mocap"
@@ -298,6 +307,7 @@ class NodeParams:
         return ("rate=%g Hz 心跳=%g Hz viz=%g Hz | ★状态源=%s（%s）"
                 " | τ=%g s 参考偏移=%s yaw=%s"
                 " | 模型 mass=%g kg hover_thrust=%g ⇒ T_max=%.4f N"
+                " | 垂直偏置 ki_z=%g N/(m·s)%s"
                 " | 停机(mocap>%g s / px4>%g s / status>%g s / 离开 offboard=%s / 掉 armed=%s)"
                 " | 心跳%s"
                 " | 兜底：保持 %d 拍 → 安全悬停；位姿合理性上限 %g m/s / %g rad/s"
@@ -307,6 +317,7 @@ class NodeParams:
                    tuple(round(float(v), 3) for v in self.hold_offset),
                    "保持当前" if self.keep_yaw else f"{self.hold_yaw_deg:g}°",
                    self.mass, self.hover_thrust, self.z0_params().t_max,
+                   self.ki_z, "（关）" if self.ki_z <= 0.0 else "",
                    self.mocap_timeout_s, self.px4_timeout_s, self.status_timeout_s,
                    self.stop_on_nav_state_exit, self.stop_on_armed_drop,
                    "无条件发（闸门只管 setpoint）" if self.heartbeat_always
@@ -393,11 +404,26 @@ class MpcNode(Node):
         #: 喂给 `solve(u_ref=…)` 的前馈 = **参考自己的解析前馈**（静止锚点 ⟹ `[T_hover,0,0,0]`）。
         #: ⚠️ 必须**一开始就有值**：`prediction=False` 时 `u_ref` 不能省（`OfflineOcp.solve`
         #: 会 raise，见那边的 docstring），而热身拍（`publish=False`）**也要解**。
-        #: ★★ 它是**常量**（每拍都传同一个），这是 2026-09-28 那一场 runaway 之后定下来的：
-        #:   原来这里喂"上一帧解"，而那是一条正反馈（解偏 ⟹ 下一帧的参考量跟着偏），
-        #:   真 PX4 闭环里把 `u[3]` 从 0 爬到 +4.696 rad/s / EKF 帧转了 13.6 圈。
-        #:   依据与第一手读数见 `node_core.hold_feedforward` 的 ★ 两段。
+        #: ★★ 角速率那三路是**常量 0**、推力那一路是 `t_hover + ΔF`（`ΔF` 见下）——
+        #:   这不是 2026-09-28 那一场 runaway 的回退：那次喂的是**上一帧解**，是一条正反馈
+        #:   （解偏 ⟹ 下一帧的参考量跟着偏），真 PX4 闭环里把 `u[3]` 从 0 爬到 +4.696 rad/s
+        #:   / EKF 帧转了 13.6 圈。依据与第一手读数见 `node_core.hold_feedforward` 的 ★ 两段。
+        #:   ☠️ **`ΔF` 的来源是"实测位置误差的积分"，不是 `sol.u`** —— 谁要把这里改成读解，
+        #:   就是把那条正反馈放回来。判据见 `test_mpc_node.py::test_垂直偏置不跟着解爬`。
+        #: ★ 这一行**只是初始值**：`_apply_bias_to_u_ref()`（每拍、在 `solve` 之前）会按当时的
+        #:   `ΔF` **整个重算**一遍 ⟹ 谁想让 `u_ref` 变样，改的是那个函数，不是这一行。
         self._u_ref: np.ndarray = hold_feedforward(self.z0, self.ocp.config.N)
+
+        #: 垂直通道的**外层前馈偏置**累积量 [N]（ticket 20）：`u_ref[:,0] = t_hover + ΔF`。
+        #: ★ 为什么需要它：模型与被控对象之间的**恒定**口径差（失配机型、电池口径）在纯比例
+        #:   闭环下只能靠**稳态位置误差**去平衡（OCP 的推力前馈是固定的 `t_hover`）⟹
+        #:   稳态偏差正比于口径差，`mass+30` 实测 **−0.6406 m**（判据① 限 0.15 m）。
+        #:   积分作用把"要靠位置误差才能撑住的推力"变成"记下来的推力"⟹ 稳态误差归零。
+        #: ★ 它加在**外层前馈**上（OCP 的 `u_ref`），不动 `f(x,u)`、不动 codegen、不动 `params.py`。
+        self._df: float = 0.0
+        #: 上一次积分/冻结的时刻 [s]（`None` = 还没积过）。★ 冻结期间也**推**它，否则恢复后
+        #: `Δt` 会是"整段冻结时长"⟹ 一拍积进去一大坨，那正是判据① 窗口里最不该有的暂态。
+        self._bias_at_s: Optional[float] = None
 
         # —— 兜底（ticket 07 / M5）——
         # ★ 悬停帧在这里**建一次**：它是常量（悬停推力 + 零角速率），而且**不依赖任何状态**
@@ -534,8 +560,17 @@ class MpcNode(Node):
 
         # ★ `prediction=False`：每周期只取第一拍 `u`（省 ~1.1 ms/周期，实测，见本包 README）。
         #   它要求**显式**传 `u_ref`（缺省那条"上一帧解平移一拍"是从预测轨迹里来的）
-        #   ⟹ 这里用"上一拍的 `u` 铺满时域"（零阶保持）。比 `shifted_previous` 弱一点
-        #   （看不到后 N−1 拍），但它不依赖读轨迹；RViz 那条预测路径是另外取出来的（见 `_viz_tick`）。
+        #   ⟹ 这里喂 `_apply_bias_to_u_ref()` 现算的那一份（**参考自己的解析前馈**，不是上一帧解）。
+        #   ⚠️ 这条注释的前身写的是"上一拍的 `u` 铺满时域（零阶保持）"—— 那是 ticket 06 的旧设计，
+        #   2026-09-28 的 runaway 之后就不这么喂了（见 `__init__` 的 ★★）。本次只是把话说对，
+        #   代码没变（ticket 20 §9.1）。RViz 那条预测路径是另外取出来的（见 `_viz_tick`）。
+        # ★★ 一拍里的**顺序**（ticket 20）：先 `_apply_bias_to_u_ref()`（把 ΔF 写进这一拍喂给
+        #   求解器的 `u_ref`）⟹ `solve` ⟹ 判这一帧能不能用（`_normal_frame`）⟹ **最后**才
+        #   `_integrate_bias_z()`。为什么积分排在判之后：只有判完才知道这一帧是"正常帧"还是兜底帧，
+        #   而兜底帧的位置误差**不可归因** ⟹ 不许积进去（见 `_gate_closed` / 下面那段）。
+        #   ⚠️ 代价是**一拍的滞后**：这一拍 `solve` 用的 ΔF 积到上一拍为止（100 Hz 下 10 ms）。
+        #   对 Ki ≈ 1 的慢积分器可以忽略；换成"先积后解"就得先知道这一帧会不会兜底 ⟹ 做不到。
+        self._apply_bias_to_u_ref()
         sol = self.ocp.solve(cycle.x0, cycle.x_ref, u_ref=self._u_ref, prediction=False)
         self.solves += 1
         if self._inject_active():
@@ -563,10 +598,22 @@ class MpcNode(Node):
 
         # 这一拍的"正常帧"能不能用（三道判据收口在 `_normal_frame` 里，顺序就是判据的顺序）
         sp, reason = self._normal_frame(sol)
-        # ★★ 这里**故意什么都不更新**：`_u_ref` 是参考的解析前馈，是常量（理由见 `__init__`
-        #   那段 ★★ 与 `node_core.hold_feedforward`）。曾经这一行是
-        #   `self._u_ref = tile(sol.u)`（"上一帧解铺满时域"）⟹ 正反馈、单调上爬、runaway。
-        #   现在"这一拍`sol` 有多离谱"只走 `_normal_frame` 的判据，**不许**回流成下一拍的前馈。
+        # ★★ 这里**只**更新那个垂直偏置，且它的来源是**实测位置误差**（`cycle`），不是 `sol`：
+        #   `_u_ref` 的三路角速率仍是常量 0，推力那一路是 `t_hover + ΔF`（理由见 `__init__` 的 ★★
+        #   与 `node_core.hold_feedforward`）。曾经这一行是 `self._u_ref = tile(sol.u)`
+        #   （"上一帧解铺满时域"）⟹ 正反馈、单调上爬、runaway。现在"这一拍 `sol` 有多离谱"
+        #   只走 `_normal_frame` 的判据，**不许**回流成下一拍的前馈。
+        if cycle.anchor:
+            # 锚点被钉/重钉的那一拍 ⟹ **复位**偏置（否则上一场的偏置会带进下一场；
+            # 订锚点这件事只有 `NodeCore` 知道，所以顺着它的 `anchor` 事件接，不自己另判一次）
+            self._df = 0.0
+        if reason is None:
+            self._integrate_bias_z(cycle, now_s)
+        else:
+            # 兜底帧：**冻结但不清零** —— 它的输出走 `self._hover_sp`（固定 `t_hover`，不读偏置），
+            # 所以此刻偏置不影响输出，只影响"恢复之后从哪儿起步"。清零等于把已经学到的口径差
+            # 扔掉，恢复后要重新收敛几秒 —— 而判据① 的窗口正是"最后一次正常帧往前 8 s"。
+            self._bias_at_s = now_s
 
         if not cycle.publish:
             # 热身拍：**求解但绝不发**（理由见 `WARMUP_CYCLES`：第 0 拍的解是出厂迭代点）。
@@ -600,13 +647,57 @@ class MpcNode(Node):
 
     # ─────────────────────────── 这一拍发什么 ───────────────────────────
 
+    def _apply_bias_to_u_ref(self) -> None:
+        """按这一拍的累积量**重算**要喂给求解器的 `u_ref`（`hold_feedforward(z0, N, ΔF)`）。
+
+        ★ **每拍重算，不是原地改一列**：`hold_feedforward` 是前馈的**唯一产地**（ticket 20 §4）
+          ⟹ "参考量是怎么来的"只有那一处可读。
+          代价是每拍一次 `N×4` 的分配（`N = 50`，即 1600 B）—— 在 100 Hz 下是噪声级，
+          换来的是"不会有人在这儿偷偷改第 0 路以外的东西"。
+        ★ `ΔF` 的**值域由它的唯一写者 `_integrate_bias_z` 保证**（那边夹、这边不重复夹）：
+          `ΔF ∈ [−t_hover, f_max − t_hover]` ⟹ 和恒在 `[0, f_max]` 内。
+        ★ **`ki_z ≤ 0` = 硬关掉，连状态一起清零**（不是"停止累积、留着旧值"）：
+          `NodeParams.ki_z` 的语义是"积分作用开多大"，`0` 就该等于**没有积分作用**
+          —— 留着上一段攒的偏置，A/B 对照里"关掉"那一组会带着前一组的学习量起飞。
+        """
+        if self.params.ki_z <= 0.0:
+            self._df = 0.0
+        self._u_ref = hold_feedforward(self.z0, self.ocp.config.N, self._df)
+
+    def _integrate_bias_z(self, cycle, now_s: float) -> None:
+        """**纯积分**：把这一拍的垂直位置误差积进 `ΔF`，并**夹在界内**（ticket 20 裁定 1/2）。
+
+        `e_z = z_ref − z_meas`（ENU、z 向上 ⟹ 偏低时为正 ⟹ 加推力）。
+        ⚠️ 误差取的是**参考减测量**（`cycle.x_ref[0][2] − cycle.x0[2]`）：`x_ref` 从锚点起
+          （不是从当拍测量起，见 `node_core.hold_reference` 的 ★★）⟹ 这个误差**关得掉**；
+        用当拍测量当参考的话误差永远为 0、积分器就成了摆设。
+
+        ★ **抗积分饱和：夹的是状态，不是输出**（`ΔF ∈ [−t_hover, f_max − t_hover]`）。
+          只夹输出（`t_hover + ΔF` 那个和）的话，状态照样一直积上去 —— 顶在界上的那几秒
+          全被记进状态里，误差反向之后要花同样长的时间才退回来。
+          ⚠️ 夹在**这里**（状态写完就夹）而不是 `_apply_bias_to_u_ref` 里：那样状态只在"用之前"
+          被夹住，日志里（以及两拍之间）它仍是出界的；夹在这里 ⟹ **状态恒在界内**，
+          "顶住时不再累积"才是**可直接观测**的（饱和段 `ΔF` 逐帧恒等，见日志的 `df` 列）。
+        ★ 下界 `−t_hover`（不是 0）：`lbu[0] = 0`（推力不能为负），把 `ΔF` 压到 `−t_hover`
+          就是压到 `u_ref[0] = 0`；再往下压只会让恢复变慢。
+        """
+        dt = 0.0 if self._bias_at_s is None else (now_s - self._bias_at_s)
+        self._bias_at_s = now_s
+        if self.params.ki_z <= 0.0 or dt <= 0.0:
+            return
+        e_z = float(cycle.x_ref[0][2] - cycle.x0[2])
+        self._df = float(np.clip(self._df + self.params.ki_z * e_z * dt,
+                                 -self.z0.t_hover, self.z0.f_max - self.z0.t_hover))
+
     def _gate_closed(self, now_s: float, cycle) -> None:
         """闸门关着的一拍：**不求解也不发 setpoint**（心跳照发，见模块 docstring）。
 
         ★ 闸门**刚**关上的那一拍立刻打一行日志（不必等 `log_every` 的抽帧）：输入合理性
           那两条判据给出的读数（"位移 100.000 m > 允许 0.200 m"）是调阈值的人第一个要问的数，
           而它可能只出现一两拍 —— 被抽帧抽掉就等于没有。
+        ★ 这一拍**不积分**（位置误差不可归因），但把时钟推过去（见 `_bias_at_s` 的 ★）。
         """
+        self._bias_at_s = now_s
         self.ladder.reset()
         self.gated[cycle.reason] = self.gated.get(cycle.reason, 0) + 1
         fresh = cycle.reason != self._last_gate_reason
@@ -780,8 +871,18 @@ class MpcNode(Node):
             #:   让 `u_ref` 也成了"控制器在追什么"的一部分，而它**只在日志里看得见** ——
             #:   2026-09-28 的 runaway 复盘时手上只有 `u`（解出来的）与 `x_ref0`（状态参考），
             #:   偏偏缺"控制参考"，于是"棘轮"这条结论只能靠离线复算才站得住。
-            #:   它现在是常量（`hold_feedforward`）⟹ 这一列恒等，但恒等本身就是要能一眼看出来。
+            #:   ★ 三路角速率仍是常量 0 ⟹ 恒等；**推力那一路自 ticket 20 起是时变的**
+            #:   （`t_hover + ΔF`，`ΔF` = 垂直位置误差的积分）⟹ 这一列不再是常量。
+            #:   ☠️ 它是**总量**（含 `t_hover`），别把这一列直接当 `ΔF` —— `ΔF` 有自己的一列（见下）。
             "u_ref0": None if self._u_ref is None else _jlist(self._u_ref[0]),
+            #: ★ 垂直通道的**前馈偏置累积量** `ΔF` [N]（ticket 20）。
+            #:   为什么要单独一列、而不是让人拿 `u_ref0[0] − t_hover` 去减：
+            #:   **那两个数的口径都能变**（`t_hover = mass·g`，而 `mass` 是节点参数、SITL 与实机不同；
+            #:   更要紧的是本项目的 `hover_thrust` 口径本身就有 3.92 × 的分歧）。
+            #:   直接记状态 ⟹ 复盘时不需要知道任何常数就能读出"积分器积到了多少"。
+            #:   ★ 它还是**抗积分饱和**唯一的观测面：饱和段里 `ΔF` 应当**逐帧恒等**
+            #:   （夹的是状态）；若换成"只夹输出"，这一列会继续单调长。
+            "df": round(float(self._df), 6),
             #: 锚点机头 [rad]（没钉过 = `None`）。逐帧恒等 ⟹ 压缩后零成本，而它是"目标朝向"
             #: 这个常量的**直接读数**：`x_ref0_q` 能从它和 `hold_yaw` 反推，反之不能。
             "anchor_yaw": None if self.core.anchor_yaw() is None
@@ -975,6 +1076,7 @@ _PARAMS = (
     ("mass", 0.75, float),
     ("hover_thrust", 0.1589, float),
     ("tau_s", 0.05, float),
+    ("ki_z", 1.0, float),
     ("state_source", "mocap", str),
     ("px4_position_topic", TOPIC_PX4_POS, str),
     ("px4_attitude_topic", TOPIC_PX4_ATT, str),
@@ -1016,6 +1118,7 @@ def declare_params(node: Node) -> NodeParams:
         mass=get("mass").value,
         hover_thrust=get("hover_thrust").value,
         tau_s=get("tau_s").value,
+        ki_z=get("ki_z").value,
         state_source=get("state_source").value,
         px4_position_topic=get("px4_position_topic").value,
         px4_attitude_topic=get("px4_attitude_topic").value,

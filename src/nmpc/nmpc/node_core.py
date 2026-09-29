@@ -423,13 +423,37 @@ def hold_reference(x_ref_pose: np.ndarray, config: ControlConfig, N: int) -> np.
     return np.tile(target, (N + 1, 1))
 
 
-def hold_feedforward(params: Z0Params, N: int) -> np.ndarray:
+def hold_feedforward(params: Z0Params, N: int, df: float = 0.0) -> np.ndarray:
     """静止保持参考的**解析前馈** `(N, NU)` —— 使 `f(x_ref, u_ref) = 0`（"参考自己就是模型的一条解"）的那个 `u`。
 
     | 通道 | 取值 | 依据 |
     |---|---|---|
     | 推力 | `params.t_hover`（`m·g / T_max`） | 悬停配平：升力 = 重力，归一化后就是悬停油门 |
     | 三个角速率 | 0 | 参考是**静止**的（位置/速度/姿态的导数都为 0）⟹ 角速率必须为 0 |
+
+    `df`（默认 `0.0`）= **垂直通道的外层前馈偏置** [N]（ticket 20）⟹ 推力那一路变
+    `t_hover + df`。它是**唯一**一个能让这个函数返回"不是模型解"的入口，所以理由写在这儿：
+
+    ★ **为什么需要它**：`u_ref` 是 OCP 的**参考平衡点**（代价 `R·(u − u_ref)`），而
+      `t_hover = m·g` 是**模型**的悬停推力。模型与被控对象之间只要有**恒定**口径差
+      （失配质量、电池口径、`hover_thrust` 那一族分歧），纯比例闭环就只能靠**稳态位置误差**
+      去补它 —— 实测：`mass+30` 在 B 档 SITL 里稳在 **−0.6406 m**（判据① 限 0.15 m）。
+      积分作用把"要靠位置误差才撑得住的推力"变成"记下来的推力"，稳态误差归零。
+
+    ★ **加了 `df ≠ 0` 之后，`f(x_ref, u_ref) ≠ 0` 是故意的** —— 因为*模型是错的、被控对象才是真的*。
+      这条推翻了本函数"参考自己就是模型的一条解"那半句不变量（它现在只在 `df == 0` 时成立）；
+      具体偏离多少**可以精确算**：静止水平参考下 `ẍ_z = (u[0] − t_hover)/m = df/m`，其余通道不动
+      ⟹ 参考 + 前馈变成"以 `df/m` 匀速加速"的那条解（`test_node_core.py` 里按这个口径钉住）。
+
+    ☠️ **`df` 的夹取（抗积分饱和）不在本函数里** —— 本函数只负责"把它加到第 0 路上"。
+      夹的是**积分器的状态**（`mpc_node._apply_bias_to_u_ref`，界限 `ΔF ∈ [−t_hover, f_max − t_hover]`
+      ⟹ 和恒在 `[0, f_max]` 内），不是夹输出：只夹输出的话，积分器会一边顶在界上一边继续累积
+      （windup），松开的瞬间要花很久才退回来。
+
+    ☠️ **别拿"在本项目的 SITL 口径下 `t_max ≈ f_max`"去把这两个量合回去**
+      （`hover_thrust = 0.6235` 时 `t_max = 11.8003 N` vs `f_max = 11.8 N`，差 0.0027 %；
+      而 `params.py` 的**默认**口径 `0.1589` 下 `t_max = 46.3 N`，是 `f_max` 的 3.92 倍）。
+      依据见 `params.py:23` 的解耦裁定与 ticket 20 §8.1。
 
     ★ 它取代了 `mpc_node` 里那句"上一帧解铺满时域"。为什么必须换：代价项是 `R·(u − u_ref)`，
       把**上一帧解**当参考量 ⟹ 解出一点偏、下一帧的参考量就跟着偏，是一条**正反馈**。
@@ -452,7 +476,7 @@ def hold_feedforward(params: Z0Params, N: int) -> np.ndarray:
       （加速度/角速率前馈），不能继续返回悬停配平 —— 否则 M6 §3.3 的实测（持续角速率
       被压成 0）会原样复发。那时候 `hold_reference` 也要一起换。
     """
-    return np.tile(np.array([params.t_hover, 0.0, 0.0, 0.0], dtype=float), (N, 1))
+    return np.tile(np.array([params.t_hover + df, 0.0, 0.0, 0.0], dtype=float), (N, 1))
 
 
 # ───────────────────────────── 闸门 ─────────────────────────────

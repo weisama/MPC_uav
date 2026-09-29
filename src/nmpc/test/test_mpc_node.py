@@ -115,6 +115,17 @@ def _wait_dut_up(sc: Scenario, timeout_s: float = STARTUP_S) -> None:
                 message="DUT 起来之后没在 /fmu/in/offboard_control_mode 上发出第一帧心跳")
 
 
+def _读日志(path: Path) -> list:
+    """逐帧 JSONL → 字典列表（**只读文件**，不碰节点；ticket 20 的四条用例共用）。
+
+    ★ 数字全被 `mpc_node._jlist` 四舍五入到 **6 位小数** ⟹ 任何**两个读数相减**得到的量
+      （`e_z = x_ref0[2] − x0[2]`、`ΔF` 的增量）都带 ~1e-6 的量化噪声
+      ⟹ 断言别用比它更紧的容差（1e-9 那种会偶发假红）。
+    """
+    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()
+            if line.strip()]
+
+
 def _arm_and_offboard(sc: Scenario) -> None:
     """注入"已解锁 + 已切 OFFBOARD"—— 走 `Timeline`（夹具**唯一**那条注入面）。
 
@@ -1143,14 +1154,24 @@ def test_A_档的逐帧日志把状态源_求解耗时_饱和标志都记下来�
         f"收尾摘要里没有饱和计数：{summary[-300:]!r}"
 
 
-def test_前馈取参考的解析前馈_不跟着解爬(tmp_path):
-    """★★ 2026-09-28 的 runaway 回归：`u_ref` **不许**是"上一帧解"。
+def test_垂直偏置不跟着解爬(tmp_path):
+    """★★ 2026-09-28 的 runaway 回归 —— ticket 20 之后考的是**更强**的那条不变量。
 
-    `R·(u − u_ref)` 里，`u_ref` 取上一帧解 ⟹ 解出一点偏、下一帧的参考量就跟着偏 ——
-    一条**正反馈**。`offline-ocp.md` §4.4 离线记过"单调上爬、不收敛"；SITL 闭环里它放大成
-    runaway（`u[3]` 从 0 爬到 **+4.696 rad/s**、EKF 帧转了 **13.6 圈**）。判据用**日志**读，
-    不读节点内部：`u_ref0`（控制参考）逐帧恒为 `[t_hover, 0, 0, 0]`，而同段 `u` 是**在动的**。
+    历史（第一手见 `node_core.hold_feedforward` 的 ★ 两段与
+    [`tier-a-sitl-hover.md`](../../../docs/control/tier-a-sitl-hover.md)）：`u_ref` 取
+    "上一帧解铺满时域" ⟹ `R·(u − u_ref)` 里解出一点偏、下一帧的参考量就跟着偏 —— 正反馈；
+    `offline-ocp.md` §4.4 离线记过"单调上爬、不收敛"，真 PX4 闭环里放大成 runaway
+    （`u[3]` 从 0 爬到 **+4.696 rad/s**、EKF 帧转了 **13.6 圈**）。
 
+    ☠️ **ticket 20 推翻了原来那条断言**：垂直通道加了积分偏置之后，`u_ref0` 的推力那一路
+    变成 `t_hover + ΔF`（时变）⟹ "`u_ref0` 逐帧恒等于 `[t_hover,0,0,0]`"**不再是恒等式**。
+    要守的不变量换成更本质的那条：**`ΔF` 只来自实测位置误差、不来自 `sol.u`**。
+
+    ★ 这条用例是**负控**（正控见 `test_垂直偏置积的是实测位置误差`）：
+      任务 `hold_offset = (10, 0, 0)` ⟹ **`e_z ≡ 0`** ⟹ 积分器没有任何东西可积
+      ⟹ `ΔF` 必须**逐帧严格为 0**，`u_ref0[0]` 恒等于 `t_hover`（用 `==`，不是 `approx`）。
+      而同段里 `u[1]` 顶满（> 1 rad/s）、`u[0]` 也在动 ⟹ "**解在动、前馈纹丝不动**"
+      就是"偏置不来自解"的直接读数。
     ★ 任务用 `hold_offset_x = 10 m`：位置误差大到把 roll 顶满 ⟹ 解明显非零。
       少了"同一段里 `u` 真的在动"这半条，测试就没有鉴别力（静态悬停时旧代码也看不出爬）。
     """
@@ -1161,18 +1182,252 @@ def test_前馈取参考的解析前馈_不跟着解爬(tmp_path):
         sc.wait_for(lambda: len(sc.px4.published_frames("rates")) >= 15, timeout_s=10.0,
                     message="解锁后没攒到 15 帧 setpoint")
 
-    recs = [json.loads(line) for line in log_path.read_text(encoding="utf-8").splitlines()
-            if line.strip()]
-    normal = [r for r in recs if r["fallback"] == "normal"]
+    normal = [r for r in _读日志(log_path) if r["fallback"] == "normal"]
     assert len(normal) >= 10, f"正常帧只有 {len(normal)} 拍，测不出「爬不爬」"
 
     z0 = Z0Params()
     want = [z0.t_hover, 0.0, 0.0, 0.0]
     for r in normal:
+        # ★ 两列一起断言：`df` 是积分器的**状态**，`u_ref0` 是它**发出去的样子**
+        #   （`df > 0` 而 `u_ref0[0] == t_hover` 这种不一致就是"加进前馈的那一步漏了"）。
+        assert r["df"] == 0.0, \
+            f"第 {r['tick']} 拍的垂直偏置不是 0：df = {r['df']}（e_z = x_ref0[2]−x0[2] = " \
+            f"{r['x_ref0'][2] - r['x0'][2]:.3e}，这一场它必须恒为 0）"
         assert r["u_ref0"] == pytest.approx(want), \
-            f"第 {r['tick']} 拍的控制参考变成了 {r['u_ref0']}（该恒为参考的解析前馈 {want}）"
+            f"第 {r['tick']} 拍的控制参考变成了 {r['u_ref0']}（角速率三路该恒为 0、推力该是 {want}）"
     assert max(abs(r["u"][1]) for r in normal) > 1.0, \
         "同段的解没动过 ⟹ 这条测试证明不了「前馈没跟着解爬」（任务参数失效？）"
+
+
+def test_垂直偏置积的是实测位置误差(tmp_path):
+    """★ ticket 20 的**正控**：`ΔF` 必须等于"**实测垂直位置误差**的纯积分"，一阶不差。
+
+    与负控是同一条 x 任务（`hold_offset_x = 10` ⟹ `u[1]` 照样顶满、解照样在动），
+    **只多一个 z 偏移** `hold_offset_z = 2.0` ⟹ `e_z ≡ +2.0` 永远关不掉（锚点从测量起，
+    见 `node_core.hold_reference` 的 ★★）⟹ `ΔF` 该以 `ki_z·e_z` 的斜率线性长上去。
+
+    | # | 判据 | 为什么它有牙齿 |
+    |---|---|---|
+    | ① | `e_z` 逐帧恒 = `hold_offset_z`（读日志的 `x_ref0[2] − x0[2]`） | 先把"输入是常量"钉住，②的线性才有意义 |
+    | ② | `ΔF` 逐帧**严格单调增** | 正号累积（偏低 ⟹ 加推力） |
+    | ③ | `ΔF_last − ΔF_first ≈ ki_z·e_z·(t_last − t_first)`（`t` 取日志的 `wall_ns`） | **望远镜求和**：右边 = `ki_z·∫e_z dt` 的离散形式，左边只由两端读数决定 ⟹ 与逐拍抖动无关 |
+    | ④ | 全程 `ΔF` 没顶到界（`f_max − t_hover`） | ③ 在饱和段会失真 ⟹ 先排除 |
+    | ⑤ | `u_ref0[1:]` 逐帧恒 0 且同段 `u[1]` > 1.0 | runaway 守卫（角速率三路**永远**是常量 0） |
+    | ⑥ | `ref_anchor != ""` 的那一拍 `ΔF == 0` | **钉锚点 ⟹ 复位**（否则上一场的偏置带进下一场） |
+
+    ★ 为什么 ③ 能证伪"偏置来自上一帧解"：②③ 量到的是一条**跟着墙钟线性走**的斜坡，
+      斜率**正好**是 `ki_z·e_z` —— 那是实测误差的函数。解那一路既不是线性的、也不带 `e_z`
+      （同段 `u[1]` 就顶在 3.84 rad/s 上不动）⟹ 任何"把 `sol.u` 接进积分器"的写法都过不了 ③。
+    ⚠️ ③ 是**差分**形式 ⟹ 对 `ΔF` 上的**恒定**偏置免疫（比如 OCP 自己的稳态偏置被算进去）；
+      那一头由 ⑥（锚点处必须为 0）挡。判据① 的独立读数仍以飞行留档为准（`df` 列的稳态值）。
+    """
+    log_path = tmp_path / "mpc.jsonl"
+    # ★ `ki_z` 在这里**显式设成 1.0**、并拿同一个数去算预测值：既让③不依赖"节点当前的默认增益"
+    #   （那是产品参数，会变），也不用 `import NodeParams`（seam 1 的纪律：不 import 节点的类）。
+    ki = 1.0
+    with _scenario(state_source="px4", hold_offset_x=10.0, hold_offset_z=2.0, ki_z=ki,
+                   log_file=str(log_path)) as sc:
+        _wait_dut_up(sc)
+        _arm_and_offboard(sc)
+        sc.wait_for(lambda: len(sc.px4.published_frames("rates")) >= 150, timeout_s=15.0,
+                    message="解锁后没攒到 150 帧 setpoint（1.5 s，够积分器长起来）")
+
+    z0 = Z0Params()
+    normal = [r for r in _读日志(log_path) if r["fallback"] == "normal"]
+    assert len(normal) >= 100, f"正常帧只有 {len(normal)} 拍，积分器长不起来"
+
+    e_z = [r["x_ref0"][2] - r["x0"][2] for r in normal]
+    # 容差 1e-5：`x_ref0` 与 `x0` 是**各自**四舍五入到 6 位小数之后才落盘的（见 `_读日志`）
+    assert all(e == pytest.approx(2.0, abs=1e-5) for e in e_z), \
+        f"这一场的 e_z 本该恒为 hold_offset_z = 2.0，实际首尾 {e_z[0]:.9f} → {e_z[-1]:.9f}"
+
+    df = [r["df"] for r in normal]
+    assert all(b > a for a, b in zip(df, df[1:])), \
+        f"ΔF 没有逐帧严格上升（前 10 拍：{[round(v, 4) for v in df[:10]]}）"
+    assert max(abs(r["u_ref0"][1]) for r in normal) == 0.0 and \
+        all(r["u_ref0"][2:] == [0.0, 0.0] for r in normal), \
+        "偏置漏进了角速率那三路（那三路必须恒为 0）"
+    assert max(abs(r["u"][1]) for r in normal) > 1.0, \
+        "同段的解没动过 ⟹ 正控不成立（任务参数失效？）"
+
+    hi = z0.f_max - z0.t_hover
+    assert max(df) < hi - 1e-6, \
+        f"ΔF 顶到了上界（{hi:.4f} N）⟹ ③ 会在饱和段失真：max = {max(df):.4f}"
+
+    dt_s = (normal[-1]["wall_ns"] - normal[0]["wall_ns"]) / 1e9
+    assert df[-1] - df[0] == pytest.approx(ki * 2.0 * dt_s, rel=0.05), \
+        (f"ΔF 的增量不是 ki_z·e_z·Δt：实测 {df[-1] - df[0]:.4f} N / "
+         f"{dt_s:.3f} s，预测 {ki * 2.0 * dt_s:.4f} N")
+
+    anchors = [r for r in _读日志(log_path) if r["ref_anchor"]]
+    assert anchors, "日志里没有钉锚点那一拍 ⟹ ⑥ 没被验到"
+    assert all(r["df"] == 0.0 for r in anchors), \
+        f"钉锚点那一拍的 ΔF 没有复位：{[(r['tick'], r['df']) for r in anchors if r['df'] != 0.0][:3]}"
+
+
+def test_垂直偏置顶在界上就不再累积(tmp_path):
+    """★ **抗积分饱和**：夹的是**状态** ⟹ 饱和段里 `ΔF` 必须**逐帧恒等**。
+
+    手法：`ki_z := 200`、`hold_offset_z = 5` ⟹ 几拍就顶到上界 `f_max − t_hover = 4.4425 N`。
+
+    判据（全部读日志的 `df` 列）：
+      · 每一帧 `ΔF ≤ f_max − t_hover`（**不出界**）；
+      · 达到上界之后 `ΔF` **逐帧 `==`**（不是"还在长、只是输出被夹"）——
+        这正是"夹状态"与"只夹输出"唯一能从外部区分的地方：
+        只夹输出的话这一列会继续单调长，而 `u_ref0[0]` 照样恒 = `f_max`（**看不出来**）；
+      · `u_ref0[0]` 逐帧 ≤ `f_max`（状态在界内 ⟹ 发出去的也在界内）。
+
+    ★ 上界口径：`f_max = 11.8 N`（电池可持续推力，`params.py:108`），**不是** `t_max`
+      （那是归一化常数 `t_hover / hover_thrust`，默认口径下 46.3 N）—— 见 ticket 20 §8.1 的 ☠️。
+    ★ `ki_z = 200` 只是为了"几拍就饱和"（真参数不会这么大，§8.3 的起测点是 1）；
+      这条用例量的是**饱和之后的行为**，与增益怎么标定无关。
+    """
+    log_path = tmp_path / "mpc.jsonl"
+    with _scenario(state_source="px4", hold_offset_z=5.0, ki_z=200.0,
+                   log_file=str(log_path)) as sc:
+        _wait_dut_up(sc)
+        _arm_and_offboard(sc)
+        sc.wait_for(lambda: len(sc.px4.published_frames("rates")) >= 40, timeout_s=15.0,
+                    message="解锁后没攒到 40 帧 setpoint")
+
+    z0 = Z0Params()
+    hi, lo = z0.f_max - z0.t_hover, -z0.t_hover
+    normal = [r for r in _读日志(log_path) if r["fallback"] == "normal"]
+    assert len(normal) >= 30, f"正常帧只有 {len(normal)} 拍"
+    assert all(lo <= r["df"] <= hi for r in normal), \
+        f"ΔF 出界了（界 [{lo:.4f}, {hi:.4f}]）：{[r['df'] for r in normal if not lo <= r['df'] <= hi][:3]}"
+    assert all(r["u_ref0"][0] <= z0.f_max + 1e-6 for r in normal), \
+        f"发出去的推力参考超过了 f_max：{max(r['u_ref0'][0] for r in normal):.6f} > {z0.f_max}"
+
+    sat = [r for r in normal if r["df"] > hi - 1e-6]
+    assert len(sat) >= 10, \
+        f"没造出饱和段（顶到上界的帧只有 {len(sat)} 拍）⟹ 这条测不出抗饱和"
+    assert len({r["df"] for r in sat}) == 1, \
+        (f"饱和段里 ΔF 还在往上涨（{len({r['df'] for r in sat})} 个不同值）⟹ "
+         f"夹的是输出、不是状态：首尾 {sat[0]['df']} → {sat[-1]['df']}")
+    # ★ 饱和段里误差仍在 +5（正控：不是"没东西可积了"才不涨）
+    assert all(r["x_ref0"][2] - r["x0"][2] == pytest.approx(5.0, abs=1e-5) for r in sat), \
+        "饱和段里 e_z 不是 +5 ⟹ 这条测不出「顶住了还在积」"
+
+
+def test_关掉积分增益时垂直偏置恒为0(tmp_path):
+    """★ `ki_z ≤ 0` = **硬关掉**（连状态一起清零），不是"停止累积、留着旧值"。
+
+    为什么这条要单独测：ticket 20 的验收是一条 **A/B 对照**（有/无积分作用各飞一场）。
+    若"关掉"只是停下积分、把上一段攒的 `ΔF` 留着，对照组会带着前一组的学习量起飞
+    —— 两边比出来的差就不是"积分作用的效果"了，而且**从话题上完全看不出来**。
+
+    判据：`ki_z := 0` + `hold_offset_z = 2.0`（足够大的正误差）下，`df` 列**逐帧严格 0.0**、
+    `u_ref0` 逐帧恒等 `[t_hover, 0, 0, 0]` ⟹ 行为与 ticket 20 之前**逐位相同**。
+    """
+    log_path = tmp_path / "mpc.jsonl"
+    with _scenario(state_source="px4", hold_offset_z=2.0, ki_z=0.0,
+                   log_file=str(log_path)) as sc:
+        _wait_dut_up(sc)
+        _arm_and_offboard(sc)
+        sc.wait_for(lambda: len(sc.px4.published_frames("rates")) >= 40, timeout_s=15.0,
+                    message="解锁后没攒到 40 帧 setpoint")
+
+    z0 = Z0Params()
+    normal = [r for r in _读日志(log_path) if r["fallback"] == "normal"]
+    assert len(normal) >= 30, f"正常帧只有 {len(normal)} 拍"
+    assert all(r["df"] == 0.0 for r in normal), \
+        f"关掉之后 ΔF 不是 0：{[r['df'] for r in normal if r['df'] != 0.0][:3]}"
+    assert all(r["u_ref0"] == pytest.approx([z0.t_hover, 0.0, 0.0, 0.0]) for r in normal), \
+        "关掉之后控制参考不再是 `[t_hover,0,0,0]` ⟹ 「关掉」没有回到旧行为"
+    assert all(r["x_ref0"][2] - r["x0"][2] == pytest.approx(2.0, abs=1e-5) for r in normal), \
+        "这一场本该有 +2 m 的垂直误差（正控：不是「没东西可积」才保持 0）"
+
+
+def test_闸门关闭期间垂直偏置冻结(tmp_path):
+    """★ ticket 20 §8.2 的第 1 个时点：**闸门关着 ⟹ 冻结**（不积分），但**时钟要推过去**。
+
+    闸门关着时位置误差**不可归因**（状态可能是几秒前那一帧，见 `Cycle` 的 `age_state_s`）
+    ⟹ 不许积。而"冻结期间也推时钟"这半条是**防一个更隐蔽的错**：不推的话，恢复的第一拍
+    `Δt` 会是**整段静默时长**⟹ 一拍积进去一大坨 —— 那正是判据① 的 8 s 窗口里最不该有的暂态。
+
+    造法：`hold_offset_z = 2.0`（⟹ `ΔF` 以 2 N/s 稳定长）先飞 1 s，然后掐掉
+    `vehicle_local_position` 2 s（闸门在 0.5 s 后关，`px4_timeout_s` 默认值）。
+
+    | 读数 | 判据 | 为什么 |
+    |---|---|---|
+    | 日志里有一段 `wall_ns` 的**空洞** | 空洞 ≥ 0.8 s | 闸门**真的**关了（否则整条用例白跑） |
+    | 空洞两端 `ΔF` 之差 | `0 ≤ Δ < 0.05 N` | 下界挡住"清零"；上界挡住的两种错法都很大：若**不推时钟**，恢复那一拍会积进 `ki·e_z·ΔT ≈ 2.0 N`（40× 于容差）；若**静默期间继续积**，空洞里没有日志行、但恢复后 `ΔF` 会跳 `2 N/s × 1 s` |
+    | 闸门关着的那段（话题面） | 零帧 setpoint | 与 `test_状态静默…` 同一条纪律 |
+
+    ⚠️ 两把时钟**不能混**：日志的 `wall_ns` 是 DUT 的墙钟，`sc.t()` 是夹具自己的时间线
+      ⟹ 空洞在**日志里**找（不拿 `sc.t()` 去切日志），夹具时钟只用来查话题。
+    """
+    log_path = tmp_path / "mpc.jsonl"
+    ki, e_z = 1.0, 2.0
+    with _scenario(state_source="px4", hold_offset_z=e_z, ki_z=ki,
+                   log_file=str(log_path)) as sc:
+        _wait_dut_up(sc)
+        _arm_and_offboard(sc)
+        sc.wait_for(lambda: len(sc.px4.published_frames("rates")) >= 100, timeout_s=15.0,
+                    message="解锁后没攒到 100 帧 setpoint（1 s，先让 ΔF 长起来）")
+
+        t0 = sc.t()
+        sc.timeline.extend(px4_state_silence(sc.px4, t0 + 0.2, duration_s=2.0,
+                                             key="local_position"))
+        # 闸门在静默 0.5 s 后关（`px4_timeout_s`）⟹ [t0+1.0, t0+1.7] 整段都在关着
+        sc.advance_to(t0 + 1.2)
+        n_sp = len(sc.px4.frames_between("rates", t0 + 1.0, t0 + 1.7))
+        assert n_sp == 0, f"闸门该关着，setpoint 却还在发（{n_sp} 帧）"
+        sc.advance_to(t0 + 3.5)
+
+    normal = [r for r in _读日志(log_path) if r["fallback"] == "normal"]
+    gaps = [(b["wall_ns"] - a["wall_ns"]) / 1e9 for a, b in zip(normal, normal[1:])]
+    i = int(np.argmax(gaps))
+    assert gaps[i] >= 0.8, \
+        f"日志里没有闸门关闭的那段空洞（最大间隔 {max(gaps):.3f} s）⟹ 这条用例白跑了"
+
+    d_before, d_after = normal[i]["df"], normal[i + 1]["df"]
+    assert d_before > 0.1, f"关闭之前 ΔF 还没长起来（{d_before}）⟹ 冻结/清零分不出来"
+    assert d_after >= d_before, f"闸门重开之后 ΔF 掉了（{d_before} → {d_after}）⟹ 被清零了"
+    assert d_after - d_before < 0.05, \
+        (f"闸门重开那一拍 ΔF 跳了 {d_after - d_before:.4f} N（静默 {gaps[i]:.2f} s）⟹ "
+         f"冻结期间没有推进时钟，一拍把整段静默积了进去（该积的只有 1 拍 ≈ {ki * e_z * 0.01:.4f} N）")
+
+
+def test_兜底期间垂直偏置冻结但不清零(tmp_path):
+    """★ ticket 20 §8.2 的第 2 个时点：**兜底 ⟹ 冻结、但不清零**。
+
+    ★ **故意不清零**：兜底帧的输出走 `self._hover_sp`（固定 `t_hover`，**不读**这个偏置）
+      ⟹ 偏置此刻不影响输出，只决定"恢复之后从哪儿起步"。清零等于把已经学到的口径差扔掉，
+      恢复后要重新收敛几秒 —— 而判据① 的窗口正是"最后一次正常帧往前 8 s"，这几秒会
+      **直接算进稳态误差**。清零只留给"钉锚点"那一拍（被控对象/任务变了才该忘）。
+
+    造法：`hold_offset_z = 2.0` ⟹ `ΔF` 稳定长；`inject_solve_fail_after_frames = 20`
+      ⟹ 第 20 帧起解被毒化（`_poisoned`：状态码非零 + `u` 全 NaN）⟹ 兜底阶梯接管。
+
+    判据（读日志的 `df` 列，**逐帧 `==`**）：
+      · 兜底帧的 `ΔF` 与"最后一拍正常帧"的 `ΔF` **逐位相同**（冻结）；
+      · 且那个值 `> 0.1 N`（**没被清零** —— 清成 0 也会让上面那条 `==` 失败，两条一起看才认得出是哪种错）。
+    ⚠️ **这一层量不到"恢复之后"**：故障注入的语义是"从第 N 帧起**永远**坏"
+      （`_inject_active` = `published >= n`，只增不减）⟹ 本夹具造不出"兜底之后再回到正常帧"。
+      "恢复后从哪儿起步"因此**没有端到端读数**，只能靠这里的"冻结且保留"间接守住。
+    """
+    log_path = tmp_path / "mpc.jsonl"
+    with _scenario(state_source="px4", hold_offset_z=2.0, ki_z=1.0,
+                   inject_solve_fail_after_frames=20, log_file=str(log_path)) as sc:
+        _wait_dut_up(sc)
+        _arm_and_offboard(sc)
+        sc.wait_for(lambda: len(sc.px4.published_frames("rates")) >= 40, timeout_s=15.0,
+                    message="注入生效之后没有继续发帧（兜底把发布停掉了？）")
+
+    recs = _读日志(log_path)
+    normal = [r for r in recs if r["fallback"] == "normal"]
+    fb = [r for r in recs if r["fallback"] in ("hold", "hover")]
+    assert normal and fb, f"两个阶段没凑齐：normal {len(normal)} 拍、兜底 {len(fb)} 拍"
+    assert normal[-1]["tick"] < fb[0]["tick"], "兜底帧排在正常帧之前 ⟹ 阶段切分的假设不成立"
+
+    d = normal[-1]["df"]
+    assert d > 0.1, f"兜底开始之前 ΔF 还没长起来（{d}）⟹ 「冻结」与「清零」分不出来"
+    assert {r["df"] for r in fb} == {d}, \
+        (f"兜底期间 ΔF 变了：正常帧末尾 {d}，兜底段取到 "
+         f"{sorted({r['df'] for r in fb})[:5]} ⟹ 要么还在积（不冻结）、要么被清零了")
+
 
 
 # ───────────────────────────── 在这一层量不了的那几条（不写假测试）─────────────────────────────
