@@ -188,6 +188,54 @@ EXTRA_VARIANTS = {
     "z0-thrcurve": ({"THR_MDL_FAC": 0.45}, "复现 z0 固件的 `THR_MDL_FAC`，用于量化曲线失配"),
 }
 
+# ---------------------------------------------------------------- 加密档（ticket 12 §附.1）
+
+#: 边界附近的**加密档**：±30 % 只答了"哪一档越线了"，没答**线在哪**。这几档把边界夹紧。
+DENSE_PCTS = (0.10, 0.05)
+
+#: 只对**探到边界的那两个**旋钮加密。另外三个（`inertia`/`tau`/`rate`）在 ±30 % 上都没退化
+#: ⟹ 往更小幅度扫没有信息量（退化只会更不可能），扫了也只是多烧机时。
+DENSE_KNOBS = ("mass", "thrust")
+
+
+def build_dense_variants() -> dict:
+    """边界附近的加密档 —— **刻意不并进** `build_variants()`。
+
+    ★ **为什么不改 `MISMATCH_PCT` 了事**：`build_variants()` 把它**编进了变体名**
+      （`z0-{knob}{tag}{int(MISMATCH_PCT*100)}`）。把它改成 0.10 ⟹ **11 个变体全体改名**
+      （`z0-mass+30` → `z0-mass+10`）、被控对象跟着变，而 ticket 12 那 13 场归档
+      （文件名与读数都挂在这套名字上）**当场孤立**。那不是"加一档"，是**换掉基线**。
+      ⟹ 加密档**只增不改**，`MISMATCH_PCT` 永远是 `0.30`。
+
+    ★ **为什么与 `build_variants()` 分开**：那 11 个变体是 08/09 的产物与 12 的归档所挂的
+      **基线**；加密档是**另一组实验**。混进同一个函数 ⟹ "默认变体集"悄悄长大
+      （`--variants-all`、`--check` 都跟着变），而报告上看不出来。
+    """
+    base = {n: v for n, v, _s, _w, scope in ROWS if scope in ("overlay", "both")}
+    out = {}
+    for knob in DENSE_KNOBS:
+        spec = KNOBS[knob]
+        for pct in DENSE_PCTS:
+            pct_tag = int(round(pct * 100))
+            for sign, tag in ((+1, "+"), (-1, "-")):
+                vals = dict(base)
+                factor = 1.0 + sign * pct
+                for p in spec["params"]:
+                    vals[p] = base[p] * factor
+                out[f"z0-{knob}{tag}{pct_tag}"] = vals
+    return out
+
+
+def all_variants() -> dict:
+    """**基线 ∪ 加密档**。凡是"按名字查一个变体"的地方都用它。
+
+    ★ 别直接用 `build_variants()[name]` —— 那样加密档会 KeyError
+      （`verify_z0_plant.expected_params` 就是靠这个查找，ticket 12 的判据⑤ 又靠它）。
+    """
+    out = build_variants()
+    out.update(build_dense_variants())
+    return out
+
 
 def build_variants() -> dict:
     """变体名 → {参数名: 值}（**全量**，不是差量 —— 每个覆盖层都自洽可读）。"""
@@ -306,6 +354,16 @@ def render_table() -> str:
     for variant, (overrides, why) in EXTRA_VARIANTS.items():
         out.append(f"| `{variant}` | "
                    f"{', '.join('`'+p+'`' for p in overrides)} | {why} |")
+    # 加密档：它们是**另一组**（不改 `MISMATCH_PCT` 那套基线），故单列一行并写明理由，
+    # 免得有人以为"变体表里怎么多了几档 ±10 %/±5 %"就是基线动了
+    for knob in DENSE_KNOBS:
+        names = " / ".join(
+            f"`z0-{knob}{tag}{int(round(pct * 100))}`"
+            for pct in DENSE_PCTS for tag in ("+", "-"))
+        out.append(f"| {names} | "
+                   f"{', '.join('`'+p+'`' for p in KNOBS[knob]['params'])} | "
+                   f"**边界加密档**（ticket 12 §附.1）：把 ±30 % 探到的边界夹紧；"
+                   f"**不改**上方 ±30 % 那套基线 |")
     return "\n".join(out)
 
 
@@ -313,7 +371,7 @@ def render_table() -> str:
 
 def targets() -> dict:
     out = {"airframes/10046_sihsim_z0": render_airframe()}
-    for variant, values in build_variants().items():
+    for variant, values in all_variants().items():
         out[f"params/{variant}.param"] = render_overlay(variant, values)
     return out
 
@@ -331,7 +389,7 @@ def main(argv=None):
         print(render_table())
         return 0
     if args.list:
-        for name in build_variants():
+        for name in all_variants():
             print(name)
         return 0
 

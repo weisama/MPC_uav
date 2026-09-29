@@ -48,6 +48,10 @@ def _load():
 
 ms = _load()
 
+#: 变体/参数的**同一份真源** —— `mismatch_sweep` 自己是 `import plant_spec`，
+#: 这里顺着它的引用拿，不另起一次导入（两次导入会是**两个模块对象**，改了一边看不到）。
+plant_spec = ms.plant_spec
+
 
 # ---------------------------------------------------------------- 人造观测
 
@@ -263,6 +267,127 @@ def test_旋钮动的参数名来自_plant_spec_不另抄一份():
     assert ms.knob_param_names("z0-rate-30") == ["MC_ROLLRATE_P", "MC_PITCHRATE_P",
                                                  "MC_YAWRATE_P"]
     assert ms.knob_param_names("z0") == []
+
+
+# ---------------------------------------------------------------- 加密档是加法式的
+
+
+def test_加密档没有动_30_那套基线():
+    """★★ 这条是**回归闸门**，不是装饰。
+
+    加密档（±10 %/±5 %）唯一的合法做法是**只增不改**：`build_variants()` 把百分比
+    **编进了变体名**，`MISMATCH_PCT` 一改，11 个变体全体改名、被控对象跟着变，
+    而 ticket 12 那 13 场归档（文件名与读数都挂在这套名字上）**当场孤立**。
+    曾经写过一版"改 `MISMATCH_PCT` 就行"的方案 —— 那个方案会**静默地**毁掉证据：
+    跑起来照样出表，只是表里的名字和归档对不上了。
+    """
+    assert plant_spec.MISMATCH_PCT == 0.30, "基线百分比被动了 —— 那会孤立 12 号票的 13 场归档"
+
+    base = set(plant_spec.build_variants())
+    # 基线仍是那 11 个 ±30 % 的名字（+ 非扫描项），且**不含**任何加密档名
+    for knob in ms.KNOBS:
+        for tag in "+-":
+            assert f"z0-{knob}{tag}30" in base, f"基线丢了 z0-{knob}{tag}30"
+    assert not [n for n in base if n.endswith(("+10", "-10", "+5", "-5"))], \
+        f"加密档混进了基线：{sorted(base)}"
+
+
+def test_加密档的值是基线的_90_95_且查得到():
+    """加密档要**按名字查得到**（`all_variants`），否则 12 号票的判据⑤ 直接 KeyError。
+
+    `verify_z0_plant.expected_params` 用 `all_variants()` 查 —— 它要是只查基线，
+    加密档那 8 场会**在判据⑤ 上崩**，而不是给出一个错的读数（崩比错好，但一样跑不完）。
+    """
+    dense = plant_spec.build_dense_variants()
+    assert set(dense) == {f"z0-{k}{t}{p}"
+                          for k in plant_spec.DENSE_KNOBS
+                          for p in (10, 5) for t in "+-"}
+
+    every = plant_spec.all_variants()
+    assert set(plant_spec.build_variants()) <= set(every), "并集丢了基线"
+    assert set(dense) <= set(every), "并集没有加密档 ⟹ 按名查会 KeyError"
+
+    base = plant_spec.all_variants()["z0"]
+    for pct, name in ((1.10, "z0-mass+10"), (0.90, "z0-mass-10"),
+                      (1.05, "z0-mass+5"), (0.95, "z0-mass-5")):
+        assert dense[name]["SIH_MASS"] == pytest.approx(base["SIH_MASS"] * pct)
+    for pct, name in ((1.10, "z0-thrust+10"), (0.95, "z0-thrust-5")):
+        assert dense[name]["SIH_T_MAX"] == pytest.approx(base["SIH_T_MAX"] * pct)
+        # 推力旋钮**同时**动 Q_MAX（保持偏航/推力比）—— 加密档也得守这条
+        assert dense[name]["SIH_Q_MAX"] == pytest.approx(base["SIH_Q_MAX"] * pct)
+
+    # 加密档只动**那一个**旋钮：`z0-mass+10` 不许碰推力
+    assert dense["z0-mass+10"]["SIH_T_MAX"] == base["SIH_T_MAX"]
+
+
+def test_emit_的产物覆盖加密档():
+    """`--emit`/`--check` 走 `targets()` ⟹ 它必须含加密档，否则那 8 份覆盖层
+    永远不会被生成/校验，而 `mismatch_sweep` 会以"没有这个覆盖层"退出。"""
+    t = plant_spec.targets()
+    for name in plant_spec.build_dense_variants():
+        assert f"params/{name}.param" in t, f"targets() 漏了 {name}"
+
+
+# ------------------------------------------------------- 半截数值不许作废整场飞行
+#
+# ★ 这一节测的是**别人票里的**取数函数（`verify_offboard_smoke.field`，属 05/11），
+#   为什么放在本文件：2026-09-29 加密档实跑**整批第一场就死在这里**
+#   （`float('-')`，见下），而本会话的纪律是"不擅自改别人票的**测试**文件"。
+#   ⟹ 冒烟在**本条跑批所依赖的那条通路**上，就记在本条的测试里；
+#   改 `verify_offboard_smoke.py` 本身已在那处代码注释里写明来由。
+
+
+def _smoke():
+    """按**同一个**模块对象取 `field()` —— 别另起一次导入（否则测的不是飞行时用的那份）。"""
+    if str(HERE) not in sys.path:
+        sys.path.insert(0, str(HERE))
+    import verify_offboard_smoke
+    return verify_offboard_smoke
+
+
+@pytest.mark.parametrize("line, want", [
+    ("    z: 0.00016", 0.00016),
+    ("    x: -0.00023", -0.00023),          # 负号 + 小数
+    ("    vz: -1.2e-3", -0.0012),           # 科学计数
+    ("    z: .5", 0.5),                     # 小数点开头
+    ("    z: 5.", 5.0),                     # 小数点结尾
+    ("    timestamp: 23576000 (0.000000 seconds ago)", 23576000.0),
+])
+def test_正常数值的取法一个都没变(line, want):
+    """改 `field()` 的正则**只该**把"半截值"从抛改成 `None` —— 合法写法一律照旧。"""
+    assert _smoke().field(line, line.strip().split(":")[0]) == want
+
+
+@pytest.mark.parametrize("line", [
+    "    z: -",                    # ☠️ 真的崩过：窗口边界落在负号后面
+    "    z: e",                    # ☠️ 同理：'e' 也在旧字符类里
+    "    TOPIC: estimator_status_flags",
+    "    z: nan",
+])
+def test_半截或非数值一律给_None_绝不抛(line):
+    """`field()` 是**有损字节窗口**上的取数器：取不到就 `None`，抛异常等于整场飞行作废。
+    旧字符类 `-?[0-9.eE+-]+` 能只匹配到 `-`/`e`/`E`/`.`/`+` 一个字符 ⟹ `float()` 抛。"""
+    assert _smoke().field(line, "z") is None
+
+
+def test_截断的真值块不再让整场作废():
+    """把**真值流**的一个块截到负号后面 —— 复现 2026-09-29 那一崩，且要求它活下来。
+
+    崩点在 `verify_tier_a_hover.parse_stream:129`（逐字段取数）→ `field()`：
+    `text_since()` 渲染的是 `_raw[mark:]` 这个**字节窗口**，边界可以落在数值中间。
+    """
+    import verify_tier_a_hover as ta
+    head = ("TOPIC: vehicle_local_position_groundtruth instance 0 #7\n"
+            "    timestamp: 23576000 (0.000000 seconds ago)\n"
+            "    x: -0.00023\n    y: 0.00113\n    z: ")
+    full = head + "-0.01408\n    vx: 0.0\n    vy: 0.0\n    vz: 0.0\n"
+    cut = head + "-"                       # ⟸ 窗口正好断在负号后
+
+    rows = ta.parse_stream(full, ta.GT_TOPIC)      # 完整块：7 个字段全取到
+    assert len(rows) == 1 and rows[0]["z"] == -0.01408 and rows[0]["n"] == 7
+
+    rows = ta.parse_stream(cut, ta.GT_TOPIC)       # 截断块：**不抛**，该字段给 None
+    assert len(rows) == 1 and rows[0]["z"] is None and rows[0]["x"] == -0.00023
 
 
 # ---------------------------------------------------------------- 发散

@@ -417,8 +417,21 @@ def sample_topic(px, topic, timeout=15.0, attempts=2, drain=1.2, rec=None):
     return ""
 
 
+#: 一个数的写法 —— `5` / `-1.5` / `.5` / `5.` / `1.5e-3`。**至少要有一个数字**。
+#:
+#: ☠️ 不能图省事写 `-?[0-9.eE+-]+`：那个字符类**本身**能只匹配到一个 `-`（或 `e`、
+#:    `E`、`.`、`+`），于是 `float()` 抛 `ValueError`，**整场飞行作废**。这不是假想：
+#:    `text_since()` 是**按字节窗口**（`_raw[mark:]`）渲染的，窗口边界可以落在数值中间
+#:    —— 2026-09-29 ticket 12 的加密档实跑就是这么死的（`float('-')`，见
+#:    `verify_tier_a_hover.py:129 parse_stream` → 这里）；把回调块截到负号之后能稳定复现。
+#:    ⚠️ 同样的字符类在本文件还有 5 处（`ts_age_s` / `param` 那几条），本次只改这一处
+#:    —— 那一处正卡着 12 号票的批次，其余是**已知潜伏**、未在实跑里触发。
+_NUM = r"-?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?"
+
+
 def field(text, name):
-    m = re.search(rf"^\s*{name}:\s*(-?[0-9.eE+-]+)", text or "", re.M)
+    """取一行 `name: <数>` 里的数；取不到（含**半截值**）一律返回 `None`，不抛。"""
+    m = re.search(rf"^\s*{name}:\s*({_NUM})", text or "", re.M)
     return float(m.group(1)) if m else None
 
 

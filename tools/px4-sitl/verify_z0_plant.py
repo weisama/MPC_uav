@@ -137,8 +137,13 @@ def curve_inv(t: float, a: float) -> float:
 
 
 def expected_params(variant: str) -> dict:
-    """期望值 = 覆盖层会 `param set` 的那些 + 机型文件里的那些。"""
-    out = dict(plant_spec.build_variants()[variant])
+    """期望值 = 覆盖层会 `param set` 的那些 + 机型文件里的那些。
+
+    ★ 查的是 `all_variants()`（基线 ∪ 加密档）而**不是** `build_variants()` ——
+      后者只有 ±30 % 那套基线，`z0-mass+10` 这种加密档名会 **KeyError**
+      （ticket 12 的判据⑤ 正靠这个函数，见 `mismatch_sweep.expected_params`）。
+    """
+    out = dict(plant_spec.all_variants()[variant])
     for name, value, _s, _w, scope in plant_spec.ROWS:
         if scope == "airframe":
             out[name] = value
