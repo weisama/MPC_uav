@@ -397,9 +397,14 @@ def extrapolate_state(x: np.ndarray, tau_s: float = TAU_DEFAULT_S) -> np.ndarray
 def hold_reference(x_ref_pose: np.ndarray, config: ControlConfig, N: int) -> np.ndarray:
     """构造 `(N+1, NX)` 的位置保持参考：位置 = **锚点位置** + `hold_offset`，速度 0，姿态水平。
 
-    ★ 姿态取**水平**（roll = pitch = 0）而非照抄测量姿态：悬停参考就该是水平的，
-      而 OCP 的代价对四元数只罚**倾斜**（`qw` 权重是 0，见 `OcpConfig.q_diag`）⟹
-      水平 + 当前机头才是"不倾斜、朝向不变"的那个目标。
+    ★ 姿态取**水平**（roll = pitch = 0）而非照抄测量姿态，机头取**锚点那一帧**的
+      （`config.hold_yaw`，缺省时从 `x_ref_pose` 的四元数取）⟹ 悬停参考 = 水平 + 锚点机头。
+      ☠️ **2026-09-29 订正**：这里原写「OCP 的代价对四元数**只罚倾斜**（`qw` 权重是 0）」
+      —— **这句从 ticket 16 方案 E 落地起不成立**：`qw` 已从 0 改成 0.1
+      （`OcpConfig.q_diag`，见 `.scratch/phase2/issues/16-ocp-yaw-weights-mirror-well.md`）
+      ⟹ 代价**也罚朝向**了。⚠️ 本函数的取法**不变**（它本来就取锚点机头），
+      变的是**理由**：现在"不倾斜"与"朝向不变"两件事**都**由代价在管，
+      而不是像原注释说的只靠"只罚倾斜"这一条。
 
     ★★ `x_ref_pose` 是**锚点**（`NodeCore` 在闸门第一次打开那一拍钉住的那一帧测量，
       见 `NodeCore._update_anchor`），**不是当拍的测量** —— 这是本函数最容易用错的地方，

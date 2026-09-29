@@ -131,46 +131,72 @@ def test_cost_uses_the_config_weights_not_hardcoded_ones(ocp: OfflineOcp):
     assert heavier == pytest.approx(1e2 * cfg.N + 3e2, rel=1e-12)
 
 
-# ─────────────── 代价的**结构性缺陷**（2026-09-28 在 SITL 闭环上撞出来的）───────────────
+# ─────────────── 代价的**镜像井**及其修复（2026-09-28 在 SITL 闭环上撞出来，ticket 16 修复）───
 #
-# 这一节不是在验收 ticket 04 的交付，而是把**它的两条已知限制**变成可复现的数字：
-# 它们不是"权重没调好"，而是**代价函数的形式**决定的，而且正是 ticket 09 那场 runaway
-# 的底层原因（详见 `docs/control/tier-a-sitl-hover.md` §4）。
-# ⚠️ 调这些要动 ticket 04 的权重约定（`offline-ocp.md` §2，**不在 M1–M9 里**）⟹
-#    改之前先问操作者；改完这两条测试要**一起**更新（它们是"限制还在不在"的读数）。
+# 这一节不是在验收 ticket 04 的交付，而是把**偏航代价的一个结构性后果**变成可复现的数字：
+# 它不是"权重没调好"，而是**代价函数的形式**决定的，而且正是 ticket 09 那场 runaway 的底层原因
+# （详见 `docs/control/tier-a-sitl-hover.md` §4）。
+#
+# ★ 2026-09-29 操作者裁定「上 E」后，**默认权重已改**（`qw = 0.1, qatt = 2.0, R_yaw = 50`）：
+#   镜像井**已消掉**。下面两条一起读 —— 一条钉「参考实现的 `qw = 0` 为什么是井」（反事实，留住
+#   是为了让"为什么非改不可"可执行、且万一有人把 `qw` 改回 0 会红），另一条钉「默认不再是井」。
 
-def test_the_cost_cannot_tell_the_reference_heading_from_its_mirror():
-    """★★ 镜像井：`q` 与 `2π − ψ` 的四元数**矢量部完全相同** ⟹ `qw = 0` 时代价**无法区分**。
+_MIRROR_PSI = 1.618
 
-    参考实现抄来的 `q_diag` 四元数段是 `(0.0, 0.1, 0.1, 0.1)` —— `w` 分量权重为 0（`offline-ocp.md`
-    §2 记了"照抄来的，本票没改它，但它是绕圈/自旋参考的已知限制来源"）。后果：
 
-    `yaw_quat(ψ) = [cos(ψ/2), 0, 0, sin(ψ/2)]`、`yaw_quat(2π−ψ) = [−cos(ψ/2), 0, 0, sin(ψ/2)]`
-    ⟹ 两者只差 `w` 的符号，而 `w` **不被罚** ⟹ 代价在"参考机头"与"它的镜像"之间**完全不区分**。
-
-    ★ 这就是"机头没有回正力"的结构性原因：偏航误差到 2π 的一半（= 镜像）之前，
-      代价的梯度都只能靠 `(q_x, q_y, q_z)` 那三项里那一点耦合给出来（比 `R_yaw` 小 4 个量级）。
-    """
-    cfg = OcpConfig()
-    assert tuple(cfg.q_diag[6:10]) == (0.0, 0.1, 0.1, 0.1), \
-        f"这条测试的前提变了：四元数段权重成了 {tuple(cfg.q_diag[6:10])}"
-
-    psi = 1.618
-    x_ref = np.tile(np.concatenate([np.zeros(6), yaw_quat(psi)]), (cfg.N + 1, 1))
-    x_pred = np.tile(np.concatenate([np.zeros(6), yaw_quat(2 * math.pi - psi)]),
+def _ref_and_mirror(cfg: OcpConfig) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """参考机头 `ψ` 与它的镜像 `2π − ψ` 两条姿态，外加一条控制量（`u_ref = u_pred`）。"""
+    x_ref = np.tile(np.concatenate([np.zeros(6), yaw_quat(_MIRROR_PSI)]), (cfg.N + 1, 1))
+    x_pred = np.tile(np.concatenate([np.zeros(6), yaw_quat(2 * math.pi - _MIRROR_PSI)]),
                      (cfg.N + 1, 1))
     u = np.tile([Z0Params().t_hover, 0.0, 0.0, 0.0], (cfg.N, 1))
+    return x_ref, x_pred, u
+
+
+def test_the_cost_cannot_tell_the_reference_heading_from_its_mirror():
+    """★★ 镜像井的**机理**：`ψ` 与 `2π − ψ` 的四元数**矢量部完全相同** ⟹ `qw = 0` 时无法区分。
+
+    `yaw_quat(ψ) = [cos(ψ/2), 0, 0, sin(ψ/2)]`、`yaw_quat(2π−ψ) = [−cos(ψ/2), 0, 0, sin(ψ/2)]`
+    ⟹ 两者只差 `w` 的符号；`w` 权重为 0 时这些代价**分不出**参考机头与它的镜像。
+
+    ⚠️ **本用例现在钉的是「参考实现那组权重」这个反事实**（`q_diag` 四元数段 = `(0.0,0.1,0.1,0.1)`），
+    而**默认已经不是它**（ticket 16 方案 E）。留着它的两个理由：① 把"为什么非改不可"变成可执行的对照；
+    ② 哪天有人把 `qw` 改回 `0`，这里会红。默认权重下的正向结论见下一条用例。
+    """
+    cfg = OcpConfig(q_diag=(1e1,) * 6 + (0.0, 0.1, 0.1, 0.1))
+    x_ref, x_pred, u = _ref_and_mirror(cfg)
 
     at_ref = cfg.cost(np.tile(x_ref[0], (cfg.N + 1, 1)), u, x_ref, u)
     at_mirror = cfg.cost(x_pred, u, x_ref, u)
     assert at_ref == pytest.approx(0.0, abs=1e-24)
     assert at_mirror == pytest.approx(0.0, abs=1e-24), \
-        f"镜像机头（相差 {2 * math.pi - 2 * psi:.3f} rad）的代价居然不是 0：{at_mirror}"
+        f"镜像机头（相差 {2 * math.pi - 2 * _MIRROR_PSI:.3f} rad）的代价居然不是 0：{at_mirror}"
 
     # 反面：把 `w` 那一项罚起来（`qw = 0.1`）⟹ 镜像井消失。
     # 解析值：误差只在 w 上，|Δw| = 2·cos(ψ/2)，阶段权重 qw、共 N 步（终端权重里四元数段是 0）。
-    w_err = 2.0 * math.cos(psi / 2.0)
+    w_err = 2.0 * math.cos(_MIRROR_PSI / 2.0)
     heavier = OcpConfig(q_diag=(1e1,) * 6 + (0.1, 0.1, 0.1, 0.1))
     fixed = heavier.cost(x_pred, u, x_ref, u)
     assert fixed == pytest.approx(0.1 * w_err ** 2 * cfg.N, rel=1e-9)
     assert fixed > 9.0, f"罚起 w 之后镜像机头该有明显的代价，实际 {fixed:.4f}"
+
+
+def test_the_default_cost_separates_the_reference_heading_from_its_mirror():
+    """★ ticket 16 方案 E：**默认** `qw = 0.1` ⟹ 镜像机头的代价不再 = 0，而是 ≈ 9.53。
+
+    解析值：镜像误差只在 `w` 上，`|Δw| = 2·cos(ψ/2)`，阶段权重 `qw = 0.1`、共 `N` 步
+    （终端权重四元数段是 0）⟹ `0.1 · (2cos(ψ/2))² · N`。参考机头本身的代价仍是 0
+    （同一条姿态，代价只看偏差）。
+    """
+    cfg = OcpConfig()
+    assert cfg.q_diag[6] > 0.0, \
+        f"前提变了：默认 `qw` 又成了 {cfg.q_diag[6]}（镜像井会复发）"
+    x_ref, x_pred, u = _ref_and_mirror(cfg)
+
+    w_err = 2.0 * math.cos(_MIRROR_PSI / 2.0)
+    at_ref = cfg.cost(np.tile(x_ref[0], (cfg.N + 1, 1)), u, x_ref, u)
+    at_mirror = cfg.cost(x_pred, u, x_ref, u)
+    assert at_ref == pytest.approx(0.0, abs=1e-24)
+    assert at_mirror == pytest.approx(cfg.q_diag[6] * w_err ** 2 * cfg.N, rel=1e-9)
+    assert at_mirror > 9.0, \
+        f"默认权重下镜像机头该有明显的代价（≈9.53），实际 {at_mirror:.4f}"

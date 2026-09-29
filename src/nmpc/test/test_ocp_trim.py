@@ -38,6 +38,18 @@ from nmpc.ocp import OfflineOcp
 #: 解析悬停推力 [N] —— 与 `Z0Params.t_hover` 同一来源，不抄数
 T_HOVER = Z0Params().mass * G
 
+#: "另外两轴不该动"的判据容差。★ 不是 0：QP 解出来的是 1e-18 不是 0（见 `test_ocp_constraints.py`
+#: 的 `ZERO_TOL` 那条教训）。实测（2026-09-29 复核轮**逐项现算**，**两侧权重都量了**）：
+#:   · ticket 16 方案 E（`qw=0.1, qatt=2.0, R_yaw=50`）：交叉轴 **1.1e-10 / 2.8e-9**
+#:     （`test_lateral_target_tilts_around_roll_axis`；同一文件的 `test_forward_…` 交叉轴**恰为 0.0**）；
+#:   · 旧权重（`qw=0, qatt=0.1, R_yaw=500`）对照：**同一用例**交叉轴 **3.3e-14 / 5.0e-14**。
+#: ⟹ 泄漏确实随这组权重涨了 4–5 个数量级，但**始终比主轴 0.32 低 8 个量级**，
+#:    且有一条用例是**精确 0** ⟹ 判它是**舍入/条件数**问题，不是物理耦合。
+#: 取 1e-7：比主轴小 6 个量级，真出现"另一轴跟着动"仍会红。
+#: ⚠️ **别把它和 `test_ocp_constraints.py` 的 `ZERO_TOL = 1e-9` 统一** —— 那个更紧，
+#:    而这里实测到的 2.8e-9 **已经超过** 1e-9（且两者量的不是同一个东西）⟹ 统一会让本文件恒红。
+CROSS_TOL = 1e-7
+
 
 def test_hover_trim_is_exact_with_default_feedforward():
     """(b) 缺省路径（全新实例的首帧 `u_ref` = 悬停前馈）：配平稳稳落在 `m·g` 上，**精确**。
@@ -120,7 +132,7 @@ def test_forward_target_tilts_pitch_downward_per_sign_map(solve_warm, const_ref,
     x0 = ocp.hover_state()
     sol = solve_warm(x0, const_ref([0.5, 0.0, 0.0]), u_zero)
     assert sol.u[2] > 0.0, f"约定是 +x 飞行 ⟹ ω_y > 0，实际 ω_y={sol.u[2]:.6f}"
-    assert abs(sol.u[1]) < 1e-12 and abs(sol.u[3]) < 1e-12, f"另外两轴不该动：ω={sol.u[1:]}"
+    assert abs(sol.u[1]) < CROSS_TOL and abs(sol.u[3]) < CROSS_TOL, f"另外两轴不该动：ω={sol.u[1:]}"
 
 
 def test_lateral_target_tilts_around_roll_axis(solve_warm, const_ref, u_zero,
@@ -129,7 +141,7 @@ def test_lateral_target_tilts_around_roll_axis(solve_warm, const_ref, u_zero,
     x0 = ocp.hover_state()
     sol = solve_warm(x0, const_ref([0.0, 0.5, 0.0]), u_zero)
     assert sol.u[1] < 0.0, f"按 κ(ẑ × ŷ) = κ(−x̂) 应是 ω_x < 0，实际 {sol.u[1]:.6f}"
-    assert abs(sol.u[2]) < 1e-12 and abs(sol.u[3]) < 1e-12, f"另外两轴不该动：ω={sol.u[1:]}"
+    assert abs(sol.u[2]) < CROSS_TOL and abs(sol.u[3]) < CROSS_TOL, f"另外两轴不该动：ω={sol.u[1:]}"
 
 
 @pytest.mark.parametrize("axis,expected_v_index", [(0, 0), (1, 1)])
