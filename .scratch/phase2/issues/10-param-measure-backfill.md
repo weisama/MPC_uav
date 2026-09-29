@@ -636,3 +636,17 @@ SITL 与 CPU 密集测试" ⟹ **第①步已满足**。但 `git status` 实测
 ⟹ 本张收尾的"全量测试"必须：① 三条 setup 都 source；② **报出收集到的条数**，而不是只说"全绿"
 （`src/nmpc/test/` 没有 `importorskip`，实测 grep 无命中 ⟹ 那边缺 `px4_msgs` 会**硬报错**，
 两棵树的失败模式不同）。
+
+### 2026-09-29 12:2x —— 全量测试里会看到一条**既有**的 `1 failed`，别把它当成我的回归
+
+`ros-ws-8b` 在验 20 时撞见：整目录跑时
+`test_ocp_health.py::test_no_ros_import_leaks_in` **必红**（它实测 `1 failed, 38 passed`）。
+**已独立核实其成因**：该守卫**在进程内**查 `sys.modules`（`test_ocp_health.py:111`），
+而同目录的 `test_mpc_node.py` 会**先** import `rclpy` ⟹ 守卫误判成"本模块泄漏"。
+本会话实测：**单独**跑 `test_ocp_health.py` = **8 passed** ⟹ 与任何人的改动无关，是**导入顺序**造成的。
+
+⚠️ **本张收尾跑全量时必须照此解释它**（如实报"1 既有失败 + 成因"，不是"我先弄红的"）。
+★ 顺带一个**同类不一致**（只登记、本张不改）：`test_sign_map.py` / `test_node_core.py` 查泄漏用的是
+**另起子进程**（`subprocess.run([sys.executable, "-c", …])`）⟹ 不受导入顺序影响；
+`test_ocp_health.py` 用**进程内** `sys.modules` ⟹ 会。两种写法并存，后者是脆弱的那一种。
+**要不要为它开票，交给操作者**（本张不擅自开）。
