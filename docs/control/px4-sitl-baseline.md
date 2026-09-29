@@ -251,7 +251,7 @@ PX4 v1.14.3 的模板调用是 empy **3.x** 的 API。全树用到 `em.RAW_OPT` 
 
 | # | 文档说的 | 实测 | 处置 |
 |---|---|---|---|
-| D1 | `Tools/check-message-compatibility.py`（`PROJECT.md:450`、`px4-interface.md:178`、`:284`）；本张清单同上 | 真身在 `auterion/px4-ros2-interface-lib`；见 §2.3 | **本张已改** `phase2-implementation.md` §S1 与 §6.1 给 S1 的指令；**另外 2 文件 3 处未动**（不越界）⟹ **已开 [ticket 14](../../.scratch/phase2/issues/14-stale-check-msg-compat-path.md) 承接**，见 §7 遗留 |
+| D1 | `Tools/check-message-compatibility.py`（`PROJECT.md:450`、`px4-interface.md:178`、`:284`）；本张清单同上 | 真身在 `auterion/px4-ros2-interface-lib`；见 §2.3 | **本张已改** `phase2-implementation.md` §S1 与 §6.1 给 S1 的指令；**另外 2 文件 3 处未动**（不越界）⟹ **已开 [ticket 14](../../.scratch/phase2/issues/14-stale-check-msg-compat-path.md) 承接**，见 §7 遗留。★ **2026-09-29 已收口**：ticket 14 `done`，那 3 处（`PROJECT.md:455`、`px4-interface.md:183`/`:297`）已改 ⟹ 本行「**未动**」一词已过期（保留为当时记录） |
 | D2 | 「23 个 submodule」 | **17** 个（`grep -c '^\[submodule' .gitmodules`） | 本页记正；`phase2-implementation.md` §S1 的「23」已一并改 |
 | D3 | 命令写 `micro-xrce-dds-agent udp4 -p 8888` | 二进制名是 **`MicroXRCEAgent`**（无小写别名） | 本页记正 |
 | D4 | 「gazebo-classic 与 gz-sim 皆可」 | 本机两条都不可直接用，见 §3 | 本页记正；**Q12「留在 1.14.x」的决策本身不变** |
