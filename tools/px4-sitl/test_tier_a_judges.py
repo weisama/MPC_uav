@@ -20,6 +20,7 @@
 
 from __future__ import annotations
 
+import argparse
 import importlib.util
 import math
 import sys
@@ -528,3 +529,31 @@ def test_attribute_only_claims_the_direction_was_proved_when_judge_9_had_power()
         assert t.startswith("**代价 / 前馈"), t
         assert "上一帧解" in t and "qw = 0" in t
         assert "**符号映射" not in t
+
+
+# ------------------------------------------------- 参数表：验收第 3 项的那个旋钮
+
+
+def _cfg(**kw):
+    """`dut_params()` 只读这几个字段（缺的取与 CLI 默认同值）。"""
+    base = dict(log_file="/tmp/x.jsonl", source="px4", hold_x=0.0, hold_y=0.0,
+                hold_z=1.0, hold_yaw=0.0, rate_hz=100.0)
+    base.update(kw)
+    return argparse.Namespace(**base)
+
+
+def test_参数表把机头参考透传给节点():
+    """★ ticket 16 验收第 3 项（A 档复飞看机头）的**唯一旋钮**：`hold_yaw_deg` 必须真的
+    进 `--ros-args -p`。
+
+    这条**能红**的理由很具体：它是**参考机头**，不传 ⟹ 每一场都在节点默认的 `0°` 下飞，
+    机头那一列**永远没有误差可看**，那一项就退化成靠"没人推它"通过 —— 正是验收正文
+    点名不要的那种通过。而节点**认得**这个参数（`mpc_node.py` 的 `_PARAMS`），
+    ⟹ 缺这一行会**静默**：一场飞下来全绿，缺的东西看不出来。
+
+    ★ 参数**名**也要钉（是 `hold_yaw_deg`、不是 `hold_yaw`）：ROS 2 侧名字对不上就没人读它，
+    同样是静默的。所以断言整个 `名:=值` 串，而不是"某个数出现过"。
+    """
+    assert "hold_yaw_deg:=0.0" in ta.dut_params(_cfg())
+    assert "hold_yaw_deg:=20.0" in ta.dut_params(_cfg(hold_yaw=20.0))
+    assert "hold_yaw_deg:=-15.5" in ta.dut_params(_cfg(hold_yaw=-15.5))

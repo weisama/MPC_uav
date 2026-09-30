@@ -698,12 +698,20 @@ def dut_params(cfg) -> list:
 
     ★ 频率**不改**（票面 100 Hz 是候选上限）：D6 就是"先按 100 Hz 量最坏耗时、
       再按实测降档"——先降档再量等于把问题绕过去。
+
+    ★★ `hold_yaw_deg` 是 **ticket 16 验收第 3 项唯一的旋钮**（2026-09-30 补）：
+      它是**参考机头**（绝对、ENU，`mpc_node.py` 的 `hold_yaw_deg`），而 SITL 里车辆解锁时
+      机头 ≈ 0 ⟹ 传 `20` 就等于给出一条**已知大小**的机头误差（≈ 20°），不必另造扰动注入。
+      ⚠️ 这个参数**一直存在**于 `mpc_node`，只是这份参数表**从来没传过**它 ⟹ 从前每一场都在
+      `hold_yaw_deg = 0°`（节点默认）下飞，机头那一列因此**没有误差可看**。少这一行，
+      那一项就只能靠"没人推它"来通过 —— 正是验收正文点名不要的那种通过。
     """
     params = [f"log_file:={cfg.log_file}",
               "state_source:=px4",
               f"hold_offset_x:={cfg.hold_x}",
               f"hold_offset_y:={cfg.hold_y}",
               f"hold_offset_z:={cfg.hold_z}",
+              f"hold_yaw_deg:={cfg.hold_yaw}",
               f"rate_hz:={cfg.rate_hz}"]
     if cfg.source == "px4-gt":
         params += [f"px4_position_topic:=/fmu/out/{GT_TOPIC}",
@@ -1856,6 +1864,9 @@ def main(argv=None) -> int:
     ap.add_argument("--hold-x", type=float, default=0.0)
     ap.add_argument("--hold-y", type=float, default=0.0)
     ap.add_argument("--hold-z", type=float, default=1.0, help="悬停高度（ENU，米）")
+    ap.add_argument("--hold-yaw", type=float, default=0.0,
+                    help="悬停参考机头（deg，透传给节点的 `hold_yaw_deg`）。★ 造一条**已知大小**的机头"
+                         "误差：SITL 里解锁时机头 ≈ 0 ⟹ 误差 ≈ 这个值。见 `dut_params()` 的 ★★")
     #: ★ 默认给 **150 s**（不是 40）：`OfflineOcp()` 首次会代码生成 + 编译 C（`test_mpc_node`
     #:   的 `STARTUP_S` 也按 120 s 留）；卡太短会把"节点还在编译"读成"中间件没通"。
     #:   缓存命中时实测 ~8–12 s。
@@ -1914,6 +1925,11 @@ def main(argv=None) -> int:
                 obs["plant_checks"] = evaluate_plant(plant)
                 cfg = argparse.Namespace(**vars(args))
                 cfg.name = f"hover-{args.hold_z:g}m"
+                # ★ 机头参考非零才加后缀：DUT 的 JSONL 与观测文件都按 `cfg.name` 命名，
+                #   不加就会让 `--hold-yaw 20` 的那一场**覆盖**同高度的常规场（两场的证据
+                #   互相踩掉、而文件名一样 ⟹ 事后分不清哪一场是哪一场）。
+                if args.hold_yaw:
+                    cfg.name += f"-yaw{args.hold_yaw:g}"
                 cfg.log_file = str(Path(args.outdir) / f"{cfg.name}-{args.source}.jsonl")
                 argv_dut = ["--ros-args"]
                 for p in dut_params(cfg):
