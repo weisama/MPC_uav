@@ -89,9 +89,16 @@ def _dut_env() -> dict:
             "LD_LIBRARY_PATH": f"{root / 'lib'}:{os.environ.get('LD_LIBRARY_PATH', '')}"}
 
 
-def _scenario(**params) -> Scenario:
-    """一个 Phase 2 的场景：假 PX4 + 脚本化动捕 + 真的 DUT 子进程。"""
-    return Scenario(dut=DUT, px4=True, mocap=True, params=params, dut_env=_dut_env())
+def _scenario(start_dut: "bool | None" = None, **params) -> Scenario:
+    """一个 Phase 2 的场景：假 PX4 + 脚本化动捕 + 真的 DUT 子进程。
+
+    ★ `start_dut` 是**台架的**开关（`Scenario.__init__`），不是 DUT 的 ROS 参数 —— 必须在这里
+      摘出来转发。混进 `params` 的话 DUT 会以"未知参数"启动失败，而 `mpc_node` 的参数白名单
+      恰好会把这件事**变成一条清楚的报错**（rclpy 自己不会因为多一个参数报错，所以它选择主动拒）。
+      ⚠️ 第一手（2026-09-30）：写成 `**params` 一把抓时，`start_dut=False` 就是这样暴露的。
+    """
+    return Scenario(dut=DUT, px4=True, mocap=True, params=params, start_dut=start_dut,
+                    dut_env=_dut_env())
 
 
 def _wait_dut_up(sc: Scenario, timeout_s: float = STARTUP_S) -> None:
@@ -1656,6 +1663,243 @@ def test_兜底期间垂直偏置冻结但不清零(tmp_path):
         (f"兜底期间 ΔF 变了：正常帧末尾 {d}，兜底段取到 "
          f"{sorted({r['df'] for r in fb})[:5]} ⟹ 要么还在积（不冻结）、要么被清零了")
 
+
+
+# ─────────────────── 轨迹参考 `/traj/reference`（ticket 17）───────────────────
+
+#: 假 `traj` 上电时**不动**（`FakeTraj.running` 只有收到 `/traj/start` 才为真，见它的 ★★ 第 1 条）
+#: ⟹ 本组的用例必须自己按一下"开始"。⚠️ **Phase 2 里没有那个按键的合法主人**：
+#: 真身上是 `control` 节点发的（`/traj/start`），而 `mpc_node` **不接管轨迹几何**（本票的边界）。
+#: 所以按下它的这一方在台架上就是**测试自己**（= 操作员）—— 别把它挪进 DUT，
+#: 那会让"参考还没来"那条闸门（`no_traj_reference`）永远走不到。
+_TOPIC_TRAJ_START = "/traj/start"
+
+# ⚠️ **本组对"别的会话"比本文件其它用例更敏感**（第一手，2026-09-30）：本机的台架都跑在
+#    domain 73 上，而 `/traj/*` 是**全固定**的话题名 ⟹ 另一个会话正在跑 `control` / `traj`
+#    的测试时，它那份 `FakeTraj` 会**往同一对话题上发**：一份参考、以及它会发 `/traj/start`。
+#    症状（2026-09-30 实测到一次）：`test_没有参考时闸门不开` 里那句
+#    `traj.reference_frames == 0` 变成 205 —— 假 traj 被人从外面点着了。
+#    ★ 方向是好的：这类污染只会让断言**变红**（多一份参考 ⟹ 目标点不对 / `ref_frozen` 不为真 /
+#      闸门不该开却开了），**不会**让它假绿。所以判据是"重跑一次"而不是"改断言"。
+_污染提示 = "（先看 `pgrep -af pytest`：本机 domain 73 上可能还有一个会话在跑台架）"
+
+
+def _按下开始键(sc: Scenario, traj) -> None:
+    """给假 `traj` 发一帧 `/traj/start`，并等到它**真的开始发参考**。
+
+    ★ 两段等待都不是客套：① 发现是异步的，`get_subscription_count()` 到 1 之前发的那一帧
+      会**丢**（症状是"按了没反应"）；② `FakeTraj` 是 50 Hz 定时器驱动的，`reference_frames`
+      涨了才算参考真的上了线（否则后面的判据会量到"参考没来"）。
+    """
+    from std_msgs.msg import Empty
+
+    pub = sc.node.create_publisher(Empty, _TOPIC_TRAJ_START, 10)
+    sc.wait_for(lambda: pub.get_subscription_count() >= 1, timeout_s=10.0,
+                message=f"假 traj 没订上 {_TOPIC_TRAJ_START}（发现还没跑完就发 ⟹ 那一帧丢了）")
+    pub.publish(Empty())
+    sc.wait_for(lambda: traj.reference_frames > 0, timeout_s=10.0,
+                message="按了开始键，假 traj 一帧参考都没发（`selected` 为假？定时器没转？）")
+
+
+def test_掩码常量与_mavros_msgs_逐位相同():
+    """★ 本文件是**唯一**能验这条的地方：`node_core` 按契约不 import ROS ⟹ 它的 `IGNORE_*`
+    是**手抄**的常量（见 `traj_reference_fields` 的 ★★）。
+
+    抄错一位的症状是"某一轴参考恒为 0"或"某一轴照着一个被忽略的字段走" —— 两者在话题面上
+    都像正常飞行。所以这里逐位对一遍真消息类的常量，并顺手把"默认掩码 `2496` 下
+    位置/速度/yaw 全都有效"这件事**在真类上**再验一次（`test_node_core.py` 只能验到内部自洽）。
+
+    ⚠️ 这一条**不起 DUT**（纯常量），所以它是廉价的那一档 —— 但它守的是**协议**，
+      而协议的错法是这一票里最安静的一种。
+    """
+    from mavros_msgs.msg import PositionTarget
+
+    from nmpc import node_core as nc
+
+    for name in ("IGNORE_PX", "IGNORE_PY", "IGNORE_PZ",
+                 "IGNORE_VX", "IGNORE_VY", "IGNORE_VZ", "IGNORE_YAW"):
+        assert getattr(nc, name) == getattr(PositionTarget, name), \
+            f"{name} 与 mavros_msgs 对不上（手抄的常量漂了）"
+    # Phase 1 的 `kTypeMask`（`traj_node.cpp` 的默认掩码）：只忽略加速度三位与 yaw_rate。
+    default_mask = (PositionTarget.IGNORE_AFX | PositionTarget.IGNORE_AFY
+                    | PositionTarget.IGNORE_AFZ | PositionTarget.IGNORE_YAW_RATE)
+    assert default_mask == 2496, "默认掩码变了 ⟹ 位置/速度/yaw 的有效性断言要重写"
+    assert default_mask & (nc.IGNORE_PX | nc.IGNORE_PY | nc.IGNORE_PZ
+                           | nc.IGNORE_VX | nc.IGNORE_VY | nc.IGNORE_VZ
+                           | nc.IGNORE_YAW) == 0, \
+        "默认掩码下这三样该全有效；有交集说明掩码或常量抄错了"
+
+
+def test_轨迹档才订_traj_reference_而默认档一帧都不订():
+    """★ 条件订阅的可断言形态（与 A 档"不订动捕"那条同一纪律，ticket 09 的 ★★）。
+
+    两个方向都要量，缺一半就是假断言：
+      · `reference_source=traj` ⟹ `/traj/reference` 上**有**订阅者；
+      · 默认档（`hold`）⟹ **一个都没有**（"订阅了但不看"在话题边界上不可证伪，
+        而那正是"默认档不改变任何现有行为"这条承诺唯一的黑盒证据）。
+
+    ⚠️ 断言的**顺序**是判据的一部分（第一手教训见 A 档那条）：必须等发现跑完再说"没有订阅者"。
+      屏障取"假 traj 已经和 DUT 见面了"或"心跳已发出 + `hold(1.0)`"，再加正控 ——
+      否则"零订阅者"与"节点压根没起来"在断言里长得一样。
+
+    ★★ **两个方向都用"起 DUT 前后订阅者数目的差"来判**（`start_dut=False` + 手工 `start_dut()`），
+      而**不是**判 `matched_subscribers() == 0`。第一手（2026-09-30）：那条更直觉的写法**会假红**
+      —— `/traj/reference` 的**正常**订阅者里就有 Phase 1 的 `control_node`（它才是这条话题
+      原本的消费者），而本机的台架都跑在 domain 73 上：另一个会话跑 `src/control/test` 时，
+      它的 `control_node` 会让这个计数**恒 ≥ 1**。判差之后，外来的订阅者被同时计入前后两边
+      而消掉，**只有我们自己这个进程**才动得了这个差。
+      ⚠️ 同理，正向那条若写 `>= 1` 就是**假绿**的（外来订阅者替我们满足了它）。
+    """
+    with _scenario(reference_source="traj", start_dut=False) as sc:
+        from bench import FakeTraj
+        traj = FakeTraj(sc.node, sc)
+        sc.hold(1.5)                            # 等发现跑完（此刻 DUT 还没起 ⟹ 基线不含我们）
+        base = traj.matched_subscribers()
+        sc.start_dut()
+        _wait_dut_up(sc)
+        sc.hold(1.0)
+        assert traj.matched_subscribers() == base + 1, \
+            f"轨迹档下 DUT 没有给 /traj/reference 加上一个订阅者（{base} → {traj.matched_subscribers()}）"
+        _按下开始键(sc, traj)                                  # 没有参考的话闸门不会开
+        _arm_and_offboard(sc)
+        sc.wait_for(lambda: len(sc.px4.published_frames("rates")) >= 5, timeout_s=10.0,
+                    message="正控不成立：订上参考之后并没有真的开始发 setpoint")
+
+    with _scenario(start_dut=False) as sc:                    # 默认档 = hold
+        from bench import FakeTraj
+        traj = FakeTraj(sc.node, sc)
+        sc.hold(1.5)
+        base = traj.matched_subscribers()
+        sc.start_dut()
+        _wait_dut_up(sc)
+        sc.hold(1.0)
+        assert traj.matched_subscribers() == base, \
+            ("默认（hold）档下 DUT 也订了 /traj/reference —— 那会让「默认档不改变任何现有行为」"
+             "不可证伪（这条数错了不是外来的订阅者，差值已经把它消掉了）")
+        _arm_and_offboard(sc)
+        sc.wait_for(lambda: len(sc.px4.published_frames("rates")) >= 5, timeout_s=10.0,
+                    message="正控不成立：默认档在解锁之后没发 setpoint（那说明「没订」是因为节点坏了）")
+
+
+def test_轨迹参考驱动目标点_且参考速度进了日志(tmp_path):
+    """★★ 本票的**行为**判据：`/traj/reference` 一到，目标点就从"锚点 + `hold_offset`"
+    变成"**锚点 + 参考给的相对量**"，而且参考的**速度**（不是测量的速度）出现在日志里。
+
+    ★ 鉴别力在哪儿：同样的动捕位置 `(1,2,3)`，`hold` 档的目标点是 `(1,2,3)`、速度恒 0；
+      轨迹档这里是 `(1.5, 1.75, 3.0)`、速度 `(0.2,0,0)` ⟹ 三种数都**互不相同**，
+      所以这条断言能把"参考真的接上了"与"参考被忽略、退回了悬停"分开
+      （后者是这一票最可能的失效形态：掩码读错、坐标没接上、订阅没成功）。
+    ★ `x_ref0_v` 是**参考的速度**而不是测量的：夹具的动捕速度是 0（`VrpnSource.velocity` 默认），
+      所以这一格非 0 **只可能**来自参考那条消息 —— 这是它比位置更能证伪的地方。
+
+    参考用的是**常量偏移 + 常量速度**这一族（也正是 `traj_reference` 的精确解族，见
+    `hold_feedforward` 的 ☠️ 2026-09-30 订正）：`p_rel` 不随时间变，而**时域外推**由参考
+    自己的速度给 ⟹ 目标点在时间轴上是一条以 `v` 前进的直线。
+    """
+    log = tmp_path / "traj.jsonl"
+    with _scenario(reference_source="traj", log_file=str(log), log_every=1) as sc:
+        from bench import FakeTraj
+        sc.mocap_source.position = (1.0, 2.0, 3.0)
+        traj = FakeTraj(sc.node, sc,
+                        reference_fn=lambda _t: (0.5, -0.25, 0.0),
+                        velocity_fn=lambda _t: (0.2, 0.0, 0.0))
+        _wait_dut_up(sc)
+        sc.wait_for(lambda: traj.matched_subscribers() >= 1, timeout_s=10.0,
+                    message="DUT 没订上 /traj/reference")
+        _按下开始键(sc, traj)
+        _arm_and_offboard(sc)
+        sc.wait_for(lambda: len(sc.px4.published_frames("rates")) >= 20, timeout_s=10.0,
+                    message="参考一直在发，闸门却没开 ⟹ 参考那条没进 `cycle()`")
+        sc.hold(0.5)
+
+        rows = [r for r in _读日志(log) if r.get("x_ref0")]
+        assert rows, "逐帧日志一帧都没写（`log_file` 参数没生效？）"
+        r = rows[-1]
+        assert r["reference_source"] == "traj"
+        assert r["x_ref0"] == pytest.approx([1.5, 1.75, 3.0], abs=1e-4), \
+            "目标点不是「锚点 + 参考给的相对量」（退回参数化悬停了？）"
+        assert r["x_ref0_v"] == pytest.approx([0.2, 0.0, 0.0], abs=1e-6), \
+            "参考的速度没进日志（`velocity` 那三格被掩码吃了 / 没读？）"
+        # ★ 正控的反面：测量速度是 0（假动捕不发速度）⟹ 上面那一格非 0 只可能来自参考。
+        assert r["x0"][3:6] == pytest.approx([0.0, 0.0, 0.0], abs=1e-6), \
+            "测量速度非 0 ⟹ 上面那条断言就不是「参考的速度」了（夹具的假设变了）"
+
+
+def test_参考断流之后冻结_而不是停发(tmp_path):
+    """★ Phase 1 的裁定在 Phase 2 的落点：**缺参考 ⟹ 保持上一个目标，不回退到原点**
+    （`phase1-implementation.md` §3.3；`StopConfig.traj_stream_gap_s`）。
+
+    ★ 参数名与 Phase 1 那一档**逐字相同**（`src/control/README.md:119` 的 `traj_stream_gap_s`）：
+      那边 0.5 s ⟹ 保持上一个目标，`traj_timeout_s`（3.0 s）是**另一级**（放弃这一趟）。
+      本节点只有第一级，见 `node_core.StopConfig.traj_stream_gap_s` 的 ⚠️。
+
+    断言三件事，少一件这条就不成立：
+      ① **setpoint 照发**（心跳那一路不算 —— 它本来就无条件发，见模块 docstring 的 ★★）；
+      ② 日志里 `ref_frozen` 为真、`x_ref0_v` 归零；
+      ③ 目标点**守住**（不回到原点、也不继续往前飘）。
+    ☠️ ②里"速度归零"这一项是**必须**的：只冻位置不冻速度的话，参考会按自己的速度继续
+      往前外推、自己飞走，而飞机照着追 —— 一个**不会报错**的漂移源。
+    """
+    log = tmp_path / "freeze.jsonl"
+    with _scenario(reference_source="traj", traj_stream_gap_s=0.3,
+                   log_file=str(log), log_every=1) as sc:
+        from bench import FakeTraj
+        sc.mocap_source.position = (1.0, 2.0, 3.0)
+        traj = FakeTraj(sc.node, sc,
+                        reference_fn=lambda _t: (0.5, -0.25, 0.0),
+                        velocity_fn=lambda _t: (0.2, 0.0, 0.0))
+        _wait_dut_up(sc)
+        sc.wait_for(lambda: traj.matched_subscribers() >= 1, timeout_s=10.0,
+                    message="DUT 没订上 /traj/reference")
+        _按下开始键(sc, traj)
+        _arm_and_offboard(sc)
+        sc.wait_for(lambda: len(sc.px4.published_frames("rates")) >= 20, timeout_s=10.0,
+                    message="参考一直在发，闸门却没开")
+
+        t0 = sc.t()
+        traj.silence()                       # 上游没了：不归零、不发任何东西
+        sc.advance_to(t0 + 1.5)
+
+        n_sp = len(sc.px4.frames_between("rates", t0 + 0.8, t0 + 1.5))
+        assert n_sp > 0, "参考断流之后 setpoint 停了 —— 该冻住，不该交给兜底阶梯"
+        assert sc.dut_alive(), "DUT 在参考断流期间退出了"
+
+        rows = [r for r in _读日志(log) if r.get("x_ref0")]
+        tail = rows[-1]
+        assert tail["ref_frozen"] is True, "参考断了 1.2 s 还没冻（`traj_stream_gap_s=0.3`）"
+        assert tail["x_ref0_v"] == pytest.approx([0.0, 0.0, 0.0], abs=1e-6), \
+            "★ 冻结必须把**速度**一起归零，否则参考自己按 v 继续外推、飞机照着追"
+        assert tail["x_ref0"] == pytest.approx([1.5, 1.75, 3.0], abs=1e-4), "冻结该守住最后那一点"
+        # 正控：断流之前它确实在动（否则"冻住"与"从头就没接上"分不开）。
+        early = [r for r in rows if r.get("ref_frozen") is False]
+        assert early and early[-1]["x_ref0_v"] == pytest.approx([0.2, 0.0, 0.0], abs=1e-6), \
+            "断流之前参考速度就不是 0.2 ⟹ 这条用例没有鉴别力"
+
+
+def test_没有参考时闸门不开_理由是_no_traj_reference():
+    """轨迹档下**一帧参考都没到** ⟹ 闸门必须关着，且理由要指得出是"参考没来"。
+
+    ★ 为什么看理由而不是只看"没发"：`not_armed` / `no_mocap` / `no_traj_reference`
+      在"发了没有"这一层长得一模一样，而根因完全不同。这条闸门是**本票新增**的那一条，
+      它进不了日志的话，现场"解锁了、offboard 了、什么都没发"就查不出是谁拦的。
+    ★ 正控在同一个场景里：心跳照发（否则"没发 setpoint"可能只是节点没起来）。
+    """
+    with _scenario(reference_source="traj") as sc:
+        from bench import FakeTraj
+        traj = FakeTraj(sc.node, sc)          # ★ 刻意**不按开始键**：一帧参考都不会有
+        _wait_dut_up(sc)
+        sc.wait_for(lambda: traj.matched_subscribers() >= 1, timeout_s=10.0,
+                    message="DUT 没订上 /traj/reference")
+        _arm_and_offboard(sc)
+        sc.hold(1.5)
+
+        assert traj.reference_frames == 0, "假 traj 自己发了参考 ⟹ 本用例的前提不成立"
+        n_sp = len(sc.px4.published_frames("rates"))
+        assert n_sp == 0, f"参考一帧都没到，却发了 {n_sp} 帧 setpoint"
+        assert len(sc.px4.published_frames("mode")) > 50, "心跳没在发 ⟹ 不是闸门拦的，是节点没起来"
+        assert sc.dut_alive()
+        assert "no_traj_reference" in sc.dut_log(), \
+            f"停发的理由不是 no_traj_reference（日志尾：{sc.dut_log()[-500:]!r}）"
 
 
 # ───────────────────────────── 在这一层量不了的那几条（不写假测试）─────────────────────────────

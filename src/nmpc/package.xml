@@ -25,6 +25,17 @@
   <depend>geometry_msgs</depend>
   <depend>nav_msgs</depend>
   <depend>visualization_msgs</depend>
+  <!-- ★ `reference_source=traj` 时要收 `/traj/reference`（ticket 17）。复用 Phase 1 的
+       `mavros_msgs/PositionTarget`（理由见 `mpc_node.py` 模块 docstring 的 ★）。
+       `mavros_msgs` 是**消息定义包**：`CMakeLists.txt` 只调 `rosidl_generate_interfaces`，
+       全文件没有 `find_package(mavros)` / `libmavros` / 插件 ⟹
+       这一条**不把 mavros 那半边（节点、插件）拉进 Phase 2 的运行环**。
+       ⚠️ **一处要说准**（2026-09-30 第一手）：它的 `package.xml:34` 里有一条
+       `<build_export_depend>libmavconn</build_export_depend>`，而它自己的构建**从不使用**
+       （全仓没有 `find_package(libmavconn)`；本机 Humble 里 `/opt/ros/humble/share/libmavconn`
+       根本不存在）⟹ 那是一条**悬空声明**，作用只到"下游在**构建依赖图**里排在它后面"。
+       ★ 且 `libmavconn` 与 `mavros` 节点**不是同一个包** —— 运行环里仍然没有任何 mavros 侧二进制。 -->
+  <depend>mavros_msgs</depend>
 
   <test_depend>ament_cmake_pytest</test_depend>
   <!-- ★ seam 1 的集成测试（`test/test_mpc_node.py`）用仓库里的台架夹具起 DUT 子进程

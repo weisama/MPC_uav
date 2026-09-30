@@ -18,6 +18,7 @@
 | 订阅 | `/mocap/velocity_enu`（`geometry_msgs/TwistStamped`，**ENU**，B 档；`state_source=mocap` 时才有） | 可靠 / depth 10 | `mocap_rel_pose_node.cpp` 的 `QoS(10)`；★ 速度来源（ticket 15）—— `PoseStamped` 没有 `twist` 字段，`v` 必须走这条独立话题才能进 `x + v·τ` |
 | 订阅 | `/fmu/out/vehicle_local_position` + `/fmu/out/vehicle_attitude`（**NED/FRD**，A 档；`state_source=px4` 时才有这两条） | **BEST_EFFORT** / depth 1 | 发布方实测 best_effort + TRANSIENT_LOCAL（2026-09-28，z0 SITL，A 档探针）⟹ 订阅侧写 RELIABLE 就**一个回调都不进** |
 | 订阅 | `/fmu/out/vehicle_status` | **BEST_EFFORT** / depth 1 | PX4 的 writer 是 best_effort（`utilities.hpp:59-63`）⟹ 订阅侧写 RELIABLE 就**一个回调都不进** |
+| 订阅 | `/traj/reference`（`mavros_msgs/PositionTarget`；`reference_source=traj` 时才有这一条） | 可靠 / depth 10 | `traj_node.cpp:108-109` 的 `rclcpp::QoS(10)`（默认 reliable + volatile） |
 | 发布 | `/fmu/in/vehicle_rates_setpoint` | BEST_EFFORT + TRANSIENT_LOCAL / depth 1 | PX4 的 reader 是 best_effort（`utilities.hpp:114-119`）；TRANSIENT_LOCAL 让晚起的 reader 也能拿到最后一帧 |
 | 发布 | `/fmu/in/offboard_control_mode`（`body_rate = True`，其余 False） | 同上 | 同上 |
 | 发布 | `/mpc/predicted_path`、`/mpc/reference`（RViz 用，`nav_msgs/Path` / `Marker`） | 默认（可靠） | 本仓自己的观测面，不接飞控 |
@@ -40,6 +41,40 @@
   而"订阅了但不看"在话题边界上**不可证伪**（DDS 里那条订阅明明白白地在那儿）。
   条件订阅让这条验收项变成一个**黑盒可断言的事实**：
   `state_source=px4` 时 `/mocap/pose_enu` 的 `matched_subscribers() == 0`。
+
+★★ **两档参考源**（`-p reference_source:=hold|traj`，ticket 17）：**与 `state_source` 正交**
+（两个 `if`，不是一个 `else`），两档**只差"目标点从哪里来"**：
+
+| 档 | 目标点 | 话题 | 用在 |
+|---|---|---|---|
+| `hold`（默认） | 锚点 + 参数化 `hold_offset`，速度 0、水平姿态 | 无（参数） | 悬停（ticket 09/20），**默认档 = 不改变任何现有行为** |
+| `traj` | **锚点 + `/traj/reference` 给的相对量**，速度由参考自己给 | `/traj/reference`（`mavros_msgs/PositionTarget`，与 Phase 1 同话题同类型 ⟹ `traj` 节点零改动） | 飞轨迹（ticket 11 的判据②） |
+
+★ 为什么复用 Phase 1 那个类型、那个话题名（ticket 17 的裁定，第一手）：
+  ① 仓里的回放包（bags 3/4）**已经**把 `/traj/reference` 记成 `mavros_msgs/msg/PositionTarget`
+     ⟹ 换类型就要为回放写一层转换，而那层转换是**没有真值可对**的那种代码；
+  ② `mavros_msgs` 是**消息定义包**（`CMakeLists.txt` 只调 `rosidl_generate_interfaces`，
+     全文件没有 `find_package(mavros)` / `libmavros` / 插件）⟹
+     "把 mavros 拉进 Phase 2 的环里"这个担心不成立。
+     ⚠️ **一处要说准**（2026-09-30 第一手）：它的 `package.xml:34` 有一条
+     `<build_export_depend>libmavconn</build_export_depend>`，而它自己的构建**从不使用**
+     （全仓没有 `find_package(libmavconn)`；本机 Humble 里 `/opt/ros/humble/share/libmavconn`
+     根本不存在）⟹ 那是一条**悬空声明**，作用只到"下游在**构建依赖图**里排在它后面"，
+     且 `libmavconn` 与 `mavros` 节点不是同一个包；
+  ③ `traj` 节点一个字都不用改 ⟹ 轨迹的形状（三条几何、`traj_origin` 语义）与 Phase 1 完全同一份。
+
+★ **轨迹原点取在锚点上**（= `reference_abs = 锚点 + p_rel`）：这与 Phase 1 的裁定同构 ——
+  Phase 1 的 `traj_origin` 就是 `control` 在 HOVER 判稳那一刻记的**自己当前位置**
+  （`phase1-implementation.md` §3.3 第一手表），**不是**动捕原点；理由是"偏移被自动吸收：
+  在同一个坐标系里以当前点为 0 发指令"。Phase 2 的锚点（闸门第一次打开那一拍的测量）
+  是同一件事 —— **加原点这件事发生在下游这一侧**，`traj` 只知道相对量。
+  ⚠️ 由此带来的**已知限制**：`p_rel` 给的是形状，绝对落点由"闸门打开时飞机在哪"决定
+  ⟹ 与"按动捕原点摆放的绝对轨迹"差一个常值平移。起飞点摆得离轨迹起点越近，这个平移越小。
+  **这一点留给 ticket 11 的实飞去确认或推翻**，本票只把口径写死。
+
+★ 为什么 `traj` 档**拒绝**非 0 的 `hold_offset`（`_validate`）：那时目标点已经是"锚点 + 相对量"，
+  再叠一个平移既不是轨迹的一部分、也不是锚点的一部分，而症状是"整条轨迹偏了一截"
+  —— 看着像轨迹算错了。切档时忘掉 `hold_offset_z` 是最自然的操作失误，所以让它**启动即退**。
 
 ⚠️ 话题名参数化（而不是写死）的理由 —— A 档真正要回答的是"**我们的约定与真 PX4 一致**"，
   而这个问题的证据链只有一条：拿一条**已知真值**的 PX4 状态流喂进去，看指令方向对不对。
@@ -156,6 +191,13 @@ from geometry_msgs.msg import PoseStamped, TwistStamped  # noqa: E402
 # ⚠️ **必须改名**：`nav_msgs/Path` 与 `pathlib.Path` 同名，直接 import 会把上面那个
 #    悄悄换掉 —— 症状是"读 `/proc/self/status` 时 `Path.__init__() takes 1 positional argument`"，
 #    即一个与可视化毫无关系的报错（本文件第一次跑就是这么炸的）。
+# ★ `/traj/reference` 的类型**复用 Phase 1 的**（ticket 17 的裁定）：`traj` 节点一个字都不用改。
+#   ⚠️ `mavros_msgs` 是**消息定义包**（`CMakeLists.txt` 只调 `rosidl_generate_interfaces`），
+#   不把 mavros 那半边（mavros 节点、插件、`libmavros`）拉进 Phase 2 的环里 ——
+#   Phase 2 走 uXRCE-DDS，与 mavros 是两条并行的下游，互不依赖。
+#   （它 `package.xml` 里那条 `<build_export_depend>libmavconn</build_export_depend>` 是**悬空**的，
+#   详见模块 docstring 的 ★★ 第 ② 条。）
+from mavros_msgs.msg import PositionTarget  # noqa: E402
 from nav_msgs.msg import Path as NavPath  # noqa: E402
 from rclpy.executors import ExternalShutdownException  # noqa: E402
 from rclpy.node import Node  # noqa: E402
@@ -168,7 +210,8 @@ from px4_msgs.msg import (OffboardControlMode, VehicleAttitude,  # noqa: E402
                           VehicleStatus)
 
 from nmpc import NU, sign_map  # noqa: E402
-from nmpc.node_core import (FALLBACK_HOLD_FRAMES, STATE_SOURCE_PX4, STATE_SOURCES,  # noqa: E402
+from nmpc.node_core import (FALLBACK_HOLD_FRAMES, REFERENCE_SOURCE_TRAJ,  # noqa: E402
+                            REFERENCE_SOURCES, STATE_SOURCE_PX4, STATE_SOURCES,
                             ControlConfig, FallbackLadder, NodeCore, StopConfig,
                             frame_is_finite, hold_feedforward, saturated_bounds,
                             solution_usable)
@@ -191,12 +234,23 @@ QOS_PUB_FMU = QoSProfile(history=HistoryPolicy.KEEP_LAST, depth=1,
 #: （`mocap_rel_pose_node.cpp:110`，与 `bench/vrpn_source.py` 的 `mocap_qos()` 一致）。
 QOS_MOCAP = QoSProfile(history=HistoryPolicy.KEEP_LAST, depth=10,
                        reliability=ReliabilityPolicy.RELIABLE)
+#: `/traj/reference` 的发布方是 `traj` 节点，用 `rclcpp::QoS(10)`
+#: （`traj_node.cpp:108-109`：默认 reliable + volatile、depth 10）⟹ 与 `QOS_MOCAP` **同形**。
+#: ⚠️ 仍然**单独一个名字**：两条话题的发布方毫无关系，共用一个名字意味着哪天
+#: `mocap` 那条的 QoS 一改会顺带改到轨迹这条上，而这件事在话题面上看不出来。
+QOS_TRAJ_REF = QoSProfile(history=HistoryPolicy.KEEP_LAST, depth=10,
+                          reliability=ReliabilityPolicy.RELIABLE)
 
 TOPIC_MOCAP = "/mocap/pose_enu"
 #: 动捕**速度**（`geometry_msgs/TwistStamped`，ENU，与 `/mocap/pose_enu` 同一个 frame）——
 #: `mocap` 节点把 `/vrpn/<刚体>/twist` 原样 republish 出来（ticket 15）。与 `TOPIC_MOCAP` 一样
 #: **写死**（不参数化）：它是 `mocap` 档**定死**的上游，而 A 档那两条才是"可以换一条流"的参数。
 TOPIC_MOCAP_VEL = "/mocap/velocity_enu"
+#: **轨迹参考**（ticket 17）：`mavros_msgs/PositionTarget`，与 Phase 1 的 `traj` 节点同类型同话题名
+#: ⟹ `traj` 侧零改动。与 `TOPIC_MOCAP` 一样**写死**（不参数化）：它是"轨迹"这件事的上游，
+#: 而话题名换了就等于换了一套几何 —— 那种改动该改代码，不该改启动参数（同 `TOPIC_MOCAP` 的理）。
+#: 只有 `reference_source=traj` 时才订阅（同 `state_source` 的条件订阅纪律）。
+TOPIC_TRAJ_REF = "/traj/reference"
 TOPIC_STATUS = "/fmu/out/vehicle_status"
 #: A 档的状态话题（`state_source=px4`）。★ 默认值是**飞控自己的估计**（票面原文点名要的这两条），
 #: 而它们是可以换的 —— 换话题（真值 / 记录回放）是参数的事，见模块 docstring 的表。
@@ -261,9 +315,27 @@ class NodeParams:
     #: A 档：PX4 状态话题（默认是飞控自己的估计；换真值/回放只是改这两个参数）
     px4_position_topic: str = TOPIC_PX4_POS
     px4_attitude_topic: str = TOPIC_PX4_ATT
+    #: ★★ **参考从哪里来**（ticket 17）：`hold`（默认）= 参数化的悬停锚点 + `hold_offset`；
+    #: `traj` = `/traj/reference`（`mavros_msgs/PositionTarget`，与 Phase 1 同一个话题）。
+    #: ☠️ **与 `state_source` 正交**：两档各自独立选（A 档也能飞轨迹、动捕档也能只悬停），
+    #:   所以这里**不合并**成一个"档位"参数 —— 那会造出两个只在某几种组合下成立的档名。
+    #: ⚠️ `traj` 档下 `hold_offset` 必须是 0：那时的目标点是"锚点 + 轨迹给的相对量"，
+    #:   再叠一个偏移就是一个**没人能说清它意味着什么**的平移（校验见 `_validate`）。
+    reference_source: str = "hold"
+    #: `traj` 档：参考**断流**判据 [s] ⟹ **冻结**（位置保持、速度置 0），**不是**停发。
+    #: ★ 依据是 Phase 1 的裁定"缺一帧参考就保持上一个目标，不回退到原点"
+    #:   （`phase1-implementation.md` §3.3）；停发的后果比丢帧激烈得多（见 `node_core` 的闸门）。
+    #: ★★ **名字抄 Phase 1 的**（`src/control/README.md:119`）：它那一级就叫 `traj_stream_gap_s`
+    #:   （0.5 s ⟹ 保持上一个目标），而 `traj_timeout_s` 在那边是**另一级**（3.0 s ⟹ 放弃这一趟）。
+    #:   ☠️ 本参数**一度叫 `traj_timeout_s`**，那是同一个名字指两个阈值、两种后果 ——
+    #:   现场照文档读数会读错一档，所以改掉。**本节点没有那第二级**（见 `node_core` 的说明）。
+    #: 取 0.5 s 与 `mocap_timeout_s` / `px4_timeout_s` **同量级**：上游 `traj` 是 50 Hz 发的
+    #:   ⟹ 25 拍才判超时，远大于抖动；而它在"上游真挂了"时半秒内就冻住。
+    traj_stream_gap_s: float = 0.5
     #: 参考点相对**位置保持锚点**的偏移 [m]（ENU）。
     #: ★ 锚点 = 闸门第一次打开那一拍的测量，之后不再移动（ticket 09）⟹ 这是**绝对**目标；
     #:   早期写成"相对当拍测量"的版本会让误差永远关不掉，见 `node_core.hold_reference` 的 ★★。
+    #: ⚠️ **只在 `reference_source=hold` 时被读**；`traj` 档下必须全 0（`_validate` 会拒非 0）。
     hold_offset: tuple = (0.0, 0.0, 0.0)
     keep_yaw: bool = True
     hold_yaw_deg: float = 0.0
@@ -300,11 +372,13 @@ class NodeParams:
         return ControlConfig(
             tau_s=self.tau_s,
             state_source=self.state_source,
+            reference_source=self.reference_source,
             hold_offset=tuple(float(v) for v in self.hold_offset),
             hold_yaw=yaw,
             stop=StopConfig(
                 mocap_timeout_s=self.mocap_timeout_s,
                 px4_timeout_s=self.px4_timeout_s,
+                traj_stream_gap_s=self.traj_stream_gap_s,
                 status_timeout_s=self.status_timeout_s,
                 stop_on_nav_state_exit=self.stop_on_nav_state_exit,
                 stop_on_armed_drop=self.stop_on_armed_drop,
@@ -321,7 +395,8 @@ class NodeParams:
 
     def describe(self) -> str:
         return ("rate=%g Hz 心跳=%g Hz viz=%g Hz | ★状态源=%s（%s）"
-                " | τ=%g s 参考偏移=%s yaw=%s"
+                " | ★参考=%s"
+                " | τ=%g s 参考偏移(仅hold档)=%s yaw=%s"
                 " | 模型 mass=%g kg hover_thrust=%g ⇒ T_max=%.4f N"
                 " | 垂直偏置 ki_z=%g N/(m·s)%s"
                 " | 停机(mocap>%g s / px4>%g s / status>%g s / 离开 offboard=%s / 掉 armed=%s)"
@@ -329,6 +404,7 @@ class NodeParams:
                 " | 兜底：保持 %d 拍 → 安全悬停；位姿合理性上限 %g m/s / %g rad/s"
                 % (self.rate_hz, self.heartbeat_hz, self.viz_hz,
                    self.state_source, self.state_source_desc(),
+                   self.reference_source_desc(),
                    self.tau_s,
                    tuple(round(float(v), 3) for v in self.hold_offset),
                    "保持当前" if self.keep_yaw else f"{self.hold_yaw_deg:g}°",
@@ -354,6 +430,16 @@ class NodeParams:
             return f"PX4 {self.px4_position_topic} + {self.px4_attitude_topic}（NED/FRD）"
         return f"{TOPIC_MOCAP} + {TOPIC_MOCAP_VEL}（ENU/FLU）"
 
+    def reference_source_desc(self) -> str:
+        """参考那一档**实际会订阅什么**（与 `state_source_desc` 同一用途：日志 + 话题边界断言）。
+
+        ★ 独立一行（不并进 `state_source_desc`）：两个来源正交，合成一句之后
+          "`hold` 档有没有订阅 `/traj/reference`"在日志里就查不出来了。
+        """
+        if self.reference_source == REFERENCE_SOURCE_TRAJ:
+            return f"{TOPIC_TRAJ_REF}（相对锚点，断流 {self.traj_stream_gap_s:g} s 冻结）"
+        return f"参数化锚点 + 偏移 {tuple(round(float(v), 3) for v in self.hold_offset)}"
+
 
 class MpcNode(Node):
     """100 Hz 求解 + 50 Hz 心跳 + 10 Hz RViz 的 (C) 级 CTBR（总推力 + 机体角速率）节点。"""
@@ -370,7 +456,9 @@ class MpcNode(Node):
         #   但"先绑再建"能让首次编译也落在同一个核上，读数才有可比性）。
         self.ocp = ocp if ocp is not None else OfflineOcp(params=self.z0)
         self.config = params.control_config()
-        self.core = NodeCore(self.z0, self.config, self.ocp.config.N)
+        # ★ 第 4 个参数是**求解器的**离散步长（`tf/N`），只有 `traj` 档的参考外推用它；
+        #   从 `self.ocp` 现取（不写死、也不从 `tau_s` 推）—— 见 `NodeCore.__init__` 的 ★。
+        self.core = NodeCore(self.z0, self.config, self.ocp.config.N, self.ocp.dt)
 
         # —— 上游 ——
         # ★★ 按档**条件订阅**（ticket 09）：A 档不订阅动捕，于是"本档不使用动捕输入"这条
@@ -396,6 +484,12 @@ class MpcNode(Node):
             #   ⚠️ 两档的分岔仍只有这一处：A 档的速度在 `vehicle_local_position` 里，不订这条。
             self.sub_mocap_vel = self.create_subscription(
                 TwistStamped, TOPIC_MOCAP_VEL, self._on_mocap_velocity, QOS_MOCAP)
+        # ★ 参考那条（ticket 17）**与状态源正交**，所以是**另一个** `if`，不是上面那个的 `else`
+        #   ⟹ "A 档不订阅动捕"那条断言（`matched_subscribers() == 0`）不受影响。
+        self.sub_traj_ref = None
+        if params.reference_source == REFERENCE_SOURCE_TRAJ:
+            self.sub_traj_ref = self.create_subscription(
+                PositionTarget, TOPIC_TRAJ_REF, self._on_traj_reference, QOS_TRAJ_REF)
         self.sub_status = self.create_subscription(
             VehicleStatus, TOPIC_STATUS, self._on_status, QOS_SUB_STATUS)
 
@@ -474,12 +568,18 @@ class MpcNode(Node):
             f"；T_max={self.z0.t_max:.4f} N ⟹ 悬停归一化推力 "
             f"{self._hover_sp.thrust_body_z:+.4f}"
             f"；CPU 亲和性={self._cpus_allowed()}")
+        # ★ **这一行要列全所有的订阅**：它是"本档到底订了什么"在日志里的**唯一**落点，
+        #   而 A 档那条验收项（"本档不使用动捕输入"）就是拿它在启动日志里做断言的。
+        #   ⚠️ ticket 17 补了 `/traj/reference` 那一路 —— 原先漏了它，于是轨迹档的启动日志
+        #   与悬停档**一模一样**，而"参考那条订上了没有"正是轨迹档第一个要回答的问题。
+        subs = [f"{params.state_source_desc()}"
+                f"（{'BEST_EFFORT/depth 1' if params.state_source == STATE_SOURCE_PX4 else '可靠/depth 10'}）",
+                f"{TOPIC_STATUS}（**BEST_EFFORT**/depth 1）"]
+        if params.reference_source == REFERENCE_SOURCE_TRAJ:
+            subs.append(f"{TOPIC_TRAJ_REF}（可靠/depth 10）")
         self.get_logger().info(
-            "接口：订阅 %s（%s）+ %s（**BEST_EFFORT**/depth 1）；"
-            "发布 %s 与 %s（BEST_EFFORT + TRANSIENT_LOCAL/depth 1）"
-            % (params.state_source_desc(),
-               "可靠/depth 10" if params.state_source != STATE_SOURCE_PX4 else "BEST_EFFORT/depth 1",
-               TOPIC_STATUS, TOPIC_RATES, TOPIC_MODE))
+            "接口：订阅 %s；发布 %s 与 %s（BEST_EFFORT + TRANSIENT_LOCAL/depth 1）"
+            % (" + ".join(subs), TOPIC_RATES, TOPIC_MODE))
         if int(params.inject_solve_fail_after_frames) > 0:
             # ★ 用 **error** 级别、并且把"装桨前必须关"写在同一行：这一档一开，
             #   飞机收到的每一帧都是坏解兜底出来的 —— 它只该在台架/SITL 上出现。
@@ -544,6 +644,10 @@ class MpcNode(Node):
 
     def _on_attitude(self, msg: VehicleAttitude) -> None:
         self.core.on_attitude(msg, self._now_s())
+
+    def _on_traj_reference(self, msg: PositionTarget) -> None:
+        """`/traj/reference`（ticket 17）—— 掩码/非有限的解析在 `core.on_traj_reference` 里。"""
+        self.core.on_traj_reference(msg, self._now_s())
 
     def _on_status(self, msg: VehicleStatus) -> None:
         self.core.on_status(msg, self._now_s())
@@ -869,10 +973,11 @@ class MpcNode(Node):
         |---|---|
         | `solve_ms` / `solve_ok` / `status` / `sqp_iter` / `qp_stat` / `degraded` | "这一拍的解是怎么来的、求解器当时什么状态"（**D6 那个数字**就从 `solve_ms` 上取） |
         | `sat`（+ 收尾摘要的 `sat_count`） | "它有没有顶在约束上" —— 顶约束**不是错**，但漂移与顶约束同时出现就是归因线索 |
-        | `u` / `x0` / `x_ref0` | 把一帧从话题上**重算回去**：`u` 是求解器给的、`x0` 是喂进去的、`x_ref0` 是要它去哪 |
+        | `u` / `x0` / `x_ref0` / `x_ref0_v` | 把一帧从话题上**重算回去**：`u` 是求解器给的、`x0` 是喂进去的、`x_ref0` + `x_ref0_v` 是要它去哪、走多快 |
         | `u_ref0` / `x_ref0_q` | 代价里的**控制参考**与**姿态参考**（`x_ref0` 只有位置分量）：判"棘轮"要看 `u` 与 `u_ref0` 的差，判"机头在追哪"要看 `x0[6:10]` 与 `x_ref0_q` 的差 |
         | `ref_anchor` | "这个目标是哪一刻钉的、后来有没有被搬走"（`""` = 常态；见 `node_core._update_anchor`） |
         | `state_source` / `age_*` / `ekf_*` | "这个数是**谁**给的、多旧"（A 档尤其重要，见 `node_core.describe_state`） |
+        | `reference_source` / `ref_cb` / `ref_bad` / `ref_age_s` / `ref_frozen` | "**参考**是谁给的、多旧、有没有被冻住"（ticket 17）；`ref_frozen` 为真时 `x_ref0_v` 应当是 0 |
         | `df` | "那个垂直积分偏置积到了多少"（ticket 20）—— 与**上一拍**的 `u[0]` 一起 `−thrust_body_z·t_max`，就是"它到底有没有加到发出去的指令上"（☠️ **不是同一拍**：见下面 `df` 那一列的 ☠️） |
 
         ⚠️ 一帧里**同时**有 `u`（FLU/ENU 的内部量）与 `roll/pitch/yaw/thrust_body_z`（PX4 的
@@ -912,6 +1017,14 @@ class MpcNode(Node):
             "sat": list(self._last_sat),
             "x0": None if cycle is None or cycle.x0 is None else _jlist(cycle.x0),
             "x_ref0": None if cycle is None or cycle.x_ref is None else _jlist(cycle.x_ref[0][:3]),
+            #: ★★ 参考的**速度**（`x_ref` 的第 3–6 个分量；`x_ref0` 只记了位置那三个）。
+            #:   为什么要单独一列（ticket 17）：它是"参考在不在动、朝哪动、多快"的**唯一**
+            #:   直接读数 —— 而它在 `hold` 档**恒为 0**（`hold_reference` 里速度那一项就是 0）
+            #:   ⟹ 轨迹档一接上，这一列就是一次**跳变**，"参考接到没有"不必再从别处推断。
+            #:   ⚠️ 它**不是**测量速度（那是 `x0[3:6]`，来自 PX4/动捕）：参考速度恒 0 而测量
+            #:   速度非 0 = 飞机在往目标点归位或**在漂**；两者分不开时看 `ref_frozen`。
+            "x_ref0_v": (None if cycle is None or cycle.x_ref is None
+                         else _jlist(cycle.x_ref[0][3:6])),
             #: ★★ 参考的**姿态**单独一列（`x_ref0` 只记了前 3 个位置分量）。
             #:   为什么要它：判"控制器在追哪去"要的是 `x_ref0_q` 与 `x0[6:10]` 的**差**，
             #:   而只有前者没进日志时，飞行后从 `x0` 那一列**推不出**参考机头
@@ -1141,6 +1254,8 @@ _PARAMS = (
     ("tau_s", 0.05, float),
     ("ki_z", 1.0, float),
     ("state_source", "mocap", str),
+    ("reference_source", "hold", str),
+    ("traj_stream_gap_s", 0.5, float),
     ("px4_position_topic", TOPIC_PX4_POS, str),
     ("px4_attitude_topic", TOPIC_PX4_ATT, str),
     ("hold_offset_x", 0.0, float),
@@ -1183,6 +1298,8 @@ def declare_params(node: Node) -> NodeParams:
         tau_s=get("tau_s").value,
         ki_z=get("ki_z").value,
         state_source=get("state_source").value,
+        reference_source=get("reference_source").value,
+        traj_stream_gap_s=get("traj_stream_gap_s").value,
         px4_position_topic=get("px4_position_topic").value,
         px4_attitude_topic=get("px4_attitude_topic").value,
         hold_offset=(get("hold_offset_x").value, get("hold_offset_y").value,
@@ -1257,7 +1374,7 @@ def _validate(p: NodeParams) -> None:
     而那时**节点已经起来了**（DDS 里也已经有话题了）⟹ 台架会把它读成"节点没发数据"。
     """
     for name in ("rate_hz", "heartbeat_hz", "viz_hz", "mass", "hover_thrust", "tau_s",
-                 "mocap_timeout_s", "px4_timeout_s", "status_timeout_s",
+                 "mocap_timeout_s", "px4_timeout_s", "traj_stream_gap_s", "status_timeout_s",
                  # 输入合理性那三条（ticket 07）：非有限会让判据**静默失效**
                  # （`nan > x` 恒假 ⟹ 跳变判据永远不触发，而"永远不触发"看起来像"没有跳变"）。
                  "mocap_stamp_regress_s", "mocap_jump_speed_max", "mocap_jump_rate_max"):
@@ -1285,6 +1402,20 @@ def _validate(p: NodeParams) -> None:
     if p.state_source == STATE_SOURCE_PX4 and not (p.px4_position_topic and p.px4_attitude_topic):
         raise SystemExit(f"A 档的两条状态话题都不能为空，收到 {p.px4_position_topic!r} / "
                          f"{p.px4_attitude_topic!r}")
+    # ★ 参考源（ticket 17）—— 同样**现在**就拒，不等第一拍。
+    if p.reference_source not in REFERENCE_SOURCES:
+        raise SystemExit(f"reference_source={p.reference_source!r} 不认识，只能是 "
+                         f"{list(REFERENCE_SOURCES)}（hold = 参数化悬停锚点；"
+                         "traj = /traj/reference，见模块 docstring）")
+    # ☠️ `traj` 档下 `hold_offset` **必须**为 0：那时目标点是"锚点 + 轨迹给的相对量"，
+    #    再叠一个偏移就是一个**没人能说清它意味着什么**的平移 —— 它既不是轨迹的一部分，
+    #    也不是锚点的一部分，而在话题面上它表现为"飞机整体偏了一截"，看着像轨迹算错了。
+    #    ⚠️ 这条**不是**形式主义：`hold_offset_z` 在 A 档悬停那几场里一直是个非 0 的值，
+    #      切档时忘掉它是最自然的操作失误，而后果是**静默的常值位置偏差**。
+    if p.reference_source == REFERENCE_SOURCE_TRAJ and any(float(v) != 0.0 for v in p.hold_offset):
+        raise SystemExit(
+            f"reference_source=traj 时 hold_offset 必须全 0，收到 {p.hold_offset!r}"
+            "（traj 档的目标点 = 锚点 + /traj/reference 给的相对量，见 ticket 17）")
 
 
 def main(argv=None) -> int:

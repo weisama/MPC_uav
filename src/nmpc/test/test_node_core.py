@@ -22,19 +22,34 @@ import numpy as np
 import pytest
 
 from nmpc.model import NX, quat_angle, yaw_quat
-from nmpc.node_core import (ARMING_STATE_ARMED, FALLBACK_HOLD_FRAMES, JUMP_DT_FLOOR_S,
-                            NAV_STATE_OFFBOARD, TAU_DEFAULT_S, WARMUP_CYCLES,
+from nmpc.node_core import (ARMING_STATE_ARMED, FALLBACK_HOLD_FRAMES, IGNORE_PX, IGNORE_PY,
+                            IGNORE_PZ, IGNORE_VX, IGNORE_VY, IGNORE_VZ, IGNORE_YAW,
+                            JUMP_DT_FLOOR_S, NAV_STATE_OFFBOARD, REFERENCE_SOURCE_TRAJ,
+                            TAU_DEFAULT_S, WARMUP_CYCLES,
                             ControlConfig, FallbackLadder, NodeCore, StopConfig,
                             extrapolate_state, frame_is_finite, hold_feedforward,
                             hold_reference, mocap_stamp_s, pose_to_state, px4_pose_to_enu,
                             px4_quat_to_enu,
                             px4_stamp_s, px4_vector_to_enu, saturated_bounds, solution_usable,
-                            yaw_from_quat)
+                            traj_reference, traj_reference_fields, yaw_from_quat)
 from nmpc.ocp import OcpConfig
 from nmpc.params import DEFAULT as P
 from nmpc.sign_map import Px4RatesSetpoint
 
-N = OcpConfig().N
+_OCP_CFG = OcpConfig()
+N = _OCP_CFG.N
+#: 求解器的离散步长 —— 与 `OfflineOcp.dt` **同一个口径**（`tf / N`，`ocp.py:423-425`）。
+#: ★ 从配置**现算**、不写 `0.02`：参考外推用的就是它（`traj_reference`），
+#:   而"外推的步长对不对"在话题面上完全静默（用成 `tau_s` 只会让斜率整体差 2.5 倍）。
+#: ⚠️ 本文件的契约是"**不建**求解器"（`OcpConfig` 只是个 dataclass）⟹ 不去 `OfflineOcp` 上取那个属性
+#:   （那会代码生成 + 编译 C）。
+#: ☠️ **口径一致这件事只钉住了一半，说清楚**：本文件钉的是"`NodeCore` 用的步长**就是**调用方给的
+#:   那个数，且那个参数**必填、无默认值**"（`test_时域步长是必填参数_口径不对必须当场红`）——
+#:   于是"忘了传/传错成 `tau_s`"不可能静默。**跨模块那一半**（`mpc_node` 传的确实是
+#:   `self.ocp.dt` 而不是别的数）靠的是**构造**：`mpc_node.py` 那一行只有一种写法，
+#:   而 DUT 的启动日志把 OCP 的步长印成 ms（`内部步长 … ms`）⟹ 对不上时日志里看得见。
+#:   ⟹ **不要**在这里写"由节点侧的用例钉" —— 那条用例并不存在，也不是靠断言钉的。
+DT = _OCP_CFG.tf / _OCP_CFG.N
 
 
 # ───────────────────────────── 小替身（鸭子类型，不 import ROS）─────────────────────────────
@@ -97,7 +112,7 @@ class _Status:
 
 
 def _core(config: ControlConfig | None = None) -> NodeCore:
-    return NodeCore(P, config or ControlConfig(), N)
+    return NodeCore(P, config or ControlConfig(), N, DT)
 
 
 # ───────────────────────────── 纯函数 ─────────────────────────────
@@ -1115,6 +1130,254 @@ def test_饱和标志认得出顶在约束上_且不把擦边当饱和():
     assert saturated_bounds([0.99 * p.f_max, 0.9, 0.9, 0.9], p) == ()
     # 零推力 = 顶在下界（FLU 下推力非负，下界就是 0）
     assert saturated_bounds([0.0, 0.0, 0.0, 0.0], p) == ("F_min",)
+
+
+# ─────────────────── 轨迹参考 `/traj/reference`（ticket 17）───────────────────
+
+class _TrajRef:
+    """`mavros_msgs/PositionTarget` 的形状（只造被测代码会读的那几个字段：位置/速度/yaw/掩码）。"""
+    def __init__(self, position=(0.0, 0.0, 0.0), velocity=(0.0, 0.0, 0.0),
+                 yaw=0.0, mask=2496):
+        self.position = _Vec(*position)
+        self.velocity = _Vec(*velocity)
+        self.yaw = float(yaw)
+        self.type_mask = int(mask)
+
+
+def _traj_config(**kw) -> ControlConfig:
+    """`traj` 档的配置（与 `hold` 档**只差这一个字段**，所以其它字段照旧用默认值）。"""
+    kw.setdefault("warmup_cycles", 0)
+    stop = StopConfig(**kw)
+    return ControlConfig(reference_source=REFERENCE_SOURCE_TRAJ, stop=stop)
+
+
+def test_掩码常量的低位与_位布局对得上():
+    """★★ 这一条钉的是**掩码常量的数值本身**（不是"代码读了掩码"）。
+
+    为什么值得单独一条：这几个数是**协议**（`mavros_msgs/PositionTarget` 的 `IGNORE_*`），
+    而它们在我们这边是**手抄**的（`node_core` 不许 import ROS）。抄错一位的症状是
+    "某一轴参考恒为 0"或"某一轴参考照着一个被忽略的字段走" —— 两者在话题面上都像正常飞行。
+    ⚠️ 与真消息类的**交叉核对**在 `test_mpc_node.py`（那一侧 import 得动 `mavros_msgs`）；
+      这里只验**内部自洽**：位置/速度/yaw 那七位恰好是低 11 位里的 1087，且与默认掩码
+      `2496`（= IGNORE_AFX|AFY|AFZ|YAW_RATE，Phase 1 `traj_node.cpp` 的 `kTypeMask`）
+      **无交集** —— 也就是"默认掩码下位置、速度、yaw 三样全都有效"。
+    """
+    valid = IGNORE_PX | IGNORE_PY | IGNORE_PZ | IGNORE_VX | IGNORE_VY | IGNORE_VZ | IGNORE_YAW
+    assert valid == 1087
+    assert 2496 & valid == 0, "默认掩码 2496 下这三样该全有效；有交集说明抄错位了"
+
+
+def test_轨迹参考掩码逐轴生效():
+    """★★ **被忽略的轴必须真的不读** —— 而不是"读了但恰好值也对"。
+
+    这条的鉴别力全在**故意填错值**上：被忽略的那几轴填 99 / −77 / 88 / 66，
+    一旦代码去读了它们，读数会立刻变（而默认掩码下位置那几位恰好是真值 ⟹ 那个错法
+    在默认掩码上**看不出来**，只有把掩码换成"忽略某几轴"才暴露）。第一手的反例形态见
+    `traj_reference_fields` 的 ★★：被忽略的字段里上游**允许**放任意值。
+    """
+    msg = _TrajRef(position=(1.5, 99.0, -77.0), velocity=(0.3, 88.0, 66.0), yaw=0.7,
+                   mask=IGNORE_PY | IGNORE_PZ | IGNORE_VY | IGNORE_VZ)
+    p, v, yaw, bad = traj_reference_fields(msg)
+    assert bad is None
+    assert p[0] == pytest.approx(1.5)
+    assert p[1] is None and p[2] is None, "位置 y/z 被掩码忽略 ⟹ 必须是 None（不是 99.0 / −77.0）"
+    assert v[0] == pytest.approx(0.3)
+    assert v[1] is None and v[2] is None, "速度 y/z 被掩码忽略 ⟹ 必须是 None（不是 88.0 / 66.0）"
+    assert yaw == pytest.approx(0.7)
+
+
+def test_有效轴上的非有限值是坏帧_被忽略的不是():
+    """⚠️ 两条取向都在这一条里：**有效轴**上出现 NaN ⟹ 整帧作废（同 `_measure_mocap`）；
+    **被忽略的轴**上出现 NaN **不算坏帧**（那一轴本来就不该读，上游往里放什么是它的自由）。"""
+    ok = _TrajRef(position=(0.0, float("nan"), 0.0),
+                  mask=IGNORE_PY)                       # 非有限的是**被忽略**的那一轴
+    assert traj_reference_fields(ok)[3] is None
+    bad = _TrajRef(position=(0.0, float("nan"), 0.0),
+                   mask=IGNORE_PZ)                      # 非有限的是**有效**的那一轴
+    assert traj_reference_fields(bad)[3] is not None
+    # ★ 读数要指得出是哪一轴（而不是一句"帧坏了"）—— 复盘时那一格是唯一的线索。
+    assert "y" in traj_reference_fields(bad)[3]
+
+
+def test_轨迹参考是模型的一条精确解():
+    """★★★ **本票的核心断言**（票面 ⚠️ 1 的落点）：`traj_reference` 给的那条参考
+    连同 `hold_feedforward` 给的那个 `u`，**是模型自己的一条精确解**。
+
+    为什么这条是核心：代价项是 `R·(u − u_ref)`，所以"参考 + `u_ref` 是不是模型的一条解"
+    = "`u_ref` 对不对"。给定参考族（匀速直线 + 水平姿态 + 纯偏航）与 `u_ref = [m·g, 0,0,0]`，
+    `f(x_ref, u_ref) = ẋ_ref` **恒成立**（无阻力模型里匀速平动不需要倾角，倾角是加速度才要的）
+    ⟹ `hold_feedforward` **不需要**为轨迹档改动。票面那条 ⚠️（"前馈要按参考自己的导数重算"）
+    对本参考族**不成立**：它要防的是"参考带持续加速度/角速率而 `u_ref` 还是悬停配平"。
+    ☠️ 所以**这条测试红了就是在说**：参考族或者 `u_ref` 有一边改错了 —— 而且红法很难看
+    （`step_rk4` 往前走一步就对不上参考），不是"差一点点"。
+
+    ★ 鉴别力（**这条不是形式主义**）：把 `traj_reference` 换成**零阶保持**（位置钉在当拍参考上、
+      速度那一项照旧填 `v`）当场变红 —— 那正是 `traj_reference` 的 ⚠️ 里描述的那个
+      **自相矛盾**的参考（位置项要它停、速度项要它走）。2026-09-30 手工验证过：改坏之后
+      位置那一行立刻差 `v·dt = 4 mm`（每步），而不是"抖一下"。
+    """
+    from nmpc.model import Z0MultirotorRateModel
+
+    v = np.array([0.35, -0.12, 0.08])              # 三个轴都非 0（单轴的非 0 会漏掉耦合）
+    yaw = 0.4
+    cfg = ControlConfig(reference_source=REFERENCE_SOURCE_TRAJ, hold_yaw=None)
+    anchor = pose_to_state((1.0, 2.0, 3.0), yaw_quat(yaw))
+    x_ref = traj_reference(anchor, cfg, N, DT,
+                           p_rel=(0.5, -0.25, 0.1), v_rel=tuple(v), yaw_ref=yaw)
+    u_ref = hold_feedforward(P, N)
+    model = Z0MultirotorRateModel(P)
+    for k in range(N):                              # 逐步比（不累积误差）
+        nxt = model.step_rk4(np.asarray(x_ref[k], float), np.asarray(u_ref[k], float), DT)
+        assert nxt == pytest.approx(np.asarray(x_ref[k + 1], float), abs=1e-12), (
+            f"第 {k} 步：参考 + 解析前馈不是模型的解 ⟹ 参考族或 u_ref 算错了"
+            "（零阶保持就会这样红：位置项要它停、速度项要它走）")
+
+
+def test_时域步长是必填参数_口径不对必须当场红():
+    """★ "参考外推用的步长 = 求解器的离散步长"这条口径里，**本文件能钉的那一半**。
+
+    ⚠️ 为什么值得单独一条：这三个候选数在本仓里**都是正常量级** ——
+      求解器步长 `tf/N = 20 ms`、`tau_s = 50 ms`、控制周期 `1/100 Hz = 10 ms`。
+      传错一个**不报错**，只让参考的时域斜率整体差一个常数倍
+      （症状是"飞机总是慢一步/冲过头"，而话题上一切正常）。
+
+    两件事各挡一个错法：
+      ① `NodeCore` 的第 4 个参数**没有默认值** ⟹ "忘了传"当场 `TypeError`，
+         不会退回某个看起来合理的缺省（有默认值的话，忘了传 = 静默用错步长）；
+      ② **传什么就用什么**：步长翻倍，时域末点的外推距离就翻倍 ——
+         这条同时钉住"它没有被 `NodeCore` 内部改写成 `tau_s` 或别的数"。
+    """
+    anchor = pose_to_state((0.0, 0.0, 1.0), yaw_quat(0.0))
+    p_rel, v_rel = (0.0, 0.0, 0.0), (1.0, 0.0, 0.0)     # 朝 +x 以 1 m/s 走
+
+    with pytest.raises(TypeError):
+        NodeCore(P, ControlConfig(), N)                  # 少给第 4 个参数
+
+    tips = []
+    for dt in (DT, 2 * DT):
+        cfg = _traj_config()
+        core = NodeCore(P, cfg, N, dt)
+        core.on_status(_Status(), at_s=0.0)
+        core.on_traj_reference(_TrajRef(position=p_rel, velocity=v_rel), at_s=0.0)
+        core.on_mocap(_Mocap(position=(0.0, 0.0, 1.0)), at_s=0.0)
+        tips.append(core.cycle(0.01).x_ref[-1][0])
+
+    assert tips[0] == pytest.approx(N * DT, abs=1e-6), "末点 = 步长 × 步数"
+    assert tips[1] == pytest.approx(2 * tips[0], abs=1e-6), \
+        "步长翻倍而外推距离没翻倍 ⟹ 传进去的那个数被谁改写过了"
+
+
+def test_轨迹参考按参考自己的速度线性外推():
+    """时域上 `p_ref(t_k) = 锚点 + p_rel + v·(k·dt)`，其余分量**逐点相同**。
+
+    ★ 外推用的 `dt` 是**求解器的**离散步长（`OcpConfig.dt`），不是 `tau_s`、不是 1/rate。
+      这三个数在本仓里分别是 20 ms / 50 ms / 10 ms ⟹ 用错了洞**不报错**，只让参考的斜率
+      整体偏一个常数倍（"飞机总是慢一步/冲过头"，而话题上一切正常）。
+    """
+    cfg = ControlConfig(reference_source=REFERENCE_SOURCE_TRAJ)
+    anchor = pose_to_state((1.0, 2.0, 3.0), yaw_quat(0.0))
+    v = (0.5, 0.0, -0.25)
+    x_ref = traj_reference(anchor, cfg, N, DT, p_rel=(1.0, 0.0, 0.5), v_rel=v, yaw_ref=0.0)
+    assert x_ref.shape == (N + 1, NX)
+    assert x_ref[0][:3] == pytest.approx([2.0, 2.0, 3.5])
+    for k in range(N + 1):
+        assert x_ref[k][:3] == pytest.approx([2.0 + 0.5 * k * DT, 2.0, 3.5 - 0.25 * k * DT])
+        assert x_ref[k][3:6] == pytest.approx(list(v)), "速度那一项在时域上是常量"
+    assert x_ref[0][6:10] == pytest.approx(x_ref[-1][6:10]), "姿态在时域上是常量"
+
+
+def test_参考超时冻结_位置守住速度归零():
+    """★ 参考断流 ⟹ **冻结**（Phase 1 的裁定："缺一帧参考就保持上一个目标，不回退到原点"）。
+
+    ☠️ **只冻位置不冻速度是错的**（`traj_reference` 的 ★★）：外推项会继续把参考往前推，
+      参考自己飞走而飞机照着追 —— 一个**不会报错**的漂移源。所以这条断言必须**同时**
+      查两件事：位置不再外推（`x_ref[1] == x_ref[0]`）**且**速度那一项为 0。
+    ★ 另一件同样重要的事：冻结**不关闸门**（`publish` 仍为 True）—— 关闸门会让兜底阶梯
+      接管（hold 10 帧 ⟹ 安全悬停），那比"就地停住"激烈得多。
+    """
+    cfg = _traj_config(traj_stream_gap_s=0.2, mocap_timeout_s=10.0)
+    core = _core(cfg)
+    core.on_status(_Status(), at_s=0.0)
+    core.on_traj_reference(_TrajRef(position=(0.5, 0.0, 0.0), velocity=(0.2, 0.0, 0.0)), at_s=0.0)
+    core.on_mocap(_Mocap(position=(1.0, 2.0, 3.0)), at_s=0.0)
+    fresh = core.cycle(0.05)
+    assert fresh.publish and not core.traj_frozen(0.05)
+    assert fresh.x_ref[0][3:6] == pytest.approx([0.2, 0.0, 0.0])
+    assert fresh.x_ref[1][:3] == pytest.approx([1.5 + 0.2 * DT, 2.0, 3.0]), "新鲜时该外推"
+
+    core.on_mocap(_Mocap(position=(1.0, 2.0, 3.0)), at_s=0.5)
+    frozen = core.cycle(0.5)                       # 参考的龄 = 0.5 s > 0.2 s
+    assert core.traj_frozen(0.5)
+    assert frozen.publish, "冻结不是停发（停发会把兜底阶梯拉进来）"
+    assert frozen.x_ref[0][:3] == pytest.approx([1.5, 2.0, 3.0]), "位置该守在被冻结的那一点"
+    assert frozen.x_ref[0][3:6] == pytest.approx([0.0, 0.0, 0.0]), "★ 速度必须归零"
+    assert frozen.x_ref[-1][:3] == pytest.approx(frozen.x_ref[0][:3]), "★ 时域上不许再外推"
+
+
+def test_坏帧不刷新参考_龄继续变大直到冻结():
+    """坏帧的处置：**不覆盖**上一帧好参考（于是龄继续变大 ⟹ 走到冻结），而不是"这一拍不发"。
+
+    ★ 取向与输入合理性的那三条判据一致（**宁可退化，不可误停**）：上游偶发一帧 NaN
+      不该让飞机停发；而"这一帧不算数"这件事**已经**由龄反映了 —— 不需要第二条判据。
+    ★ 计数要分得开：`ref_cb` 涨而 `ref_bad` 也涨 ⟹ 上游在写坏值，`ref_bad_why` 指得出是哪一格。
+    """
+    cfg = _traj_config(traj_stream_gap_s=0.2, mocap_timeout_s=10.0)
+    core = _core(cfg)
+    core.on_status(_Status(), at_s=0.0)
+    core.on_traj_reference(_TrajRef(position=(0.5, 0.0, 0.0), velocity=(0.2, 0.0, 0.0)), at_s=0.0)
+    core.on_traj_reference(_TrajRef(position=(float("nan"), 0.0, 0.0), velocity=(0.2, 0.0, 0.0)),
+                           at_s=0.25)
+    d = core.describe_state(0.25)
+    assert d["ref_cb"] == 2 and d["ref_bad"] == 1
+    assert d["ref_age_s"] == pytest.approx(0.25), "坏帧不刷新 ⟹ 龄接着上一帧好参考算"
+    assert "x" in d["ref_bad_why"]
+
+    core.on_mocap(_Mocap(position=(1.0, 2.0, 3.0)), at_s=0.5)
+    assert core.cycle(0.5).publish, "坏帧不该让闸门关上（它是可恢复的）"
+    assert core.traj_frozen(0.5), "好帧一直不来 ⟹ 0.2 s 后冻结"
+
+
+def test_没收到参考时闸门关闭且锚点不被钉住():
+    """★★ 顺序断言：`traj` 档下**参考没到 ⟹ 这一拍整个作废，锚点不许被它钉住**。
+
+    为什么这条要专门测（它不是一个"顺手"的顺序）：锚点是"闸门第一次打开那一拍的位置"，
+    而 `traj` 档的目标点 = **锚点 + 相对量**。若在参考还没到的那些拍上就把锚点钉了，
+    等参考真到的那一拍，目标点会**少走一个参考位移** —— 症状是"启动时目标偏了一点"，
+    不会报错，也不会让任何阈值变红。
+    ★ 断言用**黑盒**做法（不碰 `core._anchor_pos`）：先在没有参考时把飞机放在 A 点，
+      再把飞机挪到 B 点并给上参考 ⟹ 目标点该是 `B + p_rel`。若是 `A + p_rel`，说明钉早了。
+    """
+    cfg = _traj_config(mocap_timeout_s=10.0)
+    core = _core(cfg)
+    core.on_status(_Status(), at_s=0.0)
+    core.on_mocap(_Mocap(position=(1.0, 2.0, 3.0)), at_s=0.0)     # A 点，此时还没有参考
+    assert core.cycle(0.05).reason == "no_traj_reference"
+
+    core.on_traj_reference(_TrajRef(position=(0.5, 0.0, 0.0)), at_s=0.1)
+    core.on_mocap(_Mocap(position=(4.0, 5.0, 6.0)), at_s=0.1)     # B 点
+    cyc = core.cycle(0.15)
+    assert cyc.publish
+    assert cyc.x_ref[0][:3] == pytest.approx([4.5, 5.0, 6.0]), \
+        "锚点被参考到达**之前**的那一拍钉住了（目标点该以 B 点为基准）"
+
+
+def test_hold_档完全不理轨迹参考():
+    """★ 两个来源**正交**的另一半：`hold` 档下 `/traj/reference` 即使送进来也一个字不读。
+
+    这条是"默认档 = 不改变任何现有行为"的可执行版本：`hold` 档的目标点必须还是
+    `锚点 + hold_offset`，与有没有参考消息无关。
+    """
+    cfg = ControlConfig(stop=StopConfig(warmup_cycles=0))
+    core = _core(cfg)
+    core.on_status(_Status(), at_s=0.0)
+    core.on_traj_reference(_TrajRef(position=(9.0, 9.0, 9.0), velocity=(5.0, 0.0, 0.0)),
+                           at_s=0.0)
+    core.on_mocap(_Mocap(position=(1.0, 2.0, 3.0)), at_s=0.0)
+    cyc = core.cycle(0.05)
+    assert cyc.publish
+    assert cyc.x_ref[0][:3] == pytest.approx(
+        [1.0 + cfg.hold_offset[0], 2.0 + cfg.hold_offset[1], 3.0 + cfg.hold_offset[2]])
+    assert cyc.x_ref[0][3:6] == pytest.approx([0.0, 0.0, 0.0]), "hold 档的速度恒为 0"
 
 
 # ───────────────────────────── 小工具 ─────────────────────────────

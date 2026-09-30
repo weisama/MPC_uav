@@ -57,8 +57,12 @@ __all__ = [
     "TAU_DEFAULT_S", "WARMUP_CYCLES", "FALLBACK_HOLD_FRAMES", "JUMP_DT_FLOOR_S",
     "ARMING_STATE_ARMED", "NAV_STATE_OFFBOARD",
     "STATE_SOURCE_MOCAP", "STATE_SOURCE_PX4", "STATE_SOURCES", "SAT_TOL_REL",
+    "REFERENCE_SOURCE_HOLD", "REFERENCE_SOURCE_TRAJ", "REFERENCE_SOURCES",
+    "IGNORE_PX", "IGNORE_PY", "IGNORE_PZ", "IGNORE_VX", "IGNORE_VY", "IGNORE_VZ",
+    "IGNORE_YAW",
     "StopConfig", "ControlConfig", "Cycle", "NodeCore", "FallbackLadder",
-    "extrapolate_state", "hold_reference", "yaw_from_quat", "pose_to_state",
+    "extrapolate_state", "hold_reference", "traj_reference", "traj_reference_fields",
+    "yaw_from_quat", "pose_to_state",
     "mocap_stamp_s", "px4_stamp_s", "px4_vector_to_enu", "px4_quat_to_enu",
     "px4_pose_to_enu", "saturated_bounds", "frame_is_finite", "solution_usable",
 ]
@@ -107,6 +111,32 @@ STATE_SOURCE_MOCAP = "mocap"
 STATE_SOURCE_PX4 = "px4"
 STATE_SOURCES = (STATE_SOURCE_MOCAP, STATE_SOURCE_PX4)
 
+#: **参考从哪里来**（`-p reference_source:=…`，ticket 17）—— 与 `state_source` **正交**
+#: （测量从哪来 × 参考从哪来 = 4 种组合，都合法，见 `mpc_node` 的模块 docstring）。
+#:
+#: | 档 | 参考 | 用在 |
+#: |---|---|---|
+#: | `hold`（默认） | **参数化的位置保持**：`锚点 + hold_offset`，速度 0、机头 = 锚点机头 | 至今为止的全部实飞（A 档 ticket 09、B 档 ticket 11） |
+#: | `traj` | `/traj/reference`（`mavros_msgs/PositionTarget`，**相对轨迹原点**）⟹ 目标 = **本节点的锚点** + 它 | S5 判据②「三条轨迹」（[ticket 11](../../../.scratch/phase2/issues/11-sitl-tier-b-seam3.md) 的飞） |
+#:
+#: ★ 为什么合成一个封闭集合：参数写错一个字母（`track`）必须**启动即退** —— 否则它会被
+#:   当成"等于 hold"而静静地悬停在原地，而"MPC（模型预测控制）在追一条轨迹"与"它锚在原地"在话题面上
+#:   都是**频率正常、数值有限**的一串角速率（同 `STATE_SOURCES` 的理由）。
+REFERENCE_SOURCE_HOLD = "hold"
+REFERENCE_SOURCE_TRAJ = "traj"
+REFERENCE_SOURCES = (REFERENCE_SOURCE_HOLD, REFERENCE_SOURCE_TRAJ)
+
+#: `mavros_msgs/PositionTarget.type_mask` 里**我们用到的**几个"忽略"位。
+#: ★ 本模块的契约是**不 import ROS**（含 `mavros_msgs`）⟹ 这几个数只能抄一份；
+#:   "抄的那份与 msg 一致"由 `test_mpc_node.py::test_掩码常量与_mavros_msgs_逐位相同`
+#:   对着真 msg 类断言（权威在 msg）。
+#: ⚠️ `type_mask` 的语义是「**置 1 = 忽略该字段**」，不是「置 1 = 有效」—— 读反了的症状是
+#:   "参考变成全 0"，而 `/traj/reference` 的默认掩码 `2496` 里位置位全是 0 ⟹ 读反了
+#:   它会**恰好**表现成"在原地悬停"，与 `hold` 档长得一模一样。
+IGNORE_PX, IGNORE_PY, IGNORE_PZ = 1, 2, 4
+IGNORE_VX, IGNORE_VY, IGNORE_VZ = 8, 16, 32
+IGNORE_YAW = 1024
+
 #: 判"顶在约束上"（饱和标志）的**相对**容差。★ 它只是**日志标志**的阈值，不是正确性判据
 #: （正确性那条是 `SolveInfo.u_bound_violation`，用生产阈值判越界）。
 #: 取 1‰ 的理由是第一手的：QP 给出的"打满"是 `3.8399998` 而不是 `3.84`（实测，见
@@ -135,6 +165,24 @@ class StopConfig:
     mocap_timeout_s: float = 0.5
     #: PX4 那条状态源的龄上限 [s]（位置与姿态**各自**判 —— 它们是两条消息）
     px4_timeout_s: float = 0.5
+    #: `/traj/reference` 的**断流**判据 [s]（只有 `reference_source="traj"` 才用得上）。
+    #: ★★ **名字对着 Phase 1 的那一档抄**（`src/control/README.md:119`）：Phase 1 有两级 ——
+    #:   `traj_stream_gap_s`（0.5 s）⟹ **保持上一个目标** + 重发 `/traj/start`；
+    #:   `traj_timeout_s`（3.0 s）⟹ `degrade=traj_timeout`（放弃这一趟）。
+    #:   本节点做的正是**第一级**，所以用第一级的名字。
+    #:   ☠️ **曾用过 `traj_timeout_s` 这个名字并因此改掉**：同一个名字在两栈里指**两个不同的
+    #:   阈值、两种不同的后果**（0.5 s 守住 vs 3.0 s 放弃）—— 现场照文档读数会读错一档。
+    #: ★ 量级照抄动捕那一条：`traj` 节点实测 50 Hz ⟹ 0.5 s = **25 帧**，是"明显断了"的量级。
+    #: ★★ **断流的后果不是停发**（与上面三条相反）：参考**冻住** —— 位置保持住、速度置 0
+    #:   （`traj_reference(..., freeze=True)`）。理由就是 Phase 1 第一级那条
+    #:   （[`control/README.md:402`](../../../src/control/README.md)：「缺一帧参考就保持上一个目标，
+    #:   **不回退到原点**」）：回退到原点 = 朝一个已经飞出去的点回去；冻住 = 就地停住。
+    #:   ⚠️ **冻住时必须把速度一起清掉**，否则"冻住的参考 + 它自己的速度"会让参考自己
+    #:   一路飞下去（外推用的是速度）—— 那是这一档最危险的一种静默失败。
+    #: ⚠️ **本节点没有第二级**（没有"断久了就放弃轨迹"这一档）：冻住之后一直守着，直到别的
+    #:   停机条件（离开 OFFBOARD / 掉 armed / 状态源超时）把闸门关上。理由：本节点**不是**
+    #:   任务状态机，它不认识"这一趟"是什么；"任务放弃"归 `control`（Phase 1）那一侧。
+    traj_stream_gap_s: float = 0.5
     status_timeout_s: float = 0.75
     #: 离开 OFFBOARD 就停（打杆接管 / ch6 切模式在节点这一侧的**唯一**表现，见模块 docstring）
     stop_on_nav_state_exit: bool = True
@@ -171,17 +219,23 @@ class ControlConfig:
     #: 这一趟的**测量从哪里来**（两档见模块 docstring）。取值必须是 `STATE_SOURCES` 里的一个，
     #: 校验在节点侧（`mpc_node._validate`）—— 本模块只按它分支。
     state_source: str = STATE_SOURCE_MOCAP
+    #: **参考从哪里来**（`REFERENCE_SOURCES` 里的一个；校验在节点侧 `mpc_node._validate`）。
+    #: ⚠️ 取值不认识时必须**启动即退** —— 见 `REFERENCE_SOURCES` 的理由。
+    reference_source: str = REFERENCE_SOURCE_HOLD
     #: 参考点相对**位置保持锚点**的偏移 [m]（ENU）。默认 (0,0,0) = 原地位置保持。
     #: ★★ 锚点是**闸门第一次打开那一拍**的测量，之后不随测量移动（`NodeCore._update_anchor`）
     #:   ⟹ 有了它，`hold_offset` 才是一个**绝对**目标（"从交班点起往上 1 m"），位置误差才关得掉。
     #: ⚠️ 它曾经是"相对**当拍测量**的偏移"，那时这一项恒等于误差、闭环没有不动点可言 ——
     #:   第一手证据（0.9 m/s 稳定爬升 37 s）见 `hold_reference` 的 ★★。
-    #: ★ 真正的轨迹接口（`/traj/reference` 订阅）仍是**未做项**（票 06 的账本判给了 ticket 09，
-    #:   而 ticket 09 选的是"锚点"这条最小路径 —— 归因与取舍记在
-    #:   `docs/control/tier-a-sitl-hover.md`）。
+    #: ★★ **只有 `reference_source="hold"` 读它**。`traj` 档下它必须**是 0**
+    #:   （节点启动时校验，见 `mpc_node._validate`）：那一档的"相对量"由 `/traj/reference`
+    #:   给，两个来源同时说话就是"原点有两个产地"——而它们在话题面上都表现为"目标在一个
+    #:   合理的位置上"，错了不报错。
     hold_offset: Tuple[float, float, float] = (0.0, 0.0, 0.0)
     #: 参考的机头（rad，ENU 从 +x 逆时针）。`None` = 保持**锚点那一拍**的机头。
     #: ★ 与位置同理：机头也是"交班时朝哪就保持朝哪"，不是一个每拍更新的量。
+    #: ★ 只有 `hold` 档读它；`traj` 档的机头来自 `/traj/reference` 的 `yaw` 字段
+    #:   （掩码说忽略时**才**退回这里 —— 见 `traj_reference`）。
     hold_yaw: Optional[float] = None
     #: 求解不可用之后**先保持几拍**上一帧可行指令，再切安全悬停（`FallbackLadder`，见常量）。
     fallback_hold_frames: int = FALLBACK_HOLD_FRAMES
@@ -428,6 +482,105 @@ def hold_reference(x_ref_pose: np.ndarray, config: ControlConfig, N: int) -> np.
     return np.tile(target, (N + 1, 1))
 
 
+def traj_reference_fields(msg) -> Tuple[Tuple[Optional[float], ...],
+                                        Tuple[Optional[float], ...],
+                                        Optional[float],
+                                        Optional[str]]:
+    """`/traj/reference`（`mavros_msgs/PositionTarget`）→ `(位置, 速度, yaw, 坏在哪)`。
+
+    返回**逐轴**可空的三元组：`None` 表示"这一轴按掩码应当**忽略**"，由调用方按
+    "忽略 = 保持锚点那一轴"处理（`traj_reference`）。`坏在哪` 非 `None` ⟹ 这一帧**整帧作废**。
+
+    ★★ **掩码必须真的读**（`type_mask` 置 1 = 忽略该字段）。这条不是形式主义：忽略掉的轴里
+      上游**允许**放任意值（`traj_node.cpp:325` 就把被忽略的 `acceleration_or_force` 与
+      `yaw_rate` 留成 0），于是"读了一个被忽略的字段"最常见的后果是**参考恒为 0** ——
+      而 `/traj/reference` 的默认掩码 `2496` 下位置位全是 0、位置字段里放的又正好是**真值**
+      ⟹ 读错在那一档看不出来。真正能看出它的是 `IGNORE_VX` 那一类：速度被忽略时字段里
+      是 0，照着读就是"参考速度 0"，而"速度 0"与"没有速度"在**参考**
+      （不是观测）这一侧是**两个不同的意思**：前者说"它就停在这儿"，后者说"不知道"。
+
+    ⚠️ **被忽略的轴上的非有限值不算坏帧**（那一轴本来就不该读）；**有效轴上**的非有限值是坏帧
+      —— 与 `_measure_mocap` 对动捕帧的取向一致（一帧里出现 NaN ⟹ 这一拍不发，而不是
+      "把这一轴当忽略"）。
+    """
+    mask = int(getattr(msg, "type_mask", 0))
+    pos = getattr(msg, "position", None)
+    vel = getattr(msg, "velocity", None)
+    # 一条轴一行：(轴名, 位置的忽略位, 速度的忽略位, 位置原值, 速度原值)
+    axes = [("x", IGNORE_PX, IGNORE_VX, getattr(pos, "x", None), getattr(vel, "x", None)),
+            ("y", IGNORE_PY, IGNORE_VY, getattr(pos, "y", None), getattr(vel, "y", None)),
+            ("z", IGNORE_PZ, IGNORE_VZ, getattr(pos, "z", None), getattr(vel, "z", None))]
+    got_p: list = []
+    got_v: list = []
+    for name, bit_p, bit_v, raw_p, raw_v in axes:
+        val_p = None if mask & bit_p else _finite_or_bad(raw_p)
+        val_v = None if mask & bit_v else _finite_or_bad(raw_v)
+        # `None` 在**有效**轴上 = 字段缺或非有限 ⟹ 整帧作废（被忽略的轴上 `None` 是正常的）
+        if val_p is None and not mask & bit_p:
+            return (None, None, None), (None, None, None), None, f"位置 {name} 非有限或缺失"
+        if val_v is None and not mask & bit_v:
+            return (None, None, None), (None, None, None), None, f"速度 {name} 非有限或缺失"
+        got_p.append(val_p)
+        got_v.append(val_v)
+
+    yaw = None
+    if not mask & IGNORE_YAW:
+        yaw = _finite_or_bad(getattr(msg, "yaw", None))
+        if yaw is None:
+            return tuple(got_p), tuple(got_v), None, "yaw 非有限或缺失"
+    return tuple(got_p), tuple(got_v), yaw, None
+
+
+def _finite_or_bad(raw) -> Optional[float]:
+    """有限 ⟹ 那个数；读不出来 / 非有限 ⟹ `None`（调用方判"坏帧"，见 `traj_reference_fields`）。"""
+    try:
+        f = float(raw)
+    except (TypeError, ValueError):
+        return None
+    return f if math.isfinite(f) else None
+
+
+def traj_reference(x_anchor: np.ndarray, config: ControlConfig, N: int, dt_s: float,
+                   p_rel, v_rel, yaw_ref: Optional[float], freeze: bool = False) -> np.ndarray:
+    """构造 `(N+1, NX)` 的**运动参考**：目标 = **锚点 + 相对轨迹**，`v` 由参考自己给。
+
+    逐轴的 `None`（掩码说"忽略"）⟹ 那一轴**保持锚点**（位置）/ **取 0**（速度）——
+    这与 MAVLink 的语义一致：忽略某一轴 = 不对那一轴提要求。
+
+    ★★ **时域上按参考自己的速度线性外推**：`p_ref(t_k) = 锚点 + p_rel + v·(k·dt_s)`。
+      这不是"锦上添花"，它是**参考自洽**的唯一取法 —— 见 `hold_feedforward` 的 ★★ 那段：
+      这个模型没有阻力，所以"匀速直线 + 水平姿态 + `F = m·g`"**本身就是模型的一条精确解**，
+      而"位置按 `v·t` 走"正是让 `f(x_ref, u_ref) = ẋ_ref` 成立的那一项。
+      ⚠️ 换成**零阶保持**（位置钉在当拍参考上、速度却填 `v`）就会得到一个**自相矛盾**的参考：
+      代价要它停在原地、速度项又要它以 `v` 前进 —— 而它在话题面上照样是一串正常的角速率。
+      判据是 `test_node_core.py::test_轨迹参考是模型的一条精确解`（拿模型的动力学往前推）。
+
+    ★★ `freeze=True`（参考超时，见 `StopConfig.traj_stream_gap_s`）⟹ **速度置 0**、位置不再外推
+      —— 也就是"就地停住"这条 Phase 1 已有的裁定。⚠️ **只冻位置不冻速度是错的**：
+      那样外推项会继续把参考往前推，参考自己飞走，而飞机照着追 —— 一个**不会报错**的漂移源。
+
+    姿态仍取**水平 + 纯偏航**（与 `hold_reference` 同一族）：理由见 `hold_feedforward` 的 ★★
+    —— 无阻力模型里"匀速平动"不需要倾角，倾角是**加速度**才需要的；而这一族的参考
+    （`/traj/reference` 只给位置与速度，加速度那几位在掩码里被忽略）**没有**加速度信息来源。
+    ⚠️ 一旦参考要带持续加速度（或持续角速率），这一族就不再是精确解，`hold_feedforward`
+    必须跟着换 —— 判据同样是那条"模型往前推"的测试，它会当场变红。
+    """
+    x = np.asarray(x_anchor, dtype=float).reshape(NX)
+    anchor_yaw = config.hold_yaw if config.hold_yaw is not None else yaw_from_quat(x[6:10])
+    yaw = anchor_yaw if yaw_ref is None else float(yaw_ref)
+
+    p_off = np.array([0.0 if v is None else float(v) for v in p_rel], dtype=float)
+    v_vec = np.zeros(3) if freeze else np.array(
+        [0.0 if v is None else float(v) for v in v_rel], dtype=float)
+
+    base = np.concatenate([x[:3] + p_off, v_vec, yaw_quat(yaw)])
+    # 时域上的第 k 个点：位置 = 基准 + v·(k·dt)，其余分量**逐点相同**（速度是常量、姿态是常量）
+    tau = np.arange(N + 1, dtype=float) * float(dt_s)
+    out = np.tile(base, (N + 1, 1))
+    out[:, :3] += tau[:, None] * v_vec[None, :]
+    return out
+
+
 def hold_feedforward(params: Z0Params, N: int) -> np.ndarray:
     """静止保持参考的**解析前馈** `(N, NU)` —— 使 `f(x_ref, u_ref) = 0`（"参考自己就是模型的一条解"）的那个 `u`。
 
@@ -471,9 +624,25 @@ def hold_feedforward(params: Z0Params, N: int) -> np.ndarray:
       的**第二行**——"调用方给的前馈（轨迹的解析前馈）"：我们的参考是静止锚点，
       它的解析前馈**就是** `[T_hover, 0, 0, 0]`，一行不差，而且是**显式**给的。
 
-    ⚠️ 将来接**运动**参考（Phase 3 的轨迹）时，这个函数要按那条参考**自己的导数**算
-      （加速度/角速率前馈），不能继续返回悬停配平 —— 否则 M6 §3.3 的实测（持续角速率
-      被压成 0）会原样复发。那时候 `hold_reference` 也要一起换。
+    ☠️ **2026-09-30 订正（ticket 17）**：这里原写「将来接**运动**参考时要按那条参考**自己的
+      导数**算，不能继续返回悬停配平」。**对本仓现在这个运动参考族，这句话不成立** ——
+      说它"要重算"是把 M6 §3.3 那条实测（持续角速率被压成 0）外推到了它管不到的地方。
+
+      第一手推导：本仓的轨迹参考（`traj_reference`）是「**按参考自己的速度线性外推的位置**
+      + 水平姿态 + 常量偏航」，而**这个模型没有阻力** ⟹ `v̇ = R(q)·[0,0,F]/m + g` 在
+      `q` 水平、`F = m·g` 时恒为 0 ⟹ 匀速直线平动**本身就是模型的一条精确解**，
+      `u_ref = [m·g, 0, 0, 0]` 一个字不差。M6 §3.3 那条要防的是"参考**带持续加速度/角速率**
+      而 `u_ref` 还是悬停配平"：匀速不需要倾角（倾角是**加速度**才需要的），
+      常量偏航不需要角速率。**运动 ⟹ 要给前馈导数**这个推断，漏掉了"这一族运动的导数为 0"。
+
+      ⇒ 本函数**不需要**为 `traj` 档改动，那条不变量 `f(x_ref, u_ref) = ẋ_ref` 对两个档
+      **无条件**成立。判据是 `test_node_core.py::test_轨迹参考是模型的一条精确解`
+      （拿 `step_rk4` 逐步往前推）；☠️ **它红了就是在说这条订正错了或参考族变了** ——
+      换成零阶保持的参考当场变红（2026-09-30 变异验证过）。
+
+      ⚠️ 但这条订正**只对现在这个参考族成立**：一旦参考要带**持续加速度**（掩码里那三位
+      `IGNORE_A*` 解开）或**持续角速率**，上面那张表立刻作废，M6 §3.3 的坑原样复发。
+      那时**换的是参考族**（连同 `traj_reference` 的外推项），不只是 `u_ref`。
     """
     return np.tile(np.array([params.t_hover, 0.0, 0.0, 0.0], dtype=float), (N, 1))
 
@@ -535,10 +704,17 @@ class NodeCore:
       `fake_px4.py` 就是把这条性质照抄过来的）。
     """
 
-    def __init__(self, params: Z0Params, config: ControlConfig, horizon: int):
+    def __init__(self, params: Z0Params, config: ControlConfig, horizon: int, horizon_dt_s: float):
+        """
+        ★ `horizon_dt_s` 是**求解器的**离散步长（`OfflineOcp.dt = tf / N`，本仓 20 ms），
+          只有 `traj` 档的参考外推用它（`traj_reference`）。⚠️ 它是**必需参数、不给默认值**：
+          默认成 `TAU_DEFAULT_S` 之类的近邻值在"步长对了没有"这件事上**完全静默**
+          —— 参考会以错误的斜率走，而话题面上一切正常。
+        """
         self.params = params
         self.config = config
         self.horizon = int(horizon)
+        self.horizon_dt_s = float(horizon_dt_s)
 
         self.status = None              # 最近一帧 vehicle_status（鸭子类型，不 import px4_msgs）
         self.mocap = None               # 最近一帧 /mocap/pose_enu
@@ -588,6 +764,22 @@ class NodeCore:
         self._anchor_xy_reset: Optional[int] = None
         self._anchor_quat_reset: Optional[int] = None
 
+        # —— 轨迹参考（ticket 17，只在 `reference_source == "traj"` 时被读）——
+        # ★ 存的是**解析好的** `(位置, 速度, yaw)`，不是原始消息：
+        #   解析（读掩码、挑掉被忽略的轴、查非有限）是**到达那一刻**就该做完的事，
+        #   它的结论取决于那一帧的掩码，而掩码可以逐帧变。存原始消息 = 把"哪一帧的掩码"
+        #   这件事推迟到 `cycle()`，那时手上只有最后一帧，前面那帧坏在哪就查不出来了。
+        # ⚠️ **坏帧只计数、不覆盖**：`self.traj_*` 永远是最近一帧**好**的。坏帧的后果是
+        #   "这一帧不算数" ⟹ 龄自然变大 ⟹ 超时后走冻结（`StopConfig.traj_stream_gap_s`）。
+        #   这条取向与输入合理性的那两条判据一致：**宁可退化，不可误停**。
+        self.traj_pos: Optional[Tuple[Optional[float], ...]] = None
+        self.traj_vel: Optional[Tuple[Optional[float], ...]] = None
+        self.traj_yaw: Optional[float] = None
+        self.traj_reference_at_s: Optional[float] = None
+        self.traj_reference_frames = 0     # 收到过多少帧（含坏帧）
+        self.traj_bad_frames = 0           # 其中多少帧被整帧作废
+        self.traj_bad_why = ""             # 最后一帧坏的读数（进日志；好帧到来时不清空）
+
     # ── 输入 ──
     def on_status(self, msg, at_s: float) -> None:
         self.status = msg
@@ -610,6 +802,23 @@ class NodeCore:
         self.mocap_velocity = msg
         self.mocap_velocity_at_s = float(at_s)
         self.mocap_velocity_frames += 1
+
+    def on_traj_reference(self, msg, at_s: float) -> None:
+        """`/traj/reference`（`mavros_msgs/PositionTarget`，ticket 17）—— 只在 `traj` 档订阅。
+
+        ★ 解析**在这里**做完（不是 `cycle()`）：见 `__init__` 里那两个槽位的 ★。
+        ★ **坏帧不覆盖**：见同一个 ★。
+        """
+        self.traj_reference_frames += 1
+        p, v, yaw, bad = traj_reference_fields(msg)
+        if bad is not None:
+            self.traj_bad_frames += 1
+            self.traj_bad_why = bad
+            return
+        self.traj_pos = p
+        self.traj_vel = v
+        self.traj_yaw = yaw
+        self.traj_reference_at_s = float(at_s)
 
     def on_local_position(self, msg, at_s: float) -> None:
         self.local_position = msg
@@ -649,7 +858,10 @@ class NodeCore:
           （拿它当闸门 = 一个恒假的保证）。但它们是复盘时"这个偏差是谁给的"那条线索。
           **记录，但不闸**（闸门只有"龄"那一条）。
         """
-        d = {"state_source": self.config.state_source}
+        d = {"state_source": self.config.state_source,
+             # ★ **两个来源是正交的**（A 档也能飞轨迹、动捕档也能只悬停）⟹ 分开记两格。
+             #   少记这一格，一场轨迹飞行的记录里就只剩"参考在动"，而看不出它**为什么**在动。
+             "reference_source": self.config.reference_source}
         if self.config.state_source == STATE_SOURCE_PX4:
             d["age_pos_s"] = _num_json(self.age(self.local_position_at_s, now_s))
             d["age_att_s"] = _num_json(self.age(self.attitude_at_s, now_s))
@@ -678,7 +890,33 @@ class NodeCore:
             #   与 CONTEXT.md 的判稳口径同一条坑）。**记录，但不闸**（同 `ekf_*` 那一组）。
             d["vel_cb"] = self.mocap_velocity_frames
             d["age_vel_s"] = _num_json(self.age(self.mocap_velocity_at_s, now_s))
+        if self.config.reference_source == REFERENCE_SOURCE_TRAJ:
+            # 轨迹参考的取证面（ticket 17）。★ 它在这里而不在 `Cycle` 里：`describe_state`
+            # **每一拍都发**（含闸门关着那些拍），而"参考最近怎么样"正是闸门关着时要问的。
+            # ⚠️ **这个龄也算的是最近一帧好的**（坏帧不覆盖 ⟹ 坏帧把龄推大 ⟹ 走到冻结）。
+            d["ref_cb"] = self.traj_reference_frames
+            d["ref_bad"] = self.traj_bad_frames
+            d["ref_age_s"] = _num_json(self.traj_age(now_s))
+            d["ref_frozen"] = self.traj_frozen(now_s)
+            #: 最后一帧坏在哪（好帧**不清空**它）—— "`ref_bad` 在涨"时这是唯一能指出
+            #: 是哪一路上游在写非有限值的读数。没有坏帧就是 `null`。
+            d["ref_bad_why"] = self.traj_bad_why or None
         return d
+
+    def traj_age(self, now_s: float) -> float:
+        """最近一帧**好的** `/traj/reference` 的龄 [s]（一帧都没到过 = `inf`，同 `age`）。"""
+        return self.age(self.traj_reference_at_s, now_s)
+
+    def traj_frozen(self, now_s: float) -> bool:
+        """参考超时 ⟹ **就地停住**（位置不再外推、速度置 0）；见 `StopConfig.traj_stream_gap_s`。
+
+        ⚠️ **"一帧都没到过"返回 `False` 而不是 `True`**：那是"根本没进过轨迹档"，
+          不是"参考冻住了"—— 它由 `cycle()` 的 `no_traj_reference` 那条闸门单独回答。
+          混在一起会让复盘日志把"话题断了"读成"上游在冻着飞"。
+        """
+        if self.traj_reference_at_s is None:
+            return False
+        return self.traj_age(now_s) > self.config.stop.traj_stream_gap_s
 
     # ── 锚点（位置保持的绝对点）──
 
@@ -787,11 +1025,30 @@ class NodeCore:
         if jump is not None:
             return self._hold(jump[0], now_s, age_status, age_state, detail=jump[1])
 
+        # ── 参考：分岔在**这一处**，而且必须在钉锚点**之前**（ticket 17）──
+        #   ⚠️ 顺序不是风格问题：`traj` 档下参考不到 ⟹ 这一拍整个作废，**锚点不许被它钉住**。
+        #   钉早了，闸门真正打开那一拍的目标就会比该有的位置早一拍（差一个参考的位移量），
+        #   而这件事在日志里只表现为"启动时 x_ref0 偏了一点"，不会报错。
+        ref_frozen = False
+        if self.config.reference_source == REFERENCE_SOURCE_TRAJ:
+            if self.traj_pos is None:
+                return self._hold("no_traj_reference", now_s, age_status, age_state,
+                                  detail="还没收到过 /traj/reference（或收到的全是坏帧）")
+            # ★ **超时不关闸门**，只**冻结**（位置保持、速度置 0）：这条是 Phase 1 的裁定
+            #   —— "缺一帧参考就保持上一个目标，不回退到原点"。停发会让兜底阶梯接管
+            #   （hold 10 帧 ⟹ hover），那比"就地停住"激烈得多，而参考丢帧本身是可恢复的。
+            ref_frozen = self.traj_frozen(now_s)
+
         x0 = extrapolate_state(x_meas, self.config.tau_s)
         # ★ 参考从**锚点**起，不从这一拍的测量起（ticket 09；理由与那场 0.9 m/s 的爬升见
         #   `hold_reference` 的 ★★）。锚点在这一拍之前钉/重钉（见 `_update_anchor`）。
         anchor_event = self._update_anchor(x_meas, now_s)
-        x_ref = hold_reference(self.anchor_state(), self.config, self.horizon)
+        if self.config.reference_source == REFERENCE_SOURCE_TRAJ:
+            x_ref = traj_reference(self.anchor_state(), self.config, self.horizon,
+                                   self.horizon_dt_s, self.traj_pos, self.traj_vel,
+                                   self.traj_yaw, freeze=ref_frozen)
+        else:
+            x_ref = hold_reference(self.anchor_state(), self.config, self.horizon)
 
         # 这一帧被接受了 ⟹ 它成为下一拍的基准（位置/姿态/时间戳一起搬）
         self._last_pose = (x_meas[:3].copy(), x_meas[6:10].copy())

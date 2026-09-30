@@ -26,6 +26,12 @@
   QoS 也是抄的：两个发布者都是 `rclcpp::QoS(10)`（可靠 + 易失），`/traj/start` 的订阅者
   同样是 `QoS(10)`。这一层错了不会报错，只会"永远收不到"（同 `FakeMavros` 的教训）。
 
+  ★ **填了哪几个字段也是抄的**（2026-09-30 补，ticket 17）：真身 `publish_reference`
+  （`traj_node.cpp:311-329`）填的是 `position` + `velocity` + `yaw`，`acceleration_or_force`
+  与 `yaw_rate` 留 0（那几位在 `kTypeMask` 里被忽略）。本夹具原先把 `velocity` **漏了** ——
+  对只看位置的消费者不可见，而 Phase 2 的 MPC（模型预测控制）要拿它做时域外推 ⟹ 漏掉它 = 每条轨迹都被
+  当成"停在那儿"，且不报错。`velocity_fn` 就是补的这三格。
+
 ★★ 它**不做二次成型**：`reference_fn` 说什么就发什么（没有限速、没有平滑）。
   真机上的限速在 `traj` 里（`max_speed_ms`，`traj_node.cpp:93/128`）—— 那是 `traj` 自己的
   正确性，由 `test_traj.cpp` 测；这里若也插一道限速，只会让"目标是不是等于原点 + 参考"
@@ -78,6 +84,7 @@ class FakeTraj:
         duration_s: float = 60.0,
         selected: bool = True,
         reference_fn: Optional[Callable[[float], Tuple[float, float, float]]] = None,
+        velocity_fn: Optional[Callable[[float], Tuple[float, float, float]]] = None,
         publish_progress: bool = True,
     ) -> None:
         #: 场景时钟（`Scenario`）—— 频率类的东西一律用它，不用墙上时钟。
@@ -92,6 +99,15 @@ class FakeTraj:
         #: 默认恒为 `(0, 0, 0)` = 原地悬停在轨迹原点上 —— 那正是 z0 的轨迹 1
         #: （`traj::Hover` 整条都发相对原点的零偏移），也是"目标 = 原点 + 参考"最裸的场面。
         self.reference_fn = reference_fn or (lambda _t: (0.0, 0.0, 0.0))
+        #: ★ **参考自己的速度**（相对轨迹原点，ENU，m/s）—— 真身 `traj_node.cpp:321-324` 是
+        #: 逐轴照抄 `ref.v` 的（`msg.velocity.x/y/z = ref.v.x/y/z`），而 `kTypeMask` **不忽略**
+        #: 速度那三位 ⟹ 这三格是**有效字段**，不是"填了也没人看"。
+        #: ⚠️ **2026-09-30 补（ticket 17）**：本夹具原先把这三格**漏掉了**（永远留 0），
+        #:   而"0"与"没给"在**参考**这一侧是两个不同的意思（前者说"它就停在这儿"）。
+        #:   对一个只看位置的消费者（Phase 1 的 `control`）漏掉它是不可见的；而 Phase 2 的
+        #:   MPC（模型预测控制）要把速度拿去做时域外推 ⟹ 漏掉它 = 每一条轨迹都被当成"停在那儿"，
+        #:   且**完全不报错**。默认 `None` ⟹ 三个轴都发 0（= 补这一格之前的行为，旧用例不受影响）。
+        self.velocity_fn = velocity_fn or (lambda _t: (0.0, 0.0, 0.0))
         self.publish_progress = publish_progress
 
         #: `running_`（`traj_node.cpp`）：只有它为真才发参考与进度。
@@ -200,6 +216,7 @@ class FakeTraj:
 
     def _publish_reference(self) -> None:
         x, y, z = self.reference_fn(self.elapsed_s)
+        vx, vy, vz = self.velocity_fn(self.elapsed_s)
         msg = PositionTarget()
         msg.header.stamp = self._node.get_clock().now().to_msg()
         msg.header.frame_id = REFERENCE_FRAME_ID
@@ -208,6 +225,10 @@ class FakeTraj:
         msg.position.x = float(x)
         msg.position.y = float(y)
         msg.position.z = float(z)
+        # ★ 速度照抄真身（`traj_node.cpp:321-324`）—— 掩码里速度那三位是**有效**的。
+        msg.velocity.x = float(vx)
+        msg.velocity.y = float(vy)
+        msg.velocity.z = float(vz)
         self._ref_pub.publish(msg)
         self.reference_frames += 1
 

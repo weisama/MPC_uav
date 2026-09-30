@@ -27,7 +27,7 @@
 | `src/nmpc/nmpc/node_core.py` | **零 ROS、零求解器**的那一半：闸门 / 外推 / 参考 / 停机条件（可一毫秒单测） |
 | `src/nmpc/nmpc/preflight_check.py` | 装桨之前的**静态自检**（§7）—— 起飞流程的一步，不是测试 |
 | `src/bench/bench/fake_px4.py` | 假 PX4 夹具（与 `FakeMavros` 同族的"外部世界"） |
-| `src/nmpc/test/test_mpc_node.py` | **seam 1** 集成测试（**14 条**，起真的 DUT 子进程） |
+| `src/nmpc/test/test_mpc_node.py` | **seam 1** 集成测试（条数一直在长，**别引数字**：`grep -c '^def test_' src/nmpc/test/test_mpc_node.py`），起真的 DUT 子进程 |
 | `src/bench/test/test_fake_px4_selftest.py` | 夹具自检（16 条，**不起 DUT**） |
 
 层次分工（别混，`test_mpc_node.py` 的模块 docstring 里有同一张表）：
@@ -47,7 +47,7 @@ source ~/px4_msgs_ws/install/setup.bash
 source install/setup.bash
 export ACADOS_SOURCE_DIR=$HOME/acados
 export LD_LIBRARY_PATH=$ACADOS_SOURCE_DIR/lib:$LD_LIBRARY_PATH
-python3 -m pytest src/nmpc/test/test_mpc_node.py        # 14 条；多数用例各起一次 DUT（启动 ~8 s，见 §8）
+python3 -m pytest src/nmpc/test/test_mpc_node.py        # 多数用例各起一次 DUT（启动 ~8 s，见 §8）
 ```
 
 ---
@@ -60,6 +60,7 @@ python3 -m pytest src/nmpc/test/test_mpc_node.py        # 14 条；多数用例�
 |---|---|---|---|---|
 | 订阅 | `/mocap/pose_enu` | `geometry_msgs/PoseStamped` | 可靠 / depth 10 | `mocap_rel_pose_node.cpp:110` 的 `QoS(10)`；**ENU/FLU 原生**（M7） |
 | 订阅 | `/fmu/out/vehicle_status` | `px4_msgs/VehicleStatus` | **`BEST_EFFORT`** / depth 1 | PX4 的 writer 是 `TRANSIENT_LOCAL` + best_effort（`utilities.hpp:57-65` 的 datawriter QoS 块；`:113-120` 是 **reader**，别引错） |
+| 订阅 | `/traj/reference`（**只有 `-p reference_source:=traj` 时才有这一条**，见 §9 与 [`mpc-node-traj-reference.md`](mpc-node-traj-reference.md)） | `mavros_msgs/PositionTarget` | 可靠 / depth 10 | Phase 1 的 `traj_node.cpp:108-109` 的 `rclcpp::QoS(10)`；**复用 Phase 1 的话题名与类型** ⟹ `traj` 节点零改动（ticket 17） |
 | 发布 | `/fmu/in/offboard_control_mode` | `px4_msgs/OffboardControlMode` | `BEST_EFFORT + TRANSIENT_LOCAL` / depth 1 | 照抄 `px4-mpc`（§2.6） |
 | 发布 | `/fmu/in/vehicle_rates_setpoint` | `px4_msgs/VehicleRatesSetpoint` | 同上 | 同上 |
 | 发布 | `/mpc/predicted_path` | `nav_msgs/Path` | 默认（可靠） | 本仓自己的观测面，**不接飞控** |
@@ -68,6 +69,14 @@ python3 -m pytest src/nmpc/test/test_mpc_node.py        # 14 条；多数用例�
 ⚠️ 订阅 `/fmu/out/*` **必须显式 `BEST_EFFORT`**：写成 ROS 2 的默认 `RELIABLE` 就**一个回调都不进**、
 **也不报错**（QoS 不兼容不报错，只是永不匹配）—— 唯一的症状是夹具侧的 `matched_subscribers` 数不到它
 （`test_接口与_QoS_与票面一致` 断言 `== 1`）。
+
+★ **两条条件订阅，互相正交**（都是"不给参数就不订"，但管的是两件不同的事）：
+`state_source=mocap|px4` 决定**测量**那条链订哪一对话题（ticket 09）；
+`reference_source=hold|traj` 决定**参考**那条链订不订 `/traj/reference`（ticket 17）。
+两个 `if`、不是一个 `else` ⟹ 四种组合都合法（A 档 + 轨迹参考 = 飞控自己的状态 + 轨迹目标）。
+两者的理由同源：验收项写的是"本档**不使用**某输入"，而"订阅了但不看"在话题边界上**不可证伪**
+—— 条件订阅让它变成一个黑盒可断言的事实（`matched_subscribers()` 的**差值**，见
+[`mpc-node-traj-reference.md`](mpc-node-traj-reference.md) §7）。
 
 ### 2.2 ★ 心跳**无条件发** —— 票面那条"不发布"的正解
 
@@ -283,7 +292,7 @@ ros2 run nmpc preflight_check.py -p mass:=0.82 -p hover_thrust:=0.55   # 与节�
 | 事项 | 归哪 |
 |---|---|
 | 求解失败 / 非有限值的**兜底动作**（谁接管、怎么降级） | ✅ **2026-09-28 已由 [ticket 07](../../.scratch/phase2/issues/07-solver-failure-fallback.md) 关闭** —— 三档阶梯（`hold` 10 拍 → 安全悬停）、发布前全量校验、失败事件的 `error` 上报 + JSONL `fallback` 列，见 [`mpc-node-fallback.md`](mpc-node-fallback.md)。★ 那条交接的措辞（"`heartbeat_always` 是留给它的接缝"）**已作废**：心跳照旧无条件发，兜底换的是 **rates setpoint 的内容**（"不发"在飞控侧 = 沿用陈旧命令，见该文 §1.1） |
-| 真正的轨迹接口 `/traj/reference`（本票只有参数化参考点偏移） | ⚠️ **2026-09-28：ticket 09 走的是最小锚点路径，没有做它** —— A 档只要"稳定悬停"一个工况，且 A 档的原则是"每次只有一个新变量"，引入一条新话题链会让第 6/8 场那组对照不再干净。**这条交接仍然挂着**，见 [ticket 09](../../.scratch/phase2/issues/09-sitl-tier-a-closed-loop.md) Comments #7，等操作者裁定归哪张票 |
+| 真正的轨迹接口 `/traj/reference`（本票只有参数化参考点偏移） | ✅ **2026-09-30 已由 [ticket 17](../../.scratch/phase2/issues/17-traj-reference-interface.md) 关闭** —— `-p reference_source:=traj` 订阅 Phase 1 那条话题（同类型同话题名 ⟹ `traj` 零改动），目标点 = **锚点 + 参考给的相对量**、参考自己的速度进时域外推、超时**冻结**。口径、判据与"没证明什么"见 [`mpc-node-traj-reference.md`](mpc-node-traj-reference.md)。⚠️ 中间那句"等操作者裁定归哪张票"**已经作废**：[ticket 09](../../.scratch/phase2/issues/09-sitl-tier-a-closed-loop.md) 的 Comments #7 当场就**另开了 [ticket 17](../../.scratch/phase2/issues/17-traj-reference-interface.md)** 承载这条交接 —— 缺的不是"归哪张票"，而是那张票的 `Status` 升级（2026-09-30 操作者授权开工并推标签）。★ **仍未做的**是"三条轨迹真的飞完" —— 那归 ticket 11 的 §S5 判据② |
 | 100 Hz 要不要降档（实测最坏耗时 → D6/回填） | ✅ **2026-09-28 已由 [ticket 09](../../.scratch/phase2/issues/09-sitl-tier-a-closed-loop.md) 回答**：空机稳态最坏 **3.995 ms** ⟹ **100 Hz 保档**（冷启动 15.956 ms 落在 `warmup` 闸门里）。⚠️ 新加一条前置条件"**机上别跑别的东西**"（同二进制多几个进程 ⟹ 11.297 ms ⟹ 50 Hz 档）。读数见 [`tier-a-sitl-hover.md`](tier-a-sitl-hover.md) §5，**整周期**（含订阅/发布、状态转换、日志）仍归 ticket 11 |
 | 绑核 + 可选实时优先级的**实测**（实现已在节点里：`cpu` / `rt_priority`） | ticket 11 |
 | 动捕速度源（`v` 从哪来 ⟹ τ 才可能端到端验证） | [issue 15](../../.scratch/phase2/issues/15-mocap-velocity-source.md) |
