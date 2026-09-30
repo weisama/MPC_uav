@@ -1,4 +1,4 @@
-# B 档五场矩阵的归档证据（ticket 11）
+# B 档矩阵的归档证据（ticket 11 —— 目录内**九场**：F0–F4 五场 + ticket 20 的两次复跑四场）
 
 这一份是 [`docs/control/tier-b-sitl-seam3.md`](../../../../docs/control/tier-b-sitl-seam3.md)
 （ticket 11 的交付文档）背后的一手产物。**裁决表与全部读数在文档里，这里只放产物本身**，
@@ -9,16 +9,20 @@
 | 文件 | 是什么 |
 |---|---|
 | `<tag>-summary.json` | 该场的观测汇总：配置、真值统计、DUT 逐帧统计、`solve` 耗时分账、**`checks` = 判定行**（含每行的 `detail`，全部读数在文字里） |
-| `<tag>-console.log` | PX4 SITL 的控制台（`pxh>`），137 行 |
+| `<tag>-console.log` | PX4 SITL 的控制台（`pxh>`），137–138 行（`mass+30` 那几场多一行质量提示） |
 | `<tag>-replay.json` | 回放夹具自己的收尾统计（发帧数、实测延迟、σ） |
 | `mocap-model-3.json` | **夹具的模型**（134 KiB）：来自真实 Phase 1 包，含逐轴 σ 与成簇帧间隔 ⟹ 有了它才能重放出"同样脾气"的动捕流 |
-| `run_matrix.sh` | 跑这五场的脚本（含**等空机**闸门与 `pgrep -x` 的教训） |
-| `u-ref-authority-*.json` | **ticket 20 的离线探针产物**（不是飞行）：`probe_u_ref_authority.py` 的输出，见下节 |
+| `run_matrix.sh` | 跑这九场的脚本（含**等空机**闸门与 `pgrep -x` 的教训） |
+| `u-ref-authority-*.json` | **ticket 20 的离线探针产物**（不是飞行）：`probe_u_ref_authority.py` 的输出，见下节。★ 其中 `-sameframes-20260930` 那份是**同批帧、新树**的复跑，用来量"中间那四个提交对这档的影响"（20 号票 §13.7） |
+| `controller-code-20260930-F0c-F1c.json` | `F0c`/`F1c` 两场的**代码身份**（`git HEAD` + 11 个文件 sha256 + 入口脚本 sha）—— 这两场的 `--json` 里没有 `controller_code` 块（缺席口径见下方第 4 条），故单记一份 |
+| `df-column-20260930.json` | `F0b`/`F1b`/`F0c`/`F1c` 四场的**逐帧 `[tick, df, u[0], thrust_body_z]`** + 发布点闭合式残差 —— 20 号票 §13.4 的**唯一**可复核底料（`df`/`u_ref0` 两列不在 `-summary.json` 里，逐帧 jsonl 又没入库）。**生成器**：[`tools/px4-sitl/export_df_column.py`](../../export_df_column.py)（读 `/tmp/tier-b/<tag>-dut.jsonl` ⟹ 必须与飞行同一次开机内跑） |
 
 `<tag>` = `F0`(标称) / `F1`(mass+30，判据①) / `F2`(mass+30 + 50 ms，判据③) /
 `F3`(mass+30 + 注入求解失败，判据④) / `F4`(标称 + 注入，判据④的对照)。
-★ 另有两场是 **ticket 20 的复跑**（同一套脚本：`run_matrix.sh` 的 `F0b)` / `F1b)`）：
-`F0b`(标称 + 垂直积分作用) / `F1b`(mass+30 + 垂直积分作用) —— 见下节。
+★ 另有四场是 **ticket 20 的复跑**（同一套脚本 `run_matrix.sh`），**两组是两个不同的落点**：
+`F0b`/`F1b` = 偏置加在 **`u_ref`** 上（**已被证伪**，见 20 号票 §10）；
+`F0c`/`F1c` = 偏置加在**发出去的指令**上（裁定 4 的候选 A，本张的验收证据）—— 见下节。
+☠️ **两组都要留着**：作废的是**落点**，不是那两场读数 —— 它们正是"反号"那件事的一手凭证。
 
 ## ⚠️ 四件读这份归档必须知道的事
 
@@ -33,9 +37,13 @@
    （改了口径、拿旧 JSON 重判，这一行不会跟着变）—— 要它按新口径重算，得整场重飞。
 3. **`params` 只记了 ROS 参数，没记 harness 的 argv**（`--seed` 等）⟹ 复现靠 `run_matrix.sh`
    的默认值（种子默认 `20260929`）。
-4. **代码身份**：每份 `<tag>-summary.json` 里的 `controller_code` 块记的是这五场实际 import 到的
+4. **代码身份**：每份 `<tag>-summary.json` 里的 `controller_code` 块记的是那五场（`F0`–`F4`）实际 import 到的
    控制器源码 —— `src/nmpc` @ `cff55ae`（2026-09-29 09:40:49），逐文件 sha256 也在里面。
-   为什么**包**解析到 `src/` 而不是 `install/`：`run_matrix.sh:52` 设了
+   ⚠️ **ticket 20 那四场（`F0b`/`F1b`/`F0c`/`F1c`）的 JSON 里没有这一块**（那块是事后给 F0–F4
+   补的，`F*` 的生成路径不产它；**缺席口径** = `grep -c controller_code <tag>-summary.json`
+   在这四份上都出 `0`）：`F0b`/`F1b` 的身份记在 20 号票 §9.6／§11（`a4e0fa8c…`），
+   `F0c`/`F1c` 的记在本目录 `controller-code-20260930-F0c-F1c.json`。
+   为什么**包**解析到 `src/` 而不是 `install/`：`run_matrix.sh` 里那行 `export PYTHONPATH=…/src/nmpc` 设了
    `PYTHONPATH=/home/chen/ros_ws/src/nmpc`，而 DUT 子进程继承它 —— `ta.MpcDut.start` 把
    `env = dict(os.environ)` 再叠 `dut_env()` 交给 `Popen`，而 `dut_env()`
    （[`verify_tier_a_hover.py:370`](../../verify_tier_a_hover.py#L370)、
@@ -66,13 +74,15 @@
 
 ```bash
 TAGS="F0 F1 F2 F3 F4" bash tools/px4-sitl/evidence/tier-b/run_matrix.sh
-# ticket 20 的复跑（垂直通道加了外层积分作用）：
+# ticket 20 的第一次复跑（偏置落在 u_ref 上 —— 这个落点后来被证伪）：
 TAGS="F0b F1b" bash tools/px4-sitl/evidence/tier-b/run_matrix.sh
+# ticket 20 的第二次复跑（偏置落在发出去的指令上 = 裁定 4 的候选 A）：
+TAGS="F0c F1c" bash tools/px4-sitl/evidence/tier-b/run_matrix.sh
 # 定性用的离线探针（几秒，不占机器窗口 ⟹ **不用等空机**）：
 python3 tools/px4-sitl/probe_u_ref_authority.py --frames /tmp/tier-b/F1b-dut.jsonl
 ```
 
-### ticket 20 复跑的两场（2026-09-29 13:0x）
+### ticket 20 第一次复跑的两场（2026-09-29 13:0x）—— **落点后来被证伪**
 
 同一脚本、同一判层、同一口径，唯一差别是**控制器带 `ki_z = 1.0 N/(m·s)` 的垂直积分作用**。
 结论（全程读数见 [20 号票](../../../../.scratch/phase2/issues/20-vertical-channel-mismatch-offset.md) §10）：
@@ -87,6 +97,24 @@ python3 tools/px4-sitl/probe_u_ref_authority.py --frames /tmp/tier-b/F1b-dut.jso
 而环路真正撑住高度的是 `d u[0]/d e_z = +3.45 N/m` 那条通路。
 ⚠️ 前四场（F0–F4）的 `controller_code` 是 `src@cff55ae`；**这两场是 `a4e0fa8c…`**（本张的新代码）——
 两组**不可混在一张表里比**，只能按"同一对（有无积分器）"比。
+
+### ticket 20 第二次复跑的两场（2026-09-30 04:4x）—— **判据① 双过**
+
+同一脚本、同一判层、同一 `ki_z = 1.0`，**唯一差别是偏置落到了发出去的指令上**（裁定 4 的候选 A）。
+两场**判据① 双过**（`mass+30` 那场从 `F1b` 的 −0.7200 m 收进 0.15 m 界内）。
+☠️ **本节的数字一律不在 README 里重抄**（归档的规矩：同一个读数只写一处、改一处）——
+逐场读数在 [20 号票](../../../../.scratch/phase2/issues/20-vertical-channel-mismatch-offset.md) **§13.2**、
+代价在 **§13.5**、发布点闭合式（含本目录 `df-column-20260930.json` 该怎么用）在 **§13.4**。
+这里只记三条**归档层面**、看这个目录的人会踩的：
+
+1. **`ΔF` 现在只能从 `df` 列读** —— `u_ref0[0]` 在候选 A 上**恒为常量**（两场去重后只有一个值）⟹
+   照旧落点那样去读 `u_ref0[0]` 会读出"`ΔF = 0`"，把一次成功的实验误判成"积分作用没生效"（§13.4）。
+2. **代价落在振荡峰峰值那一列**（标称那一场也涨了，而它的 `ΔF` 只有 mN 量级）⟹ 逐项见 §13.5。
+3. **离线复算的峰峰值那一列不许用** —— 被实飞证伪（§13.6）。
+
+⚠️ 代码身份：`F0c`/`F1c` 走的是 `src@5c27f0e`（`src/nmpc` 干净 ⟹ 控制器 == 该提交内容），
+入口脚本与 `src/` 那份 **同 sha `463df55e…`**（已 build）；逐文件 sha 见本目录
+`controller-code-20260930-F0c-F1c.json`。
 
 
 

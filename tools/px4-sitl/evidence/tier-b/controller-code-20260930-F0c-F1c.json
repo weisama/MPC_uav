@@ -1,0 +1,28 @@
+{
+  "记录时点": "2026-09-30 05:0x UTC（ticket 20 的 F0c/F1c 复跑之后）",
+  "为什么单独一个文件": "F0c/F1c 的 --json 里**没有** `controller_code` 块（那块是 F0–F4 事后补进去的，见 evidence/tier-b/README.md 第 4 条）。这两场是本张验收项 2 的证据 ⟹ 身份单记一份。",
+  "git": {
+    "head": "5c27f0e317b04038b8b3b92e8a7284b6004a8197",
+    "src_nmpc_dirty": "（空 ⟹ 控制器代码 == HEAD 内容）",
+    "注": "F0c/F1c 的 harness（run_matrix.sh 里 F0c/F1c 那两个 case）当时是**未提交的工作树改动**，但它只选场次/传参，不进控制器。"
+  },
+  "import 解析到哪": "/home/chen/ros_ws/src/nmpc/nmpc/__init__.py",
+  "sha256": {
+    "src/nmpc/nmpc/__init__.py": "6c01eeaa0af4d713ed5abe97bdd6faab13d707df33b42b106a1c220f711bec7d",
+    "src/nmpc/nmpc/commands.py": "3aafee4a9d0426b76d0d0e9be5cb1285c187ce1a43e20eb9b59a26d64d92ba12",
+    "src/nmpc/nmpc/model.py": "65f5565a1490489369ffd465fc079fdbb499b7d898df289204fb2c677d534f61",
+    "src/nmpc/nmpc/mpc_node.py": "463df55ea60139fd86bc363135126c529796734abc842819acf831dc7a7995d7",
+    "src/nmpc/nmpc/node_core.py": "076c57185e83bde345bbf443714d70d7b7b5204fa2e50d8fd22be29b856eba36",
+    "src/nmpc/nmpc/ocp.py": "74fbdfac4c1c542a3d927b179c0b6d762418074618a751ca464d4e162a92075f",
+    "src/nmpc/nmpc/offboard_smoke.py": "a342a2d1bda394070e2629a6ef759ef0ab7c1e7f4e433ab634621d382e5b34f4",
+    "src/nmpc/nmpc/params.py": "f46fb47efb9c1becfe814bc7d8558d814c3e50a47dfe5c9ec63c85f15c34b81f",
+    "src/nmpc/nmpc/preflight_check.py": "5f969520f5a4b1ee00cfea8b071ce1cacd3ea647895f2ec178f2710726a0416b",
+    "src/nmpc/nmpc/sign_map.py": "362a9391974241d59596870aac8b2b09a234faee662af4dc0b8bb6f81bfc71c7",
+    "src/nmpc/nmpc/timing.py": "335f7ccde0eab8827e3af2225a1d55ae0046defd91c3210eca5f8c0120b6f625"
+  },
+  "install_入口脚本": {
+    "path": "install/nmpc/lib/nmpc/mpc_node.py",
+    "sha256": "463df55ea60139fd86bc363135126c529796734abc842819acf831dc7a7995d7",
+    "注": "DUT 是 `ros2 run nmpc mpc_node.py` 起的 ⟹ 入口脚本来自 install/；与 src/ 那份**同一 sha** ⟹ 已 build"
+  }
+}

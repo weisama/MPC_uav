@@ -8,9 +8,14 @@ set +u
 
 OUTDIR=/tmp/tier-b
 LOG=/tmp/run_matrix.log
-# ☠️ `--model` 故意**不写**：五场当时写的是 `/tmp/mocap-model-3.json`，而 `/tmp` 是 tmpfs ——
+# ☠️ `--model` 故意**不写**：五场当时写的是 `/tmp/mocap-model-3.json`，而 `/tmp` **过不了重启** ——
 #    机器 2026-09-29 10:40 重启后那份没了。验证器的默认值已改成**本归档里那份**
 #    （`evidence/tier-b/mocap-model-3.json`，内容与当时一致，见其模块 docstring）。
+#    ★ 机制订正（2026-09-29，本行原写"`/tmp` 是 tmpfs"）：`/tmp` 在 z0 上是**根盘 ext4**
+#    （`df -T /tmp` ⟹ `/dev/nvme0n1p1 ext4`），清空来自 tmpfiles 里那条 `D /tmp`
+#    （`/usr/lib/tmpfiles.d/tmp.conf:11`）。**同一次开机内 `/tmp` 是持久的** ——
+#    这个差别有实际后果：照"tmpfs"理解会以为同会话也会丢，于是把证据随手放别处；
+#    真相是"开机内能用、但一手证据仍得当场落仓库"。
 COMMON="--hold-s 15 --dut-timeout-s 90 --offboard-timeout-s 45 --outdir $OUTDIR"
 
 say() { echo "[$(date +%H:%M:%S)] $*" | tee -a "$LOG"; }
@@ -79,9 +84,18 @@ for tag in ${TAGS:-F0 F1 F2 F3 F4}; do
     #   ⟹ 不 build 的话 `mpc_node.py` **自身**的改动完全不生效，
     #   症状指纹 = 日志里**没有 `df` 列**、读数与加积分作用之前逐位相同（ticket 20 §8.6 ★、§9.6）。
     #   ⚠️ 别推成"改什么都要 build"：被 `import` 的 `node_core.py`/`ocp.py` 走的是 `src/` 正规包
-    #   （本脚本第 52 行把 `src/nmpc` 前置、DUT 子进程继承）⟹ 那类改动不 build 也会飞。
+    #   （本脚本下面那行 `export PYTHONPATH=…/src/nmpc` 把 `src/` 前置、DUT 子进程继承）
+    #   ⟹ 那类改动不 build 也会飞。☠️ 这里故意**不写行号**：上面一改行号就飘。
     F0b) fly F0b --mismatch none ;;
     F1b) fly F1b --mismatch mass+30 ;;
+    # ── ticket 20 换落点（裁定 4 的候选 A）之后的第二次复跑 ──
+    # ☠️ **为什么不是重跑 F0b/F1b**：那两份归档记的是**被证伪的那个落点**（偏置加在 `u_ref` 上，
+    #   见 20 号票 §10）—— 沿用同一个标签会把 `/tmp/tier-b/{F0b,F1b}.json` 与逐帧覆盖掉，
+    #   而"把作废读数留在旁边"是本仓库的纪律。换标签一次，两份记录并存、可对照。
+    #   与 F0b/F1b 的唯一差别 = `_normal_frame` 里 `u_cmd[0] = clip(u[0] + ΔF, 0, f_max)`
+    #   （§11.2），`ki_z` 仍是 1.0。
+    F0c) fly F0c --mismatch none ;;
+    F1c) fly F1c --mismatch mass+30 ;;
     *)  say "不认识的场次 $tag"; exit 2 ;;
   esac
 done
