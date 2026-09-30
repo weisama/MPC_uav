@@ -454,7 +454,7 @@ def hold_reference(x_ref_pose: np.ndarray, config: ControlConfig, N: int) -> np.
     ★ 姿态取**水平**（roll = pitch = 0）而非照抄测量姿态，机头取**锚点那一帧**的
       （`config.hold_yaw`，缺省时从 `x_ref_pose` 的四元数取）⟹ 悬停参考 = 水平 + 锚点机头。
       ☠️ **2026-09-29 订正**：这里原写「OCP 的代价对四元数**只罚倾斜**（`qw` 权重是 0）」
-      —— **这句从 ticket 16 方案 E 落地起不成立**：`qw` 已从 0 改成 0.1
+      —— **这句从 ticket 16 落地起不成立**：`qw` 已从 0 改成 0.1
       （`OcpConfig.q_diag`，见 `.scratch/phase2/issues/16-ocp-yaw-weights-mirror-well.md`）
       ⟹ 代价**也罚朝向**了。⚠️ 本函数的取法**不变**（它本来就取锚点机头），
       变的是**理由**：现在"不倾斜"与"朝向不变"两件事**都**由代价在管，

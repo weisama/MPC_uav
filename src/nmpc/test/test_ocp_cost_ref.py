@@ -137,7 +137,9 @@ def test_cost_uses_the_config_weights_not_hardcoded_ones(ocp: OfflineOcp):
 # 它不是"权重没调好"，而是**代价函数的形式**决定的，而且正是 ticket 09 那场 runaway 的底层原因
 # （详见 `docs/control/tier-a-sitl-hover.md` §4）。
 #
-# ★ 2026-09-29 操作者裁定「上 E」后，**默认权重已改**（`qw = 0.1, qatt = 2.0, R_yaw = 50`）：
+# ★ 2026-09-29 操作者裁定后，**默认权重已改**（`qw = 0.1, qatt = 2.0`；`R_yaw` 保持参考实现的
+#   500 —— 同日一度跟着降到 50，因会让 RTI 迭代在大误差下**收敛极慢**（发指令的窗口里逐拍乱跳）
+#   而撤回，见 `OcpConfig.r_diag` 的 ☠️）：
 #   镜像井**已消掉**。下面两条一起读 —— 一条钉「参考实现的 `qw = 0` 为什么是井」（反事实，留住
 #   是为了让"为什么非改不可"可执行、且万一有人把 `qw` 改回 0 会红），另一条钉「默认不再是井」。
 
@@ -160,7 +162,7 @@ def test_the_cost_cannot_tell_the_reference_heading_from_its_mirror():
     ⟹ 两者只差 `w` 的符号；`w` 权重为 0 时这些代价**分不出**参考机头与它的镜像。
 
     ⚠️ **本用例现在钉的是「参考实现那组权重」这个反事实**（`q_diag` 四元数段 = `(0.0,0.1,0.1,0.1)`），
-    而**默认已经不是它**（ticket 16 方案 E）。留着它的两个理由：① 把"为什么非改不可"变成可执行的对照；
+    而**默认已经不是它**（ticket 16）。留着它的两个理由：① 把"为什么非改不可"变成可执行的对照；
     ② 哪天有人把 `qw` 改回 `0`，这里会红。默认权重下的正向结论见下一条用例。
     """
     cfg = OcpConfig(q_diag=(1e1,) * 6 + (0.0, 0.1, 0.1, 0.1))
@@ -182,7 +184,7 @@ def test_the_cost_cannot_tell_the_reference_heading_from_its_mirror():
 
 
 def test_the_default_cost_separates_the_reference_heading_from_its_mirror():
-    """★ ticket 16 方案 E：**默认** `qw = 0.1` ⟹ 镜像机头的代价不再 = 0，而是 ≈ 9.53。
+    """★ ticket 16：**默认** `qw = 0.1` ⟹ 镜像机头的代价不再 = 0，而是 ≈ 9.53。
 
     解析值：镜像误差只在 `w` 上，`|Δw| = 2·cos(ψ/2)`，阶段权重 `qw = 0.1`、共 `N` 步
     （终端权重四元数段是 0）⟹ `0.1 · (2cos(ψ/2))² · N`。参考机头本身的代价仍是 0
