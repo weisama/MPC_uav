@@ -705,6 +705,16 @@ def dut_params(cfg) -> list:
       ⚠️ 这个参数**一直存在**于 `mpc_node`，只是这份参数表**从来没传过**它 ⟹ 从前每一场都在
       `hold_yaw_deg = 0°`（节点默认）下飞，机头那一列因此**没有误差可看**。少这一行，
       那一项就只能靠"没人推它"来通过 —— 正是验收正文点名不要的那种通过。
+
+    ★★★ **它旁边还有一个闸门，漏了同样是静默的**（2026-09-30 复核抓出，本函数第一版就漏了）：
+      `mpc_node` 的 `keep_yaw` **默认 True**，而 `control_config()` 里那一行是
+      `yaw = None if keep_yaw else radians(hold_yaw_deg)`（`mpc_node.py`）⟹ **默认档下
+      `hold_yaw_deg` 被整条忽略**，`ControlConfig.hold_yaw` 是 `None`，于是
+      `node_core.hold_reference` 取的是**锚点那一拍的机头**（`node_core.py` 的
+      `yaw = config.hold_yaw if ... is not None else yaw_from_quat(x[6:10])`）——
+      参考机头 ≈ 实测机头，**误差恒为噪声**。飞出来一场"全绿"，而 ⑩ 只报"没做"。
+      ⟹ `hold_yaw` 非 0 时**必须**同时把它关掉。★ 只在非 0 时传：`hold_yaw_deg = 0` 的场次
+      保持"锚点机头"这个**老行为**一个字不变（绝对 0° 与"解锁机头"在真机上不是一回事）。
     """
     params = [f"log_file:={cfg.log_file}",
               "state_source:=px4",
@@ -713,6 +723,9 @@ def dut_params(cfg) -> list:
               f"hold_offset_z:={cfg.hold_z}",
               f"hold_yaw_deg:={cfg.hold_yaw}",
               f"rate_hz:={cfg.rate_hz}"]
+    if cfg.hold_yaw:
+        # ★ `keep_yaw:=false` 是 `hold_yaw_deg` 的**使能位**，不是可选优化：见 docstring ★★★
+        params.insert(5, "keep_yaw:=false")
     if cfg.source == "px4-gt":
         params += [f"px4_position_topic:=/fmu/out/{GT_TOPIC}",
                    f"px4_attitude_topic:=/fmu/out/{GT_ATT_TOPIC}"]
@@ -903,6 +916,24 @@ def frame_track(frames, tail_s=3.0, head_n=20):
     u3_tail = (statistics.fmean(float(f["u"][3]) for f in normal[-100:])
                if normal and all(isinstance(f.get("u"), list) and len(f["u"]) >= 4
                                  for f in normal[-100:]) else None)
+    # ── 机头误差 vs 角速率指令（判据⑩ 的原料，ticket 16 验收第 3 项）──
+    # ★ 两路都取**同一帧**：参考机头 `x_ref0_q` 与实测机头 `x0[6:10]`（都是 EKF 帧、同一拍），
+    #   配那一帧的 `u[3]`。★ 取**末段**（悬停段）：那时位置已在参考附近 ⟹ `u[3]` 里
+    #   占比最大的就是机头这一项，不会被位置误差那条路串进来。
+    # ★ 用**中位数**而不是均值：RTI 逐拍带一点依赖热启动的抖动，千帧中位数把它的方差压掉
+    #   约 √1000（判据要问的是"这个偏差下指令往哪边走、走多大"，不是逐拍噪声）。
+    pairing = []
+    for f in tail:
+        q_ref = f.get("x_ref0_q")
+        if not (isinstance(q_ref, list) and len(q_ref) >= 4
+                and isinstance(f.get("x0"), list) and len(f["x0"]) >= 10
+                and isinstance(f.get("u"), list) and len(f["u"]) >= 4):
+            continue
+        pairing.append((wrap_pi(yaw_enu_from_quat(q_ref) - yaw_enu_from_quat(f["x0"][6:10])),
+                        float(f["u"][3])))
+    # ★ 只留**真有误差**的那些帧：没注入误差（`--hold-yaw 0`）时 `pairing` 是满的、
+    #   而误差全是噪声 ⟹ 那不算"判过"，算"没判"（`evaluate` 记 `ok=None`）。
+    big = [(dq, u3) for dq, u3 in pairing if abs(dq) >= YAW_RESTORE_MIN_RAD]
     return {"n": len(normal),
             "up_head": statistics.fmean(up_head), "up_tail": statistics.fmean(up_tail),
             "climb": statistics.fmean(up_tail) - statistics.fmean(up_head),
@@ -937,6 +968,11 @@ def frame_track(frames, tail_s=3.0, head_n=20):
             "yaw_ekf_span": (psi[-1] - psi[0]) if psi else None,
             "yaw_ekf_tail_span": (yt[-1][1] - yt[0][1]) if yt else None,
             "yaw_ekf_tail_rate": ((yt[-1][1] - yt[0][1]) / tail_s) if yt else None,
+            # ── 机头回正（判据⑩）──
+            "yaw_restore_n": len(big),                       # 末段里"真有误差"的帧数
+            "yaw_restore_n_all": len(pairing),               # 末段里配得上对的帧数（分母）
+            "yaw_restore_err": (statistics.median([dq for dq, _ in big]) if big else None),
+            "yaw_restore_u3": (statistics.median([u3 for _, u3 in big]) if big else None),
             "u3_tail": u3_tail}
 
 
@@ -954,6 +990,25 @@ CK_ANCHOR = "★ 参考锚定"
 #: 偏航那两条判据的名字前缀（`attribute` 按前缀找它们）。
 CK_YAW_MAP = "⑨ 偏航：指令方向与被控对象真的转的方向一致"
 CK_YAW_CONV = "⑨ 偏航：我们换算出来的机头朝向 == 教科书那一个"
+CK_YAW_RESTORE = "⑩ 偏航：有已知机头误差时指令把它往参考拉（符号 + 量级）"
+
+#: ⑩ 用的常数 —— **都不是判据自己的发明**，是把已经量到的东西写成常数：
+#: ① `R_YAW` = 落地权重 `r_diag[3]`（`OcpConfig` 的默认，`src/nmpc/nmpc/ocp.py`）。
+#:    ★ 它由 `test_tier_a_judges.py::test_偏航回正判据的权重常数没跟着_OcpConfig_漂` 钉住 ——
+#:      权重一改而这里没跟，这条判据量的就是**别的东西**，而且**照样绿**（本仓库的老坑）。
+#: ② `YAW_TAU_PER_R = 2.05`：闭环机头时间常数与 `R_yaw` 的实测比（`τ ≈ 2.05 · R_yaw`），
+#:    逐档量出来的原始 stdout 在 ticket 16 Comments #5 ⑤。
+R_YAW = 5e2
+YAW_TAU_PER_R = 2.05
+#: 期望的角速率指令 = `Δψ / τ`，`τ = YAW_TAU_PER_R · R_YAW`（落地权重 ⟹ ≈ 1025 s）。
+YAW_TAU_S = YAW_TAU_PER_R * R_YAW
+#: 判"这一场真的注入了机头误差"的下限 [rad]：小于它**不判**（记"没做"）——
+#: 误差太小时 `u[3]` 被别的项盖住，判了也说明不了什么。
+YAW_RESTORE_MIN_RAD = math.radians(5.0)
+#: 量级判带的乘法宽度：期望值的 `1/4 … 4` 倍。
+#: ★ **只有符号是锐的**；幅值这一带是"别差一个数量级"的信封 —— 真 SITL 多了姿态环滞后，
+#:   实测增益只会比离线预测**小**，所以**下限比上限要紧**（下限抓"权威被压到 ≈0"）。
+YAW_RESTORE_BAND = (0.25, 4.0)
 
 
 def yaw_ned_from_quat(q_ned_frd) -> float:
@@ -1615,6 +1670,54 @@ def evaluate(obs) -> list:
        f"{v.fmt(tr.get('u3_tail'), '+.4f')} rad/s。★「机头在转而位置那几条全绿」是"
        f"**位置参考锚死**的副作用 ⟹ 别拿位置 ✅ 当成机头正常；归因见判据⑨")
 
+    # ⑩ 机头回正（**ticket 16 验收第 3 项**）—— ★ 判**指令**，不判机头走到哪。
+    #   落地权重下 τ ≈ 2.05·R_yaw ≈ 1025 s ⟹ 一场 25 s 里机头只走 ~0.5°，而 EKF 机头的噪声
+    #   就是这个量级 ⟹ "机头回到位"这个量在短场里**不可观测**；可观测的是 `u[3]`。
+    #   ★ 符号规则不是推的（推理有踩坑记录）：离线钉住状态、反复解到不动点实测（2026-09-30）——
+    #     实测机头 `+23°`（Δψ = −0.4014 rad）⟹ `u[3] = −3.8319e-4`；`−23°` ⟹ `+3.8319e-4`，
+    #     **反号等幅** ⟹ `u[3]·Δψ > 0` 即回正，且 τ = 1047.6 s（与 `2.05·R_yaw` 差 2%）。
+    #   ⚠️ 本场没注入机头误差时这条**没做**（`ok=None`、不计数）—— 它不是通过，
+    #     投它票的是"这一场用 `--hold-yaw` 飞"这件事本身（验收正文就这么要求）。
+    #   ⚠️ 也别拿上面 ⑥b 的 ✅ 当替代：它的门槛 `0.1 rad/s` 比这条要看的 `3.4e-4` 高
+    #     **三个数量级** ⟹ 偏航权威再小它也是绿的（这就是 ticket 25 的"死通道"）。
+    r_err, r_u3 = tr.get("yaw_restore_err"), tr.get("yaw_restore_u3")
+    if r_err is None or r_u3 is None:
+        # ★ 两种成因**分开说**（复核意见）：配不上对（分母 0）与"配上了但误差全在噪声里"
+        #   是两条不同的排查路，混成一句"没注入误差"会把人往错的方向引。
+        n_all = tr.get("yaw_restore_n_all") or 0
+        why = (f"末段一对都没配成（分母 = {n_all}）⟹ 先查逐帧日志里有没有 `x_ref0_q` 这一列"
+               f"（老节点的日志没有它）"
+               if n_all == 0 else
+               f"末段配到 {v.fmt(n_all, 'd')} 帧（参考机头 `x_ref0_q` 与实测机头 `x0[6:10]` "
+               f"同一帧配对），但其中 `|Δψ| ≥ {math.degrees(YAW_RESTORE_MIN_RAD):.0f}°` 的"
+               f"有 **0 帧** ⟹ 参考机头与实测机头分不开（`--hold-yaw` 没传；"
+               f"⚠️ 传了但没关 `keep_yaw` 也是如此，见 `dut_params()` 的 ★★★）")
+        ck("⑩ 偏航：有已知机头误差时指令把它往参考拉（**没做**：本场没有机头误差）",
+           None,
+           why + "。★ 这**不是通过**：验收它得用 `--hold-yaw 20` 重飞一场"
+                 "（见 `dut_params()` 的 ★★）",
+           counts=False)
+    else:
+        want = r_err / YAW_TAU_S
+        lo, hi = YAW_RESTORE_BAND[0] * abs(want), YAW_RESTORE_BAND[1] * abs(want)
+        same_sign = (r_u3 * r_err) > 0
+        in_band = lo <= abs(r_u3) <= hi
+        ck(CK_YAW_RESTORE, same_sign and in_band,
+           f"末段 {v.fmt(tr.get('yaw_restore_n'), 'd')} 帧里 Δψ = 参考机头 − 实测机头 "
+           f"= {v.fmt(r_err, '+.4f')} rad（{math.degrees(r_err):+.1f}°，中位数），"
+           f"同段 `u[3]` = {v.fmt(r_u3, '+.8f')} rad/s（中位数）⟹ "
+           f"{'**同号**（回正）' if same_sign else '☠ **反号**（把机头往远处推）'}；"
+           f"期望 `Δψ/τ` = {v.fmt(want, '+.2e')} rad/s（`τ = 2.05·R_yaw = {YAW_TAU_S:.0f} s`，"
+           f"`R_yaw = {R_YAW:g}`），实测/期望 = "
+           f"{v.fmt((abs(r_u3)/abs(want)) if want else None, '.2f')}×"
+           f"（判带 {YAW_RESTORE_BAND[0]:g}…{YAW_RESTORE_BAND[1]:g}×）"
+           f"{'' if in_band else ' ☠ 量级不在带里'}。"
+           f"★ 只有**符号**是锐的（反了必红）；幅值那一带是「别差一个数量级」的信封 —— "
+           f"真 SITL 多了姿态环滞后，实测增益只会比离线预测小。"
+           f"⚠️ 这一条**判不了**「机头多久回到位」（那是 τ ≈ 17 min 的事，短场里不可观测），"
+           f"它判的是「指令在不在往参考拉、拉得对不对」；"
+           f"偏航权威本身够不够是 ticket 25 的事")
+
     # ⑦ D6：票面那个数字（结论行，不判"通过"）
     ck("⑦ D6（结论行，不是通过/不通过）：求解耗时 p50/p99/最坏 —— 冷启动与稳态分账",
        None,
@@ -1726,6 +1829,20 @@ def attribute(obs, checks) -> str:
                 "（换算误差 ≈ 2ψ_ned 或随航向线性变）⟹ 看 `node_core.px4_quat_to_enu` 的"
                 "`Q_NED_TO_ENU` / `Q_FRD_TO_FLU` 复合顺序；"
                 "★ 位置环可能仍然正常，所以这条只能靠真值姿态抓")
+    if failed(CK_YAW_RESTORE):
+        # ★ 排在 ⑥b 之前：⑩ 红时 ⑥b **可能**也红（权威够大时符号反会让机头朝远处转、转角/转速
+        #   超门槛），两条同时红该先说到因上。⚠️ 但**落地权重下 ⑥b 看不见它**：`|u[3]| ≈ 3.8e-4`
+        #   在 3 s 里只转 `1.1e-3 rad`，`0.1 rad/s` 与 `0.5 rad` 两个门槛都过得去 ——
+        #   这正是下面正文说的那个洞，别把这两句读成互相矛盾。
+        return ("**偏航通道（票面三条之外；ticket 16 验收第 3 项）**：有已知机头误差时，`u[3]` "
+                "**没有把机头往参考拉**（符号反），或者**幅值差了一个数量级**（权威被压到 ≈0）。"
+                "★ 这一条**独立于** ⑥b：⑥b 的门槛是 `0.1 rad/s`，比这里要看的 `3.4e-4` 高"
+                "**三个数量级** ⟹ 权威再小 ⑥b 也是绿的（那就是个洞，见下）。"
+                "· **符号反** ⟹ 先查 `u[3]` 这一路的取反（`sign-map.md` §5.2）与 `q_diag` 的 `qw`"
+                "（`qw = 0` 时代价对朝向几乎无回正力、且**分不出镜像机头**，见 `offline-ocp.md` §2）；"
+                "· **幅值 ≈ 0（但符号对）** ⟹ 这是**死通道**，落地权重下 `τ ≈ 2.05 · R_yaw ≈ 17 min`、"
+                "指令量级 `1e-4 rad/s`（**票 25**）—— 那不是这条判据的锅，"
+                "它只说明「指令在往对的方向拉，只是很轻」")
     if failed("⑥b"):
         # ★★ 这里**不许**一口咬定"⑨ 已经证明两个方向都没反"：走到这一条时 ⑨a 可能是
         #   **没做**（别名闸门 / 仪器没接上，`ok=None`），也可能做了但**判别力不足**
@@ -1865,8 +1982,10 @@ def main(argv=None) -> int:
     ap.add_argument("--hold-y", type=float, default=0.0)
     ap.add_argument("--hold-z", type=float, default=1.0, help="悬停高度（ENU，米）")
     ap.add_argument("--hold-yaw", type=float, default=0.0,
-                    help="悬停参考机头（deg，透传给节点的 `hold_yaw_deg`）。★ 造一条**已知大小**的机头"
-                         "误差：SITL 里解锁时机头 ≈ 0 ⟹ 误差 ≈ 这个值。见 `dut_params()` 的 ★★")
+                    help="悬停参考机头（deg，透传给节点的 `hold_yaw_deg`，非 0 时**同时**传 "
+                         "`keep_yaw:=false` —— 少了它参考机头取锚点机头、误差造不出来）。"
+                         "★ 造一条**已知大小**的机头误差：SITL 里解锁时机头 ≈ 0 ⟹ 误差 ≈ 这个值。"
+                         "见 `dut_params()` 的 ★★/★★★")
     #: ★ 默认给 **150 s**（不是 40）：`OfflineOcp()` 首次会代码生成 + 编译 C（`test_mpc_node`
     #:   的 `STARTUP_S` 也按 120 s 留）；卡太短会把"节点还在编译"读成"中间件没通"。
     #:   缓存命中时实测 ~8–12 s。

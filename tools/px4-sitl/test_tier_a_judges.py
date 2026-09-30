@@ -542,6 +542,30 @@ def _cfg(**kw):
     return argparse.Namespace(**base)
 
 
+def _params_as_ros(cfg):
+    """把 `dut_params()` 吐出来的 `名:=值` 串按 ROS 的规矩落成节点自己的 `NodeParams`。
+
+    ★★ 为什么要这一层：只断言"串在参数表里"**守不住这类洞** —— `hold_yaw_deg:=20` 一直都能
+      写进表里，可它在节点里被 `keep_yaw`（**默认 True**）整条闸掉
+      （`control_config()` 那行：`yaw = None if keep_yaw else radians(hold_yaw_deg)`）
+      ⟹ 参考机头仍是**锚点那一拍的机头**，误差造不出来，而飞完一场"全绿"。
+      只有把串**真喂进节点自己的代码**、问它"参考机头最后是什么"，这个洞才会红。
+      类型从节点的 `_PARAMS` 表取（不信这边的猜测）。
+    """
+    from nmpc.mpc_node import _PARAMS, NodeParams
+    types = {n: t for n, _d, t in _PARAMS}
+    kw, off = {}, {}
+    for item in ta.dut_params(cfg):
+        name, _, val = item.partition(":=")
+        t = types[name]                       # 名字拼错在这里就 KeyError（与启动即退同义）
+        if name.startswith("hold_offset_"):
+            off[name[-1]] = t(val)
+            continue
+        kw[name] = (val == "true") if t is bool else t(val)
+    kw["hold_offset"] = (off.get("x", 0.0), off.get("y", 0.0), off.get("z", 0.0))
+    return NodeParams(**kw)
+
+
 def test_参数表把机头参考透传给节点():
     """★ ticket 16 验收第 3 项（A 档复飞看机头）的**唯一旋钮**：`hold_yaw_deg` 必须真的
     进 `--ros-args -p`。
@@ -557,3 +581,208 @@ def test_参数表把机头参考透传给节点():
     assert "hold_yaw_deg:=0.0" in ta.dut_params(_cfg())
     assert "hold_yaw_deg:=20.0" in ta.dut_params(_cfg(hold_yaw=20.0))
     assert "hold_yaw_deg:=-15.5" in ta.dut_params(_cfg(hold_yaw=-15.5))
+
+
+def test_机头参考真的生效_不只是串写进了参数表():
+    """★★ **同族第三个洞**（2026-09-30 复核抓出）：参数传了 ≠ 参数**被读**。
+
+    `hold_yaw_deg` 在节点里被 `keep_yaw`（默认 **True**）闸着 ⟹ 光传它，`hold_yaw` 仍是
+    `None`，`hold_reference` 取锚点机头，**参考机头 ≈ 实测机头、误差恒为噪声** ——
+    这时 ⑩ 只会报"没做"，而票面上写着"已造出 20° 已知误差"。**静默**，且上面那条测试守不住。
+
+    ★ 断言的是**节点自己算出来的参考机头**（走 `dut_params()` → ROS 的值 → `NodeParams` →
+      `control_config()` 这条真链），不是"我有没有写那一行"：
+      查的是**结果**，所以闸门以后改名/换实现它也拦得住。
+    ★ 老行为也要钉住：`hold_yaw_deg = 0`（不传 `--hold-yaw`）时参考机头仍是"**保持锚点机头**"
+      （`hold_yaw=None`）—— 绝对 0° 与"解锁机头"在真机上不是一回事，别把默认档改了。
+    """
+    p = _params_as_ros(_cfg(hold_yaw=20.0))
+    assert p.control_config().hold_yaw == pytest.approx(math.radians(20.0))
+    p_neg = _params_as_ros(_cfg(hold_yaw=-15.5))
+    assert p_neg.control_config().hold_yaw == pytest.approx(math.radians(-15.5))
+    p0 = _params_as_ros(_cfg())
+    assert p0.control_config().hold_yaw is None
+    # 使能位本身也钉一下：只在非 0 时出现（0 的场次一个字不变）
+    assert "keep_yaw:=false" in ta.dut_params(_cfg(hold_yaw=20.0))
+    assert "keep_yaw:=false" not in ta.dut_params(_cfg())
+
+
+# ------------------------------------------------- ⑩ 机头回正（判 `u[3]` 的方向与量级）
+
+
+def _truth_rows(n=400, hz=100.0):
+    """够 `evaluate` 跑完的一条真值轨迹（NED ⟹ z 向下为正，起飞后稳在 ≈ −1.05 m）。
+
+    ⚠️ **不能省**：`evaluate` 会读 `truth[0][3]`（地面那一点），空列表直接 IndexError
+    （第一版人造 obs 就是这么崩的）⟹ 这条注释是给下一个写人造 obs 的人看的。
+    """
+    rows = []
+    for i in range(n):
+        t = i / hz
+        z = 0.05 if t < 1.0 else 0.05 - 1.10 * min(1.0, (t - 1.0) / 2.0)
+        rows.append([t, 0.0, 0.0, z, 0.0, 0.0, 0.0])
+    return rows
+
+
+def _restore_obs(err, u3, n=300):
+    """把"末段机头误差 / `u[3]`"塞进 obs —— 判据⑩ 的输入就这两个数（外加分母 `n`）。"""
+    return {"name": "人造", "source": "px4", "t": {"offboard_enter": 1.5},
+            "dut": {"frames": 400, "track": {
+                "ref_n": 400, "ref_span_z": 0.0, "ref_span_xy": 0.0,
+                "ref_events": ["anchor"], "referr_head": 0.1, "referr_tail": 0.01,
+                "yaw_restore_err": err, "yaw_restore_u3": u3,
+                "yaw_restore_n": n, "yaw_restore_n_all": n}},
+            "truth": _truth_rows(), "hover_s": 3.0, "armed_ever": True}
+
+
+def _restore_check(obs):
+    """只挑出 ⑩ 那一条（`evaluate` 会另出 ~20 条，与这条无关）。"""
+    got = [c for c in ta.evaluate(obs) if c["name"].startswith("⑩")]
+    assert len(got) == 1, [c["name"] for c in got]
+    return got[0]
+
+
+#: 离线探针（2026-09-30）实测的那一对：机头 −23.0° ⟹ 稳态 `u[3] = −3.8319e-4` rad/s。
+#: ★ 用**实测的数**当基准，不用 `Δψ/τ` 现算 —— 那样等于拿判据的公式喂判据自己。
+RESTORE_ERR, RESTORE_U3 = -0.4014, -3.8319e-4
+
+
+def test_偏航回正判据认双方向的误差_不是写死一个符号():
+    """⑩ 要判的是**关系**（`u[3]·Δψ > 0`），不是"`u[3]` 必须为负"。
+
+    ★ 探针实测过：误差反号 ⟹ `u[3]` 等幅反号（`+23°` 与 `−23°` 两条读数对称），
+      所以**两个方向都必须 ✅**。只钉一个符号的写法会在真机上把一半的场次判红。
+    """
+    for err, u3 in ((RESTORE_ERR, RESTORE_U3), (-RESTORE_ERR, -RESTORE_U3)):
+        c = _restore_check(_restore_obs(err, u3))
+        assert c["ok"] is True, c["detail"]
+        assert "同号" in c["detail"]
+
+
+def test_偏航回正判据在符号反时红():
+    """★ 主动变异：把 `u[3]` 反号 ⟹ 必须是 ❌（而且 detail 要说出"反号"）。
+
+    这正是 ticket 16 验收第 3 项要抓的那件事：镜像井（`qw = 0`）下控制器可能把机头
+    往**远处**推。现有 ⑥b 看不见它（门槛高三个数量级，见 `test_..._⑥b_...` 一族）。
+    """
+    c = _restore_check(_restore_obs(RESTORE_ERR, -RESTORE_U3))
+    assert c["ok"] is False, c["detail"]
+    assert "反号" in c["detail"]
+
+
+def test_偏航回正判据在权威被压到零时红_即使符号是对的():
+    """★★ 这条是本判据**唯一**能替 ticket 25（死通道）说的话：**符号对、量级不对**。
+
+    `u[3] = −1.9e-5` 是 **A 档原始权重**（`qw = 0`）下的实测读数 —— 符号是对的，
+    但比期望的 `Δψ/τ` 小 20 倍，落在判带之外 ⟹ ❌。
+    ★ 判带**下限**才是这道闸；（真 SITL 的姿态环滞后只会让实测更小，上限基本不会碰到）。
+    """
+    c = _restore_check(_restore_obs(RESTORE_ERR, -1.9e-5))
+    assert c["ok"] is False, c["detail"]
+    assert "量级不在带里" in c["detail"]
+
+
+def test_偏航回正判据在上限外也红():
+    """反方向的一条：`u[3]` 大 8 倍（> 4× 判带）⟹ ❌。
+
+    ★ 为什么上限也要判：量级大得离谱意味着 `u[3]` 里**混进了别的东西**
+      （位置环 / 姿态回授 / 参考没锚住），那时"它在往参考拉"这个读数不再干净。
+    """
+    c = _restore_check(_restore_obs(RESTORE_ERR, 8 * RESTORE_U3))
+    assert c["ok"] is False, c["detail"]
+
+
+def test_没有注入机头误差时判据说没做而不是通过():
+    """★★ 本判据最容易假绿的地方：**没有误差时它本来就会看着"没问题"**。
+
+    `--hold-yaw` 不传 ⟹ 参考机头 = 解锁机头 ⟹ `Δψ` 全在噪声里 ⟹ `frame_track` 给出
+    `yaw_restore_err = None`。这时必须是**没做**（`ok=None`、`counts=False`），
+    而且票面上要写着要用 `--hold-yaw 20` 重飞 —— 不是 ✅。
+    （与 `test_参数表把机头参考透传给节点` 是一对：那条保证旋钮**接得上**，这条保证
+      **不接也不会被读成通过**。）
+    """
+    c = _restore_check(_restore_obs(None, None))
+    assert c["ok"] is None, c["detail"]
+    assert c["counts"] is False
+    assert "没做" in c["name"] and "--hold-yaw" in c["detail"]
+
+    # ★ 两种成因要**分开说**（分母 0 = 配对失败；分母满 = 真没误差）—— 混成一句会把排查方向带偏
+    c0 = _restore_check(_restore_obs(None, None, n=0))
+    assert "一对都没配成" in c0["detail"] and "x_ref0_q" in c0["detail"]
+    assert "keep_yaw" in c["detail"]        # 传了但被 keep_yaw 闸掉，也是这条路
+
+
+def test_偏航回正判据的权重常数没跟着_OcpConfig_漂():
+    """★ `R_YAW` 是**抄**过来的常数，不是判据自己的发明 ⟹ 得钉住它的出处。
+
+    它进 `τ = YAW_TAU_PER_R · R_YAW`，而 `τ` 决定期望的 `u[3]` ⟹ 权重改了而这里没跟，
+    这条判据量的就是**别的东西**，而且**照样绿**（本仓库的老坑：常数与出处各说各话）。
+    """
+    from nmpc.ocp import OcpConfig          # 延迟 import：与 `nmpc` 那一族 importorskip 一致
+    assert ta.R_YAW == OcpConfig().r_diag[3]
+    assert ta.YAW_TAU_S == ta.YAW_TAU_PER_R * ta.R_YAW
+
+
+def _restore_frames(n=600, hz=100.0, psi_ref=0.0, psi_meas=math.radians(20.0), u3=-3.0e-4):
+    """造逐帧日志喂 `frame_track`（只填 `normal` 那一档 + 它真会读的键）。
+
+    末段 3 s 的机头误差 = `psi_ref − psi_meas`（两路都在 EKF 帧、同一拍）。
+    """
+    q_ref = _quat_from_yaw_enu(psi_ref)
+    frames = []
+    for i in range(n):
+        frames.append({"wall_ns": int(1e9 + i * 1e9 / hz),
+                       "fallback": "normal",
+                       "x0": [0.0, 0.0, 1.0, 0.0, 0.0, 0.0] + _quat_from_yaw_enu(psi_meas),
+                       "x_ref0_q": q_ref,
+                       "u": [7.35, 0.0, 0.0, u3]})
+    return frames
+
+
+def test_frame_track_把参考机头与实测机头配成对_并丢掉没误差的帧():
+    """★★ 这一条钉住"仪器"那一半：**读了哪两个量、哪些帧不算**。
+
+    判据⑩ 的一切都建立在这一对读数上，而配对错**不会报错**（只是数不对）——
+    与 `dut_params` 漏传 `hold_yaw_deg` 同族的静默失败。
+    """
+    tr = ta.frame_track(_restore_frames(psi_meas=math.radians(20.0)))
+    assert tr["yaw_restore_n_all"] > 100                       # 末段配得上对的帧
+    assert tr["yaw_restore_n"] == tr["yaw_restore_n_all"]      # 全都有误差（20° > 5° 门槛）
+    assert tr["yaw_restore_err"] == pytest.approx(math.radians(-20.0), abs=1e-9)
+    assert tr["yaw_restore_u3"] == pytest.approx(-3.0e-4, rel=1e-9)
+
+    # ★ 没有误差那一场：分母还在、分子为 0 ⟹ 判据读"没做"（不是"通过"）
+    tr0 = ta.frame_track(_restore_frames(psi_meas=0.0))
+    assert tr0["yaw_restore_n_all"] > 100 and tr0["yaw_restore_n"] == 0
+    assert tr0["yaw_restore_err"] is None and tr0["yaw_restore_u3"] is None
+
+    # ★ 误差小于门槛（2° < 5°）：同样不判 —— 噪声里的小偏差说明不了"往哪边拉"
+    tr2 = ta.frame_track(_restore_frames(psi_meas=math.radians(2.0)))
+    assert tr2["yaw_restore_n"] == 0 and tr2["yaw_restore_err"] is None
+
+
+# ------------------------------------------------- ⑩ 的归因位置（排在 ⑥b 之前）
+
+
+def test_attribute_把偏航指令反号归到偏航通道而不是棘轮():
+    """★ 符号反了会让机头**朝远处转** ⟹ ⑥b（末段转速/累计转角）**也会红**。
+
+    两条同时红时，归因必须说到**因**上（`u[3]` 反号），不能说成 ⑥b 那一段的"棘轮"
+    （那是历史病灶、另一回事）—— 说错了会把人送去改代价而不是查取反。
+    """
+    checks = _six_b_checks()
+    checks.append(_ck(ta.CK_YAW_RESTORE, False))   # ⑩ 红；⑥b 那一条仍然是 False
+    text = ta.attribute(_obs(), checks)
+    assert text.startswith("**偏航通道（票面三条之外"), text
+    assert "符号反" in text and "死通道" in text
+    assert "上一帧解" not in text                  # 没有跑到 ⑥b 那段
+
+
+def test_attribute_在判据没做时仍然把归因留给棘轮那一条():
+    """反例（防"新分支把所有红都吃掉"）：⑩ **没做**（`ok=None`）时不该抢归因。
+
+    没注入机头误差的场次里 ⑩ 是"没做"，那一场 ⑥b 若红仍是它自己的事（棘轮）。
+    """
+    checks = _six_b_checks()
+    checks.append(_ck(ta.CK_YAW_RESTORE, None))
+    assert ta.attribute(_obs(), checks).startswith("**代价 / 前馈")
