@@ -15,7 +15,7 @@
 | `run_matrix.sh` | 跑这九场的脚本（含**等空机**闸门与 `pgrep -x` 的教训） |
 | `u-ref-authority-*.json` | **ticket 20 的离线探针产物**（不是飞行）：`probe_u_ref_authority.py` 的输出，见下节。★ 其中 `-sameframes-20260930` 那份是**同批帧、新树**的复跑，用来量"中间那四个提交对这档的影响"（20 号票 §13.7） |
 | `controller-code-20260930-F0c-F1c.json` | `F0c`/`F1c` 两场的**代码身份**（`git HEAD` + 11 个文件 sha256 + 入口脚本 sha）—— 这两场的 `--json` 里没有 `controller_code` 块（缺席口径见下方第 4 条），故单记一份 |
-| `df-column-20260930.json` | `F0b`/`F1b`/`F0c`/`F1c` 四场的**逐帧 `[tick, df, u[0], thrust_body_z]`** + 发布点闭合式残差 —— 20 号票 §13.4 的**唯一**可复核底料（`df`/`u_ref0` 两列不在 `-summary.json` 里，逐帧 jsonl 又没入库）。**生成器**：[`tools/px4-sitl/export_df_column.py`](../../export_df_column.py)（读 `/tmp/tier-b/<tag>-dut.jsonl` ⟹ 必须与飞行同一次开机内跑） |
+| `df-column-20260930.json` | `F0b`/`F1b`/`F0c`/`F1c` 四场的**逐帧 `[tick, df, u[0], thrust_body_z]`** + 发布点闭合式残差 —— 20 号票 §13.4 的**唯一**可复核底料（`df`/`u_ref0` 两列不在 `-summary.json` 里，逐帧 jsonl 又没入库）。**生成器**：[`tools/px4-sitl/export_df_column.py`](../../export_df_column.py)（读 `/tmp/tier-b/<tag>-dut.jsonl` ⟹ 必须与飞行同一次开机内跑）。☠️ **这两场的输入已经没了**：2026-09-30 06:38 那次开机把 `/tmp` 清了 ⟹ 生成器**再跑不起来**，本文件是那四列（`df`／`u[0]`／`thrust_body_z`／`u_ref0`）**唯一**的存本（这正是"当场落仓库"那条纪律的一次现场兑现） |
 
 `<tag>` = `F0`(标称) / `F1`(mass+30，判据①) / `F2`(mass+30 + 50 ms，判据③) /
 `F3`(mass+30 + 注入求解失败，判据④) / `F4`(标称 + 注入，判据④的对照)。
