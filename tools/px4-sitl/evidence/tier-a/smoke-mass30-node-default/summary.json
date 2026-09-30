@@ -1,0 +1,130 @@
+{
+ "n_runs": 1,
+ "baseline": {
+  "n": 0,
+  "present": false,
+  "warn": "**这次没有跑基准（`z0`）** ⟹ 整张表没有对照，「±30 % 是否有影响」这个问题**答不了**",
+  "climb_ekf": null,
+  "e_z_ekf": null,
+  "p2p_ekf": null,
+  "drift_ekf": null,
+  "yaw_span_ekf": null,
+  "solve_steady_max": null,
+  "solve_p50": null,
+  "climb_gt": null,
+  "p2p_gt": null
+ },
+ "by_variant": {
+  "z0-mass+30": [
+   {
+    "passed": false,
+    "failed_checks": [
+     "② 行为：真值高度真的升上去了（起飞后 5 s 内 z < −0.4 m）",
+     "③ 悬停高度 1 m ± 0.15（★ **EKF 帧**：节点日志里 `x0[2]` 的抬升量，末段 3 s 均值）",
+     "⑤ 推力标定：PX4 解出的电机均值 ≈ m·g/(4·T_max)（★ 只在末段配平时才算数）",
+     "⑤ 归一化常数一致：节点自己的 `HOVER_THRUST` == 机型的 m·g/(4·T_max)",
+     "⑤ 悬停段的推力指令 ≈ 悬停所需（|u[0]| 与 m·g 差 < 25%）"
+    ],
+    "harness_dead": false,
+    "diverged": true,
+    "diverge_why": "末段真值抬升只有 +0.000 m（< 0.4 m ⟹ 末段不在空中）",
+    "attribution": "**符号映射 / 推力方向**：进了 OFFBOARD 但飞机没往上去 ⟹ 看 `u[0]` 与线上下发的 `thrust_body_z` 的符号（`sign-map.md` §1）",
+    "climb_ekf": -0.32914480564784043,
+    "e_z_ekf": -1.3291448056478403,
+    "p2p_ekf": 0.26552200000000004,
+    "drift_ekf": 0.2975267782637388,
+    "referr_tail": -1.3813035,
+    "yaw_span_ekf": -0.03272010137638359,
+    "u3_tail": -0.0017891699999999999,
+    "climb_gt": 0.0,
+    "up_tail": -0.7785783056478405,
+    "p2p_gt": 0.0,
+    "solve_p50": 3.351,
+    "solve_p99": 5.055,
+    "solve_max": 16.608,
+    "solve_steady_max": 5.51,
+    "ladder_steady": "100 Hz（最坏 ≤10 ms，余量够）",
+    "frames": 2770,
+    "actual_hz": 99.77,
+    "variant": "z0-mass+30",
+    "rep": 1,
+    "knob": "mass",
+    "overlay_ok": true,
+    "status": "发散",
+    "delta": {
+     "climb_ekf": null,
+     "e_z_ekf": null,
+     "p2p_ekf": null,
+     "drift_ekf": null,
+     "yaw_span_ekf": null,
+     "solve_steady_max": null,
+     "solve_p50": null,
+     "climb_gt": null,
+     "p2p_gt": null
+    }
+   }
+  ]
+ },
+ "counts": {
+  "发散": 1,
+  "退化": 0,
+  "稳定": 0
+ },
+ "variants": [
+  "z0-mass+30"
+ ],
+ "controller": {
+  "n_sigs": 1,
+  "sigs": {
+   "62640d4a1df6": [
+    "z0-mass+30-1"
+   ]
+  },
+  "packages": {
+   "62640d4a1df6": [
+    "/home/chen/ros_ws/src/nmpc/nmpc"
+   ]
+  },
+  "warn": null
+ },
+ "harness": {
+  "n_sigs": 1,
+  "sigs": {
+   "e1c7d044bd535825": [
+    "z0-mass+30-1"
+   ]
+  },
+  "warn": null
+ },
+ "trace": {
+  "n": 1,
+  "n_runs": 1,
+  "by": {
+   "run_variant": 1
+  },
+  "hz": 5.0
+ },
+ "rank": {
+  "rows": [
+   {
+    "knob": "mass",
+    "x": null,
+    "flag": "发散（不参与倍数）",
+    "variant": "z0-mass+30",
+    "rep": null,
+    "key": null,
+    "value": null,
+    "base_median": null
+   }
+  ],
+  "resolvable": false,
+  "note": "**这次没有跑基准（`z0`）** ⟹ 「谁先退化」**答不了**：没有散度带就没有尺子，只能看每档的绝对读数",
+  "frames": []
+ },
+ "vertical_gain": {
+  "k": null,
+  "rows": [],
+  "resolvable": false,
+  "note": "没有基准（`z0`）读数 ⟹ **反推不出刚度**"
+ }
+}
