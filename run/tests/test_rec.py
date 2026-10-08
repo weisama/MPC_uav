@@ -57,33 +57,76 @@ Topic information: Topic: /chatter | Type: std_msgs/msg/String | Count: 2 | Seri
 # ─────────────────────────── 场景表 ───────────────────────────
 
 
-def test_四个场景就是票面那四个():
-    assert [s.n for s in rec.SCENARIOS] == [1, 2, 3, 4]
-    assert len({s.slug for s in rec.SCENARIOS}) == 4, "落盘目录名不许重"
-    assert set(rec.SCENARIO_BY_N) == {1, 2, 3, 4}
-    # 场景 1/2 没有 control（手动遥控飞那条链），3/4 才是全链
+def test_六个场景就是票面那六个():
+    """★ 操作者 2026-10-08 拍定的那张表：`1` 静止 / `2` 手飞起飞 / `3` 轨迹 1 /
+    `4` 轨迹 2（正方形）/ `5` 轨迹 3（八字）/ `6` 任意录制。
+
+    ⚠️ **4 与 5 相对 09-29 那一版调过个儿**：那时 4 是八字。票面写的是"轨迹 3=轨迹 1，
+    4=轨迹 2，5=轨迹 3"⟹ 轨迹号对齐本来那张表，八字从 4 挪到 5。
+    """
+    assert [s.n for s in rec.SCENARIOS] == [1, 2, 3, 4, 5, 6]
+    assert len({s.slug for s in rec.SCENARIOS}) == 6, "落盘目录名不许重"
+    assert set(rec.SCENARIO_BY_N) == {1, 2, 3, 4, 5, 6}
+    # 场景 1/2 没有 control（手动遥控飞那条链），3/4/5 才是全链，6 是自由录（链由人自己定）
     assert (rec.SCENARIO_BY_N[1].chain, rec.SCENARIO_BY_N[2].chain) == ("up_manual", "up_manual")
-    assert (rec.SCENARIO_BY_N[3].chain, rec.SCENARIO_BY_N[4].chain) == ("up", "up")
+    assert tuple(rec.SCENARIO_BY_N[n].chain for n in (3, 4, 5)) == ("up", "up", "up")
+    assert rec.SCENARIO_BY_N[6].chain == "any"
+
+
+def test_轨迹号与飞控那边的两条轨迹一一对上():
+    """★ 票面那句话（"3=轨迹 1，4=轨迹 2，5=轨迹 3"）指的是**飞行程序那边**的轨迹号
+    （`fly.py` 的 1/2/3）—— 场景号与轨迹号是**两套编号**，别把它们混成一套。
+    这里的判据取自场景自己的 `do` 文字，而不是另抄一张对照表（抄了就会各自漂移）。
+    """
+    for scene_n, kind in ((3, "1"), (4, "2"), (5, "3")):
+        do = rec.SCENARIO_BY_N[scene_n].do
+        assert f"**{kind}**" in do, \
+            f"场景 {scene_n} 的 `do` 里应当点名让飞手选轨迹 {kind}（现在是：{do!r}）"
 
 
 def test_每个场景都写清楚要人做什么_预期话题也能当正则用():
     for scenario in rec.SCENARIOS:
-        assert scenario.title and scenario.slug and scenario.do and scenario.expect
-        assert scenario.expect_s > 0
+        assert scenario.title and scenario.slug and scenario.do
         assert scenario.chain in rec.CHAIN_MENU_TITLE, f"场景 {scenario.n} 的链没有菜单出处"
         for pattern in scenario.expect:
             re.compile(pattern)                     # ★ 写错的正则要在这里炸，不是收口时
+    # ★ 有倒计时的那几条（1–5）必须同时给出预期话题 —— "到点收口"与"该收到什么"是一套的
+    for scenario in rec.SCENARIOS:
+        if scenario.expect_s is not None:
+            assert scenario.expect_s > 0, f"场景 {scenario.n}：倒计时没写成 `None`，就得是正数"
+            assert scenario.expect, f"场景 {scenario.n} 有倒计时却没写预期话题"
 
 
-def test_四个场景的时长统一_120s_且它是自动收口的判据():
-    """★ 操作者 2026-09-29 现场拍定：**四份统一 120 s，到点自动收口**
+def test_五个场景的时长统一_120s_且它是自动收口的判据():
+    """★ 操作者 2026-09-29 现场拍定：**统一 120 s，到点自动收口**
     （演变：原先 1/2 是 90、3 是 150、4 是 120 ⟹ 统一 90 ⟹ 统一 **120**）。
-    钉在用例里，改一个就得四个一起改 —— 它现在是**收口的判据**（`watch` 拿它比时间），
-    不再是"提示"：四个不一样 ⟹ 现场每个人心里的"录够了没有"都不一样。
+    钉在用例里，改一个就得一起改 —— 它现在是**收口的判据**（`watch` 拿它比时间），
+    不再是"提示"：几个不一样 ⟹ 现场每个人心里的"录够了没有"都不一样。
 
+    ⚠️ 场景 6（任意录制）**不在这一条里**：它 `expect_s is None`（见下一条用例），
+    因此**不取 `0.0`** —— 0 会被读成"立刻到点"。
     ⚠️ 实际时长以 `session.json` 的 `duration_s` 为准（秒级调度 ⟹ 差个零点几秒是正常的）。
     """
-    assert {s.expect_s for s in rec.SCENARIOS} == {120.0}
+    ticked = [s for s in rec.SCENARIOS if s.expect_s is not None]
+    assert [s.n for s in ticked] == [1, 2, 3, 4, 5]
+    assert {s.expect_s for s in ticked} == {120.0}
+
+
+def test_场景6是自由录_不倒计时_也不预设预期话题():
+    """★ 操作者 2026-10-08 拍定："不预设场景/时长，起录后我按 Ctrl-C 停"。
+
+    ⚠️ 两个坑都钉在这里：
+      ① `expect_s` 必须是 **`None`**，不能是 `0.0` —— `watch` 拿 `expect_s` 比时间，
+         0 会在第一帧就判"到点"（而自由录**永远**不该自己收口）；
+      ② `expect = ()` **合法**（`render_scenario_card` / `render_record_table` 都按
+         "自由录 —— 不预设"这一支印），但**不能是别的场景的副本** —— 那会让人以为
+         "这一场要录到那些话题才算数"。
+    """
+    free = rec.SCENARIO_BY_N[6]
+    assert free.expect_s is None
+    assert free.expect == ()
+    assert free.chain == "any", "自由录的链由人自己定（手动遥控飞 or 程序飞）"
+    assert "Ctrl-C" in free.do, "自由录的 `do` 必须写清**怎么停**（屏幕上没有倒计时可以看）"
 
 
 def test_场景选择那一行与场景表同源():
@@ -119,19 +162,80 @@ def test_排除正则为空时不许出现_x(tmp_path):
     assert "-x" in rec.record_argv(tmp_path / "x", exclude="^/mavros/imu/")
 
 
-def test_四份场景落盘目录各不相同_且都直接在_bag_下(tmp_path):
+def test_六份场景落盘目录各不相同_且都直接在_bag_下(tmp_path):
     """★ 布局是**扁平**的（操作者 2026-09-29 现场拍定）：`bag/<slug>/`，**没有日期层**。
     日期没丢 —— 每份包自己的 `started_utc` 写在 `session.json` 与 `MANIFEST.md` 里，
     现场按场景找东西时目录名就是要记的那一个。
-    ⚠️ 代价：同名场景再录一次会撞上已有目录（`rosbag2` 拒绝往已有目录里录）。
+    ⚠️ 代价：同名场景再录一次会撞上已有目录（`rosbag2` 拒绝往已有目录里录）⟹ 那时录进
+    `unique_dir` 那份带时间戳的（见下面的用例）。
     """
     dirs = [rec.session_dir(s, tmp_path) for s in rec.SCENARIOS]
-    assert len(set(dirs)) == 4
+    assert len(set(dirs)) == 6
     for scenario, path in zip(rec.SCENARIOS, dirs):
         assert path == tmp_path / scenario.slug
         assert rec.record_argv(path)[4] == str(path)         # `-o` 就是那个目录
         assert rec.scenario_by_slug(path.name) is scenario, \
             "★ 目录名必须能回认出场景号 —— 收编（`adopt`）只有这一条线索"
+
+
+# ─────────────────────────── 重录：带时间戳的新目录 ───────────────────────────
+
+
+def test_重录落进带时间戳的新目录_且认得回场景号(tmp_path):
+    """★ 2026-10-08 现场那条主诉的修法：**目录已存在不再是一句死路**。
+
+    判据三条：
+      ① `unique_dir` 与首选目录**不同名**、且**前缀就是 slug**（人能一眼看出是哪个场景）；
+      ② 它**不在**首选目录里（是兄弟，不是子目录）—— 免得 `rosbag2` 把两者混起来；
+      ③ 名字还得能回认出场景号（`adopt` 只有目录名这一条线索）。
+    """
+    for scenario in rec.SCENARIOS:
+        preferred = rec.session_dir(scenario, tmp_path)
+        fresh = rec.unique_dir(scenario, tmp_path)
+        assert fresh != preferred
+        assert fresh.parent == tmp_path
+        assert fresh.name.startswith(scenario.slug + "__"), fresh.name
+        assert rec.scenario_by_slug(fresh.name) is scenario
+        assert rec.dir_stamp() in fresh.name
+
+
+def test_同一秒里连来两次也不覆盖(tmp_path):
+    """⚠️ 理论上要两次起录落在同一秒才会走到这一支 —— 但那一支**不许**是"覆盖"或"报错"：
+    加 `-2` / `-3` 往后排，且**仍然认得出场景号**。"""
+    now = datetime.datetime(2026, 10, 8, 7, 15, 30)
+    first = rec.unique_dir(rec.SCENARIO_BY_N[6], tmp_path, now=now)
+    first.mkdir(parents=True)
+    second = rec.unique_dir(rec.SCENARIO_BY_N[6], tmp_path, now=now)
+    assert second != first and not second.exists()
+    assert rec.scenario_by_slug(second.name) is rec.SCENARIO_BY_N[6]
+    second.mkdir(parents=True)
+    third = rec.unique_dir(rec.SCENARIO_BY_N[6], tmp_path, now=now)
+    assert third not in (first, second) and not third.exists()
+
+
+def test_时间戳是_UTC_且不带冒号(tmp_path):
+    """★ 与 `utc_stamp` 同一把尺（UTC）—— 现场要拿它和 `session.json` 的 `started_utc`、
+    飞控日志的 `utc` 对表。⚠️ 有意**不带冒号**：目录名是要被人手打、被 `git` 记住的东西。"""
+    stamp = rec.dir_stamp()
+    assert re.fullmatch(r"\d{8}-\d{6}", stamp), stamp
+    assert ":" not in stamp
+    # 传一个**本地朴素时间**进去，取出来必须是换算过的 UTC（同一个坑 `utc_stamp` 踩过）
+    naive = datetime.datetime(2026, 10, 8, 7, 15, 30)
+    assert rec.dir_stamp(naive) == naive.astimezone(datetime.timezone.utc).strftime(
+        "%Y%m%d-%H%M%S")
+
+
+def test_老编号的八字目录仍认得出场景号():
+    """★★ `bag/4_traj3_lemniscate/` 是 **09-29 入库的那份真数据**（八字，那时它是场景 4）。
+    2026-10-08 把八字挪到场景 5、4 让给正方形 ⟹ 那份包**不改名、不动内容**（它是数据），
+    所以"认目录名"这一步必须把它认回**当前的场景 5**，否则收编与清单会把它当成认不出的包。"""
+    assert rec.SLUG_ALIASES == {"4_traj3_lemniscate": 5}
+    scenario = rec.scenario_by_slug("4_traj3_lemniscate")
+    assert scenario is rec.SCENARIO_BY_N[5]
+    # ★ 别名也要能接住"带时间戳的那一份"（`<老目录名>__<stamp>`）
+    assert rec.scenario_by_slug("4_traj3_lemniscate__20261008-071530") is scenario
+    # ⚠️ 别名**不是**"所有旧编号都认"：只列了这一条，别的照样认不出（不许瞎猜）
+    assert rec.scenario_by_slug("9_nonexistent") is None
 
 
 # ─────────────────────────── 解析 `ros2 bag info` ───────────────────────────
@@ -376,14 +480,24 @@ def test_起录不预先建包目录_日志落在它旁边(tmp_path, monkeypatch
     assert "静止基线" in capsys.readouterr().out, "起之前要把那张卡摊开给人看"
 
 
-def test_包目录已经存在就只报不动(tmp_path, monkeypatch, capsys):
-    """★ 两种成因都要说清，而且**都不许删**：一份是已经入账的包，另一份是没收干净的。"""
-    _fake_start(monkeypatch, tmp_path)
+def _occupied(tmp_path, *, closed: bool):
+    """造出"首选目录已经被占"那种情形（`closed=True` = 有一份收好口的包）。"""
     bag_dir = rec.session_dir(rec.SCENARIO_BY_N[1], tmp_path / "bag")
     bag_dir.mkdir(parents=True)
-    PRECIOUS = "已经录好的东西".encode()
     (bag_dir / "1_static_0.db3").write_bytes(PRECIOUS)
-    (bag_dir / "metadata.yaml").write_text("收好口了\n", encoding="utf-8")
+    if closed:
+        (bag_dir / "metadata.yaml").write_text("收好口了\n", encoding="utf-8")
+    return bag_dir
+
+
+PRECIOUS = "已经录好的东西".encode()
+
+
+def test_首选目录被占_答_n_就只报不动(tmp_path, monkeypatch, capsys):
+    """★ **默认那一条**（空回车 ⟹ n）：两种成因都要说清，而且**都不许删、不许挪**。"""
+    _fake_start(monkeypatch, tmp_path)
+    monkeypatch.setattr(rec, "ask_confirm", lambda *a, **k: False)
+    bag_dir = _occupied(tmp_path, closed=True)
     assert rec.start(1) == 1
     assert "不覆盖已入账的包" in capsys.readouterr().out
     assert (bag_dir / "1_static_0.db3").read_bytes() == PRECIOUS
@@ -393,6 +507,63 @@ def test_包目录已经存在就只报不动(tmp_path, monkeypatch, capsys):
     out = capsys.readouterr().out
     assert "没有" in out and "本脚本不替你删包" in out
     assert bag_dir.exists()
+
+
+def test_首选目录被占_答_y_就录进带时间戳的新目录(tmp_path, monkeypatch, capsys):
+    """★★ 2026-10-08 那条主诉的正面判据：**答 y 之后这一趟真的录起来**。
+
+    ⚠️ 现场那条主诉的形状是"一选场景就说目录已存在，什么都没录" —— 四个目录全是 09-29
+    入库的那几份，所以**每一个场景号都会撞上** ⟹ 从操作者眼里看就是"这项录制坏了"。
+    修法不是"允许覆盖"（那是拿入库的数据换方便），而是**另开一份新目录**。
+    """
+    seen, states = _fake_start(monkeypatch, tmp_path)
+    monkeypatch.setattr(rec, "ask_confirm", lambda *a, **k: True)
+    bag_dir = _occupied(tmp_path, closed=True)
+    assert rec.start(1) == 0, "答了 y 还返回非零 ⟹ 现场看到的就是主诉里那句「什么都没录」"
+    (argv, _kw), = seen
+    (state,) = states
+    recorded = pathlib.Path(state["dir"])          # 落在 `tmp_path` 下 ⟹ `_rel` 给的是绝对路径
+    assert recorded != bag_dir and not recorded.exists(), "rosbag2 自己建，我们不能预先建"
+    assert recorded.name.startswith("1_static__"), state["dir"]
+    assert recorded.parent == tmp_path / "bag"
+    assert rec.scenario_by_slug(recorded.name) is rec.SCENARIO_BY_N[1]
+    # ★ 已有那份**一个字节都不碰**（这是这条修法的全部意义）
+    assert (bag_dir / "1_static_0.db3").read_bytes() == PRECIOUS
+    assert (bag_dir / "metadata.yaml").read_text(encoding="utf-8") == "收好口了\n"
+    # ★ 日志跟着**包目录名**走，否则第二次起录会盖掉第一份的日志（排障要看的就是它）
+    assert pathlib.Path(state["log"]).name == recorded.name + ".log"
+    assert str(recorded) in argv[2], "真跑的命令得指向那份新目录"
+
+
+def test_场景6永远落进带时间戳的新目录(tmp_path, monkeypatch):
+    """★ 自由录**没有"首选目录"**这个概念 ⟹ 它连问都不问一句，天生就是一份新目录
+    （⟹ 同一个自由录录几遍就几份，互不相干）。"""
+    seen, states = _fake_start(monkeypatch, tmp_path)
+    monkeypatch.setattr(rec, "ask_confirm",
+                        lambda *a, **k: pytest.fail("自由录不该问 —— 它本来就没有首选目录"))
+    # ★ 自由录那一档 `watch` **永远不返 `"timeup"`**（见 `watch` 的 ★★）⟹ 替身也得照这个
+    #   来，否则这条用例测的就不是"自由录会怎样"，而是"替身编出来的一个不可能的状态"。
+    monkeypatch.setattr(rec, "watch", lambda *a, **k: "ctrl-c")
+    assert rec.start(6) == 0
+    (state,) = states
+    assert pathlib.Path(state["dir"]).name.startswith("6_free__"), state["dir"]
+    (argv, _kw), = seen
+    assert "6_free__" in argv[2]
+
+
+def test_ask_confirm_非交互时不抛异常也走默认(capsys):
+    """★ 与 `z0.ask_confirm` 同一条纪律：管道 / 重定向 / 关掉 stdin 时**不许抛** —— 走默认。
+    ⚠️ 默认是 **N**（不换目录）：一条"没人看着"的路径不该自己决定多录一份包出来。"""
+    def eof(_prompt):
+        raise EOFError
+
+    import builtins
+    monkeypatch_ok = builtins.input
+    builtins.input = eof
+    try:
+        assert rec.ask_confirm("换一份？") is False
+    finally:
+        builtins.input = monkeypatch_ok
 
 
 def test_包不好看就返回非零(tmp_path, monkeypatch):
@@ -703,15 +874,21 @@ def test_场景号打成别的字要报出来(monkeypatch, capsys):
 # ─────────────────────────── `--dry-run` ───────────────────────────
 
 
-def test_dry_run_把四条场景的命令全摊开(tmp_path, monkeypatch, capsys):
+def test_dry_run_把六条场景的命令全摊开(tmp_path, monkeypatch, capsys):
     """★ `--dry-run` 的判据是**一个进程都不起**（`z0.dispatch` 那条）—— 这条用例只读文本，
-    真去起录的路径在上面那几条里已经证明它是"先查场景号、再查有没有在录"。"""
+    真去起录的路径在上面那几条里已经证明它是"先查场景号、再查有没有在录"。
+
+    ★ 场景 6 那一行也要与真跑的落点**同一把尺**（带时间戳的新目录）—— 否则这一屏会显示一个
+      "真跑时根本不会用"的目录名，而 `--dry-run` 的全部意义就是那一条。
+    """
     monkeypatch.setattr(rec, "BAG_ROOT", tmp_path / "bag")
     text = rec.dry_run_note("rec_start")
     for scenario in rec.SCENARIOS:
         assert scenario.title in text
     assert shlex.quote(rec.INCLUDE_REGEX) in text
     assert "一个进程都不起" in text
+    assert "6_free__" in text, "自由录的落点要按带时间戳的新目录印"
+    assert rec.session_dir(rec.SCENARIO_BY_N[6], tmp_path / "bag").name + "__" in text
     assert not (tmp_path / "bag").exists()
 def test_文件头引用的菜单号与动作表对得上():
     """★ 与 `operation_manual.md` 那条守卫同一个形状：**菜单号不许各写各的**——
@@ -825,6 +1002,73 @@ def test_收编认不出场景的目录不动_并如实报出来(tmp_path, monke
     assert "随手建的东西" in out and "认不出" in out
 
 
+def _adopt_log(opened_epoch: float, stopped_epoch=None) -> str:
+    """一份最小可用的 `.log`（epoch 可指定）—— 用来验"那句来路的日期是从这份包现算的"。"""
+    text = ("[INFO] [%.9f] [rosbag2_storage]: Opened database 'x' for READ_WRITE.\n"
+            % opened_epoch)
+    if stopped_epoch is not None:
+        text += "[INFO] [%.9f] [rosbag2_recorder]: Recording stopped\n" % stopped_epoch
+    return text
+
+
+def test_来路里的日期是现算的不许写死(tmp_path, monkeypatch):
+    """★ 2026-10-08 这一课：那句来路里原本**写死**了「2026-09-29 那次收口」，可 10-08 又收编过
+    两份 —— 写死的日期会把它们也栽到 9-29 头上。来路那句话存在的全部意义就是**能回查**，
+    **一句错的日期比没有日期更坏** ⟹ 日期只能从这份包自己的 `.log` 现算。"""
+    opened = datetime.datetime(2026, 10, 8, 10, 18, 31).timestamp()
+    root, seen = _fake_adopt_env(
+        monkeypatch, tmp_path, log=_adopt_log(opened, opened + 49.6))
+    (root / "4_traj3_lemniscate").mkdir()
+    rec.adopt(root=root)
+    text = seen[0][1]["state"]["reconstructed"]
+    assert "2026-10-08" in text, f"来路没写这份包自己的日期：{text!r}"
+    assert "2026-09-29" not in text, f"写死了别的日期 —— 这正是这次要修掉的那个毛病：{text!r}"
+    assert "缺的是**收口之后**写 `session.json` 那一段" in text, \
+        "`Recording stopped` 在 ⟹ 缺的是收口之后那一段，原因要按这条证据写"
+
+
+def test_来路里缺的是收口那一段还是录到一半_按日志分开说(tmp_path, monkeypatch):
+    """★ 两种缺法的**原因不一样**，不许共用一句话：`.log` 里有 `Recording stopped` = 录是录完了、
+    缺的是收口之后写 `session.json`；**没有**它 = 录到一半就断了。同一句"收口后段被打断"
+    会让后一种（包本身就是残的）看上去跟前者一样好。"""
+    opened = datetime.datetime(2026, 10, 8, 10, 18, 31).timestamp()
+    root, seen = _fake_adopt_env(monkeypatch, tmp_path, log=_adopt_log(opened))   # 没有 stopped
+    (root / "4_traj3_lemniscate").mkdir()
+    rec.adopt(root=root)
+    text = seen[0][1]["state"]["reconstructed"]
+    assert "录到一半就断了" in text, f"少了 `Recording stopped` 该这么说：{text!r}"
+    assert "收口之后" not in text, f"这两句不许混用：{text!r}"
+
+
+def test_归档目录按名字跳过_不算认不出(tmp_path, monkeypatch, capsys):
+    """★ `bag/old/` 是**按目录名认出来的**归档目录（已被后一次录制取代的旧包）⟹ 跳过它
+    **不算"认不出场景"**：只有它一个时返回码必须是 0（不是 1）。
+
+    ⚠️ 返回码那一列**必须有鉴别力**：把跳过那三行删掉再跑，`old/` 会落进"认不出"那条路，
+    而它**同时也返回 1** —— 所以只断言"有个 1"或"印出了 old"都验不出这条功能
+    （★ 这条用例第一版就是这么写的，变异测试时没红，才改成现在这样）。"""
+    root, seen = _fake_adopt_env(monkeypatch, tmp_path)
+    (root / rec.ARCHIVE_DIRNAME / "3_traj1_hover").mkdir(parents=True)
+    assert rec.adopt(root=root) == 0, (
+        "归档目录不是「认不出场景」的目录 —— 只有它一个时，该收编的确实一个都没有 ⟹ 0")
+    assert seen == [], "归档目录里的包不许量、更不许写"
+    out = capsys.readouterr().out
+    assert "跳过" in out, f"跳过归档目录这件事要说在屏幕上，否则像被静默吞了：{out!r}"
+
+
+def test_归档目录不吞别的认不出的目录(tmp_path, monkeypatch, capsys):
+    """★ 归档**只按那一个目录名**认，不许放宽成"凡认不出就归档"：那样拼错的目录名会被
+    悄悄吞掉，而"认不出就报红、不动它"正是这一层的纪律（见旁边那条用例）。"""
+    root, seen = _fake_adopt_env(monkeypatch, tmp_path)
+    (root / rec.ARCHIVE_DIRNAME / "3_traj1_hover").mkdir(parents=True)
+    (root / "随手建的东西").mkdir()
+    assert rec.adopt(root=root) == 1, "归档目录**之外**的认不出的目录，照样要报红"
+    assert seen == []
+    out = capsys.readouterr().out
+    assert "随手建的东西" in out and "认不出" in out, f"它该被点名：{out!r}"
+    assert "3_traj1_hover" not in out, f"归档目录**里面**的东西不该被点名：{out!r}"
+
+
 def test_收编的起录时刻取自日志里_rosbag2_自己报的那一行(tmp_path, monkeypatch):
     """★ 判据要**与本机时区无关**：拿日志里的 epoch 秒经 `utc_stamp` 换算，
     不许直接把 epoch 贴个 `Z`（本机恰好本地==UTC，那种写法在别的机器上就是错的）。"""
@@ -835,7 +1079,11 @@ def test_收编的起录时刻取自日志里_rosbag2_自己报的那一行(tmp_
     _path, kw = seen[0]
     state = kw["state"]
     # `dir` / `log` 走 `_rel`（相对仓库根）—— 用例跑在 `tmp_path` 里，所以是绝对路径
-    assert state["scenario"] == 4 and state["dir"].endswith("bag/4_traj3_lemniscate")
+    # ★ 这份目录名是**老编号**（9-29 入库的那份八字包，那时它是场景 4）⟹ `scenario` 报
+    #   **当前编号 5**，而 `slug` 如实写**目录名**（两者不一样是真的，不抹平）。
+    assert state["scenario"] == 5, "老编号的目录要按 `SLUG_ALIASES` 认回当前的场景号"
+    assert state["slug"] == "4_traj3_lemniscate", "`slug` 是落盘时那份目录的名字，如实记"
+    assert state["dir"].endswith("bag/4_traj3_lemniscate")
     assert state["started_utc"] == rec.utc_stamp(
         datetime.datetime.fromtimestamp(_REAL_LOG_OPENED_EPOCH)), "起录时刻没落到那一步"
     assert kw["stopped_utc"] == rec.utc_stamp(
@@ -843,6 +1091,9 @@ def test_收编的起录时刻取自日志里_rosbag2_自己报的那一行(tmp_
     assert "反推" in kw["stop_signal"], \
         "收编出来的 `stop_signal` 要写明是**事后反推**的 —— 表里不能看上去像收口那一刻记的"
     assert "事后重建" in state["reconstructed"]
+    # ★ 日志按**包目录名**找（与 `start` 同一把尺）：照 `scenario.slug`（现在是
+    #   `5_traj3_lemniscate`）找会找不到旁边那份，于是跨度取不到、`stop_signal` 变成
+    #   "看不出来" —— 而那正是**唯一**能把"到点"与"人按"分开的一手证据。
     assert state["log"].endswith("bag/4_traj3_lemniscate.log")
 
 
@@ -874,11 +1125,14 @@ def test_收编时日志不在就说没有起录时刻_不是编一个(tmp_path,
 
 
 def test_收编从日志跨度反推是怎么停的():
-    """★ 这是**推导**不是猜：`expect_s` 是本仓自己定的倒计时（四个场景统一 120 s），跨度是
+    """★ 这是**推导**不是猜：`expect_s` 是本仓自己定的倒计时（场景 1–5 统一 120 s），跨度是
     `rosbag2` 自己报的 ⟹ 跨度贴近 120 s = 到点自己收的，明显短一截 = 人按的 Ctrl-C。
 
     ★ 判据拿**有实测记录的那一份**校准：场景 1 的 `session.json` 是当时活着写下的，
       写着"录满到点，自动收口"，而它的 `.log` 跨度是 119.5 s ⟹ 这条判据必须把 119.5 判成"到点"。
+
+    ★ 自由录（场景 6）**没有这条推导可做**：它本来就不该有"到点" ⟹ 只能说"人按的 Ctrl-C"，
+      且**不许**印出"比到点应有的 ~None s 短一截"那种话（`None` 也不该被拿去做减法）。
     """
     one = rec.SCENARIO_BY_N[1]
     assert "到点" in rec.adopt_stop_signal(119.5, one), \
@@ -888,6 +1142,13 @@ def test_收编从日志跨度反推是怎么停的():
         assert want in got and f"{span:.1f} s" in got, f"{span} s 该判成「{want}」：{got}"
     assert rec.adopt_stop_signal(None, one) == rec.ADOPT_STOP_SIGNAL, \
         "跨度取不到时要说「看不出来」，不许挑一个"
+
+    free = rec.SCENARIO_BY_N[6]
+    got = rec.adopt_stop_signal(300.0, free)
+    assert "Ctrl-C" in got and "300.0 s" in got and "不倒计时" in got, got
+    assert "None" not in got, f"说了句 `None` 出来 —— 那是没防住自由录：{got}"
+    assert rec.adopt_stop_signal(None, free) == rec.ADOPT_STOP_SIGNAL, \
+        "连跨度都没有时，照样只能说「看不出来」"
 
 
 def test_收编的_stop_signal_写清是根据什么反推的(tmp_path, monkeypatch):
@@ -929,6 +1190,22 @@ def test_清单把每份包与缺了什么摊开(tmp_path):
     assert "`deadbeef`" in text                      # sha256 要能被人回验
     assert "/traj/progress" in text                  # ★ 缺的那条点名，不是一句"基本通过"
     assert "sess001-log001.ulg" in text
+    assert rec.ARCHIVE_DIRNAME not in text, "没有归档目录时别印那句说明"
+
+
+def test_清单说清旧包去哪了(tmp_path):
+    """★ 归档之后**同一个场景在磁盘上有两份、而本表只剩一份** —— 不写清楚，回查的人会以为
+    某个场景的数据被删了。（清单只扫一层 ⟹ `bag/old/` 里的包天然进不了表，这是要的；
+    这里管的是**别让人误读成"没了"**。）"""
+    rec.write_state(_session(), tmp_path / "3_traj1_hover" / "session.json")
+    archived = tmp_path / rec.ARCHIVE_DIRNAME / "3_traj1_hover"
+    archived.mkdir(parents=True)
+    rec.write_state(_session(dir=f"bag/{rec.ARCHIVE_DIRNAME}/3_traj1_hover"),
+                    archived / "session.json")
+    text = rec.render_manifest(tmp_path)
+    assert "旧包" in text and rec.ARCHIVE_DIRNAME in text, f"得说清归档的旧包去哪了：{text!r}"
+    # ★ 归档那份**自己**不许进表：表里出现它的 `dir` 就说明"只扫一层"这条被破坏了
+    assert f"bag/{rec.ARCHIVE_DIRNAME}/3_traj1_hover" not in text
 
 
 def test_一份包都没有时清单说实话(tmp_path):

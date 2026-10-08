@@ -28,15 +28,20 @@
 |---|---|---|---|
 | 1 | 原地悬停 | 恒为原点（**`z = 0`，不是 1.0** —— 见下） | `hover_duration_s`，默认 60 s |
 | 2 | 正方形 | 边长 1.0 m：`(0,0)→(1,0)→(1,1)→(0,1)→(0,0)`，**起点在原点**（= 悬停点，所以进 TRACK 不跳变） | 8.0 s（周长 4 m @0.5 m/s） |
-| 3 | 八字 | Gerono 双纽线 `a = 0.5`：`x = a·sinθ`、`y = a·sinθ·cosθ`，`θ: 0→2π` | ≈6.1 s（周长 ≈3.05 m @0.5 m/s） |
+| 3 | 八字 | Gerono 双纽线 `a = 1.0`：`x = a·sinθ`、`y = a·sinθ·cosθ`，`θ: 0→2π` | ≈12.2 s（周长 ≈6.10 m @0.5 m/s） |
 
 ★★ **"高度 1.0 m"不属于轨迹，属于轨迹原点。** 原点由 `control` 在 HOVER 判稳那一刻记下，
 **那时飞机已经在 1 m 上** ⟹ 轨迹里的 `z` 就该是 0。参数 `height_offset_m` 默认 **0.0**；
 填 1.0 是**叠加**（变成 2 m），不是设定高度。
 
-★ **8 字是偏扁的**：`x ∈ [−0.5, +0.5]`（宽 1.0 m）、`y ∈ [−0.25, +0.25]`（高 0.5 m）——
+★ **8 字是偏扁的**：`x ∈ [−1.0, +1.0]`（宽 2.0 m）、`y ∈ [−0.5, +0.5]`（高 1.0 m）——
 Gerono 双纽线的 y 幅度**只有 x 的一半**。这是**规格不是缺陷**（§5.2 写了）；想要两个方向都 ±a 要换
 Bernoulli 双纽线。测试里有一条不变式 `max(x)/max(y) ≈ 2` 直接钉住"偏扁"这件事。
+
+> ★★ **2026-10-08：轨迹 3 放大到原本的 2 倍**（`a`: 0.5 → 1.0）。操作者裁定，动捕棚容得下 2 m 级。
+> 这是一条**相似变换**：宽 1.0→2.0 m、高 0.5→1.0 m、周长 3.05→6.10 m、一圈时长 ≈6.1→≈12.2 s；
+> **限速一个字没改**（弧长匀速，仍 0.5 m/s）⟹ 只有一圈变长。轨迹 1/2 不受影响。
+> 记录：[`.scratch/phase2/issues/27`](../../.scratch/phase2/issues/27-lemniscate-doubled-and-downstream-labels.md)。
 
 ## ★ 速度上限是"弧长匀速"，不是"参数匀速"
 
@@ -57,7 +62,7 @@ Bernoulli 双纽线。测试里有一条不变式 `max(x)/max(y) ≈ 2` 直接�
 | `marker_frame_id` | `"map"` | ★ **必须是 RViz 有 TF 的 frame**（`/mavros/local_position/pose` 的 frame），写 `traj_origin` 会让 RViz 直接丢掉它。所以折线**形状与尺寸对、落点相对动捕原点**——校形状够用，"落点对不对"在 `control` 里看 |
 | `max_speed_ms` | `0.5` | §5.2 的硬要求。调大之前先想清楚失控后果 |
 | `hover_duration_s` | `60.0` | 悬停没有终点而完成度必须是 0–1 ⟹ 用时长兜。默认 60 = §5.3 的验收时长 |
-| `square_side_m` / `lemniscate_a_m` | `1.0` / `0.5` | 尺度 |
+| `square_side_m` / `lemniscate_a_m` | `1.0` / `1.0` | 尺度。★ 8 字的 `a` 2026-10-08 由 0.5 放大到 1.0（见上） |
 | `height_offset_m` | `0.0` | ★ 见上，**改它之前先读那段** |
 | `rate_hz` | `50.0` | 与 `control` 的 setpoint **同频**：同频才能一拍一换 |
 | `marker_period_s` / `marker_points` | `1.0` / `201` | Marker **是 volatile 的**（后起的 RViz 看不到已发的那条）⟹ 周期重发；1 s 是"够 RViz 起来"与"不刷屏"的折中 |
@@ -90,16 +95,17 @@ rviz2                                     # 加 Marker 显示，看形状与尺�
 ## 测试（两层，都不需要飞控/动捕）
 
 ```bash
-colcon test --packages-up-to traj         # 31 例（seam 2 的 20 + seam 1 的 11）
+colcon test --packages-up-to traj         # 32 例（seam 2 的 21 + seam 1 的 11）
 # ⚠️ 必须 `--packages-up-to`：seam 1 依赖 `bench` 夹具。若 bench 已经 build 过、且
 #    `install/setup.bash` 已 source，`--packages-select traj` 也能跑。
-# 📌 `colcon test-result` 的汇总会显示 33 —— 它把 xunit 里的**汇总节点**也数了一遍，
-#    真实用例数是 31（`grep -c '^TEST' test/test_trajectories.cpp` 与
+# 📌 `colcon test-result` 的汇总会显示 34 —— 它把 xunit 里的**汇总节点**也数了一遍，
+#    真实用例数是 32（`grep -c '^TEST' test/test_trajectories.cpp` 与
 #    `grep -c '^def test' test/test_traj_node.py`）。
 ```
 
-- **seam 2**（`test/test_trajectories.cpp`，零 ROS，20 例）：几何、闭合、弧长均匀性、限速扫三条轨迹、
-  周长（含一条独立 Simpson 法交叉核对——**用另一条算法算同一个数**，不重复实现里的公式）。
+- **seam 2**（`test/test_trajectories.cpp`，零 ROS，21 例）：几何、闭合、弧长均匀性、限速扫三条轨迹、
+  周长（含一条独立 Simpson 法交叉核对——**用另一条算法算同一个数**，不重复实现里的公式），
+  以及**放大到 2 倍**那条相似变换（周长/时长恰好翻倍、限速不动）。
 - **seam 1**（`test/test_traj_node.py`，11 例，用 `bench` 夹具把节点当子进程起）：
   `select`/`start` 语义（**选了不 start ⟹ 一帧都不发**，并配了正控）、消息口径
   （`type_mask = 2496`、`FRAME_LOCAL_NED`、`frame_id`、恒定 yaw）、50 Hz **窗口**频率、

@@ -93,7 +93,7 @@ public:
     params_.max_speed_ms = declare_parameter<double>("max_speed_ms", 0.5);
     params_.hover_duration_s = declare_parameter<double>("hover_duration_s", 60.0);
     params_.square_side_m = declare_parameter<double>("square_side_m", 1.0);
-    params_.lemniscate_a_m = declare_parameter<double>("lemniscate_a_m", 0.5);
+    params_.lemniscate_a_m = declare_parameter<double>("lemniscate_a_m", 1.0);
     params_.height_offset_m = declare_parameter<double>("height_offset_m", 0.0);
 
     const double rate_hz = declare_parameter<double>("rate_hz", 50.0);

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""`run/rec.py` —— **录制层**：4 个场景的 rosbag，落到 `bag/`（ticket 19）。
+"""`run/rec.py` —— **录制层**：6 个场景的 rosbag，落到 `bag/`（ticket 19 / 26）。
 
-    run/z0.py rec_start 1      # 起录场景 1（菜单 **11= 开始录制（选场景 1–4）**）
+    run/z0.py rec_start 1      # 起录场景 1（菜单 **11= 开始录制（选场景 1–6）**）
     run/z0.py rec_status       # 现在在录什么（不进菜单）
     run/z0.py rec_manifest     # 重算 `bag/MANIFEST.md`（不进菜单）
 
@@ -10,27 +10,40 @@
 由 `run/tests/test_rec.py` 的 AST 用例盯着（不许出现 `create_publisher` / `create_service` / `create_client`）。
 
 ★★ **录制是前台的一条流程，到点自动收口**（操作者 2026-09-29 拍定）：印场景卡 ⟹
-起 `ros2 bag record` ⟹ **倒计时就摆在眼前** ⟹ 到 `Scenario.expect_s`（四份统一 120 s）
-自己收口 ⟹ 打印核对表 + 重算清单。想提前停就按 **Ctrl-C**，走的是**同一条** SIGINT 收口路
-（见 `watch` / `finalize`）。⚠️ 因此菜单里**没有**"停止录制"这一项 ——
+起 `ros2 bag record` ⟹ **倒计时就摆在眼前** ⟹ 到 `Scenario.expect_s`（**场景 1–5 统一
+120 s**）自己收口 ⟹ 打印核对表 + 重算清单。想提前停就按 **Ctrl-C**，走的是**同一条** SIGINT
+收口路（见 `watch` / `finalize`）。⚠️ 因此菜单里**没有**"停止录制"这一项 ——
 一份包的生命周期就圈在这一条命令里，"录着的同时去按另一项"这件事不存在了。
+★ **场景 6（任意录制）是唯一的例外**（操作者 2026-10-08 拍定）：它 `expect_s=None`
+⟹ **不倒计时**，屏幕上只有"已录多久"，**只有你按 Ctrl-C（或录制进程自己退了）才收口**。
+理由：自由录按定义就不知道要录多久，"到点"这件事没有含义。
 
 ★ **飞控日志（`.ulg`）不在本层。** 操作者 2026-09-29 拍定飞控日志"**拔 SD 卡直接拷**"，
 所以归档是**手工动作**（拷进**该场景自己的目录** `bag/<场景>/fcu/`）；`render_manifest`
 只负责把那个目录里已经有的东西列进总表 —— 它不拷、不删、不猜。
 
 ★★ **布局是"一个场景一个目录、不带日期层"**（操作者 2026-09-29 现场拍定，见 `session_dir`）：
-`bag/1_static/` … `bag/4_traj3_lemniscate/`，每份包自己的 `started_utc` 就写在
+`bag/1_static/` … `bag/5_traj3_lemniscate/`，每份包自己的 `started_utc` 就写在
 `session.json` 与 `MANIFEST.md` 里 ⟹ 日期从目录名挪到了**每一份产物自己的记录里**。
 ⚠️ 代价是明说过的：**同名场景再录一次会撞上已有目录**（`rosbag2` 拒绝往已有目录里录，
-`start` 也从不替你删包）—— 重录必须由人先把旧那份挪走。
+`start` 也从不替你删包）。
+
+★★ **重录这条路 2026-10-08 修过**（第一手：现场敲菜单 11 选 1/2/3/4，四个目录全是 9-29
+入库的那几份 ⟹ 屏幕上一句"已经存在"就**当场退出，一个字节都不录**，看起来像这一项坏了）。
+现在的规矩（见 `session_dir` / `unique_dir`）：
+
+  · `bag/<场景>` 这份**不动、不删、不挪**（它是已入账的产物）；
+  · 目录已存在时**问一句**，答 y 就录进 **`bag/<场景>__<UTC 时间戳>/`** 这一份新的
+    （日志名跟着**包目录名**走 ⟹ 那份新的叫 `<新目录名>.log`，不覆盖旧日志）；
+  · 场景 6 自由录**天生**就落进带时间戳的新目录 ⟹ 它永远不会撞。
 
 ★★ **为什么要有这一层**（第一手，不是"顺手录一下"）：
 [`ticket 11`](../.scratch/phase2/issues/11-sitl-tier-b-seam3.md) 的输入是「Phase 1 实飞录下的真实动捕 rosbag」，
 而 2026-09-29 全盘搜包（`.bag`/`.mcap`/`*.db3`）**零命中** —— 2026-09-28 那次真机自由飞
-**一个包都没留**。B 档要的是"真实噪声与真实延迟"，理想轨迹替不了它。所以 4 个场景是
-**按用途反推出来的最小集合**：静止（噪声基线）/ 手动起飞（起飞瞬态）/ 轨迹 1（悬停判据）/
-轨迹 3（有机动 ⟹ 延迟 τ 要的激励）。逐条见 `SCENARIOS`。
+**一个包都没留**。B 档要的是"真实噪声与真实延迟"，理想轨迹替不了它。所以场景是
+**按用途反推出来的集合**：静止（噪声基线）/ 手动起飞（起飞瞬态）/ 轨迹 1（悬停判据）/
+轨迹 2（正方形）/ 轨迹 3（有机动 ⟹ 延迟 τ 要的激励）/ 自由录（**不预设用途**：现场想留什么
+就留什么，规则见 `SCENARIOS` 里第 6 条）。逐条见 `SCENARIOS`。
 
 ★ **话题口径是"白名单正则 + 事后核对"，不是 `-a`**：`-a` 会把 `/rosout`、`/parameter_events`
 以及**同域里别人起的节点**一起吸进来（本仓库有并行会话）；而写死一串话题名又会在
@@ -42,7 +55,7 @@
 
 ★ **压缩**取 `file` + `zstd`（`ros-humble-rosbag2-compression-zstd` 0.15.17 已装，第一手：
 `ls /opt/ros/humble/lib/librosbag2_compression_zstd.so`）。压缩发生在**收口那一刻**
-（录制自己的日志 `bag/<场景>.log` 里是 `Compressing file: …`）⟹ `STOP_GRACE_S` 按它定。
+（录制自己的日志 `bag/<包目录名>.log` 里是 `Compressing file: …`）⟹ `STOP_GRACE_S` 按它定。
 ⚠️ 压出来的 `*.db3.zstd` 用 `ros2 bag info` / `play` 读都没问题（第一手已验），
 但**拿 sqlite3 直接开 `.db3` 的第三方脚本读不了** —— 要用就走 `rosbag2_py`。
 
@@ -111,7 +124,7 @@ TICK_S = 0.5
 PROGRESS_EVERY_S = 10.0
 
 
-# ─────────────────────────── 4 个场景（票面定义） ───────────────────────────
+# ─────────────────────────── 6 个场景（票面定义） ───────────────────────────
 
 
 @dataclass(frozen=True)
@@ -120,24 +133,38 @@ class Scenario:
 
     `expect` 的每一条都是**正则**（`search` 语义）—— 刚体名那类动态话题只能这么写。
     收口时逐条回对 `ros2 bag info` 的实测话题，**缺一条就报出来**。
+    ★ `expect = ()` 是**合法的**（场景 6 自由录）：那不是"忘了写"，是"不预设、不判缺不缺"。
+
+    `expect_s=None` = **不倒计时**（同样只有场景 6）：`watch` 只会因为**录制进程退了**或
+    **人按了 Ctrl-C** 而收口。⚠️ 别把它写成 `0.0` —— 那会让 `watch` 一上来就判"到点"。
     """
 
     n: int
     slug: str
     title: str
-    chain: str          # 起链用哪条：`up_manual`（动捕+mavros）/ `up`（全链）
+    chain: str          # 起链用哪条：`up_manual`（动捕+mavros）/ `up`（全链）/ `any`（自由录）
     do: str             # 操作者要做的动作（打印给他看）
     expect: Tuple[str, ...]
-    expect_s: float     # ★ **到点自动收口**的时长（不再是"提示"—— 见 `start` 的前台倒计时）
+    expect_s: Optional[float]   # ★ **到点自动收口**的时长；`None` = 不倒计时（自由录）
 
 
-# ★ **四个场景统一 120 s，到点自动收口**（操作者 2026-09-29 现场拍定）。
-#   演变：最初 1/2 是 90、3 是 150、4 是 120 ⟹ 改为四份统一 90 ⟹ 再改为**四份统一 120**。
-#   为什么最后落在 120：场景 3 的轨迹 1 本身要**悬停 60 s**，前面还有爬升到 1 m +
-#   判稳 2 s + 两次按开始键，后面还有自动降落 —— 90 s 会把人逼到"赶时间"，而这一趟
-#   最看重的是**缓慢**（手飞那段）与**完整**（起飞到落地整段）。120 s 留出余量。
+# ★ **到点自动收口的场景统一 120 s**（操作者 2026-09-29 现场拍定，2026-10-08 扩到 5 条）。
+#   演变：最初 1/2 是 90、3 是 150、4 是 120 ⟹ 统一 90 ⟹ 统一 **120** ⟹ 现在**场景 1–5
+#   统一 120**（6 那条不倒计时，见下）。
+#   为什么落在 120：轨迹 1 本身要**悬停 60 s**，前面还有爬升到 1 m + 判稳 2 s +
+#   两次按开始键，后面还有自动降落 —— 90 s 会把人逼到"赶时间"，而这一趟最看重的是
+#   **缓慢**（手飞那段）与**完整**（起飞到落地整段）。120 s 留出余量。
 #   ⚠️ 到点是**自动收口**：想提前停就 Ctrl-C（同一条 SIGINT 收口路，见 `start`）。
-
+#
+# ★ **六个场景的来历**（前四条是 ticket 19 的票面；后两条 2026-10-08 操作者拍定）：
+#   5 = 轨迹 3（八字）**换了号**：原来它是场景 4，编号让给了新加的「轨迹 2（正方形）」。
+#   ⚠️ 旧编号没有作废在别处 —— `bag/4_traj3_lemniscate/` 那份 9-29 入库的包仍叫这个名字，
+#      它的 `session.json` 里写的是老编号 `scenario: 4`。`SLUG_ALIASES` 把那个目录名
+#      认回**当前的场景 5**，见 `scenario_by_slug`。
+#      ★ 2026-10-08 清 `bag/` 时那份搬进了 `bag/old/4_traj3_lemniscate/`（`bag/` 一层里
+#        已经没有这个目录名了）—— 别名**留着**：它是"老编号"这件事的机制，不是某个路径。
+#   6 = **任意录制**：不预设动作、不预设时长（`expect_s=None`）、不预设预期话题
+#      （`expect=()`），想停按 Ctrl-C；落盘目录**天生**带 UTC 时间戳 ⟹ 想录几遍录几遍。
 
 
 SCENARIOS: Tuple[Scenario, ...] = (
@@ -158,15 +185,34 @@ SCENARIOS: Tuple[Scenario, ...] = (
              ("/mocap/pose_enu", "/vrpn/.*/pose", "/traj/reference", "/traj/progress",
               "/control/state", "/mavros/setpoint_raw/local", "/mavros/state"),
              120.0),
-    Scenario(4, "4_traj3_lemniscate", "执行轨迹 3（0.5 m 八字）", "up",
-             "`fly.py` 选 **3** → 开始键①（解锁+起飞）→ 判稳后开始键②松手 ——"
-             "同一趟里继场景 3 之后再来一次，**不用重启任何节点**",
+    Scenario(4, "4_traj2_square", "执行轨迹 2（1 m 正方形）", "up",
+             "`fly.py` 选 **2** → 开始键①（解锁+起飞）→ 判稳后开始键②松手 ——"
+             "参考**从悬停点起步**（正方形起点就是原点），所以进 TRACK 不跳变",
              ("/mocap/pose_enu", "/vrpn/.*/pose", "/traj/reference", "/traj/progress",
               "/control/state", "/mavros/setpoint_raw/local", "/mavros/state"),
              120.0),
+    Scenario(5, "5_traj3_lemniscate", "执行轨迹 3（1 m 八字）", "up",
+             "`fly.py` 选 **3** → 开始键①（解锁+起飞）→ 判稳后开始键②松手 ——"
+             "同一趟里继场景 3/4 之后再来一次，**不用重启任何节点**",
+             ("/mocap/pose_enu", "/vrpn/.*/pose", "/traj/reference", "/traj/progress",
+              "/control/state", "/mavros/setpoint_raw/local", "/mavros/state"),
+             120.0),
+    Scenario(6, "6_free", "任意录制（自由录，不预设动作与时长）", "any",
+             "**你自己定**：手飞、跑某条轨迹、或者让它停着都行 —— 起录前把要用到的链起好；"
+             "想停按 **Ctrl-C**（★ 它**不会**到点自动收口）",
+             (),
+             None),
 )
 
 SCENARIO_BY_N: Dict[int, Scenario] = {s.n: s for s in SCENARIOS}
+
+#: **老编号的目录名 → 现在的场景号**（第一手：2026-10-08 把「轨迹 3（八字）」从场景 4
+#: 挪到场景 5，给新加的「轨迹 2（正方形）」腾出 4）。`bag/4_traj3_lemniscate/` 那份 9-29
+#: 入库的包**不改名、不动内容**（它是数据，`session.json` 里写的就是老编号 `scenario: 4`）
+#: ⟹ 认目录名的时候得把它认回**当前的场景 5**，否则 `adopt`/清单会把它当成"认不出场景"。
+#: ★ 2026-10-08 之后 `bag/` 一层里已经没有这个名字了（那份搬进了 `bag/old/`）——
+#: 别名留着，理由是它是"老编号"这件事的机制：**再有人把那份挪回来，它照样认得出**。
+SLUG_ALIASES: Dict[str, int] = {"4_traj3_lemniscate": 5}
 
 #: 两条一键的菜单标题（打印场景卡用）。⚠️ 它们**就是**从 `z0.ACTIONS` 抄下来的字面量
 #: —— 抄一份就会各自漂移，所以 `test_rec.py` 有一条用例把它**逐字钉回动作表**
@@ -174,6 +220,10 @@ SCENARIO_BY_N: Dict[int, Scenario] = {s.n: s for s in SCENARIOS}
 CHAIN_MENU_TITLE: Dict[str, str] = {
     "up_manual": "菜单 **8= 一键启动（动捕+mavros，手动遥控飞）**",
     "up": "菜单 **9= 一键启动全部（选轨迹 → 按开始键）**",
+    # ★ 场景 6（自由录）用哪条链**由操作者定** ⟹ 这里不指一条，把两条路都点出来。
+    #   ⚠️ 两个引用都必须与 `z0.ACTIONS` 逐字对得上（`test_rec.py` 那条跨文件守卫盯着）。
+    "any": "**你自己定**（手动遥控飞 ⟹ 菜单 **8= 一键启动（动捕+mavros，手动遥控飞）**；"
+           "程序飞 ⟹ 菜单 **9= 一键启动全部（选轨迹 → 按开始键）**）",
 }
 
 
@@ -220,18 +270,51 @@ def bag_root(root: Optional[Path] = None) -> Path:
 
 
 def session_dir(scenario: Scenario, root: Optional[Path] = None) -> Path:
-    """一份包一个目录：**`bag/<slug>/`，没有日期层**（操作者 2026-09-29 现场拍定）。
+    """一份包**首选**的目录：**`bag/<slug>/`，没有日期层**（操作者 2026-09-29 现场拍定）。
 
     ★ 为什么去掉日期层：现场按场景找东西（"把场景 3 的包发我"），
       `bag/3_traj1_hover/` 比 `bag/2026-09-29/s3-traj1-hover/` 少一层要记的东西；
       日期没有丢 —— 每份包自己的 `started_utc` 写在 `session.json` 与 `MANIFEST.md` 里。
-    ⚠️ 代价（明说过的）：**同名场景再录一次会撞上已有目录**，而 `rosbag2` 拒绝往已有目录里录、
-      `start` 也从不替你删包 ⟹ 重录必须由人先把旧那份挪走。现场只录一轮时这条不咬人。
+    ⚠️ 它只是**首选**：同名场景再录一次会撞上已有目录（`rosbag2` 拒绝往已有目录里录、
+      `start` 也从不替你删包、不替你挪包）⟹ 那时录进 `unique_dir` 那一份**带时间戳**的，
+      见下（2026-10-08 之前是"直接拒掉"，现场敲菜单 11 看起来像坏了）。
 
-    目录名就是 slug，同时是**收编时的唯一线索**（见 `adopt`：靠目录名回认场景号）。
-    同名再来一次会被 `start` 拒掉。
+    目录名的**前半段就是 slug**，同时是**收编时的唯一线索**（见 `adopt`：靠目录名回认场景号）。
     """
     return bag_root(root) / scenario.slug
+
+
+def dir_stamp(now: Optional[_dt.datetime] = None) -> str:
+    """目录后缀用的 **UTC** 紧凑时间戳（`20261008-071530`）。
+
+    ★ 与 `utc_stamp` **同一把尺**（都是 UTC）—— 现场拿它和 `session.json` 的
+      `started_utc`、飞控日志的 `utc` 对表时，两个数得能直接看。
+    ⚠️ 有意**不带冒号**（`utc_stamp` 的 ISO 形状带 `:`）：那种名字在别的系统上不好使，
+      而目录名是要被人手打、被 `git` 记住的东西。
+    """
+    stamp = _dt.datetime.now(_dt.timezone.utc) if now is None else now.astimezone(
+        _dt.timezone.utc)
+    return stamp.strftime("%Y%m%d-%H%M%S")
+
+
+def unique_dir(scenario: Scenario, root: Optional[Path] = None, *,
+               now: Optional[_dt.datetime] = None) -> Path:
+    """**一份新的**包目录：`bag/<slug>__<UTC 时间戳>/` —— 撞不上已有的那一份。
+
+    ★ 它是重录（与场景 6 自由录）的落点：已入账的 `bag/<slug>/` **一个字节都不碰**。
+    ⚠️ 后缀用双下划线 `__` 与 slug 隔开，`scenario_by_slug` 就是按它切回去认场景号的
+      （单下划线不行：slug 自己里就有 `_`）。
+    ⚠️ 万一同一秒里来两次（理论上要两次起录落在同一秒），就往后加 `-2` / `-3` ——
+      不覆盖、不报错，且**仍然认得出场景号**。
+    """
+    base = session_dir(scenario, root)
+    stamp = dir_stamp(now)
+    candidate = base.with_name(f"{base.name}__{stamp}")
+    index = 2
+    while candidate.exists():
+        candidate = base.with_name(f"{base.name}__{stamp}-{index}")
+        index += 1
+    return candidate
 
 
 def utc_stamp(now: Optional[_dt.datetime] = None) -> str:
@@ -313,9 +396,13 @@ def render_scenario_card(scenario: Scenario, out_dir: Path,
         f"场景 {scenario.n}：{scenario.title}",
         f"  起链：{CHAIN_MENU_TITLE.get(scenario.chain, scenario.chain)}",
         f"  你要做的：{scenario.do}",
-        f"  录到 {scenario.expect_s:.0f} s **自动收口**（想提前停就 Ctrl-C —— 同一条收口路）",
+        (f"  录到 {scenario.expect_s:.0f} s **自动收口**（想提前停就 Ctrl-C —— 同一条收口路）"
+         if scenario.expect_s is not None else
+         "  ★ **不倒计时**：录到你按 **Ctrl-C** 为止（同一条收口路）"),
         f"  落盘：{_rel(out_dir)}",
     ]
+    if not scenario.expect:
+        lines.append("  预期话题：（自由录 —— **不预设**，收口后也不会判\"缺了哪条\"）")
     if log_path is not None:
         lines.append(f"  日志：{_rel(log_path)}（万一没录上，先看它）")
     return "\n".join(lines)
@@ -348,7 +435,7 @@ def render_record_table(session: Dict) -> str:
     topics = session.get("topics") or []
     lines.append(f"  话题（{len(topics)} 条）：")
     if not topics:
-        lines.append("    **一条都没有** —— 先看包目录**旁边**那份 `<场景>.log`"
+        lines.append("    **一条都没有** —— 先看包目录**旁边**那份 `<包目录名>.log`"
                      "（`ros2 bag record` 自己的输出）")
     for t in sorted(topics, key=lambda x: -x["count"]):
         rate = rate_hz(t["count"], dur)
@@ -356,7 +443,10 @@ def render_record_table(session: Dict) -> str:
                      f"{t['count']:>9,} 帧  {t['topic']}")
 
     scenario = SCENARIO_BY_N.get(session.get("scenario"))
-    if scenario is not None:
+    if scenario is not None and not scenario.expect:
+        # ★ 自由录（场景 6）**没有**预期话题 ⟹ 这一节不是"漏印了"，是"不判缺不缺"。
+        lines.append("  预期话题：（自由录 —— **不预设**，所以这一屏不判\"缺了哪条\"）")
+    elif scenario is not None:
         miss = session.get("missing_expected") or []
         lines.append("  预期话题：")
         for pat in scenario.expect:
@@ -438,15 +528,21 @@ def git_head() -> Tuple[str, int]:
 
 
 def start(n: int, now: Optional[_dt.datetime] = None) -> int:
-    """菜单 **11= 开始录制（选场景 1–4）** 的**一整条前台流程**：
+    """菜单 **11= 开始录制（选场景 1–6）** 的**一整条前台流程**：
     查 ⟹ 印卡 ⟹ 起录 ⟹ 倒计时 ⟹ 收口 ⟹ 核对。
 
     ★ **前台**（操作者 2026-09-29 拍定）：屏幕上就是那个倒计时，录满 `expect_s`
     **自己收口**。旧版把录制丢到后台、只印一个 pid，人从屏幕上根本看不出
     "录到哪了、还差多久"。想提前停按 **Ctrl-C**（见 `_run_countdown`）。
+    ★ **场景 6 不倒计时**（`expect_s is None`）：屏幕上只有已录时长，**只有 Ctrl-C
+    （或录制进程自己退了）才收口**。
+
+    ★★ **目录已存在不再是一句死路**（2026-10-08 修，第一手见文件头）：先**诊断**是
+    "已入账的包"还是"上次没收干净的"，再**问一句** —— 答 y 就录进 `unique_dir` 那一份
+    **带 UTC 时间戳**的新目录（已有那份一个字节都不碰）；答 n（默认）才是老行为。
 
     返回码：`0` = 收好口且录到了东西；`1` = 有东西不对（包不干净 / 一条消息都没有 /
-    录制进程自己退了 / 已经在录 / 目录已存在）；`2` = 场景号不认识。
+    录制进程自己退了 / 已经在录 / 目录已存在且人没让换新目录）；`2` = 场景号不认识。
     """
     import z0                                  # ⟵ 函数级 import：z0 在模块级 import 本模块
 
@@ -463,23 +559,33 @@ def start(n: int, now: Optional[_dt.datetime] = None) -> int:
         return 1
 
     now = now or _dt.datetime.now()
-    out_dir = session_dir(scenario)
+    # ★ 自由录（场景 6）没有"首选目录"这一说 ⟹ 天生落进带 UTC 时间戳的新目录，撞不上别人。
+    out_dir = (unique_dir(scenario, now=now) if scenario.expect_s is None
+               else session_dir(scenario))
     # ⚠️ **`rosbag2` 拒绝往已经存在的目录里录**（第一手 2026-09-29，离线排练时撞到：
     #   `[ERROR] [ros2bag]: Output folder '…' already exists.` 而它**不覆盖、也不接着录**）。
     #   所以：① 这个目录**不能由我们预先建**（日志因此挪到旁边去，见下）；
-    #   ② 它存在就一定是"上一份还在"或"上一次没收干净"，两种都**只报不动**。
+    #   ② 它存在就一定是"上一份还在"或"上一次没收干净"，两种都**不许我们动**（不删、不挪）。
+    #   ★★ 但**也不该把人堵死**（2026-10-08 现场：四个目录全是 09-29 入账的那几份，
+    #      菜单 11 选哪个都当场退出 —— 现场看起来就是"这项录制坏了"）⟹ 给一条**新**目录。
     if out_dir.exists():
         print(f"{_rel(out_dir)} **已经存在** —— `rosbag2` 拒绝往已有的目录里录。")
         if (out_dir / "metadata.yaml").exists():
-            print("  里面有一份**收好口**的包 ⟹ 不覆盖已入账的包；要重录先把那份挪走。")
+            print("  里面有一份**收好口**的包 ⟹ 不覆盖已入账的包（本脚本不替你删、也不替你挪）。")
         else:
             print("  里面**没有** `metadata.yaml` ⟹ 上一次没收干净（或被 SIGKILL 掉了）。"
-                  "先看一眼它的日志，确认没用了再手工 `mv` 走 —— **本脚本不替你删包**。")
-        return 1
+                  "先看一眼它的日志，没用的话自己 `mv` 走 —— **本脚本不替你删包**。")
+        fresh = unique_dir(scenario, now=now)
+        if not ask_confirm(f"  改成录进一份**新的** {_rel(fresh)}？（已有那份一个字节都不碰）"):
+            print("已取消 —— 已有那份一个字节都没动。")
+            return 1
+        out_dir = fresh
     bag_root().mkdir(parents=True, exist_ok=True)
-    # ★ 日志落在**包目录旁边**（`bag/<场景>.log`）：它不能放进包里 ——
+    # ★ 日志落在**包目录旁边**（`bag/<包目录名>.log`）：它不能放进包里 ——
     #   一旦预先建了那个目录，`rosbag2` 就一句 "already exists" 直接退出（上面那条）。
-    log_path = bag_root() / f"{scenario.slug}.log"
+    #   ⚠️ 名字跟着**包目录名**走（不再写死 slug）：重录那几份各有各的日志，
+    #      否则第二次起录会把第一份的日志覆盖掉 —— 而那正是排障时要看的东西。
+    log_path = bag_root() / f"{out_dir.name}.log"
 
     # ★ 卡片印在**起之前**：那几句"你要做的"是给人**照着做**的，
     #   印在起之后等于"都录起来了，他才开始读"—— 而那几秒正是要紧的那几秒。
@@ -532,7 +638,15 @@ def render_progress(scenario: Scenario, elapsed_s: float, *, tty: bool = True,
 
     ★ 两种形状是有理由的：交互终端上原地刷新（一条线慢慢长满），
       重定向进日志的场合每 10 s 一整行 —— 往文件里灌 `\r` 只会得到一坨连成一行的东西。
+    ★ 自由录（`expect_s is None`）**没有"还剩多久"** ⟹ 只有往上数的已录时长，
+      并把"怎么停"写在那一行上（屏幕上不能只留一个越走越大的数字）。
     """
+    if scenario.expect_s is None:
+        elapsed = max(float(elapsed_s), 0.0)
+        clock = f"[{_mmss(elapsed)}]"
+        if not tty:
+            return f"  {clock} 自由录 —— 不会到点收口，按 Ctrl-C 停"
+        return f"  场景 {scenario.n}  {clock}  自由录 —— 想停按 **Ctrl-C**"
     total = float(scenario.expect_s) or 1.0
     elapsed = min(max(float(elapsed_s), 0.0), total)
     left = total - elapsed
@@ -554,6 +668,10 @@ def watch(scenario: Scenario, *, alive: Callable[[], bool], clock=None, sleep=No
 
     ★ `alive` 是**回调**而不是 pid：进程死没死的判据只有一处（`process_alive`），
       这里不重复实现一遍；用例也就没必要去起真进程。
+    ★★ **自由录（`expect_s is None`）永远不返 `"timeup"`** —— 那一档没有"到点"这件事，
+      只会因为**进程自己退了**（`"gone"`）或**人在 `_run_countdown` 里按了 Ctrl-C** 而结束。
+      这是**有意的**：把 `None` 折成某个默认秒数（比如 120）会让自由录在 120 s 处悄悄收口，
+      而操作者以为它还在录。
     """
     clock = clock or time.monotonic
     sleep = sleep or time.sleep
@@ -564,7 +682,7 @@ def watch(scenario: Scenario, *, alive: Callable[[], bool], clock=None, sleep=No
         except (AttributeError, ValueError):
             tty = False                       # 不是文件对象（用例里的假流）一律按非交互走
     t0 = clock() if started is None else started
-    total = float(scenario.expect_s)
+    total = None if scenario.expect_s is None else float(scenario.expect_s)
     shown_at: Optional[float] = None
     while True:
         elapsed = clock() - t0
@@ -575,7 +693,7 @@ def watch(scenario: Scenario, *, alive: Callable[[], bool], clock=None, sleep=No
             stream.write(render_progress(scenario, elapsed, tty=False) + "\n")
             stream.flush()
             shown_at = elapsed
-        if elapsed >= total:
+        if total is not None and elapsed >= total:
             if tty:
                 stream.write("\n")
                 stream.flush()
@@ -596,20 +714,30 @@ def _run_countdown(scenario: Scenario, pid: int, log_path: Path) -> str:
       留下一份**没有任何人收口**的包（它还在后台写着）。接住、转手发给它，
       "到点"与"人按"两条来路就汇到同一条收口路上，产物上没有区别。
     """
-    print(f"  ▶ 录满 {scenario.expect_s:.0f} s **自动收口**；想提前停按 **Ctrl-C**"
-          f"（同一条收口路）")
+    if scenario.expect_s is None:
+        print("  ▶ **自由录：不会到点收口** —— 想停按 **Ctrl-C**（同一条收口路）")
+    else:
+        print(f"  ▶ 录满 {scenario.expect_s:.0f} s **自动收口**；想提前停按 **Ctrl-C**"
+              f"（同一条收口路）")
     try:
         outcome = watch(scenario, alive=lambda: process_alive(pid))
     except KeyboardInterrupt:
         outcome = "ctrl-c"
     print()                     # ★ 倒计时是原地刷新的那一行，收口这几行得另起一行
     if outcome == "timeup":
-        print(f"  ⏱ 录满 {scenario.expect_s:.0f} s —— 自动收口。")
+        # ⚠️ 只有**有倒计时**的场景才会返 `"timeup"`（自由录那条路见 `watch`）—— 这里
+        #   仍然按"说不出来就不说"处理：不拿 `None` 去格式化（那会当场 `TypeError`
+        #   ⟹ 收口整段跑不完，而那正是最不该出事的一段）。
+        print(f"  ⏱ 录满 {scenario.expect_s:.0f} s —— 自动收口。"
+              if scenario.expect_s is not None else "  ⏱ 到点收口。")
     elif outcome == "ctrl-c":
         print("  ⏹ 你按了 Ctrl-C —— 收口。")
     else:
-        print(f"  ⚠️ 录制进程**自己退了**（没到 {scenario.expect_s:.0f} s）"
-              f"—— 先看它的输出：{_rel(log_path)}")
+        # ★ 自由录这一档**没有"没到 N s"可报**（它本来就没有 N）⟹ 那半句不印，
+        #   否则屏幕上会出现一个凭空捏出来的时长。
+        why = ("" if scenario.expect_s is None
+               else f"（没到 {scenario.expect_s:.0f} s）")
+        print(f"  ⚠️ 录制进程**自己退了**{why} —— 先看它的输出：{_rel(log_path)}")
     return outcome
 
 
@@ -698,7 +826,7 @@ def _finalize_locked(out_dir: Path, *, state: Optional[Dict], outcome: str,
     print(render_record_table(session))
     if (session.get("messages") or 0) == 0:
         print(f"\n⚠️ **一条消息都没有** —— 这份包是空的：看 "
-              f"{session.get('log') or '包目录旁边那份 <场景>.log'}"
+              f"{session.get('log') or '包目录旁边那份 <包目录名>.log'}"
               "（话题名对不对、起链起来没有）。别把它当「录过了」。")
     write_manifest()
     print(f"\n清单已更新：{_rel(BAG_ROOT / 'MANIFEST.md')}")
@@ -827,7 +955,7 @@ def status() -> int:
     state = read_state()
     live = find_recorders()
     if not state and not live:
-        print("没在录。（`rec_start N` 起录 —— N 见菜单 **11= 开始录制（选场景 1–4）**）")
+        print("没在录。（`rec_start N` 起录 —— N 见菜单 **11= 开始录制（选场景 1–6）**）")
         return 0
     if state:
         n = state.get("scenario")
@@ -837,7 +965,9 @@ def status() -> int:
         print(f"  目录 {state.get('dir')}")
         print(f"  起点 {state.get('started_local')}（UTC {state.get('started_utc')}）"
               f"   已录 {_elapsed_s(state):.0f} s"
-              + (f"   （录满 {scenario.expect_s:.0f} s 自动收口）" if scenario else ""))
+              + ("" if scenario is None else
+                 "   （**自由录**：不会到点收口，Ctrl-C 停）" if scenario.expect_s is None else
+                 f"   （录满 {scenario.expect_s:.0f} s 自动收口）"))
         print(f"  pid {pid}：{'**在跑**' if process_alive(int(pid or -1)) else '**已经退出了**'}"
               f"   落盘 {_dir_size(_abs(state.get('dir')))}")
         if state.get("log"):
@@ -880,7 +1010,7 @@ _LOG_STOPPED = re.compile(r"\[INFO\]\s+\[([\d.]+)\]\s+\[rosbag2_recorder\]:\s+Re
 
 
 def parse_record_log(text: str) -> Dict[str, Optional[float]]:
-    """`bag/<场景>.log` 的原文 → `{"opened_epoch": …, "stopped_epoch": …}`（**纯函数**）。
+    """`bag/<包目录名>.log` 的原文 → `{"opened_epoch": …, "stopped_epoch": …}`（**纯函数**）。
 
     ★ 这两个时刻是**包真的开始/停止写**的时刻（`rosbag2` 自己报的），比
       `metadata.yaml` 的 `starting_time`（那是**第一条消息**的时刻）更贴近"起录"。
@@ -899,10 +1029,21 @@ def parse_record_log(text: str) -> Dict[str, Optional[float]]:
 
 
 def scenario_by_slug(slug: str) -> Optional[Scenario]:
-    """目录名 → 场景。★ 收编**只认这一条线索**（布局是扁平的，目录名就是 slug）。"""
-    for scenario in SCENARIOS:
-        if scenario.slug == slug:
-            return scenario
+    """目录名 → 场景。★ 收编**只认这一条线索**（布局是扁平的，目录名就是 slug）。
+
+    认三种名字（**顺序就是这个顺序**）：
+      ① 正好是某个 `Scenario.slug`（9-29 那几份入库的包都是这种）；
+      ② 老编号的名字（`SLUG_ALIASES`：`4_traj3_lemniscate` = 现在的场景 5）；
+      ③ 重录/自由录那种带时间戳的（`<slug>__<UTC 时间戳>[-N]`）—— 取 `__` **前面**那一段再认一次。
+    ⚠️ 认不出就返回 `None`，**不猜**（`adopt` 那条纪律：认错场景比不收编更坏）。
+    """
+    base = slug.split("__", 1)[0]
+    for name in (slug, base):
+        if name in SLUG_ALIASES:
+            return SCENARIO_BY_N.get(SLUG_ALIASES[name])
+        for scenario in SCENARIOS:
+            if scenario.slug == name:
+                return scenario
     return None
 
 
@@ -924,14 +1065,21 @@ ADOPT_STOP_MARGIN_S = 5.0
 def adopt_stop_signal(span_s: Optional[float], scenario: Scenario) -> str:
     """从 `.log` 的开→停跨度反推**是怎么停的**（纯函数）。
 
-    ★ 这是**推导**不是猜：`expect_s` 是本仓自己定的倒计时（四个场景统一 120 s），而跨度是
+    ★ 这是**推导**不是猜：`expect_s` 是本仓自己定的倒计时（场景 1–5 统一 120 s），而跨度是
       `rosbag2` 自己报的。跨度贴近 `expect_s` ⟹ 到点自己收的；明显短一截 ⟹ 只可能是人按的。
 
     ★ 这条推导在**有实测记录的那一份上验过**：场景 1 的 `session.json` 是当时活着写下的，
       上面写着"录满到点，自动收口"，而它的 `.log` 跨度是 119.5 s —— 与下面这条判据一致。
+
+    ⚠️ **自由录（`expect_s is None`）没有这条推导可做**：那一档本来就不该有"到点"，
+      跨度多长都只能说"人按的 Ctrl-C" ⟹ 换一句**没有倒计时可比的**话，不去拿 `None` 做减法
+      （那会 `TypeError`；就算绕过去，也会印出"比到点应有的 ~None s 短一截"这种鬼话）。
     """
     if span_s is None:
         return ADOPT_STOP_SIGNAL
+    if scenario.expect_s is None:
+        return (f"SIGINT（自由录 · 场景 {scenario.n} 不倒计时 ⟹ 只可能是人按的 Ctrl-C —— "
+                f"事后从 `.log` 开→停 {span_s:.1f} s 反推）")
     if span_s >= scenario.expect_s - ADOPT_STOP_MARGIN_S:
         return (f"SIGINT（录满到点，自动收口 —— 事后从 `.log` 开→停 {span_s:.1f} s ≈ "
                 f"倒计时 {scenario.expect_s:.0f} s 反推）")
@@ -947,7 +1095,11 @@ def adopt_state(out_dir: Path, scenario: Scenario,
     返回 `(state, stopped_utc, stop_signal)`；`state` 里取不到的那几项是 `None`
     （见 `ADOPT_UNKNOWN`），另附一个 `reconstructed` 字符串**把来路写清楚**。
     """
-    log_path = log_path if log_path is not None else bag_root(root) / f"{scenario.slug}.log"
+    # ⚠️ 日志按**包目录名**找（与 `start` 同一把尺），**不是** `scenario.slug`：
+    #   两者在"重录过的那几份"与"老编号的目录"上会不一样 —— 例如 `bag/old/4_traj3_lemniscate/`
+    #   现在的 slug 是 `5_traj3_lemniscate`，照 slug 找会找不到旁边那份日志（而找得到的
+    #   那一份是**第一手**：里面的开→停跨度是 `rosbag2` 自己报的）。
+    log_path = log_path if log_path is not None else bag_root(root) / f"{out_dir.name}.log"
     log = {}
     if log_path.exists():
         log = parse_record_log(log_path.read_text(encoding="utf-8", errors="replace"))
@@ -962,7 +1114,10 @@ def adopt_state(out_dir: Path, scenario: Scenario,
     span_s = (log["stopped_epoch"] - log["opened_epoch"]
               if None not in (log.get("opened_epoch"), log.get("stopped_epoch")) else None)
     state: Dict = {
-        "scenario": scenario.n, "slug": scenario.slug, "title": scenario.title,
+        # ⚠️ `slug` 取**目录名**（它是"落盘时那份目录叫什么"这个事实），`scenario` 取
+        #   **当前编号**（它是"按现在这张表算第几号"）—— 老编号的目录上这两个会不一样，
+        #   那是真的，不抹平。
+        "scenario": scenario.n, "slug": out_dir.name, "title": scenario.title,
         "chain": scenario.chain, "dir": _rel(out_dir),
         "started_utc": utc_stamp(opened) if opened else None,
         "started_local": opened.strftime("%Y-%m-%d %H:%M:%S") if opened else None,
@@ -973,9 +1128,25 @@ def adopt_state(out_dir: Path, scenario: Scenario,
     }
     for key in ADOPT_UNKNOWN:
         state[key] = None
+    # ⚠️ "哪一次收口"**现算**（就取上面那个 `opened` 的日期），**不许写死一个日期**：
+    #   2026-09-29 修这层时这里写死过"2026-09-29 那次收口"，2026-10-08 又收编过两份，
+    #   写死的日期会把 10-08 那两份也栽到 9-29 头上 —— 来路那句话存在的全部意义就是**能回查**，
+    #   一句错的日期比没有日期更坏。（`run/tests/test_rec.py` 不收这两句的逐字文本。）
+    when = (f"{opened.strftime('%Y-%m-%d')} 那次收口" if opened is not None
+            else "一次收口（**起录日期看不出来**）")
+    # 原因那一半也**按第一手证据分岔**：缺的到底是"收口之后写 session.json 那一段"，
+    # 还是"连录都没录完"——`.log` 里有没有 `Recording stopped` 正好把这俩分开。
+    if log.get("stopped_epoch") is not None:
+        why = ("（`rosbag2` 那边 `Opened database` → `Recording stopped` 都在，"
+               "缺的是**收口之后**写 `session.json` 那一段）")
+    elif log:
+        why = ("（`.log` 里**没有** `Recording stopped` —— 录到一半就断了，"
+               "不是收口被打断）")
+    else:
+        why = "（旁边那份 `.log` 不在，**录完没有看不出来**）"
     state["reconstructed"] = (
-        "由 `run/z0.py rec_adopt` 事后重建：这份包的 `session.json` 在 2026-09-29 那次收口里"
-        "**没写成**（收口后段被打断）。起录时刻取自" + source + "；"
+        f"由 `run/z0.py rec_adopt` 事后重建：这份包的 `session.json` 在 {when}里"
+        "**没写成**" + why + "。起录时刻取自" + source + "；"
         "`stopped_utc` 与 `stop_signal` 取自 `.log` 的 "
         + (f"`Opened database` → `Recording stopped` 跨度 {span_s:.1f} s（`adopt_stop_signal` 反推）"
            if span_s is not None else "`Recording stopped`（跨度取不到，停止方式看不出来）") + "；"
@@ -984,20 +1155,33 @@ def adopt_state(out_dir: Path, scenario: Scenario,
     return state, stopped_utc, adopt_stop_signal(span_s, scenario)
 
 
+#: `bag/` 下那一个**不是包**的目录名：被后一次录制取代的旧包放这里（操作者 2026-10-08 拍定
+#: "每个场景保留最新最有用的那一份，其余进 `bag/old`"）。它按目录名**定死** ——
+#: 别改成"凡认不出场景的都归档"：那正好会把拼错的目录名悄悄吞掉，而"认不出就报红"
+#: 是这一层的纪律（见 `adopt` 的返回码）。
+#: 收编与总表本来**只扫一层**（`root.glob("*/session.json")` / `*/fcu/*.ulg`），
+#: 所以归档的包进不了总表；这里要做的只是让 `adopt` **别把它报成"认不出场景"**。
+ARCHIVE_DIRNAME = "old"
+
+
 def adopt(now: Optional[_dt.datetime] = None, root: Optional[Path] = None) -> int:
     """把 `bag/` 下**缺 `session.json`** 的包收编进清单（`run/z0.py rec_adopt`）。
 
     返回码：`0` = 该收编的都收编了（**没有可收编的也算 0** —— 那是"本来就齐"）；
     `1` = 有目录**认不出场景**（目录名不是任何 `Scenario.slug`）⟹ **不猜、不动它**。
+    （`bag/old/` 是**按名字认出来的归档目录**，跳过它不算"认不出" ⟹ 不影响返回码。）
 
     ⚠️ 它**只在缺 `session.json` 时动**：已经入账的包一个字节都不碰
       （`session.json` 在 = 那份是收口那一刻的实测读数，比事后重建可信）。
     ⚠️ 它**不改包内容**：不重命名、不重压、不动 `metadata.yaml`。
     """
     root = bag_root(root)
-    adopted, unknown, already = [], [], []
+    adopted, unknown, already, archived = [], [], [], []
     if root.exists():
         for path in sorted(p for p in root.iterdir() if p.is_dir()):
+            if path.name == ARCHIVE_DIRNAME:
+                archived.append(path.name)
+                continue
             if (path / "session.json").exists():
                 already.append(path.name)
                 continue
@@ -1012,6 +1196,9 @@ def adopt(now: Optional[_dt.datetime] = None, root: Optional[Path] = None) -> in
     print(f"收编完毕：{_rel(root)}")
     if already:
         print(f"  已经入账（没碰）：{', '.join(already)}")
+    if archived:
+        print(f"  归档目录（**按名字跳过，不是报错**）：{', '.join(archived)}/ —— "
+              "里面的包是被后一次录制取代的旧包，不进总表（见 `bag/README.md`）")
     if adopted:
         for n, name in adopted:
             print(f"  场景 {n}：`{name}` —— 补了一份 `session.json`（**事后重建**，"
@@ -1046,6 +1233,12 @@ def render_manifest(root: Optional[Path] = None) -> str:
     #   每份包自己的起点时间在表里（`started_utc`），回查不缺东西。
     lines = ["# `bag/` 清单（自动生成 —— 别手改；`run/z0.py rec_manifest` 重算）", "",
              "★ 本表是**确定性输出**（不含生成时间）：重算一次必须逐字相同，好拿 `git diff` 当判据。", ""]
+    if (root / ARCHIVE_DIRNAME).is_dir():
+        # ⚠️ 这句话**是必要的**：归档之后同一个场景在磁盘上有两份，而本表只剩一份 ——
+        #   不写清楚，回查的人会以为某个场景的数据被删了。
+        lines += [f"★ 本表**每个场景只列当前该用的那一份**。被后一次录制取代的旧包在 "
+                  f"[`{ARCHIVE_DIRNAME}/`]({ARCHIVE_DIRNAME}/) 里，**不进本表** —— "
+                  "它们**还在库里、还能回查**（谁取代了谁见 `bag/README.md`）。", ""]
     if not sessions:
         lines.append("（还没有收好口的包。）")
     else:
@@ -1094,6 +1287,22 @@ def write_manifest(root: Optional[Path] = None) -> Path:
 #   source —— 它是 CLI 自带子命令；真缺环境它自己会报错，那时屏幕上是它的原话。）
 
 
+def ask_confirm(question: str, default: bool = False) -> bool:
+    """问一句 y/N —— **逐字照 `z0.ask_confirm`**（`default` 决定空回车算什么，提示符里看得出来）。
+
+    ★ 为什么不去调 `z0.ask_confirm`：`start()` 里那份 `import z0` 是**函数级**的
+    （z0 在模块级 import 本模块，模块级再 import 回去就成环），而这一句在 `start` 内的
+    `import z0` 之后本来也够得着 —— 但那会让"录制层能不能问一句"取决于调用方是不是从菜单进来的
+    （`python3 run/rec.py rec_start 3` 走的是**另一条**入口）。问话是录制层自己的事，自己留着。
+    ★ 非交互（管道 / 重定向 / EOF）**不抛异常**：走 `default`（这里是 N ⟹ 不换目录、老行为）。
+    """
+    try:
+        reply = input(f"{question} {'[Y/n]' if default else '[y/N]'} ").strip().lower()
+    except EOFError:
+        return default
+    return default if not reply else reply in ("y", "yes")
+
+
 def _ask(prompt: str, default: str) -> str:
     """问一句（非交互时给默认值）—— 与 `z0.ask_confirm` 同一条纪律：**不抛异常**。"""
     try:
@@ -1103,10 +1312,11 @@ def _ask(prompt: str, default: str) -> str:
 
 
 def cmd_start(argv: Sequence[str] = ()) -> int:
-    """菜单 **11= 开始录制（选场景 1–4）**；`rec_start 3` 也行（不给就问一句）。
+    """菜单 **11= 开始录制（选场景 1–6）**；`rec_start 3` 也行（不给就问一句）。
 
     ⚠️ 这条**阻塞整个终端**直到收口（前台倒计时，见 `start`）—— 这是有意的：
     录制期间操作者要做的事都在飞机上，屏幕上留一个"录到哪了"比留一个菜单有用。
+    ★ 选 **6（任意录制）** 时没有倒计时，**要靠 Ctrl-C 停** —— 这条命令会一直占着终端。
     """
     if argv and argv[0].isdigit():
         return start(int(argv[0]))
@@ -1152,12 +1362,19 @@ def dry_run_note(key: str, argv: Sequence[str] = ()) -> str:
     """`--dry-run` 对录制这两条说什么 —— ★ 判据只有一条：**一个进程都不起、一个信号都不发、
     一个字节都不写**（与 `z0.dispatch` 里那条"`--dry-run` 对所有进程内动作都是不执行"配套）。"""
     if key == "rec_start":
-        lines = ["（`--dry-run`：**一个进程都不起**，状态文件也不写。四条场景与它们会跑的命令："]
+        lines = ["（`--dry-run`：**一个进程都不起**，状态文件也不写。六条场景与它们会跑的命令："]
         for scenario in SCENARIOS:
             lines.append(f"  场景 {scenario.n}：{scenario.title}")
-            lines.append(f"    $ {_sourced(record_command(session_dir(scenario)))}")
-            lines.append(f"    录到 {scenario.expect_s:.0f} s 自动收口；"
-                         f"预期话题：{'、'.join(scenario.expect)}")
+            # ★ 自由录（场景 6）的落点是**带时间戳的新目录** ⟹ 这里要按 `start()` 同一把尺印，
+            #   否则这一屏会显示一个"真跑时根本不会用"的目录名（`--dry-run` 的全部意义就是那一条）。
+            out_dir = (unique_dir(scenario) if scenario.expect_s is None
+                       else session_dir(scenario))
+            lines.append(f"    $ {_sourced(record_command(out_dir))}")
+            lines.append(
+                "    不倒计时 —— 录到你按 Ctrl-C 为止；预期话题：**不预设**（自由录）"
+                if scenario.expect_s is None else
+                f"    录到 {scenario.expect_s:.0f} s 自动收口；"
+                f"预期话题：{'、'.join(scenario.expect)}")
         lines.append("）")
         return "\n".join(lines)
     if key == "rec_manifest":

@@ -3,7 +3,7 @@
 
     ros2 run bringup fly.py
 
-    1 = 原地悬停   2 = 1 m 正方形   3 = 0.5 m 八字
+    1 = 原地悬停   2 = 1 m 正方形   3 = 1 m 八字
     0 = 取消选择   h = 帮助   q = 退出   （回车 = 立刻打印一次当前状态）
 
 ★★ 本脚本**只做两件事**：发 `/traj/select`（`std_msgs/UInt8`）、显示 `/control/state` 与
@@ -43,7 +43,7 @@ from std_msgs.msg import Float32, String, UInt8
 KINDS = {
     1: ("原地悬停", "60 s（= §5.3 的验收时长）"),
     2: ("正方形 1 m", "≈8 s"),
-    3: ("八字 a=0.5（偏扁：1.0 m × 0.5 m）", "≈6.1 s"),
+    3: ("八字 a=1.0（偏扁：2.0 m × 1.0 m）", "≈12.2 s"),
 }
 
 SELECT_TOPIC = "/traj/select"
@@ -159,7 +159,7 @@ def _stdin_ready(timeout_s: float = 0.0) -> bool:
 
 def _print_help() -> None:
     print(
-        "\n命令：1 = 原地悬停   2 = 1 m 正方形   3 = 0.5 m 八字   0 = 取消选择\n"
+        "\n命令：1 = 原地悬停   2 = 1 m 正方形   3 = 1 m 八字   0 = 取消选择\n"
         "      h = 帮助        q = 退出          回车 = 立刻打印一次当前状态\n"
         "★ 起飞与开始轨迹**不在这个脚本里**：遥控器开始键的第 1 次上升沿 = 解锁起飞，\n"
         "  第 2 次 = 进 TRACK（§H.5）。开始键按下之前，control 不会发任何控制指令。\n"

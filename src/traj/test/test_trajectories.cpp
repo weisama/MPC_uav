@@ -1,8 +1,8 @@
 // 接缝 2（纯函数）单测：三条轨迹的**几何、尺寸、限速、完成度**。
 //
 // 为什么这些断言值得写（而不是"飞起来看看"）：
-//   ① 形状与尺寸有**精确解**可对 —— 边长 1 m 的正方形周长必然是 4.0 m、8 字必然是
-//      宽 1.0 m 高 0.5 m。这类错误一旦漏到天上，表现只是"飞机画得有点怪"，
+//   ① 形状与尺寸有**精确解**可对 —— 边长 1 m 的正方形周长必然是 4.0 m、8 字（a = 1.0，
+//      2026-10-08 起的默认）必然是宽 2.0 m 高 1.0 m。这类错误一旦漏到天上，表现只是"飞机画得有点怪"，
 //      而"有点怪"和"动捕/控制有毛病"在 /traj/reference 的数值流里分不开。
 //   ② 限速是 §5.2 的硬要求（≤0.5 m/s）。★ 这里不只断言"我输出的 v 不大于上限"
 //      （那是自证），还用**有限差分**独立地量一遍"位置实际走多快" —— 后者才拦得住
@@ -219,6 +219,38 @@ TEST(Lemniscate, 周长与时长的交叉验证)
   // ③ 时长 = 周长 / 限速，@0.5 m/s ≈ 6.1 s
   EXPECT_NEAR(lem.duration(), lem.perimeter() / 0.5, 1e-12);
   EXPECT_NEAR(lem.duration(), 6.1, 0.02);
+}
+
+TEST(Lemniscate, 放大到原本的_2_倍_后尺寸与时长相乘而不是相加)
+{
+  // ★ 2026-10-08 操作者把轨迹 3 的幅度从 0.5 放大到 1.0（**原本的 2 倍**）。
+  //   放大是一条**相似变换** ⟹ 长度量都乘 2、时间也乘 2，而**限速一个字不改**（仍 0.5 m/s）。
+  //   在纯函数层把这三件事钉住；话题层（seam 1）另有一条按新规格 ±1.0 / ±0.5 的断言。
+  const Lemniscate before(0.5, 0.5);
+  const Lemniscate after(1.0, 0.5);
+
+  // ① 周长与时长都恰好翻倍（相似变换，不是"相近的另一个数"）
+  EXPECT_NEAR(after.perimeter(), 2.0 * before.perimeter(), before.perimeter() * 1e-9);
+  EXPECT_NEAR(after.duration(), 2.0 * before.duration(), before.duration() * 1e-9);
+
+  // ② a = 1.0 的周长与**独立 Simpson 积分**互校 ≈6.0972 m
+  const double expected = lemniscate_perimeter_simpson(1.0);
+  EXPECT_NEAR(after.perimeter(), expected, expected * 1e-6);
+  EXPECT_NEAR(after.perimeter(), 6.10, 0.02);
+
+  // ③ 时长 ≈12.19 s @0.5 m/s —— 放大的是尺寸，**不是速度**
+  EXPECT_NEAR(after.duration(), 12.2, 0.05);
+
+  // ④ 采样一遍位置，钉住新规格的幅度：x 半幅 1.0、y 半幅 0.5（仍是 x 的一半 = 偏扁）
+  double x_max = 0.0, y_max = 0.0;
+  for (int i = 0; i <= 100000; ++i) {
+    const Vec3 p = after.at(after.duration() * i / 100000.0).p;
+    x_max = std::max(x_max, p.x);
+    y_max = std::max(y_max, p.y);
+  }
+  EXPECT_NEAR(x_max, 1.0, 1e-3);
+  EXPECT_NEAR(y_max, 0.5, 1e-3);
+  EXPECT_NEAR(x_max / y_max, 2.0, 1e-2);
 }
 
 TEST(Lemniscate, 闭合_起点在原点_跑完停在原点)

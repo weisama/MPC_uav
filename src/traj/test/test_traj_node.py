@@ -398,8 +398,8 @@ def test_八字_幅度_偏扁_与限速():
         wait_dut_up(sc)
         cmd.select(3)
         cmd.start(sc=sc)
-        # a = 0.5 ⟹ 周长 ≈3.05 m @0.5 m/s ≈ 6.1 s（余量同上：实时参数化 + 机器可能被压住）
-        sc.wait_for(lambda: any(v >= 1.0 for v in rec.progress_since(0)), timeout_s=18.0,
+        # a = 1.0 ⟹ 周长 ≈6.10 m @0.5 m/s ≈ 12.2 s（余量同上：实时参数化 + 机器可能被压住）
+        sc.wait_for(lambda: any(v >= 1.0 for v in rec.progress_since(0)), timeout_s=30.0,
                     message="8 字没跑完")
 
         refs = rec.refs_since(0)
@@ -407,17 +407,18 @@ def test_八字_幅度_偏扁_与限速():
         xs = [p.x for p in ps]
         ys = [p.y for p in ps]
 
-        # ★ Gerono 双纽线是**偏扁**的：x 半幅 0.5、**y 半幅只有 0.25**。
+        # ★ Gerono 双纽线是**偏扁**的：x 半幅 1.0、**y 半幅只有 0.5**。
         #   这是规格不是缺陷（§5.2 写了），所以在话题层把它钉住。
-        assert min(xs) == pytest.approx(-0.5, abs=0.02) and max(xs) == pytest.approx(0.5, abs=0.02), (
-            f"8 字的 x 幅度不对：x ∈ [{min(xs):.3f}, {max(xs):.3f}]，期望 ±0.5")
-        assert min(ys) == pytest.approx(-0.25, abs=0.02) and max(ys) == pytest.approx(0.25, abs=0.02), (
-            f"8 字的 y 幅度不对：y ∈ [{min(ys):.3f}, {max(ys):.3f}]，期望 ±0.25（= x 的一半）")
+        #   ★ 2026-10-08 幅度从 0.5 放大到 1.0（原本的 2 倍）—— 见 .scratch/phase2/issues/27。
+        assert min(xs) == pytest.approx(-1.0, abs=0.02) and max(xs) == pytest.approx(1.0, abs=0.02), (
+            f"8 字的 x 幅度不对：x ∈ [{min(xs):.3f}, {max(xs):.3f}]，期望 ±1.0")
+        assert min(ys) == pytest.approx(-0.5, abs=0.02) and max(ys) == pytest.approx(0.5, abs=0.02), (
+            f"8 字的 y 幅度不对：y ∈ [{min(ys):.3f}, {max(ys):.3f}]，期望 ±0.5（= x 的一半）")
         # x 与 y 的幅度比 ≈ 2 —— 这条把"偏扁"直接表述成不变式
         assert max(xs) / max(ys) == pytest.approx(2.0, abs=0.15)
 
-        assert all(-0.5 - SPEED_TOL <= p.x <= 0.5 + SPEED_TOL for p in ps)
-        assert all(-0.25 - SPEED_TOL <= p.y <= 0.25 + SPEED_TOL for p in ps)
+        assert all(-1.0 - SPEED_TOL <= p.x <= 1.0 + SPEED_TOL for p in ps)
+        assert all(-0.5 - SPEED_TOL <= p.y <= 0.5 + SPEED_TOL for p in ps)
         worst = max(speed_from_refs(refs, i) for i in range(1, len(refs) - 1))
         assert worst <= MAX_SPEED_MS + SPEED_TOL, (
             f"8 字的位置差分速度到过 {worst:.3f} m/s —— 弧长不均匀（过中心那一段冲快了）；"
@@ -460,12 +461,12 @@ def test_折线_marker_不开始也能看到形状与尺寸():
                     timeout_s=3.0,
                     message="折线没有周期重发 —— 晚起的 RViz 会永远看不到它（尤其是没开始的时候）")
 
-        # 8 字：x 幅度 ±0.5、y 幅度 ±0.25（换轨迹**不需要重启节点**）
+        # 8 字：x 幅度 ±1.0、y 幅度 ±0.5（换轨迹**不需要重启节点**）
         n_before = len(rec.refs)
         cmd.select(3)
 
         # ★ 按**内容**认折线，不按"又来了几条"：正方形的**周期重发**随时可能插进来，
-        #   `[-1]` 于是拿到重发的正方形（实测踩到过：5 个点的折线去比 ±0.5）。
+        #   `[-1]` 于是拿到重发的正方形（实测踩到过：5 个点的折线去比 ±1.0）。
         #   点数就是不变量：正方形 5 个顶点、8 字 201+1。
         def lem_strips():
             return [m for m in rec.markers_of(0)
@@ -479,8 +480,8 @@ def test_折线_marker_不开始也能看到形状与尺寸():
         # ★ 容差 1e-3 而不是 1e-6：折线是按 **θ 均匀**采样的（刻意的，见 trajectories.hpp），
         #   而 x 的极值在 θ=3π/2 —— 201 个采样点未必正好落在那儿。这是采样的误差，
         #   不是形状的误差；1e-3 远小于"形状不对"会有的偏差（换错公式至少差 1e-1）。
-        assert min(xs) == pytest.approx(-0.5, abs=1e-3) and max(xs) == pytest.approx(0.5, abs=1e-3)
-        assert min(ys) == pytest.approx(-0.25, abs=1e-3) and max(ys) == pytest.approx(0.25, abs=1e-3)
+        assert min(xs) == pytest.approx(-1.0, abs=1e-3) and max(xs) == pytest.approx(1.0, abs=1e-3)
+        assert min(ys) == pytest.approx(-0.5, abs=1e-3) and max(ys) == pytest.approx(0.5, abs=1e-3)
         assert len(strip.points) == 202, f"8 字折线点数 {(len(strip.points))}，期望 201+1"
         # ★ 阳性对照：换轨迹**不等于**开始 —— 参考仍然一帧都不发
         assert len(rec.refs) == n_before, "只是换了个轨迹，参考就自己流起来了"
