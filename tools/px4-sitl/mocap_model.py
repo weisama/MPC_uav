@@ -51,6 +51,11 @@ POSE_TOPIC = "/mocap/pose_enu"
 STATE_TOPIC = "/control/state"
 #: 轨迹执行态的字符串（包 3 的迁移：`… →AUTO/TRACK→ MANUAL/LAND …`）
 TRACK_STATE = "AUTO/TRACK"
+#: 轨迹参考（`mavros_msgs/PositionTarget`）—— 判据② 的八字那条靠它当参考。
+#: ☠️ 包里它是**相对量、以原点为中心、`z ≡ 0`**（实测：包 4 包络 1.000 × 0.500 m、
+#: 1029 帧；包 3 恒为 0、3873 帧。读数与取证方式见 11 号票 Comments 2026-09-30）
+#: ⟹ **高度不在里面**，回放侧要按 `--ref-z-offset-m` 叠一个起飞高度（理由同处）。
+TRAJ_TOPIC = "/traj/reference"
 
 #: "缺口"的门槛：超过它的帧间隔算一次丢帧（判据里用的是**逐帧复现**，这个门槛只用于汇总表）
 GAP_MS = 20.0
@@ -163,6 +168,64 @@ def msg_data(data, types: Dict[str, str], topic: str, importlib) -> str:
     return str(deserialize_message(data, _msg_class(types, topic, importlib)).data)
 
 
+def read_reference(bag_dir: Path, workdir: Optional[Path] = None,
+                   topic: str = TRAJ_TOPIC) -> dict:
+    """把包里的 `/traj/reference` 读成一条**可以照着重发的序列**（判据② 的八字那条用）。
+
+    ★ 位置/速度/yaw **原样取出、不加任何偏移**。要叠的东西（比如起飞高度 `z`）
+      是**回放侧**的口径，不是包里的事实 ⟹ 落在 `mocap_replay.py --ref-z-offset-m` 上。
+    ★ 时间用 `header.stamp` 的**相对量**（相对本序列第一帧），与动捕那条同一口径；
+      倒退的帧**不修**（源的毛病要如实留在读数里，同 `intervals_s` 的 ★）。
+    ★ `type_mask` / `coordinate_frame` **逐帧读**并回报"整段是不是同一个值" ——
+      照着重发的前提是它们一致；不一致就得在这里说清楚，而不是挑第一帧当代表。
+    ★ 话题不存在 ⟹ 返回 `n = 0` + `why`，**不抛** —— 包 1/2 没有这条话题，
+      不该因此挡住整份模型的 dump。
+    """
+    import importlib                                        # noqa: PLC0415
+    import rosbag2_py                                       # noqa: PLC0415
+    from rclpy.serialization import deserialize_message      # noqa: PLC0415
+
+    root = prepare_bag(Path(bag_dir), Path(workdir or (Path(tempfile.gettempdir()) / "mocap-model"
+                                                       / Path(bag_dir).name)))
+    reader = rosbag2_py.SequentialReader()
+    reader.open(rosbag2_py.StorageOptions(uri=str(root), storage_id="sqlite3"),
+                rosbag2_py.ConverterOptions("", ""))
+    types = {t.name: t.type for t in reader.get_all_topics_and_types()}
+    if topic not in types:
+        return {"n": 0, "topic": topic,
+                "why": f"包里没有 {topic}（含 traj/mocap 的话题："
+                       + ", ".join(sorted(k for k in types if "traj" in k or "mocap" in k)) + "）"}
+    cls = _msg_class(types, topic, importlib)
+    stamp, pos, vel, yaw, mask, frame = [], [], [], [], [], []
+    while reader.has_next():
+        topic_i, data, _recv_ns = reader.read_next()
+        if topic_i != topic:
+            continue
+        m = deserialize_message(data, cls)
+        h = m.header.stamp
+        stamp.append(float(h.sec) + float(h.nanosec) * 1e-9)
+        pos.append((float(m.position.x), float(m.position.y), float(m.position.z)))
+        vel.append((float(m.velocity.x), float(m.velocity.y), float(m.velocity.z)))
+        yaw.append(float(m.yaw))
+        mask.append(int(m.type_mask))
+        frame.append(int(m.coordinate_frame))
+    if not stamp:
+        return {"n": 0, "topic": topic, "why": f"{topic} 一帧都没有"}
+    t = np.asarray(stamp, dtype=float)
+    return {
+        "n": len(stamp), "topic": topic, "type": types[topic],
+        "type_mask": mask[0], "type_mask_all_same": bool(len(set(mask)) == 1),
+        "coordinate_frame": frame[0],
+        "coordinate_frame_all_same": bool(len(set(frame)) == 1),
+        "t_s": [float(x) for x in (t - t[0])],
+        "p": [[float(c) for c in r] for r in pos],
+        "v": [[float(c) for c in r] for r in vel],
+        "yaw": yaw,
+        "dt_p50_ms": float(np.percentile(np.diff(t), 50) * 1e3) if t.size > 1 else 0.0,
+        "span_s": float(t[-1] - t[0]) if t.size > 1 else 0.0,
+    }
+
+
 # ------------------------------------------------------------------ 纯函数：三样模型
 
 
@@ -273,6 +336,7 @@ def build_model(bag_dir: Path, noise_bag: Optional[Path] = None, *,
                 pose_topic: str = POSE_TOPIC) -> dict:
     """量一个包 → 回放节点唯一吃的那份模型（JSON 友好）。"""
     tr = read_trace(bag_dir, workdir=workdir, pose_topic=pose_topic)
+    ref = read_reference(bag_dir, workdir=workdir)
     if tr.n < 10:
         raise SystemExit(f"{bag_dir} 的 {pose_topic} 只有 {tr.n} 帧 —— 量不出模型")
     win = track_window(tr.states)
@@ -317,14 +381,19 @@ def build_model(bag_dir: Path, noise_bag: Optional[Path] = None, *,
             "win_s": win_s,
             "note": "σ 取『本段飞行残差』与『静态基线』的逐轴较大者；残差含真机振动（保守口径）",
         },
-        # 包里的参考（`/traj/reference` 是 `mavros_msgs/PositionTarget` + `traj_origin`，
-        # 悬停时它是 0,0,0 ⟹ **高度不在里面**）。真正能当参考的是"这架飞机当时悬在哪"：
+        # **这架飞机当时悬在哪**（实测位置，不是指令）—— 悬停那条当"它该在哪儿"的旁证。
+        # ⚠️ 与下面 `reference` 是两样东西：这里是**飞机**，那里是**指令**。
         "track": {
             "pos_mean_m": [float(x) for x in seg_pos.mean(axis=0)],
             "pos_std_m": [float(x) for x in seg_pos.std(axis=0)],
             "pos_p2p_m": [float(x) for x in (seg_pos.max(axis=0) - seg_pos.min(axis=0))],
             "quat_mean_xyzw": [float(x) for x in seg_quat.mean(axis=0)],
         },
+        # 包里的**指令**参考（`/traj/reference`）—— 判据② 的八字那条照着重发它。
+        # ☠️ 它是以原点为中心的**相对量、`z ≡ 0`**（悬停那条更是恒为 0）⟹ **高度不在里面**：
+        #   回放侧要按 `--ref-z-offset-m` 叠起飞高度（理由见 11 号票 Comments 2026-09-30）。
+        #   包里没有该话题时这里只有 `n = 0` + `why`（不抛）。
+        "reference": ref,
         "bag_rate_hz": tr.rate_hz(),
         "states": [[round(t, 3), s] for t, s in tr.states],
     }
@@ -332,6 +401,35 @@ def build_model(bag_dir: Path, noise_bag: Optional[Path] = None, *,
 
 
 # ------------------------------------------------------------------ CLI
+
+
+def render_reference(ref: dict) -> List[str]:
+    """`/traj/reference` 那一段的读数（纯函数，只吃 `read_reference` 的返回值）。
+
+    ★ 与上面那条「实测」分开印：**一条是指令、一条是飞机** —— 判据② 要重发的是指令那条，
+      而"它到底跟没跟"要看两条之差。混印会让读者以为包里的参考就是飞机的轨迹。
+    """
+    if not ref.get("n"):
+        return [f"指令参考：包里没有（{ref.get('why', '?')}）"]
+    p = np.asarray(ref["p"], dtype=float)
+    v = np.asarray(ref["v"], dtype=float)
+    lo, hi = p.min(axis=0), p.max(axis=0)
+    out = [
+        f"指令参考：{ref['topic']}（{ref['type']}）{ref['n']} 帧、"
+        f"{ref['span_s']:.2f} s、间隔中位 {ref['dt_p50_ms']:.2f} ms",
+        f"      掩码 {ref['type_mask']}（整段一致：{'是' if ref['type_mask_all_same'] else '**否**'}）、"
+        f"坐标系 {ref['coordinate_frame']}（整段一致："
+        f"{'是' if ref['coordinate_frame_all_same'] else '**否**'}）",
+        "      包围盒 xyz = " + ", ".join(f"[{lo[i]:+.3f}, {hi[i]:+.3f}]" for i in range(3))
+        + f" m（z 跨度 {hi[2] - lo[2]:.3f} m）",
+        f"      速度 |v| 最大 {float(np.abs(v).max()) if v.size else 0.0:.3f} m/s、"
+        f"yaw 范围 [{min(ref['yaw']):+.3f}, {max(ref['yaw']):+.3f}] rad",
+        f"      首点 ({ref['p'][0][0]:+.4f}, {ref['p'][0][1]:+.4f}, {ref['p'][0][2]:+.4f}) "
+        f"→ 末点 ({ref['p'][-1][0]:+.4f}, {ref['p'][-1][1]:+.4f}, {ref['p'][-1][2]:+.4f}) m",
+    ]
+    if abs(hi[2] - lo[2]) < 1e-9:
+        out.append("      ☠️ **高度不在参考里**（z 恒定）⟹ 回放侧用 `--ref-z-offset-m` 叠起飞高度")
+    return out
 
 
 def render(model: dict, noise_bag: Optional[Path]) -> str:
@@ -356,10 +454,11 @@ def render(model: dict, noise_bag: Optional[Path]) -> str:
     if nz["sigma_static_quat"] is not None:
         L.append(f"      姿态（静态）σ(xyzw) = "
                  + " ".join(f"{v:.2e}" for v in nz["sigma_static_quat"]))
-    L.append(f"参考：这架飞机在窗口里悬在 ({tk['pos_mean_m'][0]:+.3f}, {tk['pos_mean_m'][1]:+.3f}, "
+    L.append(f"实测：这架飞机在窗口里悬在 ({tk['pos_mean_m'][0]:+.3f}, {tk['pos_mean_m'][1]:+.3f}, "
              f"{tk['pos_mean_m'][2]:+.3f}) m，标准差 "
              + ", ".join(f"{v * 1e3:.1f}" for v in tk["pos_std_m"])
              + " mm，峰峰 xyz = " + ", ".join(f"{v * 1e3:.1f}" for v in tk["pos_p2p_m"]) + " mm")
+    L.extend(render_reference(model["reference"]))
     L.append("状态机：" + " → ".join(f"{s}@{t:.1f}s" for t, s in model["states"]))
     return "\n".join(L)
 
