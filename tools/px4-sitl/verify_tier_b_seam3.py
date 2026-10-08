@@ -6,20 +6,28 @@
 | 判据 | 落地方式 |
 |---|---|
 | ① 起飞到 1 m 悬停、稳态位置误差 < 0.15 m、无持续振荡 | `判据①` + `判据①·振荡` |
-| ② 跑完 Phase 1 的三条轨迹（悬停/正方形/8 字） | **记未达标**（见下） |
+| ② 跑完 Phase 1 的轨迹（**悬停 / r=0.5 m 八字** 两条） | `判据②·轨迹1` + `判据②·轨迹2`（**定性判**，见下） |
 | ③ 注入 50 ms 动捕延迟后仍稳定（可变差、不可发散） | `判据③`（`--extra-delay-ms 50`） |
 | ④ 故意让求解器失败，飞机保持安全悬停而不是坠机 | `判据④`（`--inject-solve-fail-after-frames`） |
 
-★ **判据②为什么记未达标而不是"基本通过"**（操作者裁定「先跑 1/3/4，2 记未达标」）：
-  两条独立的缺口，都不在本票手里 ——
+★★ **判据② 现在怎么判**（操作者裁定，2026-09-30；原话在 11 号票 Comments）：
 
-  1. **正方形那条轨迹没有包**：`bag/` 里四份场景是 静态基线 / ？ / 悬停 / 8 字，
-     `bag/README.md` §①–④ 逐条列了，没有"1 m 正方形"。
-  2. **轨迹跟踪能力本身还不存在**：`/traj/reference` 的消费口在
-     [17 号票](../../.scratch/phase2/issues/17-traj-reference-interface.md)（仍 `needs-triage`），
-     而本节点现在的参考是**锚点 + 常量偏移**（`node_core.hold_reference`）—— 它只会"稳在一个点"。
-     ⟹ 硬要跑"正方形/8 字"就是拿一个位置保持控制器去追一条它看不见的轨迹，
-     读数只说明"没跟踪能力"，不说明任何别的事。**记"未达标 + 实际数值"，不记"基本通过"。**
+  1. **口径去掉「1 m 正方形」**，只留两条：悬停 / **r = 0.5 m 八字**。
+     正方形那条从来没跑过，理由与"没有跟踪能力"一起作废 —— `bag/` 里本来也没有那份包。
+  2. **判定口径 = 定性判：跑完 + 不撞地 + 不失控**；**跟踪误差只留档、不设界**。
+     依据：spec（`docs/control/phase2-implementation.md`）对这一条本来就只有
+     「不撞地、不失控」，**没有数值界** ⟹ **不编阈值**。
+  3. **两条各由一档场次判**：悬停那条由 `--reference-source hold` 的场次判（F0–F4 就是它），
+     八字那条只有 `--reference-source traj` 的场次才可能判（夹具重发包里的 `/traj/reference`）。
+     一场跑不出两条 ⟹ 另一条当场记「**本场不做**」（`ok=None`、**不计数**）：
+     既不冒充通过也不冒充不通过。**汇总时别把"本场不做"读成"通过"。**
+
+  ⚠️ 2026-09-30 之前，这一行是**硬编码的 `False`**（"未达标，缺口不在本票手里"）。
+     那是 17 号票还没落地时的写法：当时节点没有消费 `/traj/reference` 的口（见
+     [17 号票](../../.scratch/phase2/issues/17-traj-reference-interface.md)，**已 `done`**），
+     八字物理上不可能跑；而正方形那条的包在 `bag/` 里也不存在。
+     ⟹ 现在换成真判。一行恒 ❌ 的判据在矩阵里会**掩盖**真实结果（真跑绿了也看不出来），
+     属于最坏的那类静默失败。
 
 **状态源怎么接的**（操作者裁定「包当参考 + 噪声/延迟模型」）：
   `/mocap/pose_enu` ← `mocap_replay.py` = **本场 SITL 真值(t − D) ⊕ 包里量出来的噪声**，
@@ -139,6 +147,15 @@ GROUND_M = 0.05
 #: 判据④ 的"安全悬停"界：末段平均高度与目标之差 < 0.35 m（比判据① 宽 —— 它要回答的是
 #: "有没有保持住"，不是"控得多准"）
 HOVER_TOL_M = 0.35
+
+#: 判据② 的"不失控"界 [°]：**姿态翻过垂直就是失控了** —— 这是个物理分界（倾斜 90° 时升力
+#: 全指向水平、飞机不再被支撑），不是调出来的数。⚠️ 它不是判据② 的主判（主判是窗口内
+#: DUT 帧全在 OFFBOARD），而是**旁证**：见 `_judge_traj` 的 ★。
+LOSS_TILT_DEG = 90.0
+#: 判据② 的八字那条：真值行与 DUT 帧配对的时间容差 [s]。真值 ~250 Hz、DUT ~50 Hz，
+#: 两条流各自带抖动；0.03 s 是"同一时刻"的宽松解释 —— 够把两条流配起来，
+#: 又不会把远处那一拍拉进来冒充。
+PAIR_TOL_S = 0.03
 
 #: 进 obs 的逐帧列。判据层要用的**全部**在这里；其余（`qp_stat`/`quat_drift`/…）只在
 #: DUT 自己那份 JSONL 里留着。少一列的症状是"判据层读不到数"，多一列的症状是 obs.json 变大
@@ -740,6 +757,92 @@ def err_metrics(truth, target, t_lo: float, t_hi: float, tag: str) -> dict:
     return out
 
 
+def traj_err_metrics(frames, truth, t_lo: float, t_hi: float) -> dict:
+    """窗口内**真值 − DUT 自己那一刻的 `x_ref0`** 的误差读数（判据② 的**留档**项）。
+
+    ★★ 为什么拿节点自己的 `x_ref0` 当"该在哪儿"，而不是把参考包的坐标再算一遍：
+      节点算的是 `目标 = 锚点 + p_rel`，锚点是**起飞前那一刻的实测**（B 档还带一次回放
+      噪声抽样）。在外面重算就得自己复刻"锚点取哪一拍"，一旦取错，**锚点的偏差会被
+      算成跟踪误差** —— 与 `ref_target` 那条 ★ 同一个坑。`x_ref0` 是控制器当时真正在
+      追的那个点，拿它做基准等于直接问"追上了没有"。
+      ⚠️ 代价说清楚：这条读数是「真值 vs 控制器**以为**的目标」，不是「真值 vs 包里那条
+      理想八字」。两者差值 = 锚点误差 + 参考路自身的误差，本读数**分不开**它们。
+    ★ 窗口按**真值行**截、DUT 帧按最近邻配对（±`PAIR_TOL_S`）—— 两条流各自有抖动，
+      不配对就只能比"窗口均值 vs 窗口均值"，而那会把相位差抹平。
+    ★★ 这一块**只留档、不设界**（操作者 2026-09-30 裁定：spec 原文对这一条只有
+      「不撞地、不失控」，**没有数值界** ⟹ **不编阈值**）。所以它返回读数、不返回 `ok`。
+    """
+    rows = [r for r in (truth or []) if t_lo <= r[T_WALL] <= t_hi]
+    fs = [f for f in frame_at(frames, wall_lo=t_lo - PAIR_TOL_S, wall_hi=t_hi + PAIR_TOL_S)
+          if f.get("x_ref0") and f.get("wall_ns")]
+    out = {"n": len(rows), "n_paired": 0, "tag": "参考跟踪（留档）",
+           "window_s": round(t_hi - t_lo, 2), "pair_tol_s": PAIR_TOL_S}
+    if not rows or not fs:
+        return out
+    fw = [f["wall_ns"] / 1e9 for f in fs]
+    hz, dz, d3 = [], [], []
+    for r in rows:
+        i = bisect.bisect_left(fw, r[T_WALL])
+        best = None
+        for j in (i - 1, i):
+            if 0 <= j < len(fs) and abs(fw[j] - r[T_WALL]) <= PAIR_TOL_S:
+                if best is None or abs(fw[j] - r[T_WALL]) < abs(fw[best] - r[T_WALL]):
+                    best = j
+        if best is None:
+            continue
+        tgt = fs[best]["x_ref0"]
+        h = math.hypot(r[T_X] - tgt[0], r[T_Y] - tgt[1])
+        z = r[T_Z] - tgt[2]
+        hz.append(h)
+        dz.append(z)
+        d3.append(math.hypot(h, z))
+    if not hz:
+        return out
+    out.update({"n_paired": len(hz),
+                "pair_frac": round(len(hz) / len(rows), 3),
+                "h_mean": statistics.fmean(hz), "h_max": max(hz),
+                "z_mean": statistics.fmean(dz), "z_absmean": statistics.fmean(abs(c) for c in dz),
+                "d3_mean": statistics.fmean(d3), "d3_max": max(d3)})
+    return out
+
+
+def _window_health(frames, truth, t_lo: float, t_hi: float) -> dict:
+    """窗口内判据② 要的三条**定性**读数：跑到了没有、撞没撞地、失控没失控。
+
+    ★ 三个零件的口径（都会被写进判据行的 detail，看得见才谈得上复核）：
+      · `ran`        —— 窗口内 DUT 帧 ≥ 10 **且** 真值点 ≥ 10（数据够不够判）
+      · `air`        —— 窗口内真值最低点 > `GROUND_M`（不撞地）
+      · `offboard_kept` —— 窗口内**每一帧** DUT 报的 `nav_state` 都是 14
+    ★★ 为什么"不失控"的主判取 `nav_state` 而不是倾角：`nav_state` 在**每一帧**日志里
+      都有（`--replay` 也读得到），而倾角只有整场/稳态两个口径、且**含 DUT 停机之后
+      那一段**（真值一直录到收尾）—— 拿整场倾角当窗口判据，一次"停完自己摔了"就会
+      把整个窗口读成失控。倾角因此降级为**旁证**（`_judge_traj` 里照报不设界），
+      这与判据① 那条「没失控的旁证：真值倾角」本来就不设阈值的写法是同一条。
+    """
+    fs = frame_at(frames, wall_lo=t_lo, wall_hi=t_hi)
+    nav = [f.get("nav_state") for f in fs]
+    rows = [r for r in (truth or []) if t_lo <= r[T_WALL] <= t_hi]
+    zs = [r[T_Z] for r in rows]
+    return {"window": [round(t_lo, 3), round(t_hi, 3)],
+            "n_frames": len(fs),
+            "n_offboard": sum(1 for n in nav if n == v.NAV_STATE_OFFBOARD),
+            "n_truth": len(rows),
+            "z_min": (min(zs) if zs else None),
+            "z_max": (max(zs) if zs else None),
+            "ran": len(fs) >= 10 and len(rows) >= 10,
+            "offboard_kept": bool(fs) and all(n == v.NAV_STATE_OFFBOARD for n in nav),
+            "air": bool(zs) and min(zs) > GROUND_M}
+
+
+def _health_detail(h: dict) -> str:
+    """把 `_window_health` 的三条读成一句话 —— 判据行的 detail 与没做行共用。"""
+    return (f"窗口 [{v.fmt(h['window'][0], '.3f')}, {v.fmt(h['window'][1], '.3f')}] s（墙钟）；"
+            f"DUT 帧 {h['n_frames']} 帧（其中 OFFBOARD {h['n_offboard']} 帧）、"
+            f"真值 {h['n_truth']} 点；真值高度区间 "
+            f"[{v.fmt(h['z_min'], '+.3f')}, {v.fmt(h['z_max'], '+.3f')}] m"
+            f"（最低点 > {GROUND_M} ⟹ 不撞地={h['air']}）")
+
+
 def fallback_report(frames) -> dict:
     """兜底阶梯的**现场**：档位分布、切换顺序、注入生效点、hover 那一档的推力。
 
@@ -809,11 +912,158 @@ def divergence(truth, t_lo: float, t_hi: float, t_air_abs=None) -> dict:
 # ------------------------------------------------------------------ 判据层
 
 
+def _judge_traj(ck, obs, seg) -> dict:
+    """判据② —— 两条轨迹，**定性判**：跑完 + 不撞地 + 不失控；跟踪误差**只留档**。
+
+    ★★ 口径的来历（操作者 2026-09-30 裁定，原话在 11 号票 Comments）：
+      · **去掉「1 m 正方形」**：`bag/` 里没有那份包（四份场景逐条见 `bag/README.md`），
+        spec 那一行本来也只剩「悬停 / r=0.5 m 八字」两条；
+      · spec 原文（`docs/control/phase2-implementation.md`）对这一条只有
+        「**不撞地、不失控**」，**没有数值界** ⟹ **不编阈值**。跟踪误差照样算、
+        照样进 `obs.json`（`traj_err_metrics`），但它**不当判据**。
+
+    ⚠️ 这里原来是一行**硬编码的 `False`**（"未达标 —— 缺口是两个，都不在本票手里"）。
+      那是 **17 号票还没落地**时的写法：当时节点没有消费 `/traj/reference` 的口，
+      八字那条物理上不可能跑。17 号票收口（`83422f9`）之后那条口接通了，这行必须换成
+      **真判** —— 一行恒 ❌ 的判据在矩阵里会**掩盖**真实结果（真跑绿了也看不出来），
+      而同一条判据在 `--replay` 下又永远不会变，属于最坏的那类静默失败。
+
+    ★★ 为什么**两条轨迹各由一档场次来判**、另一条当场记「本场不做」：
+      悬停那条由 `--reference-source hold` 的场次判 —— F0–F4 就是它，也就是 Phase 1
+      轨迹 1 的真身（那几场的参考恒为锚点、飞机原地悬停）；
+      八字那条只有 `--reference-source traj` 的场次才**可能**判。
+      一场跑不出两条 ⟹ 若两条都 `counts=True`，**每一场都会凭空多一条不通过**，
+      而那是"这一场没跑它"、不是"它不通过"。所以另一条 `counts=False`（`ok=None`）：
+      既不冒充通过、也不冒充不通过，与判据③「这一条没做」是同一条三分法。
+    ★ 「本场不做」的那条**不进 `counts`**，但**进报告**：矩阵汇总时要靠它认出
+      "两条轨迹各由哪几场覆盖"，否则「判据② 全绿」会与「判据② 只跑了一条」长得一样。
+    """
+    frames = obs.get("frames") or []
+    truth = obs.get("truth") or []
+    src = obs.get("reference_source") or "hold"
+    tt = obs.get("t") or {}
+    lo = seg.get("liftoff_t") if isinstance(seg, dict) else None
+    #: 离地的**绝对墙钟**。★★ 窗口必须从这一刻起：OFFBOARD 起手那一刻飞机**还在地面**
+    #: （`offboard_enter_t` 是"模式生效"、不是"离地"），而判据② 的"不撞地"是
+    #: `窗口内最低点 > GROUND_M` —— 窗口若从 OFFBOARD 起算，**任何一场都会读成撞地**。
+    #: 真值第 7 列（`T_WALL`）才是绝对墙钟，第 0 列是流自己的时基：两者相加不能写反。
+    t_air_abs = (truth[0][T_WALL] + lo) if (truth and lo is not None) else None
+    out = {}
+
+    def _flight_window():
+        """控制住的那段窗口（绝对墙钟）—— 判据② 只在窗口里读，不读停机后的自由落体。"""
+        ov, end = tt.get("offboard_enter_t"), tt.get("flight_end_t")
+        if all(isinstance(x, (int, float)) for x in (ov, end)) and end > ov:
+            return float(ov), float(end), "OFFBOARD 起 → 收手前"
+        fs = [f for f in frames if f.get("wall_ns")]
+        if len(fs) < 2:
+            return None
+        return (fs[0]["wall_ns"] / 1e9, fs[-1]["wall_ns"] / 1e9,
+                "DUT 首帧 → 末帧（☠️ 旧 obs 没有 `offboard_enter_t` 时的退路；"
+                "它含停机后那一段，读数偏悲观）")
+
+    # ── 轨迹 1：原地悬停（Phase 1 轨迹 1；由 `hold` 档的场次判）
+    if src != "hold":
+        ck("★判据②·轨迹1 原地悬停（定性：跑完 + 不撞地 + 不失控）", None,
+           f"本场 `--reference-source {src}` ⟹ **这一条没做**（不是通过也不是不通过）。"
+           f"★ 判它的场次是 `--reference-source hold` 那几场 —— 那一档的参考恒为锚点，"
+           f"飞机原地悬停，就是 Phase 1 轨迹 1 的真身。", counts=False)
+        out["hover"] = {"ran": False, "why": "本场是 traj 档"}
+    else:
+        w = _flight_window()
+        if w is None:
+            ck("★判据②·轨迹1 原地悬停（定性：跑完 + 不撞地 + 不失控）", None,
+               "没有逐帧日志也没有真值 ⟹ **这一条判不了**，不当作通过也不当作不通过",
+               counts=False)
+        else:
+            h = _window_health(frames, truth, max(w[0], t_air_abs or w[0]), w[1])
+            out["hover"] = h
+            tilt = (f"全程最大倾角 {v.fmt(obs.get('tilt_deg_max'), '.2f')}°（|·| < "
+                    f"{LOSS_TILT_DEG:g}° 才是「没翻过去」⇔ 未失控，**旁证，不设界**）")
+            if not h["ran"]:
+                ck("★判据②·轨迹1 原地悬停（定性：跑完 + 不撞地 + 不失控）", None,
+                   f"{_health_detail(h)}；窗口（{w[2]}）里数据不够 ⟹ **这一条判不了**"
+                   f"（仪器没覆盖到窗口，不是飞机飞得不好）", counts=False)
+            else:
+                ok = bool(h["offboard_kept"] and h["air"] and lo is not None)
+                ck("★判据②·轨迹1 原地悬停（定性：跑完 + 不撞地 + 不失控）", ok,
+                   f"{_health_detail(h)}；起飞于 t={v.fmt(lo, '.2f')}s（真值流时基）；"
+                   f"窗口取法 {w[2]}；{tilt}。"
+                   f"★ 判的是**三条定性**（跑完 {h['offboard_kept'] and h['ran']}、"
+                   f"不撞地 {h['air']}、不失控 {h['offboard_kept']}）；"
+                   f"精度那条在 **★判据①**，不在这里重复。")
+
+    # ── 轨迹 2：r = 0.5 m 八字（由 `traj` 档的场次判；参考 = 夹具重发包里的 `/traj/reference`）
+    tl = obs.get("reference_timeline") or {}
+    if src != "traj":
+        ck("★判据②·轨迹2 r = 0.5 m 八字（定性：跑完 + 不撞地 + 不失控；跟踪误差只留档）",
+           None,
+           f"本场 `--reference-source {src}` ⟹ **这一条没做**（不是通过也不是不通过）。"
+           f"★ 判它的场次是 `--reference-source traj` 那几场（夹具按 `bag/"
+           f"4_traj3_lemniscate` 里的 `/traj/reference` 逐点重发；高度由 `--ref-z-offset-m` "
+           f"叠在夹具侧）。", counts=False)
+        out["lemniscate"] = {"ran": False, "why": "本场是 hold 档"}
+    elif not tl.get("n"):
+        ck("★判据②·轨迹2 r = 0.5 m 八字（定性：跑完 + 不撞地 + 不失控；跟踪误差只留档）",
+           None,
+           f"本场是 traj 档，但**参考时间线读不到**（{tl.get('why') or '没有日志'}）"
+           f"⟹ **这一条判不了** —— 「八字到底发出去没有、发到哪一刻」全靠这条日志，"
+           f"没有它就只剩一句「应该发了」。★ 不当作通过也不当作不通过", counts=False)
+        out["lemniscate"] = {"ran": False, "why": tl.get("why") or "没有日志"}
+    elif not tl.get("n_moving"):
+        ck("★判据②·轨迹2 r = 0.5 m 八字（定性：跑完 + 不撞地 + 不失控；跟踪误差只留档）",
+           None,
+           f"参考时间线里**没有一帧在动**（共发 {tl.get('n')} 帧，全在原点）⟹ **这一条没做**。"
+           f"★ 这本身就是夹具的**征兆**：包里那条参考的移动段在 `bag/4_traj3_lemniscate` 里"
+           f"是前 305 帧\n（t ≤ 6.10 s），发成不动只有两种可能 —— 模型文件里 `reference` "
+           f"块是空的，或者 `--publish-reference` 没接上。", counts=False)
+        out["lemniscate"] = {"ran": False, "why": "参考全程不动"}
+    else:
+        #: `r_lo/r_hi` = 参考**自己**的移动段（判"跑完"用），`m_lo/m_hi` = 判据**读数的窗口**
+        #: （从离地那一刻起，见上）。两者分开：把窗口下界抬到离地会让"参考在离地前就动了"
+        #: 这件事**看不出来**，而那正是"八字没跑完"的一种。
+        r_lo, r_hi = tl["move_first_s"], tl["move_last_s"]
+        m_lo, m_hi = max(r_lo, t_air_abs or r_lo), r_hi
+        h = _window_health(frames, truth, m_lo, m_hi)
+        er = traj_err_metrics(frames, truth, m_lo, m_hi)
+        out["lemniscate"] = {**h, "ref": tl, "err": er}   # ← 误差读数随判据块留档
+        ov, end = tt.get("offboard_enter_t"), tt.get("flight_end_t")
+        # 跑完的**接线**判据：移动段必须整段落在 OFFBOARD 窗口里。
+        # ★ 只有 ov/end 都在才判它（旧 obs 没有 ⟹ 这一项 `None`，不冒充通过）。
+        fits = (None if not all(isinstance(x, (int, float)) for x in (ov, end))
+                else bool(r_lo >= ov and r_hi <= end))
+        tilt = (f"全程最大倾角 {v.fmt(obs.get('tilt_deg_max'), '.2f')}°"
+                f"（旁证，不设界；★ 它含停机后那一段，别拿它当窗口判据）")
+        head = (f"参考移动段 [{v.fmt(r_lo, '.3f')}, {v.fmt(r_hi, '.3f')}] s，"
+                f"长 {v.fmt(tl.get('move_span_s'), '.2f')} s、共 {tl['n_moving']} 帧"
+                f"（时间线共 {tl['n']} 帧，相位分布 {tl.get('by_phase')}）；"
+                f"OFFBOARD 窗口 [{v.fmt(ov, '.3f')}, {v.fmt(end, '.3f')}] s ⟹ "
+                f"参考移动段整段落在窗口内={fits}（★ 判的是**参考**那一段，不是窗口；"
+                f"读数窗口另从离地那一刻算，见下）；{_health_detail(h)}；{tilt}。")
+        if not h["ran"]:
+            ck("★判据②·轨迹2 r = 0.5 m 八字（定性：跑完 + 不撞地 + 不失控；跟踪误差只留档）",
+               None,
+               f"{head}★ 移动段里数据不够 ⟹ **这一条判不了**（仪器没覆盖到窗口，"
+               f"不是飞机飞得不好）", counts=False)
+        else:
+            ck("★判据②·轨迹2 r = 0.5 m 八字（定性：跑完 + 不撞地 + 不失控；跟踪误差只留档）",
+               bool(h["offboard_kept"] and h["air"] and fits is not False),
+               f"{head}**跟踪误差（只留档，spec 没有数值界 ⟹ 不设判据）**："
+               f"真值 − DUT 自己的 `x_ref0`，水平均值 "
+               f"{v.fmt(er.get('h_mean'), '.4f')} m / 最大 {v.fmt(er.get('h_max'), '.4f')} m、"
+               f"3D 均值 {v.fmt(er.get('d3_mean'), '.4f')} m（配对上 "
+               f"{er.get('n_paired')}/{er.get('n')} 点，容差 ±{PAIR_TOL_S:g} s）。"
+               f"★ 判的是**三条定性**（跑完 {fits}、不撞地 {h['air']}、"
+               f"不失控 {h['offboard_kept']}）；误差那一列**只是留档**，"
+               f"高不影响 ok、低也不加分 —— 操作者 2026-09-30 裁定「不编阈值」。")
+    return out
+
+
 def evaluate_b(obs) -> list:
     """把 B 档的观测翻成 seam 3 的四条判据。**仪器与判据分开**（`--replay` 不重跑 SITL）。
 
     ⚠️ **它不是纯函数，尽管名字像**：判的过程要把几个派生块**写回 `obs`**
-    （`fallback_report` / `att_err_deg` / `steady` / `osc` / `diverge` / `m5`），
+    （`fallback_report` / `att_err_deg` / `steady` / `osc` / `diverge` / `m5` / `traj`），
     因为 `obs.json` 要留档的正是这些块（文档 §5/§7/§8 的数字就是从它们来的），
     而判据行只回答"过没过"、不重复装数字。
     两个后果，用之前先看一眼：
@@ -1097,18 +1347,8 @@ def evaluate_b(obs) -> list:
        f"每帧带 `sat` 列={(obs.get('dut') or {}).get('sat_logged')}、"
        f"档位分布 {fb.get('dist')}")
 
-    # ⑨ 判据②：记未达标（不计数为"通过"，也不假装"基本通过"）
-    ck("★判据② 跑完 Phase 1 的三条轨迹（悬停 / 1 m 正方形 / r=0.5 m 8 字）", False,
-       "**未达标** —— 两条独立的缺口，都不在本票手里："
-       "（a）`bag/` 里**没有「1 m 正方形」那份包**（四份场景逐条见 `bag/README.md` §①–④）；"
-       "（b）节点的参考是**锚点 + 常量偏移**（`node_core.hold_reference`），"
-       "**没有轨迹跟踪能力** —— 消费 `/traj/reference` 的那个口在 **17 号票**（仍 needs-triage）。"
-       "本场实际做的是**悬停那一条**（判据① 的读数就是它）。"
-       "★ 操作者 2026-09-29 裁定：「先跑 1/3/4，2 记未达标」；"
-       "票面也要求「记录未达标 + 实际数值」而不是「基本通过」。"
-       f"本场实测：悬停稳态水平误差 {v.fmt((obs.get('steady') or {}).get('h_mean'), '.4f')} m、"
-       f"高度误差 {v.fmt((obs.get('steady') or {}).get('z_mean'), '+.4f')} m；"
-       "第三/四条轨迹**没有运行**（没有参考可追）")
+    # ⑨ 判据②：两条轨迹（悬停 / r=0.5 m 八字）—— 定性判，误差只留档
+    obs["traj"] = _judge_traj(ck, obs, seg)
     return c
 
 

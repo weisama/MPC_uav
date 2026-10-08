@@ -13,8 +13,9 @@ A 档已经栽过两次同类：判据⑤ 在一场爬升里照样过、判据�
      报告指向控制器，而真身是判据自己；
   2. **稳定窗口止于最后一次正常帧** —— 否则判据④ 那场（注入后全程兜底）会把
      "兜底保不住高度"记成"判据① 悬停精度不行"，两件事混成一条 ❌；
-  3. **判据② 恒为未达标且计入** —— 票面要求"记录未达标 + 实际数值"，
-     一个 `ok=True` 的假绿会让整份报告读成"全部通过"；
+  3. **判据② 是两条轨迹、一场只判其中一条** —— 另一条当场记「本场不做」（`ok=None`、
+     **不计数**）；而跟踪误差**只留档、不设界**（spec 只说"不撞地、不失控"，
+     操作者 2026-09-30 明令**不编阈值**）⟹ 有一条**反向**断言钉着"误差再大也不改判"；
   4. **"没做" / "判不了" / "不通过" 的三分法** —— 前两者是 `ok=None` + `counts=False`，
      只有第三者才计数；而"仪器没覆盖到窗口"另有一条**计数**的前置行兜底；
   5. **判据④ 的 A/B/C 三层分开** —— 阶梯走没走（结构证据：悬停帧的推力恒等于
@@ -28,6 +29,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import math
 import sys
 from pathlib import Path
 
@@ -85,13 +87,20 @@ def wall(i, hz=FRAME_HZ):
     return (int(T_ABS0 * 1e9) + int(round(i * 1e9 / hz))) / 1e9
 
 
-def frame(i, *, fallback="normal", ref=(0.0, 0.0, 1.0), thrust=None, note=""):
-    """一"帧"DUT 逐帧日志（只造判据层真正读的那几列）。"""
+def frame(i, *, fallback="normal", ref=(0.0, 0.0, 1.0), thrust=None, note="",
+          nav_state=None):
+    """一"帧"DUT 逐帧日志（只造判据层真正读的那几列）。
+
+    ★ `nav_state` 默认取 `OFFBOARD`（14）而不是 `None`：判据② 的"不失控"就判在它上面，
+      默认留空的话**每一场人造场次都会被判成失控** —— 那会把"夹具少造了一列"伪装成
+      "飞机失控"，正是本文件开头说的那类假象。真实帧里这一列恒在（`FRAME_KEYS`）。
+    """
     return {"wall_ns": int(T_ABS0 * 1e9) + int(round(i * 1e9 / FRAME_HZ)),
             "tick": i, "fallback": fallback, "fallback_note": note,
             "x_ref0": list(ref), "thrust_body_z": thrust, "sat": [],
             "ref_anchor": "anchor" if i == 0 else "", "age_state_s": 0.01,
-            "state_source": "mocap"}
+            "state_source": "mocap",
+            "nav_state": b.v.NAV_STATE_OFFBOARD if nav_state is None else nav_state}
 
 
 def rise_traj(t):
@@ -297,16 +306,126 @@ def test_判据1振荡_平的就过():
     assert one(b.evaluate_b(make_obs()), "★判据①·振荡")["ok"] is True
 
 
-# ────────────────────────────────────────────── 判据②（恒未达标）
+# ────────────────────────────────────────────── 判据②（两条轨迹，**定性判**）
 
 
-def test_判据2恒定记未达标_且计入():
-    """★ 票面要求"记录未达标 + 实际数值"。若写成 `ok=True`（或 `counts=False`），
-    整份报告会读成"全部通过" —— 那正是票面点名禁止的"基本通过"。"""
-    for kw in ({}, {"mismatch": "mass+30"}, {"extra_delay_ms": 50.0}):
-        ck = one(b.evaluate_b(make_obs(**kw)), "★判据②")
-        assert ck["ok"] is False and ck["counts"] is True
-        assert "17 号票" in ck["detail"] and "未达标" in ck["detail"]
+def lemniscate(t):
+    """造一条"会动的"参考（r=0.5 的八字量级）：先爬升到 1 m，再画。
+
+    ★ 判据②·轨迹2 只要求"参考动过、且整段落在 OFFBOARD 窗口里"，不要求它真是八字
+      —— 形状那件事由 `bag/4_traj3_lemniscate` 与 `mocap_model` 那边的读数保证，
+      这里造的是**判据层的输入**，不是参考本身。
+    """
+    return (0.5 * math.sin(t), 0.25 * math.sin(2 * t), min(1.0, t))
+
+
+def traj_obs(*, ref_fn=lemniscate, truth_fn=lemniscate, move=None, n_moving=None,
+             nav_state=None):
+    """`--reference-source traj` 的一场（参考会动、时间线落在 OFFBOARD 窗口里）。
+
+    `x_ref0` 与真值走**同一条**路径 ⟹ 跟踪误差 ≈ 0；要造误差就传另一个 `truth_fn`。
+    """
+    ov, end = T_ABS0 + 2.0, T_ABS0 + 18.0
+    frames = [frame(i, ref=ref_fn(wall(i) - T_ABS0), nav_state=nav_state)
+              for i in range(int(DUR_S * FRAME_HZ))]
+    obs = make_obs(frames=frames, truth=truth_(fn=truth_fn))
+    obs["reference_source"] = "traj"
+    obs["t"] = {"offboard_enter": 2.0, "offboard_enter_t": ov, "flight_end_t": end}
+    m_lo, m_hi = move or (T_ABS0 + 3.0, T_ABS0 + 14.0)
+    obs["reference_timeline"] = {
+        "n": 1300, "n_moving": 900 if n_moving is None else n_moving,
+        "by_phase": {"pre": 200, "bag": 900, "hold": 200},
+        "first_s": T_ABS0 + 2.5, "last_s": T_ABS0 + 17.5,
+        "move_first_s": m_lo, "move_last_s": m_hi,
+        "move_span_s": round(m_hi - m_lo, 3)}
+    return obs
+
+
+def test_判据2_悬停场判轨迹1_八字那条记本场不做():
+    """`hold` 档判**悬停**那条；八字那条当场记「本场不做」（`ok=None`、**不计数**）。
+
+    ★ 为什么另一条不能也计数：一场跑不出两条轨迹。两条都 `counts=True` 的话，
+      每一场都会凭空多一条"不通过"，而那是"这一场没跑它"、不是"它不通过"。
+    """
+    checks = b.evaluate_b(make_obs())
+    hover = one(checks, "★判据②·轨迹1")
+    lem = one(checks, "★判据②·轨迹2")
+    assert hover["ok"] is True and hover["counts"] is True
+    assert lem["ok"] is None and lem["counts"] is False
+    assert "reference-source traj" in lem["detail"]
+
+
+def test_判据2_八字场判轨迹2_悬停那条记本场不做():
+    obs = traj_obs()
+    checks = b.evaluate_b(obs)
+    hover = one(checks, "★判据②·轨迹1")
+    lem = one(checks, "★判据②·轨迹2")
+    assert lem["ok"] is True and lem["counts"] is True
+    assert hover["ok"] is None and hover["counts"] is False
+    # 误差读数必须**留档**（操作者要求：不设界，但要有数）
+    # ★ `pair_frac` 是这一条的关键：两条流要真的配起来（`PAIR_TOL_S` 那条容差
+    #   在这上面才是承重的）。只断言"配上了几个点"的话，容差写坏成 0（只有恰好同刻的
+    #   才配上）照样能过 —— 变异测试实测：`n_paired > 100` 在容差归零时**仍绿**。
+    err = obs["traj"]["lemniscate"]["err"]
+    assert err["n_paired"] > 100 and err["pair_frac"] > 0.95 and err["h_mean"] < 0.01
+
+
+def test_判据2_跟踪误差只留档_再大也不改判():
+    """★★ 操作者 2026-09-30 裁定：spec 原文对这一条只有「不撞地、不失控」，**没有数值界**
+    ⟹ **不编阈值**。把真值整体平移 3 m（误差远大于判据① 的 0.15 m 界），
+    判据② 的 `ok` 仍必须是 `True`、误差照样进 `obs["traj"]["lemniscate"]["err"]`。
+
+    ★ 这是一条**反向**断言（"偏这么多该不过"的直觉在这里是错的）。没有它，下一个人
+      "顺手"给误差补个阈值就能全绿通过 —— 而那正是票面明令禁止的编阈值。
+    """
+    obs = traj_obs(truth_fn=lambda t: (lemniscate(t)[0] + 3.0, lemniscate(t)[1]
+                                       + 3.0, lemniscate(t)[2]))
+    lem = one(b.evaluate_b(obs), "★判据②·轨迹2")
+    assert lem["ok"] is True and lem["counts"] is True
+    assert obs["traj"]["lemniscate"]["err"]["h_mean"] > 3.0
+    assert "只留档" in lem["detail"]
+
+
+def test_判据2_八字没在OFFBOARD窗口里跑完就不过():
+    """八字**跑出**了 OFFBOARD 窗口 ⟹ 那一段不受控 —— 判"没跑完"，且**计数**。"""
+    obs = traj_obs(move=(T_ABS0 + 1.0, T_ABS0 + 19.0))     # 起点早于 OFFBOARD、终点晚于收手
+    lem = one(b.evaluate_b(obs), "★判据②·轨迹2")
+    assert lem["ok"] is False and lem["counts"] is True
+    assert "整段落在窗口内=False" in lem["detail"]
+
+
+def test_判据2_参考一帧没动记没做_不计数():
+    """参考全程不动是**夹具的征兆**，不是"飞机飞完了八字" ⟹ 记「没做」，不计数。"""
+    obs = traj_obs(n_moving=0)
+    lem = one(b.evaluate_b(obs), "★判据②·轨迹2")
+    assert lem["ok"] is None and lem["counts"] is False
+    assert "没有一帧在动" in lem["detail"]
+
+
+def test_判据2_参考时间线读不到记判不了_不计数():
+    obs = traj_obs()
+    obs["reference_timeline"] = {"n": 0, "why": "没有日志"}
+    lem = one(b.evaluate_b(obs), "★判据②·轨迹2")
+    assert lem["ok"] is None and lem["counts"] is False
+    assert "判不了" in lem["detail"]
+
+
+def test_判据2_悬停时离了OFFBOARD就算失控_不过():
+    """★ "不失控"判在**逐帧 nav_state** 上：一帧掉出 OFFBOARD 就说明那一段不受控。
+
+    人造场记默认 OFFBOARD，所以这里必须**主动弄坏**才能确认这一条有鉴别力
+    （变异测试：断言红不了就是没鉴别力）。
+    """
+    frames = [frame(i) for i in range(int(DUR_S * FRAME_HZ))]
+    frames[1000]["nav_state"] = 2                          # 掉出 OFFBOARD 一帧
+    hover = one(b.evaluate_b(make_obs(frames=frames)), "★判据②·轨迹1")
+    assert hover["ok"] is False and hover["counts"] is True
+
+
+def test_判据2_悬停时掉到地面就算撞地_不过():
+    truth = truth_(fn=lambda t: (0.0, 0.0, min(1.0, t) if t < 15 else 0.02))
+    hover = one(b.evaluate_b(make_obs(truth=truth)), "★判据②·轨迹1")
+    assert hover["ok"] is False and hover["counts"] is True
 
 
 # ────────────────────────────────────────────── 判据③（延迟）
@@ -426,11 +545,18 @@ def test_判据4C_归属行不计数():
 # ────────────────────────────────────────────── 整体
 
 
-def test_悬停场_计入的判据里只有判据2不通过():
-    """一场**正常悬停**的账面：除了票面要求记未达标的判据②，其余都该过
-    —— 这条给"判据层是不是整体判反了"一个一毫秒的答案。"""
-    bad = failed(b.evaluate_b(make_obs()))
-    assert len(bad) == 1 and bad[0].startswith("★判据②"), bad
+def test_悬停场_计入的判据全过():
+    """一场**正常悬停**的账面：计入的判据**一条都不该红**
+    —— 这条给"判据层是不是整体判反了"一个一毫秒的答案。
+
+    ★ 它原来断言「只有判据② 红」（那时判据② 是一行硬编码 `False`）。现在判据②
+      是真判，一场正常悬停该判 ✅ ⟹ 断言反过来：`failed()` 必须**空**。
+      ⚠️ 空名单 ≠ 全绿：判据② 的八字那条在这一场是 `counts=False`（本场不做），
+      它**不在** `failed()` 里也不在"通过"里 —— 这正是它想要的（矩阵汇总另算）。
+    """
+    checks = b.evaluate_b(make_obs())
+    assert failed(checks) == [], failed(checks)
+    assert one(checks, "★判据②·轨迹2")["counts"] is False
 
 
 def test_DUT一帧都没发时提前收手_且判据层不崩():
