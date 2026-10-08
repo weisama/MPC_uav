@@ -1444,15 +1444,21 @@ def _judge_m5(ck, obs, fb, ph, truth) -> None:
 # ------------------------------------------------------------------ 报告
 
 
-def traj_model_problem(model_path) -> str | None:
+def traj_model_problem(model_path, *, ref_hold_s=None, hold_s=None) -> str | None:
     """traj 档的**模型自检**：模型里必须真有一条参考。没问题返回 `None`，否则返回原因。
 
     ★★ 为什么要它：`--model` 的默认是**包 3**（悬停那条），它那份模型里的
       `/traj/reference` 是**恒为 0** 的（3873 帧全在原点，见 `mocap_model.TRAJ_TOPIC` 的 ☠️）。
       拿错模型的症状**完全静默**：夹具发帧无异常、飞机照飞、报告说"参考一帧没动"——
       而那读起来像"夹具坏了"。与其让操作者空烧一个窗口才发现，不如在起世界之前拦住。
-    ★ 抽成**纯函数**是为了能离线单测：这一段原来是 `main()` 里的一行 `if`，
+    ★ 抽成**纯函数**是为了能离线单测：这一段原来在 `main()` 里，
       而 `main()` 的每条路都要起 `BWorld` —— 拿它做变异测试就得烧一个窗口。
+
+    ★★ 顺带把 `--hold-s` 那条下界从**拍脑袋**改成**从模型现算**：`--hold-s` 是从
+      OFFBOARD 生效起算的，而 OFFBOARD 生效**落在夹具的 `pre` 段里**（那一刻飞机还在爬）。
+      最坏情况 = `pre` 段在 OFFBOARD 之后还要走满 `ref_hold_s`，再走完整条参考
+      （`reference.span_s`），最后才是判据① 要的 `STEADY_S` 悬停窗口。少一截的症状是
+      **判据① 的稳态窗口里混进八字或爬升段** —— 读出来像"悬停精度很差"，与控制器无关。
     """
     try:
         model = json.loads(Path(model_path).read_text(encoding="utf-8"))
@@ -1467,6 +1473,17 @@ def traj_model_problem(model_path) -> str | None:
                 f"    --model tools/px4-sitl/evidence/tier-b/mocap-model-4.json\n"
                 f"  重新生成：python3 tools/px4-sitl/mocap_model.py dump "
                 f"bag/4_traj3_lemniscate --json <路径>")
+    span = ref.get("span_s")
+    if ref_hold_s is not None and hold_s is not None and isinstance(span, (int, float)):
+        need = float(ref_hold_s) + float(span) + STEADY_S
+        if hold_s < need:
+            return (f"--hold-s={hold_s:g} 太短：traj 档至少要 "
+                    f"ref_hold_s {ref_hold_s:g}（顶住首点等飞机起来）+ 参考全长 "
+                    f"{span:.2f}（模型里量出来的）+ 判据① 的稳态窗口 {STEADY_S:g} = "
+                    f"{need:.2f} s。\n"
+                    f"  ★ 这三段是**串起来的**，少一截的症状是**判据① 的稳态窗口里混进"
+                    f"八字或爬升段** —— 读出来像「悬停精度很差」，而控制器没问题。\n"
+                    f"  给个整数：--hold-s {math.ceil(need):d}")
     return None
 
 
@@ -1553,8 +1570,11 @@ def main(argv=None) -> int:
                          f"  python3 tools/px4-sitl/mocap_model.py dump {bag} "
                          f"--json {args.model}")
     if args.reference_source == "traj":
-        # ☠️ 第三条静默错法：**拿错模型**（默认那份来自包 3，参考恒为 0）。见纯函数那条 ★。
-        problem = traj_model_problem(args.model)
+        # ☠️ 第三条静默错法：**拿错模型**（默认那份来自包 3，参考恒为 0）—— 见纯函数那条 ★。
+        #    顺带在那里把 `--hold-s` 的下界**从模型现算**（替代原来那句拍脑袋的
+        #    `hold_s >= ref_hold_s + 10`：它算不出"参考全长"这一截）。
+        problem = traj_model_problem(args.model, ref_hold_s=args.ref_hold_s,
+                                     hold_s=args.hold_s)
         if problem:
             raise SystemExit(problem)
         # ☠️ 两条静默错法各堵一道。写反了不会报错，只会让报告说"飞机没动"：
@@ -1568,10 +1588,6 @@ def main(argv=None) -> int:
             raise SystemExit("--reference-source traj 且高度 0 ⟹ 参考全在**地面**上"
                              "（包里的参考 z ≡ 0，锚点又定在地面那一拍）—— "
                              "用 --hold-z（或 --ref-z-offset-m）给一个起飞高度")
-        if args.hold_s < args.ref_hold_s + 10.0:
-            raise SystemExit(f"--hold-s={args.hold_s} 太短：traj 档要先用 --ref-hold-s="
-                             f"{args.ref_hold_s} 顶住首点等飞机起来，八字本身还要 ~6.1 s "
-                             f"（包 4 的移动段），合计至少 {args.ref_hold_s + 10.0:.0f} s")
     args.plant_param = plant_param_file(args.mismatch)
     args.model_hover_thrust = args.hover_thrust
     args.build_dir = args.build_dir or str(Path(args.src) / "build/px4_sitl_default")

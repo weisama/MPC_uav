@@ -464,6 +464,27 @@ def test_入库的两份模型各判各的():
     assert b.traj_model_problem(m4) is None, "包 4 的模型该带上那条八字参考"
 
 
+def test_hold_s太短就拦住_下界从模型现算():
+    """★ `--hold-s` 的下界**从模型里量出来的参考全长现算**，不是拍脑袋。
+
+    规则：`hold_s ≥ ref_hold_s + 参考全长 + 判据① 的稳态窗口`。三段是**串起来的**
+    （`pre` 顶住首点 → 参考整条 → 留出稳态窗口），少一截的症状是判据① 的稳态窗口里
+    混进八字或爬升段 —— 读出来像"悬停精度很差"，而控制器没问题。
+    """
+    ev = Path(b.__file__).resolve().parent / "evidence" / "tier-b"
+    m4 = ev / "mocap-model-4.json"
+    span = json.loads(m4.read_text(encoding="utf-8"))["reference"]["span_s"]
+    need = 30.0 + span + b.STEADY_S
+    assert b.traj_model_problem(m4, ref_hold_s=30.0, hold_s=need + 1.0) is None
+    # ★ `run_matrix.sh` 的 `T0)` 那一行**逐字**过一遍：改脚本时这一条会先红。
+    assert b.traj_model_problem(m4, ref_hold_s=30.0, hold_s=60.0) is None
+    short = b.traj_model_problem(m4, ref_hold_s=30.0, hold_s=need - 1.0)
+    assert short is not None and "太短" in short and f"{need:.2f}" in short
+    # ☠️ 那一句拍脑袋的旧下界（`ref_hold_s + 10`）**必须被这条判死**：
+    #    它算不出"参考全长"这一截，包 4 的参考有 20.56 s ⟹ 差着整整一条八字。
+    assert b.traj_model_problem(m4, ref_hold_s=30.0, hold_s=41.0) is not None
+
+
 # ────────────────────────────────────────────── 判据③（延迟）
 
 

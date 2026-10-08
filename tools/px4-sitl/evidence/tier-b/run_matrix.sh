@@ -1,5 +1,6 @@
 #!/bin/bash
-# ticket 11 的五场矩阵（F0 归因对照 / F1 判据① / F2 判据③ / F3 判据④失配 / F4 判据④标称）
+# ticket 11 的矩阵（F0 归因对照 / F1 判据① / F2 判据③ / F3 判据④失配 / F4 判据④标称
+#              + F0b/F1b、F0c/F1c 两次复跑（ticket 20）+ **T0 八字那一场**（判据②·轨迹2））
 # ⚠️ 必须在**空机**上跑：这套数字里有一条是"实测最坏求解耗时"，多一个进程就把它抬高（A 档 §5.1）。
 #
 # ☠️ 别加 `set -u`：ROS 的 setup.bash 会读**未定义变量**，非交互 shell 下 `set -u`
@@ -96,6 +97,25 @@ for tag in ${TAGS:-F0 F1 F2 F3 F4}; do
     #   （§11.2），`ki_z` 仍是 1.0。
     F0c) fly F0c --mismatch none ;;
     F1c) fly F1c --mismatch mass+30 ;;
+    # ── 判据② 的第二条轨迹：r = 0.5 m 八字（2026-10-08）──
+    # 这一场**不是** F 系列：`F*` 是"锚点 + 常量偏移"的定点悬停场，这一场让夹具逐点重发
+    # 包 4 里那条 `/traj/reference`（`--publish-reference`），DUT 在 `reference_source=traj`
+    # 下追它 ⟹ 判据②·轨迹2 才有得判（判据②·轨迹1 由 F0c/F1c 那几场判）。
+    # ☠️ 三个都是"写错了完全静默"的旋钮，逐条说明：
+    #   ① `--model` **必须**是包 4 那份：包 3 的参考**恒为 0**（3873 帧全在原点），
+    #      拿错了夹具发帧无异常、飞机照飞，报告里只剩一句"参考一帧没动"。验证器
+    #      `traj_model_problem()` 会在起世界之前拦住（纯函数，`test_tier_b_judges.py` 钉着）。
+    #   ② `--hold-s 60`：下界 = 顶住首点 30 + 参考全长 20.56（模型里量的）+ 判据① 稳态窗口 8
+    #      = 58.56 s。**一个都少不得**，少一截会让判据① 的稳态窗口混进八字/爬升段 ——
+    #      读出来像"悬停精度很差"，与控制器无关。59 是下界，给 60 留一拍。
+    #   ③ `--hold-z 1.0`（默认）在 traj 档**不是** DUT 的 `hold_offset_z`，而是夹具的
+    #      `--ref-z-offset-m`：包里的参考 z ≡ 0（那是一条贴地画的八字），高度得由夹具叠。
+    #      DUT 那一档的 `hold_offset` 必须全 0（非零会被 `mpc_node` 拒跑）。
+    # ⚠️ `--mismatch mass+30`：与 F1c 同一档错参数 ⟹ 读数可与 F1c 并排看
+    #    （"同一架错参数的飞机，定点悬停 vs 追八字"）。要归因对照再加一场 `none`。
+    T0) fly T0 --mismatch mass+30 --reference-source traj \
+             --model tools/px4-sitl/evidence/tier-b/mocap-model-4.json \
+             --hold-s 60 ;;
     *)  say "不认识的场次 $tag"; exit 2 ;;
   esac
 done
@@ -103,14 +123,25 @@ done
 say "全部跑完，汇总："
 python3 - <<'PY' 2>&1 | tee -a "$LOG"
 import json, pathlib
-for tag in ("F0", "F1", "F2", "F3", "F4"):
+for tag in ("F0", "F1", "F2", "F3", "F4", "T0"):
     p = pathlib.Path(f"/tmp/tier-b/{tag}.json")
     print("=" * 78)
     if not p.exists():
         print(f"{tag}: ⚠️ 没有 json"); continue
     d = json.loads(p.read_text())
     print(f"{tag}  被控对象={d.get('mismatch')}  延迟={d.get('extra_delay_ms')} ms  "
-          f"注入解失败={d.get('inject_solve_fail_after_frames')} 帧  悬停={d.get('hold_s')} s")
+          f"注入解失败={d.get('inject_solve_fail_after_frames')} 帧  悬停={d.get('hold_s')} s"
+          f"  参考源={d.get('reference_source')}")
+    # traj 档（T0）多两块：夹具的**参考时间线**（八字发出去没有、发到哪一刻）
+    # 与判层留档的**跟踪误差**（只留档，spec 没有数值界 ⟹ 不设判据）。
+    tl = d.get("reference_timeline") or {}
+    if d.get("reference_source") == "traj":
+        print(f"  参考时间线: n={tl.get('n')} 移动 {tl.get('n_moving')} 帧 "
+              f"[{tl.get('move_first_s')}, {tl.get('move_last_s')}] s "
+              f"相位 {tl.get('by_phase')}")
+        er = ((d.get("traj") or {}).get("lemniscate") or {}).get("err") or {}
+        print(f"  跟踪误差(只留档): 水平均值 {er.get('h_mean')} m / 最大 {er.get('h_max')} m "
+              f"3D 均值 {er.get('d3_mean')} m（配对 {er.get('n_paired')}/{er.get('n')}）")
     print(f"  armed_ever={d.get('armed_ever')}  dut_dead={d.get('dut_dead')}  "
           f"replay_up={d.get('replay_up')}  真值 n={d.get('truth_n')} @ {d.get('truth_hz')} Hz")
     print(f"  agent: {d.get('agent')}")
