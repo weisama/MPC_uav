@@ -4,7 +4,7 @@
 > 飞控 MicoAir **NxtPX4v2**（固件真身 = `Minderring/PX4-Autopilot` @ `4a0e65f2`，**v1.14.3 系**的
 > MicoAir 厂商构建 —— 见下方约束表。⚠️ fork `Peize-Liu/PX4-Autopilot @ 5ba2e91f` **与 z0 无关**）
 > \+ 机载 Jetson Orin NX 8GB + Nokov 动捕（VRPN）。
-> 最终目标是 **MPC 接管飞控内置 PID**；**分三阶段落地**，见下。
+> 最终目标是 **MPC 接管飞控内置 PID**；**分四阶段落地**，见下。
 
 ---
 
@@ -21,7 +21,7 @@
 | **mavros** | **2.15.1 @ `22ae5b7`** —— 源码构建在 `~/mavros_ws`，**不在本仓库**（Phase 1 全靠它） |
 | **ROS 2** | **Humble** |
 | **运行环境** | Ubuntu 22.04.5 LTS · 内核 5.15.185-tegra · aarch64（Jetson Orin NX 8GB） |
-| **阶段状态** | Phase 1 🟨 **收口**（真机自由飞成 2026-09-28；★ 残余项是**裁定不再补做 / 留待台架日**的那几条，见下） · Phase 2 🟨 **进行中**（见下） · Phase 4 ⬜ 未开始 |
+| **阶段状态** | Phase 1 🟨 **收口**（真机自由飞成 2026-09-28；★ 残余项是**裁定不再补做 / 留待台架日**的那几条，见下） · Phase 2 🟨 **进行中**（见下） · Phase 3 🟨 **进行中**（整理 + 收尾，见下） · Phase 4 ⬜ 未开始 —— ★ **这几个词是粗判、不是读数**：真实进度只认各 spec 与各票的 `Status:` 行 |
 
 ★ 上表每一行的证据落点：固件与 `px4_msgs` 见 [`refs-manifest.md`](docs/reference/refs-manifest.md)
 §2.5/§2.6，mavros 版本见 [`src/control/README.md`](src/control/README.md)。
@@ -37,29 +37,31 @@
 | **定位** | **Nokov 动捕** → VRPN → `/mavros/vision_pose/pose` → EKF2（**室内飞行，不用 GPS**） |
 | **中间件** | ROS 2 Humble + mavros2 —— Phase 1 **完全不碰 uXRCE-DDS**，Phase 2 才引入 |
 | **工作区形态** | ROS 2 工作区，★ **colcon 根 = 仓库根**（不是 `src/`）；6 个包见下面目录树 |
-| **目标** | 让 **MPC 接管飞控内置 PID**；分三阶段，**每阶段只引入一个新变量** |
+| **目标** | 让 **MPC 接管飞控内置 PID**；分四阶段，**每阶段只引入一个新变量** |
 | **issue tracker** | **`.scratch/<phase>/issues/*.md`** —— 本地 markdown，**随 git 入库**，**不用 GitHub Issues**（规则见 [`docs/agents/issue-tracker.md`](docs/agents/issue-tracker.md)） |
 | **术语表** | [`CONTEXT.md`](CONTEXT.md) —— 查词先看它（含"MPC"这个词的歧义澄清） |
 | **文档优先** | 结论大多带**第一手证据**（源码路径 + 行号 + commit）⟹ **改代码前先确认文档里的结论有没有被推翻**，不要凭记忆。教训见 [`open-source-survey.md`](docs/reference/open-source-survey.md) §0 |
 
 **怎么跑起来**：构建命令见下面[目录](#目录)末尾的引用块；起链与现场操作看
 [`run/README.md`](run/README.md)（菜单）与 [`operation_manual.md`](operation_manual.md)（★ 真机飞之前必读）。
-**怎么跑测试**：`python3 -m pytest run/tests/test_operation_manual.py -q`（文档守卫，逐文件跑 ——
+**怎么跑测试**：`python3 -m pytest run/tests/test_operation_manual.py -q`（文档守卫，**逐文件跑** ——
 ★ **没 source 时 `pytest run/tests` 整个目录一条都收不到**，这不是"全绿"；
-source 过之后是 **129 passed**，见 [`run/README.md`](run/README.md) 的「测试」一节）；ROS 侧的
+每个文件的用例数与跑法见 [`run/README.md`](run/README.md) 的「测试」一节 —— ★ **本页不抄用例数**，
+抄了就会过期）；ROS 侧的
 `colcon test` 用法与已知抖动见 [`src/bench/README.md`](src/bench/README.md)。
 
 ---
 
-## 三阶段路线
+## 四阶段路线
 
 | 阶段 | 做什么 | 控制接口 | 状态 |
 |---|---|---|---|
 | **Phase 1** | **offboard 位置定点飞行** —— 用动捕让 z0 稳定悬停并跟踪简单轨迹，**PX4 跑全部内环 PID** | **(A) 级**：`/mavros/setpoint_raw/local`（位置 + yaw） | 🟨 **代码与台架测试已就绪** + **2026-09-28 真机自由飞一次成**（定点定高 + 各按键 + 三条轨迹，**目测一切正常、数值未量** ⟹ ticket 09 收 `done`）· **阶梯 1–3 级（拆桨 / 系绳 20 cm / 系绳悬停 30 s）未做** —— ★ 2026-09-28 操作者裁定**不再补做**（自由飞已覆盖其风险；**是裁定不是做过了**，那几级的读数仍然是空的）· **台架清单 T1–T8 待下一次台架日一次性全跑** · [`spec`](.scratch/phase1/spec.md) `ready-for-agent` |
 | **Phase 2** | **MPC 接管 PID —— SITL 验证**：MPC 输出角速率 + 推力，PX4 只跑角速率环；被控对象**从上游 v1.14.3 构建的 z0 同构机**（**不是 `gz_x500`**；☠️ 原写"从 fork 构建"，该 fork 与 z0 无关） | **(C) 级**：`/fmu/in/vehicle_rates_setpoint` | 🟨 **进行中** —— MPC（模型预测控制）节点 + acados + SITL 同构机都已落地，**闭环跑得起来**；⚠️ **还没收口**（seam 3 的判据未跑满、被控对象待按真机实测重搭）。★ **本格不抄读数**（抄了就会过期）—— 进度以 [`spec`](.scratch/phase2/spec.md) 与 `.scratch/phase2/issues/` 里各票的 `Status:` 行为准 |
+| **Phase 3** | **整理 Phase 2 的产出 + 收尾它没做完的票**：把入口层与 `docs/` 裁到读得完，并结掉 Phase 2 未结的票（它们是 Phase 4 的前置）—— **不改控制律**，实机飞行不在这里 | ——（**不引入新的控制接口**） | 📋 **进度以 [`spec`](.scratch/phase3/spec.md) 与 `.scratch/phase3/issues/` 各票的 `Status:` 行为准** |
 | **Phase 4** | **MPC 上实机**：四项前置测量 + 一次固件重编（~~ADC 一行修复~~ ☠️ **修法要重定 —— 那条缺陷不在 z0 的固件里**），然后拆桨 → 系绳 → 自由飞四级阶梯 | 同 Phase 2（**(C) 级**） | ⬜ 未开始 · [`spec`](.scratch/phase4/spec.md) `ready-for-human` |
 
-**指导思想：每个阶段只引入一个新变量。** Phase 1 全走 mavros2（**完全不碰 uXRCE-DDS**），把"动捕链路 + 状态机 + offboard"先跑通；Phase 2 再加 MPC + acados + uXRCE-DDS，**但只在 SITL 里验证，不碰飞机**；Phase 4 才上实机，且**先在离地之前把每个能摔机的未知量量出来**。
+**指导思想：每个阶段只引入一个新变量**（★ **Phase 3 是例外** —— 它不引入新变量，只把前面摊开的产出收敛、把 Phase 2 的账结清）。Phase 1 全走 mavros2（**完全不碰 uXRCE-DDS**），把"动捕链路 + 状态机 + offboard"先跑通；Phase 2 再加 MPC + acados + uXRCE-DDS，**但只在 SITL 里验证，不碰飞机**；Phase 4 才上实机，且**先在离地之前把每个能摔机的未知量量出来**。
 
 ---
 
@@ -71,6 +73,7 @@ source 过之后是 **129 passed**，见 [`run/README.md`](run/README.md) 的「
 ├── .scratch/                         ★ 本地 issue tracker（随 git 入库，不是临时目录）
 │   ├── phase1/spec.md                Phase 1 spec —— offboard 位置定点飞行
 │   ├── phase2/spec.md                Phase 2 spec —— MPC 接管 PID：SITL 验证
+│   ├── phase3/spec.md                Phase 3 spec —— 整理 Phase 2 的产出 + 收尾未结票
 │   └── phase4/spec.md                Phase 4 spec —— MPC 实机飞行（含固件重编与前置测量）
 ├── docs/    资料与文档
 │   ├── PROJECT.md                    ★ 总纲（先读它）
@@ -79,7 +82,7 @@ source 过之后是 **129 passed**，见 [`run/README.md`](run/README.md) 的「
 │   ├── control/
 │   │   ├── phase1-implementation.md  ★★ Phase 1 实施清单
 │   │   ├── bench-runbook.md          ★★ 拆桨台架清单（Phase 1 必须由人做的那一薄层）
-│   │   ├── phase2-implementation.md  ★★ Phase 2/3 实施清单（Phase 4 spec 引用它）
+│   │   ├── phase2-implementation.md  ★★ Phase 2 实施清单（Phase 4 spec 引用它）
 │   │   └── mpc-roadmap.md            Phase 2 资料汇总（含 D1–D10）
 │   ├── reference/
 │   │   ├── code-inventory.md         ★★ 代码盘点与取舍
@@ -92,7 +95,7 @@ source 过之后是 **129 passed**，见 [`run/README.md`](run/README.md) 的「
 │   │   ├── refs-manifest.md          ★★ 参考仓库清单 + 钉住的 commit + §2.5 z0 固件版本判定
 │   │   └── hardware.md               硬件规格
 │   └── assets/
-│       ├── z0.params                 z0 飞控参数（928 行，待上机核实）
+│       ├── z0.params                 z0 飞控参数（928 行；★ 已与飞控真身逐条对账，见 issues/15）
 │       └── papers/                   6 篇参考文献 + 中文索引
 ├── run/                              ★ **人工启动层**：`z0.py` 交互菜单（起链 + 每步核对 +
 │                                          录制，含两条「一键」——全部程序 `up` / `up.sh`（起完把终端
@@ -136,15 +139,23 @@ source 过之后是 **129 passed**，见 [`run/README.md`](run/README.md) 的「
 > [`operation_manual.md`](operation_manual.md)（在**仓库根**）。
 > ⚠️ `control` 的测试依赖 `bench` ⟹ 用 **`colcon build --packages-up-to control`**，
 > `--packages-select control` 会因缺 `test_depend` 失败。
-> ★ 全仓库既有 **172 条 lint 失败**全部来自 vendored 的 `vrpn_listener`（`mocap`/`traj`/`bench`/`control`/`bringup`
-> 刻意不含 `ament_lint_auto`）；新增任何包**不得**增加这个数字。
+> ★ **全仓库的 lint 失败全部来自 vendored 的 `vrpn_listener`**（`mocap`/`traj`/`bench`/`control`/`bringup`
+> 刻意不含 `ament_lint_auto`，见 [`src/control/README.md`](src/control/README.md)）⟹ **新增任何包不得引入 lint 失败**。
+> ★ **本行不抄条数**（抄了就会过期）—— 现算：
+>
+> ```bash
+> colcon test --packages-select vrpn_listener && colcon test-result --test-result-base build/vrpn_listener | tail -1
+> ```
 
 **先读哪个**：`docs/PROJECT.md` → `docs/reference/code-inventory.md`（代码取舍）→ `docs/control/phase1-implementation.md`（动手写代码前必读）→ `CONTEXT.md`（查术语）。
-**要动手做哪一阶段**：先读对应的 `.scratch/phase{1,2,3}/spec.md` —— 它定义该阶段的范围与验收判据。
+**要动手做哪一阶段**：先读对应的 `.scratch/phase{1,2,3,4}/spec.md` —— 它定义该阶段的范围与验收判据。
 
-> **三份 spec 的 `Status:`（2026-09-20 已分诊）**：Phase 1 与 Phase 2 → **`ready-for-agent`**
-> （代码 + SITL 可 AFK 推进）；Phase 4 → **`ready-for-human`**（量电机位置、刷固件、系绳试飞，
-> AFK agent 做不了）。Q35=a 的暂时退回**已解除**。
+> **进度只认 `Status:` 行** —— 四份 spec 与每一张票各自的那一行才算数，**本页不抄结论**
+> （抄了第二天就过期）。**未结票清单也是现算的**（`done` / `wontfix` 之外都算未结）：
+>
+> ```bash
+> grep -L -E '^Status: *(done|wontfix)' .scratch/phase*/issues/*.md
+> ```
 
 ### 📁 参考仓库在**仓库外**
 

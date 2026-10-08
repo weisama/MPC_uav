@@ -116,12 +116,12 @@
 
 | 术语 | 定义 |
 |---|---|
-| ★ **z0** | **本项目这台无人机的正式名称。** 构型 = OddityRC XI35 Pro 机架（152 mm 轴距）+ 微空 NxtPX4v2 飞控 + Jetson Orin NX 8GB。**全部文档中一律写 `z0`**，不再用"新机/本机/这台机"等代称。当前状态：只遥控器飞过，动捕链路与 MPC 均未上机。 |
-| **旧机** | 超维空间 S2-F290（PX4 **1.13.3** + 树莓派 4B）。**动捕定点飞行是在它上面验证通过的**——z0 上的一切动捕经验都源自它，需要重做一遍。见 `docs/PROJECT.md` 1.2。 |
+| ★ **z0** | **本项目这台无人机的正式名称。** 构型 = OddityRC XI35 Pro 机架（152 mm 轴距）+ 微空 NxtPX4v2 飞控 + Jetson Orin NX 8GB。**全部文档中一律写 `z0`**，不再用"新机/本机/这台机"等代称。★ **状态不写死在本行**（写死的会过期）—— 认 [`docs/PROJECT.md`](docs/PROJECT.md) §1.2 的资产表（逐行带证据时点）。已知的两条：**动捕链路 2026-09-28 已在 z0 上飞成**（[`phase1/issues/09`](.scratch/phase1/issues/09-track-mission-script.md)）；**MPC（模型预测控制）仍未上机**（只在 SITL 里跑）—— 判据是 Phase 4（上实机）还没开始，认 [`.scratch/phase4/spec.md`](.scratch/phase4/spec.md) 的 `Status:` 行。 |
+| **旧机** | 超维空间 S2-F290（PX4 **1.13.3** + 树莓派 4B）。**动捕定点飞行最早是在它上面验证通过的** —— z0 上的一切动捕经验都源自它；★ **z0 上 2026-09-28 已重做一遍**（见上面 `z0` 行）。见 `docs/PROJECT.md` 1.2。 |
 | **NxtPX4v2 / Nxt-FC** | 微空科技（MicoAir）量产的 PX4 飞控，也被 HKUST 的 OmniNxt 采用。PX4 目标板名 `hkust_nxt-dual`。**z0 用的是它。** |
 | **XI35 Pro** | 怪象（OddityRC）的 3.5 英寸涵道机架，轴距 152 mm。**z0 的机架。** |
-| **`z0.params`** | **z0 的飞控参数文件**（`assets/z0.params`，928 行，其中 914 条参数）。内容逐字来自上游 `Huan-qun/Sim2real-UAV-Params-` 的 `S2R/assets/param/uav1.params`（那台机器叫 "Vehicle 1"），**尚未在 z0 的飞控上核实**——所以文档里凡说"`z0.params` 里 X 是默认值/可疑"，意思都是"**这是上游值，别当成 z0 的实测值**"。见 `docs/reference/params-analysis.md`。 |
-| **动捕定点飞行** | 用动捕位姿闭环、让飞机自主保持位置悬停的飞行状态。**旧机上已实现，z0 上尚未。** |
+| **`z0.params`** | **z0 的飞控参数文件**（`assets/z0.params`，928 行，其中 914 条参数）。内容逐字来自上游 `Huan-qun/Sim2real-UAV-Params-` 的 `S2R/assets/param/uav1.params`（那台机器叫 "Vehicle 1"）。★ **已于 2026-09-21 与 z0 飞控真身逐条对账**（914/915 条名字全对上，见 [`.scratch/phase1/issues/15`](.scratch/phase1/issues/15-fcu-param-reconciliation.md)）⟹ **它就是飞机上跑的那份配置**。⚠️ 但"对账一致"恰恰意味着文档里那些"X 是默认值/可疑"**真的在飞机上** —— **不等于它们是实测值**。见 `docs/reference/params-analysis.md`。 |
+| **动捕定点飞行** | 用动捕位姿闭环、让飞机自主保持位置悬停的飞行状态。**旧机（S2-F290）上最早实现；z0 上 2026-09-28 已飞成**（[`.scratch/phase1/issues/09`](.scratch/phase1/issues/09-track-mission-script.md)）。 |
 
 ## 七、测试与台架
 

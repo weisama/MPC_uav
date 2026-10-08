@@ -4,7 +4,7 @@
 > **读者**：作者本人、未来协作者、半年后回看的自己。
 > **配套文件**：[`../CONTEXT.md`](../CONTEXT.md)（术语表，**先读它**）、[`reference/code-inventory.md`](reference/code-inventory.md)（★ 代码取舍）、[`control/phase1-implementation.md`](control/phase1-implementation.md)（★★ **Phase 1 实施清单**）、[`control/phase2-implementation.md`](control/phase2-implementation.md)（★★ **Phase 2 实施清单**）、[`reference/`](reference/)（调查原始记录）、[`control/mpc-roadmap.md`](control/mpc-roadmap.md)（Phase 2 资料汇总）
 > **后续去向**：本目录对应 [`weisama/MPC_uav`](https://github.com/weisama/MPC_uav) 仓库的 `docs/` 子目录。
-> **最后更新**：2026-09-18
+> **最后更新**：★ **不写死日期**（写死的会与正文脱节）—— 取本页最后一次改动：`git log -1 --format=%cs -- docs/PROJECT.md`。各节自己的证据时点写在节内（如 §1.2 的 2026-09-28、§5.1 的 2026-09-21 / 09-23）。
 
 ---
 
@@ -32,8 +32,8 @@
 
 | 资产 | 状态 | 证据位置 |
 |---|---|---|
-| **整机组装 + 遥控器实飞** | ✅ 完成 | 用户确认；**z0 目前只遥控器飞过** |
-| **动捕 → PX4 定点/Offboard 飞行** | ✅ **已在旧机上实现** | `weisama-log/25.09.30_s2-f290.md` 标题即「已实现动捕定点飞行」 |
+| **整机组装 + 遥控器实飞** | ✅ 完成 | 用户确认（★ 这条的时点是 2026-09-18）。**z0 已不止遥控飞** —— 见下两行 |
+| **动捕 → PX4 定点/Offboard 飞行** | ✅ **旧机（S2-F290）已实现**；★ **z0 上 2026-09-28 已飞成** | 旧机：`weisama-log/25.09.30_s2-f290.md` 标题即「已实现动捕定点飞行」。z0：[`.scratch/phase1/issues/09-track-mission-script.md`](../.scratch/phase1/issues/09-track-mission-script.md)（真机自由飞一次成 —— **目测**、数值未量） |
 | **动捕延迟实测 = 50 ms** | ✅ 已测（**旧机**） | `weisama-log/25.06.28_PX4_log.md`（对 `vehicle_visual_odometry_0` 测出）。⚠️ 只有一句结论、**没有方法/相关峰/原始数据** ⟹ 对 z0 是**参照、不是结论** |
 | **★ 动捕延迟在 z0 上实测 ≈ 50 ms** | ✅ **2026-09-28 已测（z0 自己的数）** | 从飞控 ulog log 210 交叉相关 IMU × 动捕（**同一 hrt 时钟**，不含跨机对时误差）。方法/出处/不确定性见 [`reference/mocap-setup.md`](reference/mocap-setup.md) **§6.3**，工具在 [`../tools/tau-analysis/`](../tools/tau-analysis/) |
 | **动捕漂移问题已解决** | ✅ 已解决 | 通过调 `EKF2_EVP_NOISE`；见 `25.06.26_mocap.md` |
@@ -50,10 +50,10 @@
 | 机架 | 超维空间 S2-F290 | **OddityRC XI35 Pro，152 mm 轴距** |
 | 飞控 | Pixhawk + PX4 **1.13.3** | **微空 NxtPX4v2 + PX4 1.14.3 系**（✅ 2026-09-21 定案：真身 = `Minderring/PX4-Autopilot` @ `4a0e65f2`，飞控自报 `flight_sw_version = 1.14.3`。☠️ 09-20/21 一度判为「**v1.15 世代**」—— 那是**拿 fork 当参照物**的误判，已作废，见下方风险表与 [`reference/refs-manifest.md`](reference/refs-manifest.md) §2.5(d)） |
 | 机载电脑 | 树莓派 4B (8GB?) | **Jetson Orin NX 8GB** |
-| 状态 | 动捕定点飞行已验证 | **只遥控器飞过** |
+| 状态 | 动捕定点飞行已验证 | **动捕定点飞行已验证**（2026-09-28 真机自由飞一次成） |
 | 飞控参数 | — | [`assets/z0.params`](assets/z0.params)（源自上游 `uav1.params`，见 5.1） |
 
-→ **动捕链路的所有经验都在旧机上，z0 需要重做一遍**（换机 → 换 EKF2 参数 → 重标定外参）。这是里程碑 1。
+→ **动捕链路的所有经验最初都在旧机上**（换机 → 换 EKF2 参数 → 重标定外参）；★ **z0 上已于 2026-09-28 重做一遍**（真机自由飞一次成）⟹ 里程碑 1 达成，**残留项**见 [`.scratch/phase1/spec.md`](../.scratch/phase1/spec.md) 的 `Status:` 行。
 
 ### 1.3 全新的是什么（gap 分析）
 
@@ -394,7 +394,8 @@ PX4 官方 Offboard 文档明确标注了每种 setpoint 所需的**状态估计
 > ★ **2026-09-22 人裁定**：上表 8 条待处理项里**现在就改 3 条** —— `EKF2_GPS_CTRL = 0`、`SYS_HAS_GPS = 0`、
 > `MPC_XY_VEL_MAX = 2.0`；其余分别留到**系统辨识 / 推力标定 / 尺子量 / 飞行阶段**。
 > 逐条处置（含"谁改、怎么验"）见 [`reference/params-changes.md`](reference/params-changes.md) **§I**。
-> ⏸ 那 3 条是「**已裁定、尚未写入**」（裁定当天飞控没上电）。§7.2 的 **O3 / O4 / O5 / O8** 已一并更新。
+> ✅ 那 3 条**已于 2026-09-23 写入**（原写「已裁定、尚未写入」；读回与 dump 对账见
+> [`reference/params-changes.md`](reference/params-changes.md) **§I.1**）。§7.2 的 **O3 / O4 / O5 / O8** 已一并更新。
 
 > ✅ **推荐动作已执行（2026-09-21）**：从 z0 的飞控导出全量参数（915 条）与 `z0.params` 逐条 diff ——
 > **结论：914/915 条名字全对上；21 条值差异全部是设备标定类（加速度计 6 条 + 遥控器校准 12 条）与飞行计数器（3 条）**。
@@ -468,7 +469,7 @@ PX4 官方 Offboard 文档明确标注了每种 setpoint 所需的**状态估计
 | **O5** | `MPC_THR_HOVER` 是默认值还是实测值？ | ★ **一半已答（2026-09-21 对账）**：真身就是 `0.5`，**且 `0.5` 恰好是 PX4 出厂默认值** ⟹ 看不出来被改过。★ **2026-09-22 裁定：留到推力标定**（里程碑 2，与 `THR_MDL_FAC` 一并定）；它决定 **MPC（模型预测控制）** 的线性化工作点对不对 |
 | **O6** | ~~**通信中间件最终选"混合"还是"全 mavros"？**~~ ✅ **已定（分阶段）**：**Phase 1 全走 mavros2**（`/mavros/vision_pose/pose` + `/mavros/setpoint_raw/local`），**完全不碰 uXRCE-DDS**（`UXRCE_DDS_CFG` 都不用改）；**uXRCE-DDS 推迟到 Phase 2** 引入 MPC 时再上。理由：每个阶段只引入一个新变量 —— Phase 1 验动捕链路（中间件零新增），Phase 2 才引入新中间件（此时动捕已验证）。同时避开 `px4_msgs` 版本不匹配的静默失败陷阱 | 见 3.3 与本项目 Phase 1 决策记录 |
 | **O7** | 里程碑 5（INDI）是第一版就做，还是留到第二阶段？ | 影响模型复杂度 |
-| **O8** | `EKF2_GPS_CTRL = 7` 是否需要改成 0？ | ✅ **已裁定（2026-09-22）：改** —— `EKF2_GPS_CTRL = 0` + `SYS_HAS_GPS = 0`（配套）。**状态：已裁定、待写入**（裁定当天飞控没上电）。命令见 [`reference/params-changes.md`](reference/params-changes.md) **§I.1** |
+| **O8** | `EKF2_GPS_CTRL = 7` 是否需要改成 0？ | ✅ **已关闭** —— 2026-09-22 裁定改，**2026-09-23 已写入并读回确认**（`EKF2_GPS_CTRL = 0` + `SYS_HAS_GPS = 0`）。命令与读回见 [`reference/params-changes.md`](reference/params-changes.md) **§I.1** |
 
 ---
 
@@ -503,6 +504,7 @@ PX4 官方 Offboard 文档明确标注了每种 setpoint 所需的**状态估计
 | 路径 | 内容 |
 |---|---|
 | [`../CONTEXT.md`](../CONTEXT.md) | **术语表（先读）**，含 `MPC` 歧义澄清 |
+| [`../.scratch/`](../.scratch/) | ★ **本地 issue tracker**（随 git 入库、不是临时目录）：`phase{1,2,3,4}/spec.md` + 各阶段的 `issues/` —— **进度只认各文件的 `Status:` 行**，未结票清单现算（命令见 [`../README.md`](../README.md)） |
 | [`control/mpc-roadmap.md`](control/mpc-roadmap.md) | MPC 路线图详细版（**资料汇总**，含 D1–D10 待决清单） |
 | [`control/phase2-implementation.md`](control/phase2-implementation.md) | ★★ **Phase 2 实施清单（MPC 接管 PID）** —— D1–D10 决议、`px4-mpc` 第一手解读、S1–S8 分步步骤、待实测参数——**做 Phase 2 时先读它** |
 | [`control/sign-map.md`](control/sign-map.md) | ★★ **符号映射表的唯一权威** —— ENU/FLU ↔ PX4 FRD 的推导、与参考实现的逐条对照、推力项的量纲与 `T_max` 口径；**代码一律回链它、不复写数值** |

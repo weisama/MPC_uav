@@ -1,6 +1,6 @@
 # 02: 入口层裁剪与状态订正（`CLAUDE.md` / `README.md` / `PROJECT.md` / `CONTEXT.md`）
 
-Status: ready-for-agent
+Status: done
 Type: task
 
 **What's wrong（一句话）：** 入口层**读不完、也说不清"现在到哪"** —— 一个上下文是空的人/agent
@@ -63,11 +63,22 @@ spec 与文档**必须是同一批**，且都指到**顺延后**的路径（`pha
 
 ## 验收
 
-- [ ] 只按入口层的指针走，能落到"当前阶段 spec + 未结票清单"，**且没有断链**
-- [ ] 入口层四份里**不再出现写死的状态读数**；留下的状态判断都带可核的锚
-- [ ] 三处索引指向同一批文档、且路径都是顺延后的（`phase4/`）
-- [ ] `python3 -m pytest run/tests/test_operation_manual.py -q` 等**按文件**跑，全绿
-      （★ 别一次跑 `run/tests/` 整个目录，见 [`phase2/issues/26`](../../phase2/issues/26-recording-six-scenes-and-the-rewrite-path.md) 的同名记录）
+- [x] 只按入口层的指针走，能落到"当前阶段 spec + 未结票清单"，**且没有断链**
+      （轨迹：`CLAUDE.md` → `README.md`「四阶段路线」表 → `.scratch/phase3/spec.md`；
+      "未结票清单"由 `CLAUDE.md` / `README.md` 里那条 `grep -L -E '^Status: *(done|wontfix)'` **现算**。
+      ★ 入口层四份的相对链接逐条 resolve：**断链 0**（读数方法与当次数值见 Comments #2 的 ⓪；
+      ★ 判据本身**变异过一次** —— 故意改坏一条链接，计数从 `断链 0` 变成 `断链 1` 且点名了那一条）
+      ⚠️ **"断链 0" 是判据，"共 N 条" 只是当时的分母** —— 每改一次文它就动（本票写这句话的过程中
+      动过三次：99 → 90 → 101 → 102）。所以**判据以 ⓪ 那条命令为准**，不要引用这里的分母。
+- [x] 入口层四份里**不再出现写死的状态读数**；留下的状态判断都带可核的锚（逐条见 Comments #2 的表）
+- [x] 三处索引指向同一批文档、且路径都是顺延后的（`phase4/`）
+      （★ 顺带补了一行 —— `docs/PROJECT.md` §8.3 原**根本没有** `.scratch/` 这一条 ⟹ 三处索引先前不是同一批。
+      ⚠️ **如实说清这条验到了什么**：`README.md` 目录树与 `PROJECT.md` §8.3 **现在都含 `.scratch/` 那一条**；
+      `CONTEXT.md` 是**术语表、本就不承担文档索引**（它没有"目录树"这种结构），所以对第三处只能核
+      **它引用的文档全部 resolve**（含本票新加的三条 `.scratch/` 锚）—— 不是"三份索引逐条对表"）
+- [x] `python3 -m pytest run/tests/test_operation_manual.py -q` 等**按文件**跑，全绿
+      （本次读数：`test_operation_manual.py` 5 + `test_rec.py` 80 + `test_z0_menu.py` 66 = **151 passed**；
+      ★ 按文件跑，没跑整个 `run/tests/` 目录 —— 见 [`phase2/issues/26`](../../phase2/issues/26-recording-six-scenes-and-the-rewrite-path.md) 的同名记录）
 
 ## Comments
 
@@ -77,3 +88,171 @@ spec 与文档**必须是同一批**，且都指到**顺延后**的路径（`pha
 一个 AFK agent 能自己判绿。**唯一要人看一眼的是「状态订正」**：把某个状态词换成什么锚，
 涉及"这句话现在还算不算数"的判断 —— 所以验收第 2 条写的是"**不再出现写死的读数**"，
 而不是"改成了我认为对的说法"。
+
+### #2 落地记录（2026-10-08）—— 4 份文件、两类现算命令、3 条要人看的判断
+
+> ★ 下面**所有行号都是本票落地当天**（`7a25e17` 之后）的行号。行号会随编辑漂移，
+> 真正可核的锚是**票号 / 命令 / 文件路径**这三样。
+> ⚠️ 它们与上面「已知的具体实例」表里的行号**对不上是正常的** —— 那张表记的是**动手前**的位置
+> （例：`## 三阶段路线` 动手前在 `README.md:54`，补了 Phase 3 那一行之后在 `:55`）。
+
+#### ⓪ 断链是怎么数的（★ 可复现；本票的判据就靠它）
+
+验收第 1 条那句"**101 条，断链 0**"是**当场跑出来的**，不是数出来的。脚本（在仓库根跑）：
+
+```python
+import re, os
+pat = re.compile(r'\[[^\]]*\]\(([^)]+)\)')
+files = ["CLAUDE.md", "README.md", "CONTEXT.md", "docs/PROJECT.md"]   # 入口层四份
+for f in files:
+    base = os.path.dirname(os.path.abspath(f)); n = bad = 0
+    for m in pat.finditer(open(f, encoding='utf-8').read()):
+        t = m.group(1).split('#')[0].strip()
+        if not t or t.startswith(('http', 'mailto:')):
+            continue                      # 外链与锚点不在本票射程内，只判"文件在不在"
+        n += 1; bad += not os.path.exists(os.path.join(base, t))
+    print(f, n, bad)
+```
+
+★ **订正一处我自己的读数，顺带记下"同一个问题换个数法就换个答案"**：验收第 1 条原先写的
+**99** 复现不出来 —— 在只算相对链接的形式下，**改前是 90**。99 是**另一种数法**的结果：
+把 `http` 外链也算进去（那种形式下是 改前 `99` / 改后 `111`）。两种数法能重复跑出来，
+**但对"有没有断链"这个问题，只有前者成立** —— 外链在本地没有可 resolve 的目标，
+把它算进"断链率"的分母是错的。所以本票一律按**只算相对链接**：
+
+| 数法 | 改前 | 改后 |
+|---|---|---|
+| 相对链接（★ 本票采用） | **90** | **102** |
+| 含 `http` 外链 | 99 | 112 |
+
+改动造成相对链接 **+12**（`README.md` +2 / `CONTEXT.md` +5 / `docs/PROJECT.md` +5；`CLAUDE.md` ±0）。
+
+⚠️ **分母是活的** —— 上面这张表在本票内就改过三次（99 → 90 → 101 → 102，每加一处锚就动一次）。
+**判据只有"断链 0"这一条**，分母请以上面那段脚本**现跑**为准。
+
+★ 这个判据**变异过一次**（不然它是"永远绿灯"的断言）：把 `README.md` 里一条 `](run/README.md)`
+故意改成 `](run/README-NOPE.md)` ⟹ 计数立刻从 `断链 0` 变成 `断链 1` 并点名那条
+⟹ **它能区分对错**，不是摆设。
+
+#### ① 阶段计数：**6 处**（其中 2 处不在起点清单里）
+
+| 处 | 原文 | 改成 |
+|---|---|---|
+| [`CLAUDE.md:4`](../../../CLAUDE.md#L4) | 分**两**阶段落地 | 分**四**阶段落地 |
+| [`CLAUDE.md:6`](../../../CLAUDE.md#L6) | `README.md`（**两**阶段路线 + 关键约束） | （**四**阶段路线 + 关键约束） |
+| [`README.md:7`](../../../README.md#L7) | 分**三**阶段落地 | 分**四**阶段落地 |
+| [`README.md:40`](../../../README.md#L40) | 分**三**阶段，每阶段只引入一个新变量 | 分**四**阶段 |
+| [`README.md:55`](../../../README.md#L55) | `## 三阶段路线` | `## 四阶段路线`，**并且补上 Phase 3 那一行** |
+| [`README.md:151`](../../../README.md#L151) | `.scratch/phase{1,2,3}/spec.md` | `.scratch/phase{1,2,3,4}/spec.md` |
+
+★ 前两处（`CLAUDE.md`）**不在本票的起点清单里** —— 起点清单只点了 `README.md`。
+写这份票的时候 `CLAUDE.md` 还没被扫过：它写"两阶段"、`README.md` 写"三阶段"，
+**两份入口文档本来就互相对不上**。同族的还漏了两条，一并补：
+
+- `README.md` 的「阶段状态」行原来**只有 Phase 1 / 2 / 4，没有 3** ⟹ 补 `Phase 3 🟨 进行中`，
+  并在同一行注明"**这几个词是粗判、不是读数**，真实进度只认各 spec 与各票的 `Status:` 行"；
+- `README.md` 的 `.scratch/` 目录树原来**只有 `phase1` / `phase2` / `phase4`** ⟹ 补 `phase3/spec.md`。
+
+#### ② 状态订正 —— 原文 → 换成什么锚（★ 逐条都能点进去核）
+
+| 处 | 原文的状态词 | 现在写成 | 锚 |
+|---|---|---|---|
+| [`CONTEXT.md:119`](../../../CONTEXT.md#L119) | 「z0 …… 当前状态：**只遥控器飞过，动捕链路与 MPC 均未上机**」 | **状态不写死在本行**；只留两条已知事实 | [`docs/PROJECT.md` §1.2](../../../docs/PROJECT.md) 的资产表 + [`phase1/issues/09`](../../phase1/issues/09-track-mission-script.md) |
+| [`CONTEXT.md:120`](../../../CONTEXT.md#L120) | 「z0 上**需要重做一遍**」 | ★ **z0 上 2026-09-28 已重做一遍** | 同 `z0` 行 |
+| [`CONTEXT.md:123`](../../../CONTEXT.md#L123) | `z0.params`「**尚未在 z0 的飞控上核实**」 | ★ **已于 2026-09-21 与飞控真身逐条对账**（914/915 条名字全对上） | [`phase1/issues/15`](../../phase1/issues/15-fcu-param-reconciliation.md) |
+| [`CONTEXT.md:124`](../../../CONTEXT.md#L124) | 「旧机上已实现，**z0 上尚未**」 | 旧机最早实现；**z0 上 2026-09-28 已飞成** | [`phase1/issues/09`](../../phase1/issues/09-track-mission-script.md) |
+| [`PROJECT.md:7`](../../../docs/PROJECT.md#L7) | 「最后更新：**2026-09-18**」（假 —— 正文有 09-21 ~ 09-29） | **不写死日期**，给现算命令 | `git log -1 --format=%cs -- docs/PROJECT.md` |
+| [`PROJECT.md:35`](../../../docs/PROJECT.md#L35) | 「**z0 目前只遥控器飞过**」 | 标出该行自己的时点，并指向下面两行 | 下一行的 z0 证据 |
+| [`PROJECT.md:36`](../../../docs/PROJECT.md#L36) | 动捕链路状态 =「✅ 已在旧机上实现」 | **旧机已实现；z0 上 2026-09-28 已飞成** | [`phase1/issues/09`](../../phase1/issues/09-track-mission-script.md) |
+| [`PROJECT.md:53`](../../../docs/PROJECT.md#L53) | 对照表 z0 列 =「**只遥控器飞过**」 | **动捕定点飞行已验证** | 同上 |
+| [`PROJECT.md:56`](../../../docs/PROJECT.md#L56) | 「z0 **需要重做一遍** …… 这是里程碑 1」 | **已重做一遍 ⟹ 里程碑 1 达成**；残留项指向 spec | [`phase1/spec.md`](../../phase1/spec.md) 的 `Status:` 行 |
+| [`PROJECT.md:397`](../../../docs/PROJECT.md#L397) | 3 条参数「**已裁定、尚未写入**」 | **已于 2026-09-23 写入** | [`docs/reference/params-changes.md`](../../../docs/reference/params-changes.md) §I.1 |
+| [`PROJECT.md:472`](../../../docs/PROJECT.md#L472) | O8 状态「**已裁定、待写入**」 | **已关闭**（09-23 写入并读回确认） | 同上 |
+
+★ **最后两条也不在起点清单里**，是"同一类病"顺出来的：它们与
+[`docs/reference/params-changes.md`](../../../docs/reference/params-changes.md) §I.1 的读回表**直接矛盾**
+（那边白纸黑字写着"已于 2026-09-23 写入"，这边还挂着"待写入"）。
+本票 ② 的判据是"状态词过期就换成锚"，所以一并订正 —— 但**这就是 Comment #1 说的"要人看一眼"那件事**。
+
+#### ③ 写死的读数 → 现算（两条命令**都当场跑过**）
+
+| 处 | 原文 | 现在写成 |
+|---|---|---|
+| [`README.md:49`](../../../README.md#L49) | 「source 过之后是 **129 passed**」 | 删掉数字，指向 [`run/README.md`](../../../run/README.md) 的「测试」一节，注明"本页不抄用例数" |
+| [`README.md:144`](../../../README.md#L144) | 「全仓库既有 **172 条 lint 失败**」 | **不抄条数**，给现算命令（见下） |
+
+lint 那条**是约束**（"新增任何包不得引入 lint 失败"）、不能删，所以换成命令：
+
+```bash
+colcon test --packages-select vrpn_listener && colcon test-result --test-result-base build/vrpn_listener | tail -1
+```
+
+当场读数 **181 tests / 176 failures** —— 与原文的 **172** 已经对不上，**这就是"不该抄条数"的实证**。
+
+★ `--test-result-base` 那半截是必需的：裸 `colcon test-result --all` 会把
+`bench` / `control` / `mocap` / `nmpc` / `traj` 的历史结果一起算进去（同一台机上跑出来是 **654 / 214**），
+**那不是 lint 的数**。核过：`build/*/test_results/` 里**只有 `vrpn_listener` 带 lint 结果 —— 六个**
+（`cppcheck` / `cpplint` / `uncrustify` / `lint_cmake` / `xmllint` / `copyright`），其余五个包没有
+⟹ "全仓库的 lint 失败全部来自 vendored 的 `vrpn_listener`"这句话成立。
+
+#### ④ 未结票清单：不抄，现算
+
+`CLAUDE.md:21` 与 `README.md` 各留一条（同一条命令）：
+
+```bash
+grep -L -E '^Status: *(done|wontfix)' .scratch/phase*/issues/*.md
+```
+
+（落地时点：本票自己翻成 `done` **之前 27 张、之后 26 张** —— 同一条命令、隔一行就少一张。
+★ **别把这个数抄进文档** —— 上面这个"隔一行就变"正是 ② 要治的病。）
+
+#### ⑤ 三处索引：原来**不是**同一批
+
+验收第 3 条要求 `README.md` 目录树 / `PROJECT.md` 总纲 / `CONTEXT.md` 术语表指向同一批文档。
+核下来发现 [`docs/PROJECT.md` §8.3](../../../docs/PROJECT.md) 的文件索引里**根本没有 `.scratch/` 这一条**
+⟹ 三处先前不是同一批（前两处有，第三处没有）。已补一行，并在那一行里写明
+"**进度只认各文件的 `Status:` 行**，未结票清单现算（命令见 `README.md`）"。
+
+#### ⑥ ⚠️ 发现但**没改**的三件事（不在本票范围，请操作者定）
+
+本票的范围是**入口层四份**。下面三条**同属一类病、但落在范围外**，按"别顺手改别的票"只记不改：
+
+| 处 | 病灶 | 为什么没动 |
+|---|---|---|
+| [`run/README.md:285`](../../../run/README.md#L285) | 写 `test_rec.py` **66 例**，实测 **80 例**（`2665d0a` 加的用例没回填） | `run/README.md` 不在入口层四份里 |
+| [`src/control/README.md:510`](../../../src/control/README.md#L510) | 仍写死「**172 条 lint 失败**」—— 正是本票从 `README.md` 里删掉的那一个数 | 同上；★ 但**值得优先处理**：本票新写的 `README.md` 那段**正把读者指向这个文件**当依据，读者会从那句话里捡回同一个过期数字 |
+| 四份入口层里的**裸词 `MPC`** | [`CONTEXT.md:19`](../../../CONTEXT.md#L19) 立了规（"禁止单独使用裸词 `MPC`"），但四份里裸用共 **113 处**（`CLAUDE.md` 2 / `README.md` 17 / `CONTEXT.md` 25 / `PROJECT.md` 69） | 这是**全仓库的既有状况**，一次 113 处的术语清扫不是本票。本票 diff 只是**碰巧改到了其中 4 行**（改"两/三→四阶段"时），**没有**以本票的名义去动术语 |
+
+★ 第 3 条**特别说明**：本票 diff 让那 4 行"看起来被审过"，但**没有**顺手改它们的术语 ——
+免得留下"术语纪律已在本票落实"的假象。它要么归一张专门的术语票，要么明确 `wontfix`。
+
+★ 按 [`docs/agents/triage-labels.md`](../../../docs/agents/triage-labels.md)，`done` 要求"未决事项必须
+**另开 ticket** 并在本文里点名"。本文点到了名字，但**开票与否是操作者的裁定** —— 见
+[`phase3/spec.md`](../spec.md) 与 [Comment #1](#1-为什么它-ready-for-agent)。
+
+### #3 复核（`/code-review` 两轴）与它的处置 —— ★ 其中 3 条是**我自己的错**
+
+复核按 `Standards` / `Spec` 两轴各跑了一个独立 agent，**两条意见都先回仓库核实再落地**
+（复核意见与我的断言一视同仁）。核实后：
+
+**采纳并已改（5 条）**
+
+| # | 复核指出 | 核实结果 | 处置 |
+|---|---|---|---|
+| 1 | `README.md` 里还留着一处同类的状态词 | ✅ **属实**：[`README.md:98`](../../../README.md#L98) 目录树写 `z0.params …（928 行，**待上机核实**）`，与我在 `CONTEXT.md:123` 改掉的**是同一句话** | 改成"★ 已与飞控真身逐条对账，见 `issues/15`" ⟹ 入口层不再自相矛盾 |
+| 2 | `CONTEXT.md` 的 `z0` 行里那半句 `MPC 仍未上机` 没有锚 | ✅ **属实** —— 正是本票 ② 说的"留下的状态判断都要带锚" | 补上判据与指针：Phase 4 未开始，认 [`.scratch/phase4/spec.md`](../../phase4/spec.md) 的 `Status:` 行 |
+| 3 | 验收第 3 条"三处索引"的说法**撑不起来** | ✅ **属实**：`CONTEXT.md` 是术语表，**根本没有"索引"这种结构**，无法"三者对表" | 把验收第 3 条**改写成实际验到的东西**（前两处含 `.scratch/` 那一条 + 第三处引用的文档全部 resolve），不再写"三者指向同一批" |
+| 4 | 我把 HEAD 版验收第 4 条里的**跨票链接删掉了** | ✅ **属实**：`git show HEAD:…` 第 70 行原有指向 [`phase2/issues/26`](../../phase2/issues/26-recording-six-scenes-and-the-rewrite-path.md) 的"别整个目录跑"记录，我的重写把它挤掉了 | **恢复该链接** —— 删掉一个可核锚，恰好是本票要治的病 |
+| 5 | Comments #2 §③ 数错 lint 结果个数 | ✅ **属实**：是**六个**（漏了 `cppcheck.xunit.xml`），我写的"五个" | 已订正 |
+
+★ 第 3、4、5 条**都是我自己的书面断言出错**（不是别人改坏的）—— 与本票治的病同源：
+**写下的数字/说法必须当场能被一条命令推翻**。第 3 条尤其值得记：我当时把"三处"照抄进验收，
+**没有回去看第三处到底有没有索引**。
+
+**核实后不改（2 条）**
+
+- **`grep` 命令在 `CLAUDE.md` 与 `README.md` 各有一份**（复核："Duplicated Code"）——
+  **有意为之**：入口层每一份都要能**自己走通**，不靠"见另一份"。
+- **"Shotgun Surgery / Divergent Change"**（阶段计数散在 6 处、`README.md` 一次改了 5 件事）——
+  判断为**可接受**：这 5 件事同属"Phase 3 整理"这一个理由，且**本票做的正是把这些散点收敛掉**，
+  不收敛的话下一轮"顺延"还会再造一批。
