@@ -27,6 +27,7 @@ A 档已经栽过两次同类：判据⑤ 在一场爬升里照样过、判据�
 from __future__ import annotations
 
 import importlib.util
+import json
 import sys
 from pathlib import Path
 
@@ -594,3 +595,92 @@ def test_重判一份存下来的obs_会复用已存的姿态误差读数_不重
     detail = one(b.evaluate_b(obs), "⓪b ")["detail"]
     assert "取自本场落盘的读数" in detail, f"该走复用分支，实得：{detail[:80]}"
     assert "42 帧" in detail and "7.50" in detail, f"该报哨兵的数，实得：{detail[:80]}"
+
+
+# ────────────────────────────────────────────── traj 档的接线（判据② 的八字那条）
+
+
+def _cfg(**kw):
+    """`--reference-source traj` 那一档的 cfg（只有 `dut_params_b`/`ref_z_offset_m` 用到的字段）。"""
+    import types
+    base = dict(log_file="/tmp/x.jsonl", hover_thrust=0.6235, rate_hz=100.0,
+                hold_x=0.0, hold_y=0.0, hold_z=1.0,
+                reference_source="hold", ref_hold_s=30.0, ref_z_offset_m=None,
+                inject_solve_fail_after_frames=0)
+    base.update(kw)
+    return types.SimpleNamespace(**base)
+
+
+def test_traj档的DUT参数_hold_offset全零_参考源写traj():
+    """★★ "高度由谁叠"是这一档最容易接错的一根线，且**两条路写反都不会报错**：
+
+    · DUT 拿到非零 `hold_offset` ⟹ `mpc_node._validate` 拒跑（吵，但至少停）；
+    · **两边都不出高度** ⟹ 锚点在地面 ⟹ 飞机压根不打算离地，而判层只看到"它没动"。
+    所以这里把"traj 档下 DUT 收到的 hold_offset 必须**逐字**是 0.0"钉死。
+    """
+    p = b.dut_params_b(_cfg(reference_source="traj", hold_z=1.0))
+    assert "hold_offset_x:=0.0" in p and "hold_offset_y:=0.0" in p and "hold_offset_z:=0.0" in p
+    assert "reference_source:=traj" in p
+    assert "state_source:=mocap" in p, "B 档的身份不许被这条改动碰掉"
+
+
+def test_hold档的DUT参数_逐字不变():
+    """回归：加 `reference_source` 不许改掉老那一档的任何一条 —— 它上面挂着 F0–F4 全部基线。"""
+    p = b.dut_params_b(_cfg(hold_x=0.1, hold_y=-0.2, hold_z=1.5))
+    for want in ("hold_offset_x:=0.1", "hold_offset_y:=-0.2", "hold_offset_z:=1.5",
+                 "reference_source:=hold", "state_source:=mocap",
+                 "hover_thrust:=0.6235", "rate_hz:=100.0"):
+        assert want in p, f"{want} 丢了：{p}"
+
+
+def test_高度只由夹具叠_默认取hold_z():
+    """一个旋钮（`--hold-z`）在两种档下各自落地：hold 档进 DUT，traj 档进夹具。
+
+    ★ `--ref-z-offset-m` 显式给时以它为准（允许"起飞高度"与"轨迹高度"分开调）；
+      不给就跟随 `--hold-z` —— 这条"跟随"正是 `ref_z_offset_m()` 单独成函数的原因：
+      命令行与 obs 留档各写一遍，就会出现"命令行叠了 1 m、留档写 0"。
+    """
+    assert b.ref_z_offset_m(_cfg(hold_z=1.25)) == 1.25
+    assert b.ref_z_offset_m(_cfg(hold_z=1.25, ref_z_offset_m=0.5)) == 0.5
+    assert b.ref_z_offset_m(_cfg(hold_z=0.0)) == 0.0
+
+
+def _ref_rows(t0_abs, phases):
+    """造一份夹具的参考逐帧日志行（`wall_ns` 是**绝对**墙钟，`ref_timeline` 负责换算）。"""
+    out = []
+    for i, (phase, x, y, z) in enumerate(phases):
+        out.append({"wall_ns": int((t0_abs + i * 0.02) * 1e9), "phase": phase, "i": i,
+                    "position": [x, y, z], "velocity": [0.0, 0.0, 0.0], "yaw": 0.0})
+    return "\n".join(json.dumps(r) for r in out) + "\n"
+
+
+def test_参考时间线_换算到记录器墙钟_并认得出移动段(tmp_path):
+    """★★ 这是 traj 档**唯一**能回答"八字到底在 OFFBOARD 窗口里跑没跑"的读数。
+
+    为什么不能只看"夹具在发帧"：参考流**照着时间表**发，与 DUT 起没起来、进没进 OFFBOARD
+    **完全无关**。DUT 起得慢 ⟹ 整条八字在**地面上**放完，而夹具汇总里帧数/节奏/掩码全对。
+    """
+    t0 = T_ABS0
+    phases = ([("pre", 0.0, 0.0, 1.0)] * 3
+              + [("bag", 0.3, 0.0, 1.0), ("bag", 0.5, 0.1, 1.0), ("bag", 0.0, 0.0, 1.0)]
+              + [("hold", 0.0, 0.0, 1.0)] * 2)
+    f = tmp_path / "ref.jsonl"
+    f.write_text(_ref_rows(t0, phases), encoding="utf-8")
+    proc = b.ReplayProc(_cfg(reference_source="traj"), tmp_path / "frames.jsonl", tmp_path / "s.json")
+    proc.ref_out = f
+    tl = proc.ref_timeline(t0)
+    assert tl["n"] == 8 and tl["by_phase"] == {"pre": 3, "bag": 3, "hold": 2}
+    # z 叠上去的那 1 m **不算"在动"**（那是高度，不是轨迹）
+    assert tl["n_moving"] == 2, tl
+    # 首帧在 0.0 s、移动段从第 4 帧起（3 帧 pre × 20 ms）
+    assert tl["first_s"] == pytest.approx(0.0) and tl["move_first_s"] == pytest.approx(0.06)
+    assert tl["move_span_s"] == pytest.approx(0.02)
+
+
+def test_参考时间线_没有日志时说没做_不抛(tmp_path):
+    """「没做」与「没通过」不是一回事（同判据③④ 的三分法）——
+    没有夹具日志时这里要能判"判不了"，而不是让整层崩掉。"""
+    proc = b.ReplayProc(_cfg(reference_source="traj"), tmp_path / "f.jsonl", tmp_path / "s.json")
+    assert proc.ref_timeline(T_ABS0)["n"] == 0            # 没设 ref_out
+    proc.ref_out = tmp_path / "nope.jsonl"                # 设了但文件不存在
+    assert proc.ref_timeline(T_ABS0)["n"] == 0

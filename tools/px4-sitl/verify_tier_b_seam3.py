@@ -78,6 +78,7 @@ from __future__ import annotations
 
 import argparse
 import bisect
+import collections
 import json
 import math
 import os
@@ -295,6 +296,15 @@ class ReplayProc:
                "--summary", str(self.summary)]
         if self.args.base_delay_ms is not None:
             cmd += ["--base-delay-ms", str(self.args.base_delay_ms)]
+        if getattr(self.args, "reference_source", "hold") == "traj":
+            # ★ 参考那一路的逐帧留档单独一份：判层要拿它算"轨迹到底在不在 OFFBOARD 窗口里"，
+            #   与动捕那一路（`--out`）混在一起就分不出谁是谁。
+            self.ref_out = self.out_jsonl.parent / (self.out_jsonl.stem + "-reference.jsonl")
+            self.ref_out.unlink(missing_ok=True)
+            cmd += ["--publish-reference",
+                    "--ref-z-offset-m", str(ref_z_offset_m(self.args)),
+                    "--ref-hold-s", str(self.args.ref_hold_s),
+                    "--ref-out", str(self.ref_out)]
         self.proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                      text=True, start_new_session=True)
         return self
@@ -342,6 +352,40 @@ class ReplayProc:
             self.proc.wait(timeout=5)
         except subprocess.TimeoutExpired:
             pass
+
+    def ref_timeline(self, t0: float) -> dict:
+        """夹具那份参考逐帧日志 → **与记录器同一根墙钟**上的时间线（判层只能吃 obs）。
+
+        ★★ 为什么要在采集侧算好：判据层是 obs 的**纯函数**（`--replay` 不重跑 SITL），
+          让判据去读文件就等于"重判时读到的可能是另一次跑的文件"。
+        ★ 为什么不能只看"夹具在发帧"：参考流**照着时间表**发，与 DUT 起没起来、
+          进没进 OFFBOARD **完全无关**。若 DUT 起得慢，整条八字会在**地面上**放完，
+          而夹具的汇总里一切正常（帧数、节奏、掩码全对）⟹
+          "跑完了三条轨迹"会变成一句**没被验证**的话。这个时间线就是用来判它的。
+        """
+        path = getattr(self, "ref_out", None)
+        if path is None or not path.exists():
+            return {"n": 0, "why": "没有参考逐帧日志（这一场不是 traj 档？）"}
+        rows = []
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if line.strip():
+                rows.append(json.loads(line))
+        if not rows:
+            return {"n": 0, "why": f"{path} 是空的"}
+        by_phase = collections.Counter(r["phase"] for r in rows)
+        #: "在动"的帧 = 水平位置非零。八字的移动段就是这么认出来的（包 4：帧 0..304）；
+        #: 用 `--ref-z-offset-m` 叠出来的 z 不算"动"（那是高度，不是轨迹）。
+        move = [r for r in rows if abs(r["position"][0]) > 1e-6 or abs(r["position"][1]) > 1e-6]
+        out = {"n": len(rows), "by_phase": dict(by_phase), "n_moving": len(move),
+               "first_s": round(rows[0]["wall_ns"] * 1e-9 - t0, 3),
+               "last_s": round(rows[-1]["wall_ns"] * 1e-9 - t0, 3),
+               "log": str(path)}
+        if move:
+            out["move_first_s"] = round(move[0]["wall_ns"] * 1e-9 - t0, 3)
+            out["move_last_s"] = round(move[-1]["wall_ns"] * 1e-9 - t0, 3)
+            out["move_span_s"] = round(move[-1]["wall_ns"] * 1e-9
+                                       - move[0]["wall_ns"] * 1e-9, 3)
+        return out
 
 
 # ------------------------------------------------------------------ 被控对象（换机型）
@@ -412,6 +456,17 @@ def plant_hover_thrust(param_file: str):
 # ------------------------------------------------------------------ DUT 参数
 
 
+def ref_z_offset_m(cfg) -> float:
+    """`traj` 档下夹具叠在参考 `position.z` 上的高度（默认 = `--hold-z`）。
+
+    ★ 单独成函数：**"高度由谁叠"是这一档最容易接错的一根线**（见 `dut_params_b` 的 ☠️），
+      而两个取用点（命令行、obs 留档）必须是同一个数 —— 各写一遍就会出现
+      "命令行叠了 1 m、留档里写 0"这种事后谁也判不清的场面。
+    """
+    z = getattr(cfg, "ref_z_offset_m", None)
+    return float(cfg.hold_z if z is None else z)
+
+
 def dut_params_b(cfg) -> list:
     """给 `mpc_node.py` 的参数（`--ros-args -p 名:=值`）。
 
@@ -419,13 +474,21 @@ def dut_params_b(cfg) -> list:
       （默认就是 mocap，但**显式写出来** —— 这条参数就是本档的身份，让它出现在日志里）。
     ★ `hover_thrust` 显式给：见模块 docstring 的 ☠☠（SITL 机型是 0.6235，不是 0.1589）。
     ★ `rate_hz` 不改：D6 是"先按 100 Hz 量最坏耗时、再按实测降档"。
+    ★★ `--reference-source traj`（判据② 的八字那条）下 **`hold_offset` 必须全 0** —— 不是我们
+      客气，是 `mpc_node._validate` 会**拒跑**非零（`mpc_node.py:1415`）。所以那一档：
+      高度改由夹具叠在参考上（`--ref-z-offset-m`），DUT 只收到"相对锚点的轨迹"。
+      ☠️ 两条路是**互斥**的：谁叠高度是二选一。写反了（DUT 拿 `hold_offset_z=1` 又收相对参考）
+      会**起不来**（拒跑），比静默错好 —— 但要是两边都置 0，飞机就停在地面，
+      而判层只会看到"它没动"，看不出是配置错。
     """
+    traj = getattr(cfg, "reference_source", "hold") == "traj"
     params = [f"log_file:={cfg.log_file}",
               "state_source:=mocap",
               f"hover_thrust:={cfg.hover_thrust}",
-              f"hold_offset_x:={cfg.hold_x}",
-              f"hold_offset_y:={cfg.hold_y}",
-              f"hold_offset_z:={cfg.hold_z}",
+              f"hold_offset_x:={0.0 if traj else cfg.hold_x}",
+              f"hold_offset_y:={0.0 if traj else cfg.hold_y}",
+              f"hold_offset_z:={0.0 if traj else cfg.hold_z}",
+              f"reference_source:={getattr(cfg, 'reference_source', 'hold')}",
               f"rate_hz:={cfg.rate_hz}"]
     if cfg.inject_solve_fail_after_frames > 0:
         params += [f"inject_solve_fail_after_frames:={cfg.inject_solve_fail_after_frames}"]
@@ -446,10 +509,15 @@ def run_flight_b(px, rec, tap, dut, replay, cfg, agent) -> dict:
     """
     obs = {"name": cfg.tag, "plant": cfg.mismatch, "plant_param": cfg.plant_param,
            "mismatch": cfg.mismatch, "state_source": "mocap",
+           "reference_source": getattr(cfg, "reference_source", "hold"),
            "params": dut_params_b(cfg), "rate_hz": cfg.rate_hz, "hold_s": cfg.hold_s,
            "extra_delay_ms": cfg.extra_delay_ms, "model": cfg.model,
            "inject_solve_fail_after_frames": cfg.inject_solve_fail_after_frames,
            "plant_hover": plant_hover_thrust(cfg.plant_param), "t": {}}
+    if obs["reference_source"] == "traj":
+        #: 高度**由夹具叠**（DUT 那一档收不到 `hold_offset`，见 `dut_params_b` 的 ☠️）
+        obs["ref_z_offset_m"] = ref_z_offset_m(cfg)
+        obs["ref_hold_s"] = cfg.ref_hold_s
     nodes = [rec, agent, tap]
 
     # ① 夹具先起来，**并且真的在发帧**（判在它自己的逐帧 JSONL 上，不问话题）
@@ -472,13 +540,19 @@ def run_flight_b(px, rec, tap, dut, replay, cfg, agent) -> dict:
                   cfg.offboard_timeout_s, "PX4 没进 OFFBOARD")
     t_enter = rec.first_nav(v.NAV_STATE_OFFBOARD, since=t_before)
     obs["t"]["offboard_enter"] = None if t_enter is None else round(t_enter - t_before, 2)
+    #: OFFBOARD 起点在**记录器墙钟**（`rec.t0` 起算）上的值：`traj` 档靠它与参考时间线对表。
+    #: ⚠️ 上面那个 `offboard_enter` 是相对 `t_before` 的**秒数**，与夹具的墙钟不同源，
+    #:   拿它去和参考的 `wall_ns` 比就是拿两个零点不同的量相减。
+    obs["t"]["offboard_enter_t"] = None if t_enter is None else round(t_enter, 3)
     obs["armed_ever"] = rec.armed_ever(t_before, rec.now())
     obs["agent"] = agent.describe()
 
     # ④ 悬停窗口（墙钟）
     if t_enter is not None:
         ta.spin_all(px, nodes, cfg.hold_s)
-    obs["t"]["flight_end"] = round(rec.now(), 2)
+    t_end = rec.now()
+    obs["t"]["flight_end"] = round(t_end, 2)
+    obs["t"]["flight_end_t"] = round(t_end, 3)
 
     # ⑤ 收尾：把 DUT 与夹具都停下来，各自的汇总各自报
     frames = dut.frames()
@@ -490,6 +564,10 @@ def run_flight_b(px, rec, tap, dut, replay, cfg, agent) -> dict:
     obs["frames"] = [{k: f.get(k) for k in FRAME_KEYS} for f in frames]
     replay_out = replay.sigint()
     obs["replay_stdout_tail"] = "\n".join(replay_out.strip().splitlines()[-12:])
+    if obs["reference_source"] == "traj":
+        # ★ 放在**夹具停了之后**读：发帧线程还在跑时读，读到的是半条时间线，
+        #   而"八字跑完没有"正是拿这条时间线的**末尾**判的。
+        obs["reference_timeline"] = replay.ref_timeline(rec.t0)
     if cfg.replay_summary.exists():
         try:
             obs["replay"] = json.loads(cfg.replay_summary.read_text(encoding="utf-8"))
@@ -1166,11 +1244,21 @@ def main(argv=None) -> int:
     ap.add_argument("--seed", type=int, default=20260929)
     ap.add_argument("--inject-solve-fail-after-frames", type=int, default=0,
                     help="故障注入（判据④）：已发布 N 帧之后每拍的解都换成坏解；0 = 关")
-    ap.add_argument("--hold-s", type=float, default=25.0, help="OFFBOARD 生效后悬停多少秒")
+    ap.add_argument("--hold-s", type=float, default=25.0, help="OFFBOARD 生效后再飞多少秒")
     ap.add_argument("--rate-hz", type=float, default=100.0)
     ap.add_argument("--hold-x", type=float, default=0.0)
     ap.add_argument("--hold-y", type=float, default=0.0)
-    ap.add_argument("--hold-z", type=float, default=1.0, help="悬停高度（ENU，米）")
+    ap.add_argument("--hold-z", type=float, default=1.0,
+                    help="**目标高度**（ENU，米）—— 两种参考源共用这一个旋钮：`hold` 档它是 DUT 的 "
+                         "`hold_offset_z`；`traj` 档它变成夹具的 `--ref-z-offset-m`，"
+                         "而 DUT 的 `hold_offset` 全 0（那一档拒收非零）")
+    ap.add_argument("--reference-source", default="hold", choices=("hold", "traj"),
+                    help="DUT 的参考源（ticket 17）：`hold` = 锚点+常量偏移（老行为）；"
+                         "`traj` = 夹具重发包里的 `/traj/reference`（判据② 的八字那条）")
+    ap.add_argument("--ref-hold-s", type=float, default=30.0,
+                    help="`traj` 档：夹具开场顶住首点多少秒（等 DUT 起来 + 解锁 + OFFBOARD + 爬到参考高度）")
+    ap.add_argument("--ref-z-offset-m", type=float, default=None,
+                    help="`traj` 档：叠在参考 position.z 上的高度；默认取 `--hold-z`")
     ap.add_argument("--dut-timeout-s", type=float, default=150.0)
     ap.add_argument("--offboard-timeout-s", type=float, default=40.0)
     ap.add_argument("--outdir", default="/tmp/tier-b")
@@ -1196,6 +1284,22 @@ def main(argv=None) -> int:
         raise SystemExit(f"模型 {args.model} 不存在 —— 先跑：\n"
                          f"  python3 tools/px4-sitl/mocap_model.py dump bag/3_traj1_hover "
                          f"--noise-bag bag/1_static --json {args.model}")
+    if args.reference_source == "traj":
+        # ☠️ 两条静默错法各堵一道。写反了不会报错，只会让报告说"飞机没动"：
+        #    ① DUT 侧收到非零 `hold_offset` ⟹ `mpc_node._validate` **拒跑**（好，但很难懂）；
+        #    ② 两边都不出高度 ⟹ 锚点在地面 ⟹ 飞机**压根不打算离地**，判层只看到"没动"。
+        if args.hold_x or args.hold_y:
+            raise SystemExit(f"--reference-source traj 时 hold_x/hold_y 必须是 0（收到 "
+                             f"{args.hold_x}/{args.hold_y}）—— 那一档的 `hold_offset` 全 0，"
+                             f"它只是锚点相对量，不是目标点")
+        if ref_z_offset_m(args) == 0.0:
+            raise SystemExit("--reference-source traj 且高度 0 ⟹ 参考全在**地面**上"
+                             "（包里的参考 z ≡ 0，锚点又定在地面那一拍）—— "
+                             "用 --hold-z（或 --ref-z-offset-m）给一个起飞高度")
+        if args.hold_s < args.ref_hold_s + 10.0:
+            raise SystemExit(f"--hold-s={args.hold_s} 太短：traj 档要先用 --ref-hold-s="
+                             f"{args.ref_hold_s} 顶住首点等飞机起来，八字本身还要 ~6.1 s "
+                             f"（包 4 的移动段），合计至少 {args.ref_hold_s + 10.0:.0f} s")
     args.plant_param = plant_param_file(args.mismatch)
     args.model_hover_thrust = args.hover_thrust
     args.build_dir = args.build_dir or str(Path(args.src) / "build/px4_sitl_default")
