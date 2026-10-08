@@ -1444,6 +1444,32 @@ def _judge_m5(ck, obs, fb, ph, truth) -> None:
 # ------------------------------------------------------------------ 报告
 
 
+def traj_model_problem(model_path) -> str | None:
+    """traj 档的**模型自检**：模型里必须真有一条参考。没问题返回 `None`，否则返回原因。
+
+    ★★ 为什么要它：`--model` 的默认是**包 3**（悬停那条），它那份模型里的
+      `/traj/reference` 是**恒为 0** 的（3873 帧全在原点，见 `mocap_model.TRAJ_TOPIC` 的 ☠️）。
+      拿错模型的症状**完全静默**：夹具发帧无异常、飞机照飞、报告说"参考一帧没动"——
+      而那读起来像"夹具坏了"。与其让操作者空烧一个窗口才发现，不如在起世界之前拦住。
+    ★ 抽成**纯函数**是为了能离线单测：这一段原来是 `main()` 里的一行 `if`，
+      而 `main()` 的每条路都要起 `BWorld` —— 拿它做变异测试就得烧一个窗口。
+    """
+    try:
+        model = json.loads(Path(model_path).read_text(encoding="utf-8"))
+    except (OSError, ValueError) as e:                             # noqa: BLE001
+        return f"模型 {model_path} 读不出来：{e!r}"
+    ref = (model or {}).get("reference") or {}
+    if not ref.get("n"):
+        return (f"模型 {model_path} 里没有 `/traj/reference`（n={ref.get('n')}、"
+                f"why={ref.get('why')!r}）⟹ 夹具发出去的是一条**恒为 0 的参考**，"
+                f"八字根本不会跑。\n"
+                f"  改用包 4 那份（已入库）：\n"
+                f"    --model tools/px4-sitl/evidence/tier-b/mocap-model-4.json\n"
+                f"  重新生成：python3 tools/px4-sitl/mocap_model.py dump "
+                f"bag/4_traj3_lemniscate --json <路径>")
+    return None
+
+
 def report_b(obs, checks) -> int:
     print("=" * 100)
     print(f"B 档 seam 3 —— {obs.get('name')}（{obs.get('plant_param')}，"
@@ -1521,10 +1547,16 @@ def main(argv=None) -> int:
         return report_b(obs, obs["checks"])
 
     if not Path(args.model).exists():
+        bag = ("bag/4_traj3_lemniscate" if args.reference_source == "traj"
+               else "bag/3_traj1_hover --noise-bag bag/1_static")
         raise SystemExit(f"模型 {args.model} 不存在 —— 先跑：\n"
-                         f"  python3 tools/px4-sitl/mocap_model.py dump bag/3_traj1_hover "
-                         f"--noise-bag bag/1_static --json {args.model}")
+                         f"  python3 tools/px4-sitl/mocap_model.py dump {bag} "
+                         f"--json {args.model}")
     if args.reference_source == "traj":
+        # ☠️ 第三条静默错法：**拿错模型**（默认那份来自包 3，参考恒为 0）。见纯函数那条 ★。
+        problem = traj_model_problem(args.model)
+        if problem:
+            raise SystemExit(problem)
         # ☠️ 两条静默错法各堵一道。写反了不会报错，只会让报告说"飞机没动"：
         #    ① DUT 侧收到非零 `hold_offset` ⟹ `mpc_node._validate` **拒跑**（好，但很难懂）；
         #    ② 两边都不出高度 ⟹ 锚点在地面 ⟹ 飞机**压根不打算离地**，判层只看到"没动"。

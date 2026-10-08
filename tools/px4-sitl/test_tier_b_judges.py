@@ -428,6 +428,42 @@ def test_判据2_悬停时掉到地面就算撞地_不过():
     assert hover["ok"] is False and hover["counts"] is True
 
 
+# ────────────────────────────────────────────── traj 档的模型自检（起世界之前拦住）
+
+
+def test_模型里没有参考就拦住(tmp_path):
+    """拿**包 3** 那份模型跑 traj 档 ⟹ 发出去的参考恒为 0、八字根本不会跑。
+
+    ★ 这条错法**完全静默**（夹具不报错、飞机照飞），只在报告里留一句"参考一帧没动" ——
+      所以必须在起世界之前拦住。它判在**纯函数**上 ⟹ 不用烧窗口就能变异测试。
+    """
+    p = tmp_path / "m3.json"
+    p.write_text(json.dumps({"reference": {"n": 0, "why": "包里没有这个话题"}}),
+                 encoding="utf-8")
+    problem = b.traj_model_problem(p)
+    assert problem is not None and "恒为 0" in problem and "mocap-model-4.json" in problem
+
+
+def test_模型读不出来也拦住(tmp_path):
+    p = tmp_path / "坏.json"
+    p.write_text("{不是 json", encoding="utf-8")
+    assert b.traj_model_problem(p) is not None
+    assert b.traj_model_problem(tmp_path / "没有这个文件.json") is not None
+
+
+def test_入库的两份模型各判各的():
+    """★ 直接判**归档里那两份真模型**：包 3 那份该被拦住、包 4 那份该放行。
+
+    用真文件而不是人造 dict，是因为这两份是 `run_matrix.sh` 真正会传的路径 ——
+    人造 dict 测不出"包 4 的模型里其实没写进 `reference` 块"那类入库事故。
+    """
+    ev = Path(b.__file__).resolve().parent / "evidence" / "tier-b"
+    m3, m4 = ev / "mocap-model-3.json", ev / "mocap-model-4.json"
+    assert m3.exists() and m4.exists(), f"归档模型缺了：{m3} / {m4}"
+    assert b.traj_model_problem(m3) is not None, "包 3 的参考恒为 0，该被拦住"
+    assert b.traj_model_problem(m4) is None, "包 4 的模型该带上那条八字参考"
+
+
 # ────────────────────────────────────────────── 判据③（延迟）
 
 
