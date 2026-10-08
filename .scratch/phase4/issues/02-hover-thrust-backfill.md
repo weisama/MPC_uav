@@ -20,4 +20,4 @@ Type: task
 
 **为什么是 `ready-for-human`**：改飞控参数要在 QGC 里做，且「哪个读数才是可信的」是人的判断。
 
-*⚠️ spec 层约束：Phase 3 不与 Phase 1 / Phase 2 并行开工。*
+*⚠️ spec 层约束：Phase 4 不与 Phase 1 / Phase 2 并行开工。*

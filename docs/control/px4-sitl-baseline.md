@@ -1,6 +1,6 @@
 # PX4 SITL 基线（ticket 01）—— 上游 v1.14.3 + `px4_msgs` + micro-XRCE-DDS Agent
 
-> **这是 Phase 2 全部后续工作的地基**，也是 **Phase 3 重编固件要复用的构建环境**（Q37=a）。
+> **这是 Phase 2 全部后续工作的地基**，也是 **Phase 4 重编固件要复用的构建环境**（Q37=a）。
 > ⚠️ **一句话挡住最常见的误读：在这里编 SITL ≠ 刷飞控。** Q12 的「不刷固件」决策不变 ——
 > 本页只编了一份给仿真器跑的 posix 二进制，飞控里烧着的仍是出厂那份
 > `Minderring/PX4-Autopilot` @ `4a0e65f2`，**一个字都没动**。
@@ -258,7 +258,7 @@ PX4 v1.14.3 的模板调用是 empy **3.x** 的 API。全树用到 `em.RAW_OPT` 
 
 ---
 
-## 7. 给 Phase 3 的交接
+## 7. 给 Phase 4 的交接
 
 1. **构建环境已就位**：`~/refs/px4-v1.14.3-build/` + venv + 脚本三件套。
    重编固件（Q37=a）时**复用这套工具链**（`make <board>_default` 而不是 `px4_sitl_default`）。

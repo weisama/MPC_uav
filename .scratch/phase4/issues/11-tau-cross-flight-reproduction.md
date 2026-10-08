@@ -37,4 +37,4 @@ Type: task
 **为什么是 `ready-for-agent`**：纯离线数据处理。通电与拉取那一步由操作者做（与 03 相同），
 拿到日志之后的活不需要飞机、不需要人盯。
 
-*⚠️ spec 层约束：Phase 3 不与 Phase 1 / Phase 2 并行开工。*
+*⚠️ spec 层约束：Phase 4 不与 Phase 1 / Phase 2 并行开工。*

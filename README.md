@@ -21,7 +21,7 @@
 | **mavros** | **2.15.1 @ `22ae5b7`** —— 源码构建在 `~/mavros_ws`，**不在本仓库**（Phase 1 全靠它） |
 | **ROS 2** | **Humble** |
 | **运行环境** | Ubuntu 22.04.5 LTS · 内核 5.15.185-tegra · aarch64（Jetson Orin NX 8GB） |
-| **阶段状态** | Phase 1 🟨 **收口**（真机自由飞成 2026-09-28；★ 残余项是**裁定不再补做 / 留待台架日**的那几条，见下） · Phase 2 🟨 **进行中**（见下） · Phase 3 ⬜ 未开始 |
+| **阶段状态** | Phase 1 🟨 **收口**（真机自由飞成 2026-09-28；★ 残余项是**裁定不再补做 / 留待台架日**的那几条，见下） · Phase 2 🟨 **进行中**（见下） · Phase 4 ⬜ 未开始 |
 
 ★ 上表每一行的证据落点：固件与 `px4_msgs` 见 [`refs-manifest.md`](docs/reference/refs-manifest.md)
 §2.5/§2.6，mavros 版本见 [`src/control/README.md`](src/control/README.md)。
@@ -57,9 +57,9 @@ source 过之后是 **129 passed**，见 [`run/README.md`](run/README.md) 的「
 |---|---|---|---|
 | **Phase 1** | **offboard 位置定点飞行** —— 用动捕让 z0 稳定悬停并跟踪简单轨迹，**PX4 跑全部内环 PID** | **(A) 级**：`/mavros/setpoint_raw/local`（位置 + yaw） | 🟨 **代码与台架测试已就绪** + **2026-09-28 真机自由飞一次成**（定点定高 + 各按键 + 三条轨迹，**目测一切正常、数值未量** ⟹ ticket 09 收 `done`）· **阶梯 1–3 级（拆桨 / 系绳 20 cm / 系绳悬停 30 s）未做** —— ★ 2026-09-28 操作者裁定**不再补做**（自由飞已覆盖其风险；**是裁定不是做过了**，那几级的读数仍然是空的）· **台架清单 T1–T8 待下一次台架日一次性全跑** · [`spec`](.scratch/phase1/spec.md) `ready-for-agent` |
 | **Phase 2** | **MPC 接管 PID —— SITL 验证**：MPC 输出角速率 + 推力，PX4 只跑角速率环；被控对象**从上游 v1.14.3 构建的 z0 同构机**（**不是 `gz_x500`**；☠️ 原写"从 fork 构建"，该 fork 与 z0 无关） | **(C) 级**：`/fmu/in/vehicle_rates_setpoint` | 🟨 **进行中** —— MPC（模型预测控制）节点 + acados + SITL 同构机都已落地，**闭环跑得起来**；⚠️ **还没收口**（seam 3 的判据未跑满、被控对象待按真机实测重搭）。★ **本格不抄读数**（抄了就会过期）—— 进度以 [`spec`](.scratch/phase2/spec.md) 与 `.scratch/phase2/issues/` 里各票的 `Status:` 行为准 |
-| **Phase 3** | **MPC 上实机**：四项前置测量 + 一次固件重编（~~ADC 一行修复~~ ☠️ **修法要重定 —— 那条缺陷不在 z0 的固件里**），然后拆桨 → 系绳 → 自由飞四级阶梯 | 同 Phase 2（**(C) 级**） | ⬜ 未开始 · [`spec`](.scratch/phase3/spec.md) `ready-for-human` |
+| **Phase 4** | **MPC 上实机**：四项前置测量 + 一次固件重编（~~ADC 一行修复~~ ☠️ **修法要重定 —— 那条缺陷不在 z0 的固件里**），然后拆桨 → 系绳 → 自由飞四级阶梯 | 同 Phase 2（**(C) 级**） | ⬜ 未开始 · [`spec`](.scratch/phase4/spec.md) `ready-for-human` |
 
-**指导思想：每个阶段只引入一个新变量。** Phase 1 全走 mavros2（**完全不碰 uXRCE-DDS**），把"动捕链路 + 状态机 + offboard"先跑通；Phase 2 再加 MPC + acados + uXRCE-DDS，**但只在 SITL 里验证，不碰飞机**；Phase 3 才上实机，且**先在离地之前把每个能摔机的未知量量出来**。
+**指导思想：每个阶段只引入一个新变量。** Phase 1 全走 mavros2（**完全不碰 uXRCE-DDS**），把"动捕链路 + 状态机 + offboard"先跑通；Phase 2 再加 MPC + acados + uXRCE-DDS，**但只在 SITL 里验证，不碰飞机**；Phase 4 才上实机，且**先在离地之前把每个能摔机的未知量量出来**。
 
 ---
 
@@ -71,7 +71,7 @@ source 过之后是 **129 passed**，见 [`run/README.md`](run/README.md) 的「
 ├── .scratch/                         ★ 本地 issue tracker（随 git 入库，不是临时目录）
 │   ├── phase1/spec.md                Phase 1 spec —— offboard 位置定点飞行
 │   ├── phase2/spec.md                Phase 2 spec —— MPC 接管 PID：SITL 验证
-│   └── phase3/spec.md                Phase 3 spec —— MPC 实机飞行（含固件重编与前置测量）
+│   └── phase4/spec.md                Phase 4 spec —— MPC 实机飞行（含固件重编与前置测量）
 ├── docs/    资料与文档
 │   ├── PROJECT.md                    ★ 总纲（先读它）
 │   ├── LOCAL-NOTES.md                ⚠️ 含本机凭据，作者决定随 docs/ 入库 —— 见文件头部须知
@@ -79,7 +79,7 @@ source 过之后是 **129 passed**，见 [`run/README.md`](run/README.md) 的「
 │   ├── control/
 │   │   ├── phase1-implementation.md  ★★ Phase 1 实施清单
 │   │   ├── bench-runbook.md          ★★ 拆桨台架清单（Phase 1 必须由人做的那一薄层）
-│   │   ├── phase2-implementation.md  ★★ Phase 2/3 实施清单（Phase 3 spec 引用它）
+│   │   ├── phase2-implementation.md  ★★ Phase 2/3 实施清单（Phase 4 spec 引用它）
 │   │   └── mpc-roadmap.md            Phase 2 资料汇总（含 D1–D10）
 │   ├── reference/
 │   │   ├── code-inventory.md         ★★ 代码盘点与取舍
@@ -143,7 +143,7 @@ source 过之后是 **129 passed**，见 [`run/README.md`](run/README.md) 的「
 **要动手做哪一阶段**：先读对应的 `.scratch/phase{1,2,3}/spec.md` —— 它定义该阶段的范围与验收判据。
 
 > **三份 spec 的 `Status:`（2026-09-20 已分诊）**：Phase 1 与 Phase 2 → **`ready-for-agent`**
-> （代码 + SITL 可 AFK 推进）；Phase 3 → **`ready-for-human`**（量电机位置、刷固件、系绳试飞，
+> （代码 + SITL 可 AFK 推进）；Phase 4 → **`ready-for-human`**（量电机位置、刷固件、系绳试飞，
 > AFK agent 做不了）。Q35=a 的暂时退回**已解除**。
 
 ### 📁 参考仓库在**仓库外**
@@ -162,9 +162,9 @@ Sim2real-UAV-Params- / Nxt-FC / z0 固件真身 / PX4 上游对照 tag）都就�
 
 | 约束 | 后果 |
 |---|---|
-| ⚠️ **z0 不在 PX4 官方支持矩阵内，且"板名 ≠ 固件目标名"** —— 上游 `hkust_nxt-dual` 板级目标只在 **PX4 ≥ 1.15.0** 存在（v1.14.3 无 `boards/hkust` ✅ 已核实）；而**真身固件的 `boards/` 里只有 `micoair/{h743, h743-v2, h743-aio}`，没有 `hkust/`** | **不刷固件、不追上游**（Q12 不变）。⚠️ **张力没消**：板名 = **MicoAir NxtPX4v2**（用户看实物确认，`hkust_nxt-dual` 只是**上游目标名**）⟹ **Phase 3 重编固件该编哪个板级目标仍未定**。详见 [`refs-manifest.md`](docs/reference/refs-manifest.md) §2.5(d)④ |
+| ⚠️ **z0 不在 PX4 官方支持矩阵内，且"板名 ≠ 固件目标名"** —— 上游 `hkust_nxt-dual` 板级目标只在 **PX4 ≥ 1.15.0** 存在（v1.14.3 无 `boards/hkust` ✅ 已核实）；而**真身固件的 `boards/` 里只有 `micoair/{h743, h743-v2, h743-aio}`，没有 `hkust/`** | **不刷固件、不追上游**（Q12 不变）。⚠️ **张力没消**：板名 = **MicoAir NxtPX4v2**（用户看实物确认，`hkust_nxt-dual` 只是**上游目标名**）⟹ **Phase 4 重编固件该编哪个板级目标仍未定**。详见 [`refs-manifest.md`](docs/reference/refs-manifest.md) §2.5(d)④ |
 | ★★ **固件真身 = `Minderring/PX4-Autopilot` @ `4a0e65f2`（v1.14.3 系）** —— commit `4a0e65f2331b23b9c8352656e9ccb6edeaea5d6c`，`add micoair743-aio to PX4-Autopilot v1.14.3`（2024-11-18）。**飞控自报的读数**（MAVLink `AUTOPILOT_VERSION`）：`flight_sw_version = 0x010e0300`（⟹ **`1.14.3`**）、`flight_custom_version` 8 字节 `00 00 00 33 f2 65 0e 4a` ⟹ hash **`4a0e65f233`**。其 `msg/`（185 个）与**上游 v1.14.3（tag `1dacb4c`）逐字节相同** | ☠️ **fork `Peize-Liu/PX4-Autopilot @ 5ba2e91f` 与 z0 无关**（它是 **v1.15 世代**；`Nxt-FC` 的 submodule 指认是一条**错的线索**）。**"z0 是 1.14.x" 这个标签是对的** —— 09-20/21 一度判它错，是误判。详见 [`refs-manifest.md`](docs/reference/refs-manifest.md) §2.5(d) |
-| ⚠️ **电池电流采样通道缺陷（`ADC12_CH(5)`）—— ★ 实测判为"未中招"** —— 那个错值在 `boards/hkust/nxt-dual/src/board_config.h` 里（引脚表写 `/* PC5 */ GPIO_ADC12_INP8` = 通道 8，宏却读**通道 5**）；而 **z0 真身那棵树没有 `hkust/`**，它的 `boards/micoair/h743-aio` 写的是 `/* PC1 */ ADC1_CH(11)`，**与引脚相符、无此缺陷**。版本边界（第一手）：v1.15.0 仍带、v1.16.0 才改成 `ADC12_CH(8)` | ✅ **2026-09-21 实测判为"未中招"**（读数与判据见 [`params-changes.md`](docs/reference/params-changes.md) §A4）—— **不是运气，是这条缺陷不在这块固件里**。⚠️ 因此 Phase 3「重编重刷 `pr_fix_hkust_nxt_dual`」这个修法**对 z0 的固件不适用，要重定**。~~详见 `refs-manifest.md` §2.7(b)~~ ☠️ 那个指针**本身就指错了**（§2.7(b) 讲分支表，不讲 ADC）；逐项证据见 [`params-analysis.md`](docs/reference/params-analysis.md) **§3.5.1**（与 [`PROJECT.md`](docs/PROJECT.md) 同一行的指向保持一致） |
+| ⚠️ **电池电流采样通道缺陷（`ADC12_CH(5)`）—— ★ 实测判为"未中招"** —— 那个错值在 `boards/hkust/nxt-dual/src/board_config.h` 里（引脚表写 `/* PC5 */ GPIO_ADC12_INP8` = 通道 8，宏却读**通道 5**）；而 **z0 真身那棵树没有 `hkust/`**，它的 `boards/micoair/h743-aio` 写的是 `/* PC1 */ ADC1_CH(11)`，**与引脚相符、无此缺陷**。版本边界（第一手）：v1.15.0 仍带、v1.16.0 才改成 `ADC12_CH(8)` | ✅ **2026-09-21 实测判为"未中招"**（读数与判据见 [`params-changes.md`](docs/reference/params-changes.md) §A4）—— **不是运气，是这条缺陷不在这块固件里**。⚠️ 因此 Phase 4「重编重刷 `pr_fix_hkust_nxt_dual`」这个修法**对 z0 的固件不适用，要重定**。~~详见 `refs-manifest.md` §2.7(b)~~ ☠️ 那个指针**本身就指错了**（§2.7(b) 讲分支表，不讲 ADC）；逐项证据见 [`params-analysis.md`](docs/reference/params-analysis.md) **§3.5.1**（与 [`PROJECT.md`](docs/PROJECT.md) 同一行的指向保持一致） |
 | ⚠️ **动捕时间戳 `stamp = now()` 是刻意设计，不要改** | 动捕主机与 Jetson 有 **~4 秒**时钟差；改成 `msg_time` 会毁掉 EKF2 融合 |
 | ⚠️ **`TrajectorySetpoint` 没有 `thrust` 字段** | 要发姿态+推力得用 `VehicleAttitudeSetpoint` |
 | ⚠️ **推力是 `[-1, 1]` 归一化，不是 `0–1`、不是牛顿** | 数值约定错了，MPC 算得再对飞机也不会飞 |

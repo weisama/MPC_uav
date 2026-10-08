@@ -129,7 +129,7 @@ Type: task
 >
 > **清单外的 10 处**（grep 扩范围后才发现）：`README.md` 的 Phase 2 / Phase 3 / 目录树三行、
 > `.scratch/phase2/spec.md` 的 `:44` / `:212-214` / `:275` / `:298` / `:317-318`、
-> `.scratch/phase2/issues/08`、`.scratch/phase3/spec.md` 六处、`.scratch/phase1/spec.md` 的 §ADC 一节、
+> `.scratch/phase2/issues/08`、`.scratch/phase4/spec.md` 六处、`.scratch/phase1/spec.md` 的 §ADC 一节、
 > 以及 `tools/prereq-evidence/mavlink_probe.py`（#85，**唯一一处真 bug —— 它会主动给出反的判定**）。
 > 复算命令：`awk '/^## §处置表/,/^### 三、核验/' <本文件> | grep -c '^| [0-9]\+ |'`。
 
@@ -142,7 +142,7 @@ Type: task
 | 1 | 头部引文（原 :4-5 "固件真身实为 **v1.15 世代**"） | **改写** | 改为 `Minderring/PX4-Autopilot @ 4a0e65f2`（**v1.14.3 系**的 MicoAir 厂商构建）+ 明写"fork `Peize-Liu/PX4-Autopilot @ 5ba2e91f` **与 z0 无关**" |
 | 2 | Phase 2 行（原 :16） | **改写** | "被控对象**从 fork 构建的 z0 同构机**" → "**从上游 v1.14.3 构建的** z0 同构机"（+ ☠️ 原写标注）。**同轮新发现，不在原清单** |
 | 3 | Phase 3 行（原 :17） | **改写** | "一次固件修复（ADC 一行）" → "一次固件重编（~~ADC 一行修复~~ ☠️ **修法要重定 —— 那条缺陷不在 z0 的固件里**）"。**同轮新发现** |
-| 4 | 目录树 `phase3/spec.md` 说明（原 :30） | **改写** | "含固件一行修复与前置测量" → "含固件重编与前置测量"。**同轮新发现** |
+| 4 | 目录树 `phase4/spec.md` 说明（原 :30） | **改写** | "含固件一行修复与前置测量" → "含固件重编与前置测量"。**同轮新发现** |
 | 5 | 约束表 · 支持矩阵 / 板名行 | **改写** | 写清"上游 `hkust_nxt-dual` 只在 **PX4 ≥ 1.15.0** 存在"与"**真身 `boards/` 里只有 `micoair/{h743,h743-v2,h743-aio}`，没有 `hkust/`**" |
 | 6 | 约束表 · 真身行 | **改写** | 整行重写成：真身 commit 全 hash、commit message、**飞控自报读数**（`flight_sw_version = 0x010e0300` ⟹ `1.14.3`；`flight_custom_version` 8 字节 ⟹ `4a0e65f233`）、`msg/` 185 个与上游 v1.14.3 逐字节相同 |
 | 7 | 约束表 · ADC 行 | **改写** | 由"**已确认中招**"改为"**实测判为「未中招」**"，并写明"不是运气，是这条缺陷不在这块固件里"（**用户裁定"顺手改正"**，指向 `params-changes.md` §A4） |
@@ -268,12 +268,12 @@ Type: task
 | 72 | `phase2/spec.md:44` | **改写** | SITL 被控对象"从 fork `5ba2e91f` 构建" → **上游 v1.14.3（tag `1dacb4c`）**。**同轮新发现，不在原清单** |
 | 73 | `phase2/spec.md:212-214` 通信约定 | **改写**（整条） | 原条整条是错判（"都从 fork 构建 / `release/1.14` 已实测否决 / `release/1.15` 也不必试 / z0 是 v1.15 世代"）⟹ 全部划掉，写三条正确基准 |
 | 74 | `phase2/spec.md:218` `MC_BAT_SCALE_EN` | **改写**（理由收窄） | **结论不变**（保持 `0`），但不再靠"该缺陷"支撑 |
-| 75 | `phase2/spec.md:275` / `:298` / `:317-318` | **改写** | fork 同构机 → 上游 v1.14.3 构建；"留在 fork" 整句反转；给 Phase 3 的交接里"ADC 一行修复"划掉。**同轮新发现** |
+| 75 | `phase2/spec.md:275` / `:298` / `:317-318` | **改写** | fork 同构机 → 上游 v1.14.3 构建；"留在 fork" 整句反转；给 Phase 4 的交接里"ADC 一行修复"划掉。**同轮新发现** |
 | 76 | `phase2/issues/06:12`（M8 旁述） | **改写** | ⚠️ **M8 结论本身仍成立**（真身里同样不存在），**只换世代标签/对象** |
 | 77 | `phase2/issues/08:12` | **改写** | "在 fork `5ba2e91f` 构建出的 SITL 上" → **上游 v1.14.3**。**同轮新发现** |
 | 78 | `phase2/issues/01` | **保留** | ✅ **2026-09-21 已重写**，本就正确 |
-| 79 | `phase3/spec.md:11 / :16 / :38 / :64 / :122-126 / :236 / :273` | **改写** | 全文凡"ADC 一行修复"处逐处反转；§固件节补上**当前唯一有效待办**（确认板级目标）；并明确指出"本节原先那两行整块作废、保留供复核"。**同轮新发现** |
-| 80 | `phase3/issues/04` | **改写**（整票重写） | 原票的动作（打 `CH(5)`→`CH(8)` 于 `5ba2e91f`）**对象与修法双错**。**重写后 `Status: needs-info`** —— 卡在"编哪块板"这个只有操作者能答的问题上（详见该票 §0） |
+| 79 | `phase4/spec.md:11 / :16 / :38 / :64 / :122-126 / :236 / :273` | **改写** | 全文凡"ADC 一行修复"处逐处反转；§固件节补上**当前唯一有效待办**（确认板级目标）；并明确指出"本节原先那两行整块作废、保留供复核"。**同轮新发现** |
+| 80 | `phase4/issues/04` | **改写**（整票重写） | 原票的动作（打 `CH(5)`→`CH(8)` 于 `5ba2e91f`）**对象与修法双错**。**重写后 `Status: needs-info`** —— 卡在"编哪块板"这个只有操作者能答的问题上（详见该票 §0） |
 | 81 | `phase1/spec.md:18 / :229 / :298-301` | **保留** | ✅ **2026-09-21 已由 ticket 02 就地改完** |
 | 82 | `phase1/spec.md:317 / :325 / :339 / :341-346 / :348` | **改写** | 标题"预期会中招" → "**曾以为会中招**（实测：未中招）"；版本边界表 fork 行加 ☠️；"后果：电流/电量保护可能是假的"划掉；**Q37=a 的"修复"那一半作废**（"核实"那一半已 ✅ 完成）；"编译期宏"那条理由标注"对 z0 无对象，但 Phase 1 用电压兜底的做法照样对"。**同轮新发现** |
 | 83 | `phase1/issues/21`（电调滴滴，`wontfix`） | **改写 + 新证据** | 该票 §2.2 的源码引用**全部取自 fork**、自己标了"**待换树核对**"。**本轮把它做掉了**：逐条 `git show 4a0e65f2` 重读 ⟹ **机理链全部成立、结论不变，只有部分行号变**（`DShot.cpp` `:417`→`:342-344`、`:533`→`:458`、`:436-448`→`:370`/`:394`；`mixer_module.cpp` `:475`→`:472`；`drv_dshot.h:52/79/80` 与 `mixer_module.cpp:417` 行号全同）。**这不改变该票的 `wontfix`** —— 根因仍没定位 |
@@ -284,7 +284,7 @@ Type: task
 | # | 落点 | 处置 | 理由 |
 |---|---|---|---|
 | 85 | [`tools/prereq-evidence/mavlink_probe.py:426-437`](../../../tools/prereq-evidence/mavlink_probe.py) | **改写**（真 bug） | 脚本把 **`5ba2e91f` 硬编码成期望值**，并对飞控报出的 hash 做 `"5ba2e91f".startswith(git_prefix[:8])` 判定 ⟹ **飞控报 `4a0e65f233` 时它会打印"⚠️ 不一致"**，**结论正好反了**。已改为对照定案真身 `4a0e65f2`，并加一行明写"fork 与 z0 无关、旧版会给出反的判定"。`:264` 的示例字符串也换成 `4a0e65f2`。**已 `python3 -m py_compile` 通过**，并自测两个分支（`4a0e65f233` → ✅ / `5ba2e91ff2` → ⚠️） |
-| 86 | [`.scratch/phase1/issues/03`](03-vendor-vrpn-listener.md) 的"未认领清单" | **改写** | 该票 2026-09-22 的 `/code-review` 遗留表里，第 **1/2/3/5/6** 项正是本票这一类（`PROJECT.md:433`、`README.md:87`、`phase3/spec.md:38`、`mavlink_probe.py:432`、`params-analysis.md:263`）—— **本轮全部清掉**，已在该票就地记为 ✅。⚠️ 同表第 **4/7/8/9** 项是**别的工具缺陷，本轮未修、也至今无归属票**，已在该票点名 |
+| 86 | [`.scratch/phase1/issues/03`](03-vendor-vrpn-listener.md) 的"未认领清单" | **改写** | 该票 2026-09-22 的 `/code-review` 遗留表里，第 **1/2/3/5/6** 项正是本票这一类（`PROJECT.md:433`、`README.md:87`、`phase4/spec.md:38`、`mavlink_probe.py:432`、`params-analysis.md:263`）—— **本轮全部清掉**，已在该票就地记为 ✅。⚠️ 同表第 **4/7/8/9** 项是**别的工具缺陷，本轮未修、也至今无归属票**，已在该票点名 |
 
 > ⚠️ **#85 值得单独说一句**：它不是文档措辞问题，是**一个会主动误导操作者的工具**。
 > 本票的判据是"读者会不会被带偏"—— 这个脚本比任何一句文档都更直接地把人带偏（它会**替你下结论**）。
@@ -312,7 +312,7 @@ grep -rn "v1\.15 世代" docs/ | grep -v "☠️\|~~\|作废\|推翻\|更正\|�
 
 | # | 未决事项 | 归属 |
 |---|---|---|
-| 1 | ★ **Phase 3 重编固件该编哪块板级目标**（板名 `NxtPX4v2` vs 真身树里的 `micoair/{h743,h743-v2,h743-aio}`） | [`phase3/issues/04`](../../phase3/issues/04-firmware-reflash.md) §0，`needs-info`，**等操作者**（板级目标这个问题的权威记录在 [`refs-manifest.md`](../../../docs/reference/refs-manifest.md) §2.5(d)④ ①） |
+| 1 | ★ **Phase 4 重编固件该编哪块板级目标**（板名 `NxtPX4v2` vs 真身树里的 `micoair/{h743,h743-v2,h743-aio}`） | [`phase4/issues/04`](../../phase4/issues/04-firmware-reflash.md) §0，`needs-info`，**等操作者**（板级目标这个问题的权威记录在 [`refs-manifest.md`](../../../docs/reference/refs-manifest.md) §2.5(d)④ ①） |
 | 2 | `z0.params` 的 `BAT1_A_PER_V = 17.0` / `BAT1_V_DIV = 10.02` **与三个 `micoair` 板级默认值都不匹配** | ⚠️ **证据很弱**（`BAT1_*` 是**用户/台架标定值**，本来就不必等于板级默认值）—— 已作为**旁证**记进 [`refs-manifest.md`](../../../docs/reference/refs-manifest.md) §2.5(d)④ ①，**不是判据**；钉死板子的硬办法仍是该节推荐的**只读** `CAL_ACC*_ID` / `CAL_BARO0_ID`。**同上票** |
 | 3 | `A.6` 原"权威 diff 基准"（`hkust/nxt-dual/init/rc.board_defaults`）**在真身里不存在** ⟹ z0.params 该拿什么当 diff 基准 | `params-changes.md` §I 的 diff 流程要据此重定。**同上票**（板级目标定了，基准自然就有） |
 | 4 | 电调滴滴的**根因**（ticket 21 仍 `wontfix`，本轮只补了引用可信度） | [`phase1/issues/21`](21-esc-no-signal-beeping.md)，操作者已决定不再排查 |
@@ -325,9 +325,9 @@ grep -rn "v1\.15 世代" docs/ | grep -v "☠️\|~~\|作废\|推翻\|更正\|�
 
 | 轴 | 发现 | 核实方式 | 处置 |
 |---|---|---|---|
-| Standards | H1 **坏链**：本票 :299 的 `[phase3/issues/04](../phase3/issues/04-firmware-reflash.md)` 解析到不存在的 `.scratch/phase1/phase3/…` | `ls .scratch/phase1/phase3` 无、`.scratch/phase3/issues/04-firmware-reflash.md` 在 | ✅ 改为 `../../phase3/…` |
+| Standards | H1 **坏链**：本票 :299 的 `[phase4/issues/04](../phase4/issues/04-firmware-reflash.md)` 解析到不存在的 `.scratch/phase1/phase4/…` | `ls .scratch/phase1/phase4` 无、`.scratch/phase4/issues/04-firmware-reflash.md` 在 | ✅ 改为 `../../phase4/…` |
 | Standards | H2 **悬空引用**：本票 §四 说 `refs-manifest.md` §2.5(d)④ 已记 `BAT1_*` 不匹配 | `grep BAT1_A_PER_V docs/reference/refs-manifest.md` **零命中** | ✅ **两半都补上**：先把旁证写进该节（弱证据口径），本票再指回它 |
-| Standards | H3 `done` 却留无归属的未决项 | 原文只指一个文档小节，没指票 | ✅ §四 第 2/3 项改指 `phase3/issues/04`，写"**同上票**" |
+| Standards | H3 `done` 却留无归属的未决项 | 原文只指一个文档小节，没指票 | ✅ §四 第 2/3 项改指 `phase4/issues/04`，写"**同上票**" |
 | Standards | J3 `README.md` ADC 格里 `~~详见 refs-manifest.md §2.7(b)~~` 划掉后**没了替代指针** | 读现行文本确认 | ✅ 见 5.2（与 `PROJECT.md:447` 指向不一致，按后者统一） |
 | Spec | §处置表 **45 行来源写错**：称原引 fork 的 `:889`/`:995`/`:996` | `git show cc06c32:…` 逐行读：原文引的是 **`~/refs/px4-v1.15.0`** 的 `:960`/`:1066`/`:1067`；再 `git show 5ba2e91f:…mavlink_receiver.cpp` 确认 fork 的 `:889` 是 `vehicle_command_s vcmd{}`、`:995` 是 `trajectory_setpoint_s setpoint{}`，**与那段证据无关** | ✅ 改成正确来源；**改后的行号（`:943`/`:1049`/`:1050`）本身是对的**，两轴都各自复验过 |
 | Spec | `params-analysis.md` §3.11(b) "其余 **13** 个值" 漏数 | 数真身 `@value` 清单（`commander_params.c:361-374`，逐行 dump）= **14** 个 | ✅ 13 → 14，并把 14 个值列出来 |

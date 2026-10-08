@@ -141,7 +141,7 @@ Type: task
 |---|---|---|
 | 1 | `docs/PROJECT.md:433` | ADC 缺陷那段指挥读者去重刷一个**实际不受影响**的固件 |
 | 2 | `README.md:87` | 同一条 ADC 断言，方向与 PROJECT.md 相反 |
-| 3 | `.scratch/phase3/spec.md:38` | 仍写 `5ba2e91f` fork 的刷写计划（已被 `4a0e65f2` 定案推翻） |
+| 3 | `.scratch/phase4/spec.md:38` | 仍写 `5ba2e91f` fork 的刷写计划（已被 `4a0e65f2` 定案推翻） |
 | 4 | `tools/prereq-evidence/uart_loopback.py:261` | 默认端口含**未修**的 `ttyTHS2` ⟹ 会给出误导性失败 |
 | 5 | `tools/prereq-evidence/mavlink_probe.py:432` | 硬编码已作废的 `5ba2e91f` |
 | 6 | `docs/reference/params-analysis.md:263` | 同一条过时断言 |
@@ -158,7 +158,7 @@ Type: task
 > |---|---|---|
 > | 1 | `docs/PROJECT.md:433` | ✅ 现 :447，"已确认中招" → **实测未中招** |
 > | 2 | `README.md:87` | ✅ 现 :105，同上 |
-> | 3 | `.scratch/phase3/spec.md:38` | ✅ 该句整句作废（对象 + 修法双错），已重写 |
+> | 3 | `.scratch/phase4/spec.md:38` | ✅ 该句整句作废（对象 + 修法双错），已重写 |
 > | 5 | `tools/prereq-evidence/mavlink_probe.py:432` | ✅ **已改**：期望值由 `5ba2e91f` 换成定案真身 `4a0e65f2` —— **原脚本会打印反的判定**（飞控报 `4a0e65f233` 时它会说"⚠️ 不一致"）。已 `py_compile` 通过 |
 > | 6 | `docs/reference/params-analysis.md:263` | ✅ §3.5.1 整节加 ☠️ 前提作废块，判词改为**未中招** |
 >

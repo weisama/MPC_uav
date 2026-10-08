@@ -84,4 +84,4 @@ Type: task
 
 **为什么是 `ready-for-human`**：卡尺、飞机在手上、以及「这个偏差算不算均匀缩放」这种判断，AFK agent 做不了。
 
-*⚠️ spec 层约束：Phase 3 不与 Phase 1 / Phase 2 并行开工。本票虽是纯测量，仍排在 Phase 2 达标之后。*
+*⚠️ spec 层约束：Phase 4 不与 Phase 1 / Phase 2 并行开工。本票虽是纯测量，仍排在 Phase 2 达标之后。*

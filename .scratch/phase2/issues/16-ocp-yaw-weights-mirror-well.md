@@ -567,3 +567,15 @@ R_yaw= 500.0  tau(10)= 1026.03 s  tau(30)= 1064.63 s   20s场 heading_err=  0.28
 
 ⟹ 第 3 项**仍是待飞**：飞一场 `--hold-yaw 20`（25 s 常规窗口），看这一条是否 ✅。
 `Status` 维持 `ready-for-human`，**本 Comment 不自行收口**。
+
+---
+
+### #8 2026-10-08 —— 收尾移交（Phase 3）
+
+本票**未结**，已移交 [Phase 3 spec](../../phase3/spec.md) 的 Further Notes ②「收尾清单」。
+
+**本轮裁定（该表「处置」列）**：**并入 [25](../../phase2/issues/25-yaw-channel-authority.md)** ——
+两票是同一族的两半（[25](../../phase2/issues/25-yaw-channel-authority.md) = **符号 / 权威**，
+本票 = **幅值 / 镜像井**）。合并后的落点由 25 那条裁定给。
+
+⚠️ 本条**不改**本票的 `Status:` —— 标签是操作者保留的裁定，该表只记裁定结果。

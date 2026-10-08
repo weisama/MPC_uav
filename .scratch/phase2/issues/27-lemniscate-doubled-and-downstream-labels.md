@@ -59,7 +59,7 @@ Gerono 双纽线 `x = a·sinθ`、`y = a·sinθ·cosθ`：`a` 从 **0.5 → 1.0*
 | [`docs/control/phase1-implementation.md`](../../../docs/control/phase1-implementation.md) | §5.2 **节首**加裁定框（**逐项点名**被取代的旧值）；表行、实际尺寸三条、时长那句同步；H5 那行加一条 2026-10-08 批注 |
 | [`.scratch/phase1/spec.md`](../../phase1/spec.md) | 交付项 3 与用户故事 **#22** 改成 `1 m`（并在 #22 里记下"放大后操作者已确认仍在棚内"） |
 | [`docs/control/phase2-implementation.md`](../../../docs/control/phase2-implementation.md) | S5 判据② `r=0.5 m → r=1 m`，并加 ⚠️：**2026-09-29 那轮 B 档判的不是这条**（见下） |
-| [`.scratch/phase3/spec.md`](../../phase3/spec.md) #26、[`.scratch/phase3/issues/10`](../../phase3/issues/10-ladder-closed-loop-and-free-flight.md) | 阶梯 4 的"同一套三条轨迹"改成 `1 m 八字`，并加 ⚠️：**同口径对比要求两边飞同一条参考** |
+| [`.scratch/phase4/spec.md`](../../phase4/spec.md) #26、[`.scratch/phase4/issues/10`](../../phase4/issues/10-ladder-closed-loop-and-free-flight.md) | 阶梯 4 的"同一套三条轨迹"改成 `1 m 八字`，并加 ⚠️：**同口径对比要求两边飞同一条参考** |
 | [`operation_manual.md`](../../../operation_manual.md)、[`src/bringup/scripts/fly.py`](../../../src/bringup/scripts/fly.py)、[`run/rec.py`](../../../run/rec.py)、[`bag/README.md`](../../../bag/README.md) | 操作者看得见的标签 `0.5 m 八字 → 1 m 八字`；时长 `≈6.1 s → ≈12.2 s` |
 
 ## ★★ 有意**不动**的历史记录（它们记的是当时那一趟，不是当前规格）
@@ -117,7 +117,7 @@ $ python3 -m pytest run/tests/test_rec.py -q
       （目测 / 或录包留读数），本票不预判结果
 - [ ] **场景 5 重录**（`run/rec.py` 的 `5_traj3_lemniscate`）：现在录下来才会是 1.0 m 的包，
       同时给 SITL 的 `--reference-source traj` 一条新数据（旧包仍是 0.5 m）
-- [ ] **要不要 (A) 级也补一条 1.0 m 的八字包** —— 这是 Phase 3 阶梯 4 "MPC 与 (A) 级同口径对比"
+- [ ] **要不要 (A) 级也补一条 1.0 m 的八字包** —— 这是 Phase 4 阶梯 4 "MPC 与 (A) 级同口径对比"
       的前提（已入库的 (A) 级八字包是 0.5 m）
 - [ ] **动捕棚的 2 m 级余量**：操作者已口头确认放得下；要不要留一条**书面读数**（棚的有效捕捉范围）
       作为凭据
@@ -138,3 +138,32 @@ $ python3 -m pytest run/tests/test_rec.py -q
 **正被 ticket 26 的在制品占着**。本票只改了那一行标题里的尺寸字样，
 `scenario_choices()` 走的是 `title.split('（')[0]` ⟹ 菜单那行"5=执行轨迹 3"没有连带变化，
 `run/tests/test_rec.py` 的 75 条全绿。**ticket 26 的收口不该被本票影响，反之亦然。**
+
+---
+
+### #3 2026-10-08 —— 收尾移交（Phase 3）；★ 本轮才发现的一处接线缺陷
+
+本票**未结**，已移交 [Phase 3 spec](../../phase3/spec.md) 的 Further Notes ②「收尾清单」。
+
+**本轮裁定（该表「处置」列）**：**收口** = 把 `T0` 与验证器的默认参考包改成新包
+（`bag/5_traj3_lemniscate`，参考包络 **2.000 × 1.000 m**、1312 帧）
+**+ 生成 `mocap-model-5.json`** —— 回放节点吃的参考 / 噪声 / 时序**全部**来自那份 JSON
+（[`tools/px4-sitl/mocap_model.py`](../../../tools/px4-sitl/mocap_model.py) 的 `cmd_dump`），
+所以**不生成新 JSON，就还是拿 0.5 m 的参考去判 1.0 m 的轨迹**。
+
+**缺陷本身（第一手）**：现两处仍指着 **0.5 m** 那份：
+
+| 处 | 现在的值 |
+|---|---|
+| [`tools/px4-sitl/verify_tier_b_seam3.py:1567`](../../../tools/px4-sitl/verify_tier_b_seam3.py#L1567) | `--reference-source traj` 默认 `bag/old/4_traj3_lemniscate` |
+| [`tools/px4-sitl/evidence/tier-b/run_matrix.sh:116`](../../../tools/px4-sitl/evidence/tier-b/run_matrix.sh#L116) | `T0) … --model …/mocap-model-4.json` |
+
+2026-10-08 那次 `bag/` 整理（`38d55e3`）把工具的默认路径**按路径**改指了 `bag/old/…`
+（改对了 —— 那份包确实搬走了），但**没有跟着把语义换成 1.0 m**。
+
+★ 连带影响：本票 §「有意**不动**的历史记录」那张表里，把 `tools/px4-sitl/*` 与
+[`docs/control/tier-b-sitl-seam3.md`](../../../docs/control/tier-b-sitl-seam3.md) 的
+`r = 0.5 m 八字` 标成"仍然准确"的那一格，**在 `T0` 接上新包之后就不成立了** ——
+那是**本票收口时的连带改动**，不是现在顺手改的。
+
+⚠️ 本条**不改**本票的 `Status:` —— 标签是操作者保留的裁定，该表只记裁定结果。

@@ -92,7 +92,7 @@ ticket 02 的 ⑤ 只授权「结论写入文档 + 回链」。但**定案本身
 | `docs/reference/params-analysis.md` | §3.15(a)「只剩 ch7 空闲」更正 | §H.3 的原话依据 |
 | `docs/control/phase1-implementation.md` / `phase2-implementation.md` | §8.4 作废标记 / G6 加 ☠️ | 同上；G6 是 Phase 2 决策行，**只标记不改写**（改它属于 ticket 10） |
 | `.scratch/phase1/spec.md` | 阻塞项 4 → 5（新增 EdgeTX 那条）、ch7 更正、**固件真身/世代的三处落点**（:18 / :229 / :298 那块） | 本张的 `done` 需要一个点名的下家；固件那三处与 §H 的取证链直接冲突 |
-| `.scratch/phase3/spec.md`、`.scratch/phase2/issues/06`、`10` | 指针更新 | 它们引用了「只剩 ch7」这个被推翻的结论 |
+| `.scratch/phase4/spec.md`、`.scratch/phase2/issues/06`、`10` | 指针更新 | 它们引用了「只剩 ch7」这个被推翻的结论 |
 | `.scratch/phase1/issues/06`、`09`、`10` | 补充块 / 污染清单 | 下游 ticket 必须知道语义变了、以及哪些文档被连带污染 |
 | `tools/prereq-evidence/{README.md, mavlink_probe.py}` | 修 `wait_heartbeat()` 不筛来源 | **D5 那一轮用户明确要求修**；见上面第 3 条 |
 

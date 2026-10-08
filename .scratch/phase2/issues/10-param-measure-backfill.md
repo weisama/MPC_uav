@@ -108,7 +108,7 @@ python3 tools/hover-thrust/hover_thrust_from_ulog.py <悬停日志.ulg> --model-
 
 **为什么是 `ready-for-human`**：需要真飞机与拉力台/悬停日志，且核心是"哪一条读数才是可信的"这种人的判断，不是给定条件下的推导。
 
-**P6 不在这里** —— 通道分配的决定已由 [`.scratch/phase1/issues/02`](../../phase1/issues/02-rc-channel-decision.md) **定案**（**开始 = ch9**；急停 = ch8 硬件杀车，不改通道；见 [`params-changes.md` §H](../../../docs/reference/params-changes.md)）。P6 现在只剩「把 **ch9 的实读行程**读出来」，且**前置是先在 EdgeTX 里给 CH9 配开关**，实机安全项归 Phase 3。
+**P6 不在这里** —— 通道分配的决定已由 [`.scratch/phase1/issues/02`](../../phase1/issues/02-rc-channel-decision.md) **定案**（**开始 = ch9**；急停 = ch8 硬件杀车，不改通道；见 [`params-changes.md` §H](../../../docs/reference/params-changes.md)）。P6 现在只剩「把 **ch9 的实读行程**读出来」，且**前置是先在 EdgeTX 里给 CH9 配开关**，实机安全项归 Phase 4。
 
 ## Comments
 
@@ -894,3 +894,15 @@ E  assert 'rclpy' not in {... 'Cython' …}
 **只有人能产的台架/悬停测量**（电池可持续供多少推力，§6.2 那条 15 A 瓶颈），
 它决定 `f_max = 11.8 N` 保不保守。那一格是本张**清单之外**的收口条件，**没做** ⟹ 不能收 `done`。
 （第 1 件里"重搭 SITL 同构机"那半是 [11](11-sitl-tier-b-seam3.md) 的域、排在它收口后，不在本轮。）
+
+---
+
+### 2026-10-08 —— 收尾移交（Phase 3）
+
+本票**未结**，已移交 [Phase 3 spec](../../phase3/spec.md) 的 Further Notes ②「收尾清单」。
+
+**本轮裁定（该表「处置」列）**：降级为"**从已归档的飞控日志读出来**" —— 清单里剩下那一件
+（电池**可持续**供多少推力/功率，§6.2 那条 15 A 瓶颈）**不必新开台架日**：`bag/*/fcu/*.ulg`
+里就有负载下的电压/电流。读数落回本票面。
+
+⚠️ 本条**不改**本票的 `Status:` —— 标签是操作者保留的裁定，该表只记裁定结果。

@@ -352,7 +352,7 @@ memcpy(&msg.flight_custom_version, &fw_vendor_version, fw_vendor_version_length)
 - **§2.7 的 ADC 缺陷与 z0 的固件无关**：那个 `ADC_BATTERY_CURRENT_CHANNEL = ADC12_CH(5)`
   在 `boards/hkust/nxt-dual/src/board_config.h` 里，而运行固件的树里没有这块板；
   它的 `boards/micoair/h743-aio` 写的是 `/* PC1 */ ADC1_CH(11)`，**与引脚相符、无此缺陷**。
-  ⟹ ④「未中招」**有了解释**（不是运气），Phase 3「重编重刷 `pr_fix_hkust_nxt_dual`」的修法
+  ⟹ ④「未中招」**有了解释**（不是运气），Phase 4「重编重刷 `pr_fix_hkust_nxt_dual`」的修法
   **对这块固件不适用，要重定**。
 - **`CLAUDE.md` 里「PX4 1.14.x」这个标签反而一直是对的** —— 09-20/21 一度把它判成错的，是误判。
 
@@ -361,11 +361,11 @@ memcpy(&msg.flight_custom_version, &fw_vendor_version, fw_vendor_version_length)
 1. **硬件到底是哪块板** → ✅ **MicoAir NxtPX4v2**（用户看实物/订单，第一手）。
    ⚠️ **但张力没消，反而更尖锐**：NxtPX4v2 的上游目标名是 `hkust_nxt-dual`，
    而飞控固件树里**只有 `micoair/h743-*`、没有 `hkust/`** ⟹ 要么「板名 ≠ 固件目标名」，
-   要么标签与固件不符。**Phase 3 重编前必须查清该编哪个目标**（按 `hkust_nxt-dual` 编 = 换板级目标，
+   要么标签与固件不符。**Phase 4 重编前必须查清该编哪个目标**（按 `hkust_nxt-dual` 编 = 换板级目标，
    会连引脚/传感器/ADC 通道一起换，**不是打一行补丁**）。
    ☠️ **附带更正**：本文原先拿「`micoair/h743-aio` 是 BMI270」当"不是 NxtPX4v2"的判据 ——
    **错的**：三块 micoair 板**全都带 BMI088**（实测 `default.px4board`），只剩气压计（DPS310 vs SPL06）有差。
-   要把 ① 钉死到能指导 Phase 3，唯一便宜的硬办法是**只读**读参数表的 `CAL_ACC*_ID` / `CAL_BARO0_ID`。
+   要把 ① 钉死到能指导 Phase 4，唯一便宜的硬办法是**只读**读参数表的 `CAL_ACC*_ID` / `CAL_BARO0_ID`。
 2. **§2.6 怎么改** → ✅ **用户已签字**，见 §2.6「执行版」。
 
 > **★ 2026-09-23 给 ① 补一条旁证（弱证据，别当判据用）**：真身树里三个 `micoair` 目标的板级默认值**互不相同**，

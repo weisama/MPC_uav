@@ -3,7 +3,7 @@
 Status: ready-for-agent
 
 > **范围**：Phase 2 的步骤 1（10 状态模型），且**只到 SITL 闭环为止**。
-> **实机飞行已拆成独立的 [`phase3/spec.md`](../phase3/spec.md)**（Q9 / Q17 / Q34=a）。
+> **实机飞行已拆成独立的 [`phase4/spec.md`](../phase4/spec.md)**（Q9 / Q17 / Q34=a）。
 > 步骤 2（13 状态 + `k_ω`）与 INDI 见 Out of Scope。
 > **tracker**：本地 markdown，约定见 [`issue-tracker.md`](../../docs/agents/issue-tracker.md)、标签见 [`triage-labels.md`](../../docs/agents/triage-labels.md)。
 >
@@ -11,7 +11,7 @@ Status: ready-for-agent
 > （`hover_thrust`，只能从 Phase 1 的悬停日志反推）硬阻塞。详见 Further Notes。
 >
 > 相关：[`phase2-implementation.md`](../../docs/control/phase2-implementation.md)（实施清单，本 spec 的工程细节来源）、
-> [`phase1/spec.md`](../phase1/spec.md)、[`phase3/spec.md`](../phase3/spec.md)、
+> [`phase1/spec.md`](../phase1/spec.md)、[`phase4/spec.md`](../phase4/spec.md)、
 > [`mpc-roadmap.md`](../../docs/control/mpc-roadmap.md)、
 > [`CONTEXT.md`](../../CONTEXT.md)（术语权威）。
 
@@ -54,7 +54,7 @@ Phase 1 让 z0 能自主定点飞了，但**控制律从头到尾都是飞控内
 > 全在 airframe 文件里 ⟹ **可入库、可复核**）。⚠️ **代价**：SIH 是与控制器同层次的简化模型，
 > 它**证明不了"模型够真"**，只证明约定对得上 —— 这一条已知情并接受。
 
-**实机飞行不在本 spec 范围** → [`phase3/spec.md`](../phase3/spec.md)。
+**实机飞行不在本 spec 范围** → [`phase4/spec.md`](../phase4/spec.md)。
 **Phase 1 的整条链在 Phase 2 期间保持可用**，随时可退回 (A) 级。
 
 ---
@@ -224,8 +224,8 @@ q̇ = ½ · skew(ω_des) ⊗ q      ← 用 ω_des 代替真实 ω，即「内�
   - ~~**"z0 是 1.14.x" 这个旧标签已作废**（固件实为 **v1.15 世代**）~~
   - **推翻依据**：上面那三条都是拿 **fork `5ba2e91f` 的 `msg/`** 比出来的，而**该 fork 与 z0 无关**（它是 v1.15 世代）。**「z0 是 1.14.x」这个标签一直是对的。**
   - **⇒ 不要从任何 fork 生成 `px4_msgs`。** 见 [`refs-manifest.md`](../../docs/reference/refs-manifest.md) §2.5(d) / §2.6 执行版。
-- **不刷飞控固件**（Q12）—— ⚠️ 例外是 **ADC 电流采样那一处**（Q37=a），排在 **Phase 3 实机飞行之前**。
-  ☠️ **但这条修复本身已作废**：它要修的是 `boards/hkust/nxt-dual`，而**真身树里没有 `hkust/`** ⟹ **对 z0 不适用，修法要重定**（见 [`refs-manifest.md`](../../docs/reference/refs-manifest.md) §2.7）。**本 spec 交付的构建环境仍然有用**（Phase 3 重编固件要靠它），但"改哪一行"不再是已知答案。
+- **不刷飞控固件**（Q12）—— ⚠️ 例外是 **ADC 电流采样那一处**（Q37=a），排在 **Phase 4 实机飞行之前**。
+  ☠️ **但这条修复本身已作废**：它要修的是 `boards/hkust/nxt-dual`，而**真身树里没有 `hkust/`** ⟹ **对 z0 不适用，修法要重定**（见 [`refs-manifest.md`](../../docs/reference/refs-manifest.md) §2.7）。**本 spec 交付的构建环境仍然有用**（Phase 4 重编固件要靠它），但"改哪一行"不再是已知答案。
 - QoS：发布 `BEST_EFFORT + TRANSIENT_LOCAL + depth 1`，订阅**也必须显式 `BEST_EFFORT`**。
 - 时间戳单位**微秒**。
 - offboard 心跳频率远高于最低要求。
@@ -274,7 +274,7 @@ q̇ = ½ · skew(ω_des) ⊗ q      ← 用 ω_des 代替真实 ω，即「内�
 
 **符号约定与推力标定的正确性，只有在闭环里才能被验证。** seam 1 只能验证"符号映射表被正确实现了"，seam 2 只能验证"求解器自洽"——**没有哪个能验证"这套约定与真实 PX4 一致"**。两档推进（先读 PX4 状态、再读动捕）就是为了让这一层的失败可归因。
 
-> ★ **注意（Q34=a 的后果）**：实机阶梯拆出本 spec 之后，**seam 3 成了 Phase 2 唯一能验证"约定与真 PX4 一致"的地方，也就是本阶段的最高关卡**。它没有上一层兜底 —— 过了 seam 3 就直接交给 Phase 3 上机，所以 seam 3 的判据必须**真的跑满**，不能"看着还行"就过。
+> ★ **注意（Q34=a 的后果）**：实机阶梯拆出本 spec 之后，**seam 3 成了 Phase 2 唯一能验证"约定与真 PX4 一致"的地方，也就是本阶段的最高关卡**。它没有上一层兜底 —— 过了 seam 3 就直接交给 Phase 4 上机，所以 seam 3 的判据必须**真的跑满**，不能"看着还行"就过。
 >
 > ⚠️ 另注：SITL 的被控对象**不是 `gz_x500`**（Q9）——是一个**参数刻意与 z0 不匹配 ±30%**（Q11）、
 > 输入来自 **Phase 1 实飞动捕 rosbag 回放**（Q13）的 z0 同构机（构建基准 = 上游 v1.14.3，见 §通信约定）。
@@ -297,7 +297,7 @@ MPC 节点（seam 1）、OCP 求解模块（seam 2）、SITL（seam 3，手动�
 
 拆桨看电机响应方向 → 系绳 + 离地 20 cm 只给悬停推力 → 系绳闭环悬停 30 s → 自由飞三条轨迹。
 
-⚠️ **这条阶梯（连同它的先决条件）现在全部归 [`phase3/spec.md`](../phase3/spec.md)**（Q9 / Q17 / Q34=a）。
+⚠️ **这条阶梯（连同它的先决条件）现在全部归 [`phase4/spec.md`](../phase4/spec.md)**（Q9 / Q17 / Q34=a）。
 本 spec 到 seam 3 为止 —— **seam 3 就是 Phase 2 的最高验收关卡**。
 
 ---
@@ -313,8 +313,8 @@ MPC 节点（seam 1）、OCP 求解模块（seam 2）、SITL（seam 3，手动�
 - **视觉/雷达定位**（VINS、深度相机）。
 - **刷写飞控固件、追上游版本** —— 明确留在 **z0 固件真身** `Minderring/PX4-Autopilot` @ `4a0e65f2`（**v1.14.3 系**的 MicoAir 厂商构建），不追上游（Q12）。
   ☠️ **2026-09-23 更正**：原句写「留在 `Peize-Liu/PX4-Autopilot` @ `5ba2e91f`（**v1.15 世代**）」—— **整句都反了**，该 fork 与 z0 无关。
-  唯一例外是固件重编（Q37=a），排在 Phase 3 之前；☠️ 但原先那个"ADC 一行修复"**对 z0 的固件不适用，修法要重定**。**不在本 spec**。
-- **实机飞行**（拆桨 / 系绳 / 自由飞阶梯，以及它要求的实机测量与固件修复） —— 见 [`phase3/spec.md`](../phase3/spec.md)。
+  唯一例外是固件重编（Q37=a），排在 Phase 4 之前；☠️ 但原先那个"ADC 一行修复"**对 z0 的固件不适用，修法要重定**。**不在本 spec**。
+- **实机飞行**（拆桨 / 系绳 / 自由飞阶梯，以及它要求的实机测量与固件修复） —— 见 [`phase4/spec.md`](../phase4/spec.md)。
 - **更换硬件**（高 C 电池、换电机）—— 参数化隔离，是独立的硬件决策。
 - **SITL 的自动化集成测试** —— 见 Testing Decisions 的 seam 3。
 - **EKF2 参数调优** —— Phase 2 的状态源不经 EKF2。
@@ -330,11 +330,11 @@ MPC 节点（seam 1）、OCP 求解模块（seam 2）、SITL（seam 3，手动�
 | 阻塞 | 性质 | 说明 |
 |---|---|---|
 | **`hover_thrust` 的实机测量** | ★ **阻塞验收，不阻塞开工** | 它是唯一"测不准就飞不起来"的参数，**只能从 Phase 1 的悬停日志反推**。其余待测参数都有可用初值可以先顶住。**结论**：S1–S5（环境 / 求解器 / 离线 OCP / 节点 / SITL）可以**在 Phase 1 完成之前就开工**；但 seam 3 的量化判据要等 Phase 1 出数才能定稿。 |
-| ~~Phase 1 达标~~ | ~~流程性~~ | **已作废**（Q34=a）—— 原来这一条指的是"本 spec 的实机部分要以能飞的飞机为前提"。实机已移到 Phase 3，**本 spec 不再需要飞机**。 |
+| ~~Phase 1 达标~~ | ~~流程性~~ | **已作废**（Q34=a）—— 原来这一条指的是"本 spec 的实机部分要以能飞的飞机为前提"。实机已移到 Phase 4，**本 spec 不再需要飞机**。 |
 
-**→ 给 Phase 3 的交接**：本 spec 交付的是"在**上游 v1.14.3 构建的**、参数不匹配的 SITL 上跑通并验证过的 MPC
-节点"，外加两样副产品 —— ① **那棵树的完整构建环境**（Phase 3 重编固件要靠它，Q37=a；☠️ 原先说"要靠它做 ADC 一行修复"已作废 —— 那条修复对 z0 不适用）；
-② **实测的最坏求解耗时**（决定 Phase 3 的 MPC 频率上限）。派生关系见 [`phase3/spec.md`](../phase3/spec.md)。
+**→ 给 Phase 4 的交接**：本 spec 交付的是"在**上游 v1.14.3 构建的**、参数不匹配的 SITL 上跑通并验证过的 MPC
+节点"，外加两样副产品 —— ① **那棵树的完整构建环境**（Phase 4 重编固件要靠它，Q37=a；☠️ 原先说"要靠它做 ADC 一行修复"已作废 —— 那条修复对 z0 不适用）；
+② **实测的最坏求解耗时**（决定 Phase 4 的 MPC 频率上限）。派生关系见 [`phase4/spec.md`](../phase4/spec.md)。
 
 ### ⚠️ 本 spec 中有几处数值是**占位符**
 

@@ -579,7 +579,7 @@ MC_ROLLRATE_K 0.35  MC_PITCHRATE_K 0.4  MC_YAWRATE_K 1.2  MC_YAWRATE_MAX 360
 4. **`MC_*RATE_K` 是 PX4 角速率环增益** —— Phase 2 的 MPC 要架在这一层之上，这几条值最终决定了内环带宽。
 5. **用不上的部分**：fork 的 `feat_fast_lab_stable`（UART DMA）、Nxt-FC 的 OmniNxt docker CI，对 z0 无增量价值。
    ~~`pr_fix_hkust_nxt_dual` 的修复已进上游。~~ ☠️ **2026-09-21：它修的是 `hkust/nxt-dual`，而 z0 的板级目标不是它** ⟹
-   **Phase 3 重编固件时不能照搬这一行的修法**（详见 [`refs-manifest.md`](refs-manifest.md) §2.5(d)③ 与 §2.7 的 ☠️ 注）。
+   **Phase 4 重编固件时不能照搬这一行的修法**（详见 [`refs-manifest.md`](refs-manifest.md) §2.5(d)③ 与 §2.7 的 ☠️ 注）。
 
 ---
 

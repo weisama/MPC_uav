@@ -3,7 +3,7 @@
 Status: done
 Type: task
 
-**What to build:** 节点第一次完整成型，**以及 Phase 2 / Phase 3 所有节点级测试的公共底座** —— 一个假 PX4 + 脚本化动捕输入。
+**What to build:** 节点第一次完整成型，**以及 Phase 2 / Phase 4 所有节点级测试的公共底座** —— 一个假 PX4 + 脚本化动捕输入。
 
 ⚠️ **为什么夹具必须是假 PX4 而不是 SITL**：兜底路径（求解失败、非有限值、时间戳倒退）需要"**这一帧求解失败**"这种要求 —— **真 PX4 没法被要求，假件可以**。所以夹具必须能**在指定时刻注入故障**，这不是加分项，是它存在的理由。
 
@@ -39,7 +39,7 @@ Type: task
 - [x] **回退**：本张之后 Phase 1 的 `(A)` 级链仍完整可用，一条参数命令即可切回 —— Phase 2 是**加一条支路，不是替换**
       —— 本票**没有动** `offboard_smoke.py`、没有改任何 Phase 1 话题；`(A)` 链的 `ros2 run nmpc offboard_smoke.py`
       与它的三条取证开关原样可用（交接见 Comments）
-- [x] **软急停接口参数化**（通道号不写死）—— ★ 通道号的**决定**由 [`.scratch/phase1/issues/02`](../../phase1/issues/02-rc-channel-decision.md) 产出；**本张不决定、不实测**（RC 夺权与失效保护的实机实测归 Phase 3）。
+- [x] **软急停接口参数化**（通道号不写死）—— ★ 通道号的**决定**由 [`.scratch/phase1/issues/02`](../../phase1/issues/02-rc-channel-decision.md) 产出；**本张不决定、不实测**（RC 夺权与失效保护的实机实测归 Phase 4）。
       ✅ **2026-09-21 该 ticket 已 resolved**，结论里有一条**改变本张前提**：**急停 = ch8 高值 = PX4 硬件杀车，程序不读急停通道**，即**没有"软急停通道"** ⟹ 本张的"软急停接口"要按 [`phase2-implementation.md`](../../../docs/control/phase2-implementation.md) §4 那张表里的**两条既有路径**（打杆接管 / ch6 模式开关）来理解，别去假设有一个专属通道
       —— 落地为 `node_core.StopConfig` 的四个条件（**全是参数、零通道号**），见
       [`mpc-node-seam1.md`](../../../docs/control/mpc-node-seam1.md) §6

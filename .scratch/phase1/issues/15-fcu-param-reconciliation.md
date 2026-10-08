@@ -5,9 +5,9 @@ Type: task
 
 > ✅ **2026-09-28 操作者裁定：收 `done`，剩余两格按「已移交」结清**（见文末 Comments 的收口条）。
 > **移交去向**（本次逐条回票核实过，两格都确实有人接）：
-> - `EKF2_EV_POS_X/Y/Z` 外参 → [`phase3/01`](../../phase3/issues/01-geometry-and-extrinsics.md) 的
+> - `EKF2_EV_POS_X/Y/Z` 外参 → [`phase4/01`](../../phase4/issues/01-geometry-and-extrinsics.md) 的
 >   「外参（P3 / `params-changes.md` C2）」一节，判据是"位置估计里没有常值偏移"
-> - `MPC_THR_HOVER` / `THR_MDL_FAC` → [`phase3/02`](../../phase3/issues/02-hover-thrust-backfill.md)
+> - `MPC_THR_HOVER` / `THR_MDL_FAC` → [`phase4/02`](../../phase4/issues/02-hover-thrust-backfill.md)
 >   （落地与核对），测量那一半在 [`phase2/10`](../../phase2/issues/10-param-measure-backfill.md)
 >
 > ⚠️ **这是对 `triage-labels.md`「验收项没勾完不许标 `done`」的一次明示例外**，
@@ -155,9 +155,9 @@ ros2 param get /mavros/param EKF2_EV_CTRL      # 单条读
       `ros2 param set /mavros/param <名> <值>` 就会转发给飞控（`param.cpp:1148`），见 **§I.2**；
       ⚠️ 但**必须先 `~/pull`**，否则报 `Undeclared parameter`（2026-09-23 实测，`params-changes.md` §I.1 的 ★）
 - [x] ~~`EKF2_EV_POS_X/Y/Z` 外参：量出刚体→IMU 的实际偏移（`hardware.md` §6 的"尺子量"）后写入~~
-      → **2026-09-28 移交** [`phase3/01`](../../phase3/issues/01-geometry-and-extrinsics.md)（**未做**，本张不再跟踪）
+      → **2026-09-28 移交** [`phase4/01`](../../phase4/issues/01-geometry-and-extrinsics.md)（**未做**，本张不再跟踪）
 - [x] ~~`MPC_THR_HOVER` 标定（`thrust_calibrate` 流程）与 `THR_MDL_FAC` 的取舍（两者至少一个错）~~
-      → **2026-09-28 移交** [`phase3/02`](../../phase3/issues/02-hover-thrust-backfill.md)（**未做**，本张不再跟踪）
+      → **2026-09-28 移交** [`phase4/02`](../../phase4/issues/02-hover-thrust-backfill.md)（**未做**，本张不再跟踪）
       ⚠️ **两格都划掉 ≠ 做完了** —— 是"换了个票跟"，理由与代价见文末的收口条
 - [x] 把本张的结论回填 —— ★ **实际范围比本条写的更大**（原文只点了两处，**漏了 `params-analysis.md`**）：
       [`PROJECT.md`](../../../docs/PROJECT.md) §5.1、[`phase1-implementation.md`](../../../docs/control/phase1-implementation.md) §6、
@@ -271,8 +271,8 @@ ros2 param get /mavros/param EKF2_EV_CTRL      # 单条读
 
 | 格 | 末态 | 移交给谁 | 依据 |
 |---|---|---|---|
-| `EKF2_EV_POS_X/Y/Z` 尺子量 | **未做**（本次实测仍是 `0/0/0`） | [`phase3/01`](../../phase3/issues/01-geometry-and-extrinsics.md) 的「外参」一节 | 那张票的判据比本张细：它要区分"**对**"（刚体原点刻意定义在 IMU 上 ⟹ `0` 正确）与"**没做**"，本张只写了"量出后写入" |
-| `MPC_THR_HOVER` / `THR_MDL_FAC` 标定 | **未做**（本次实测仍是 `0.5` / `0.449999988`） | [`phase3/02`](../../phase3/issues/02-hover-thrust-backfill.md) ← 测量在 [`phase2/10`](../../phase2/issues/10-param-measure-backfill.md) | 那张票**本来就**把"HOVER 与 XI35 的 `K3 = 0.6786` 至少一个错"这条写进了判据（它的第 4 框） |
+| `EKF2_EV_POS_X/Y/Z` 尺子量 | **未做**（本次实测仍是 `0/0/0`） | [`phase4/01`](../../phase4/issues/01-geometry-and-extrinsics.md) 的「外参」一节 | 那张票的判据比本张细：它要区分"**对**"（刚体原点刻意定义在 IMU 上 ⟹ `0` 正确）与"**没做**"，本张只写了"量出后写入" |
+| `MPC_THR_HOVER` / `THR_MDL_FAC` 标定 | **未做**（本次实测仍是 `0.5` / `0.449999988`） | [`phase4/02`](../../phase4/issues/02-hover-thrust-backfill.md) ← 测量在 [`phase2/10`](../../phase2/issues/10-param-measure-backfill.md) | 那张票**本来就**把"HOVER 与 XI35 的 `K3 = 0.6786` 至少一个错"这条写进了判据（它的第 4 框） |
 
 ★ **代价说清**：本张此后**不再**跟踪这两格 —— 将来要问"外参量了没 / 推力标了没"，
 **去那两张票问**，别在 15 里找。⚠️ 若那两张票被删或改范围，**这两格会静默失去主人** ——

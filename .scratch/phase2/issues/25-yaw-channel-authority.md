@@ -141,3 +141,17 @@ A 档的机头判据 **⑥b**（[`verify_tier_a_hover.py`](../../../tools/px4-si
   与 ticket 20 同族，属操作者裁定，**不是**我能自己 promote 的（仓库纪律）。
 - 本票的一手读数**全部来自已在仓库里的证据**（ticket 16 Comments #5、ticket 09、
   `tools/rti-convergence/`），本次**没有新跑**；§4 待做的那个实验已写清跑法与目的。
+
+---
+
+### #2 2026-10-08 —— 收尾移交（Phase 3）
+
+本票**未结**，已移交 [Phase 3 spec](../../phase3/spec.md) 的 Further Notes ②「收尾清单」。
+
+**本轮裁定（该表「处置」列）**：**路 3（接受现状）** + 把判据门槛降到**能看见这个量**
+（现有门槛比它高三个数量级）。[16](../../phase2/issues/16-ocp-yaw-weights-mirror-well.md)
+**并入本票**。
+
+★ 本票标签是 `needs-triage`，四条路的落点差异是**代价与落点**，属操作者裁定 ——
+**不是** agent 能自己 promote 的（仓库纪律）。该表的「处置」列只记裁定结果，
+`Status:` 行**仍由操作者自己改**。

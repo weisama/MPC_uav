@@ -102,4 +102,4 @@ Type: task
 
 **为什么是 `ready-for-agent`**：纯离线数据处理，不需要飞机通电 —— 只要有 Phase 1 的日志。
 
-*⚠️ spec 层约束：Phase 3 不与 Phase 1 / Phase 2 并行开工。*
+*⚠️ spec 层约束：Phase 4 不与 Phase 1 / Phase 2 并行开工。*

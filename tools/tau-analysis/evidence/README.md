@@ -1,7 +1,7 @@
 # τ 实测的原始证据
 
 **为什么有这个目录**：ticket 03 的交付物只有一句话 —— 一个**有出处**的 τ
-（[`.scratch/phase3/issues/03-latency-tau-from-logs.md`](../../../.scratch/phase3/issues/03-latency-tau-from-logs.md)）。
+（[`.scratch/phase4/issues/03-latency-tau-from-logs.md`](../../../.scratch/phase4/issues/03-latency-tau-from-logs.md)）。
 原话是要求它**可追溯，「而不是从一个我没法回查的地方来的」**。
 而跑出这个数的**日志在飞控 SD 卡上、中间产物在 `/tmp`** —— 两者都会没。
 所以把关键几件**放进 git**，让出处链不依赖任何一台机器的临时目录。

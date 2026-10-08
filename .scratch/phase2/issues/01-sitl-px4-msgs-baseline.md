@@ -3,7 +3,7 @@
 Status: done
 Type: task
 
-**What to build:** 一条能跑的 SITL 链路，且它与 `px4_msgs` **同出于 z0 固件真身**。这是 Phase 2 全部后续工作的地基 —— 也是 Phase 3 重编固件（ADC 一行修复）要复用的构建环境，所以它顺手交付的东西比它自己看起来多。
+**What to build:** 一条能跑的 SITL 链路，且它与 `px4_msgs` **同出于 z0 固件真身**。这是 Phase 2 全部后续工作的地基 —— 也是 Phase 4 重编固件（ADC 一行修复）要复用的构建环境，所以它顺手交付的东西比它自己看起来多。
 
 **Blocked by:** ⚠️ **2026-09-21 重写**：原写「本张地基 = fork `5ba2e91f`」——**这个地基没了**。
 [phase1/11](../../phase1/issues/11-firmware-version-conflict.md) 已定案：飞控跑的是
@@ -31,7 +31,7 @@ Type: task
 - [x] `px4_msgs` 钉 **`release/1.14` @ `ffb6e80e`**（**用户已签字**；不是从 fork 生成 —— 已实测它与真身在**共有的 184 个文件**上 blob 全同）
 - [x] 一致性判定留证：`Tools/check-message-compatibility.py` 与 `ros2 interface show px4_msgs/msg/VehicleRatesSetpoint` 双向比对，且**明确覆盖 `OffboardControlMode`**（已知它是被破坏的那个）
 - [x] `micro-xrce-dds-agent udp4 -p 8888` 接通后 `/fmu/in/*` 与 `/fmu/out/*` **双向前缀**都出现在 `ros2 topic list` 里
-- [x] 构建步骤（版本、commit、submodule 处理、命令、判定结果）写入文档，使 Phase 3 能照做重编固件
+- [x] 构建步骤（版本、commit、submodule 处理、命令、判定结果）写入文档，使 Phase 4 能照做重编固件
 - [x] 记录里写明：**从上游 v1.14.3 构建 SITL ≠ 刷飞控**（Q12 不刷固件的决策不变）；Phase 2 不碰飞控，只碰仿真
 
 > ★ **三处交付形态与上面清单原文不同**（都已核实，理由见 Comments）：SITL 后端是 **SIH** 而非 gazebo；
@@ -47,7 +47,7 @@ Type: task
 
 ### 2026-09-28 收口
 
-**交付文档**：[`docs/control/px4-sitl-baseline.md`](../../../docs/control/px4-sitl-baseline.md)（构建步骤 / 版本与 commit / 五个坑 / 验收证据 / Phase 3 交接）。
+**交付文档**：[`docs/control/px4-sitl-baseline.md`](../../../docs/control/px4-sitl-baseline.md)（构建步骤 / 版本与 commit / 五个坑 / 验收证据 / Phase 4 交接）。
 **可复现脚本**：[`tools/px4-sitl/`](../../../tools/px4-sitl/) —— `build_px4_sitl.sh`、`build_xrce_agent.sh`、`run_sitl.sh`、`check_msg_compat.py`。
 
 **落地值**

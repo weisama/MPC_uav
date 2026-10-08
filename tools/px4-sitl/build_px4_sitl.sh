@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # PX4 SITL（上游 v1.14.3）在 z0 机载电脑（Jetson Orin NX，aarch64）上的构建脚本 ——
-# ticket 01 的可复现形式。**Phase 3 重编固件要复用的就是这个构建环境**（Q37=a）。
+# ticket 01 的可复现形式。**Phase 4 重编固件要复用的就是这个构建环境**（Q37=a）。
 #
 # ⚠️ 一句话挡住最常见的误读：**在这里编 SITL ≠ 刷飞控**（Q12 的「不刷固件」决策不变）。
 #    本脚本只编给仿真器跑的那份 posix 二进制（`build/px4_sitl_default/bin/px4`），

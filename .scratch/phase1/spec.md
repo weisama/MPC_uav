@@ -207,8 +207,8 @@ Status: ready-for-agent
 > | **形态 A** —— 喂脚本化输入话题 + 断言发出的话题 + 假 peer | **本节的 seam 1 ＝ 形态 A 的基准定义**；phase2 的 seam 1 是它的**第二次应用** |
 > | **形态 B** —— 在「话题边界上没有诊断分辨率」处开更细的 seam | **本节的 seam 2**；phase2 的 seam 2 是同一理由的第二次应用（开在求解器上） |
 >
-> **人工关卡**（不是 seam）：phase2 的 SITL 闭环、phase3 的实机阶梯。
-> **phase3 不新增任何 seam** —— 它复用 phase2 的 seam 1。这是刻意的：seam 越少越好。
+> **人工关卡**（不是 seam）：phase2 的 SITL 闭环、phase4 的实机阶梯。
+> **phase4 不新增任何 seam** —— 它复用 phase2 的 seam 1。这是刻意的：seam 越少越好。
 
 ### 好的测试是什么
 
@@ -259,8 +259,8 @@ Status: ready-for-agent
 > ⚠️ **是裁定不是验证**：第 2/3 步的判据**一条都没有读数**，见
 > [`08`](issues/08-takeoff-hover-land.md) 的验收阶梯与
 > [`operation_manual.md`](../../operation_manual.md) §8.2。
-> ⚠️ 另注：本条**与** phase3 的阶梯**不是一回事** —— 那边验的是 (C) 级指令，
-> 见 [`phase3/09`](../phase3/issues/09-ladder-ground-and-tether20.md)。
+> ⚠️ 另注：本条**与** phase4 的阶梯**不是一回事** —— 那边验的是 (C) 级指令，
+> 见 [`phase4/09`](../phase4/issues/09-ladder-ground-and-tether20.md)。
 
 1. 拆桨叶，地面看电机响应方向
 2. 系绳 + 离地 20 cm，只给悬停推力
@@ -350,7 +350,7 @@ Status: ready-for-agent
 **z0 的固件树里根本没有 `hkust/` 这块板** —— 它是 `boards/micoair/{h743, h743-v2, h743-aio}`，
 `h743-aio` 的电流通道写 `/* PC1 */ ADC1_CH(11)`，**与引脚相符、无此缺陷**。
 ⟹ 上面那张版本边界表是**对 `nxt-dual` 这块板**说的，**对 z0 不适用** ——
-`pr_fix_hkust_nxt_dual` 那条"一行修复"因此**也修不到 z0**（Phase 3 要重编时，
+`pr_fix_hkust_nxt_dual` 那条"一行修复"因此**也修不到 z0**（Phase 4 要重编时，
 「该编哪块板」还是个待定项，见 [ticket 11](issues/11-firmware-version-conflict.md)）。
 ⚠️ **实测也确实未中招**（A4 的读数）。）
 
@@ -363,7 +363,7 @@ Status: ready-for-agent
 | | 时机 | 内容 |
 |---|---|---|
 | **核实** | ★ ~~Phase 1 首飞前（阻塞）~~ ✅ **已于 2026-09-21 完成** | QGC / `listener battery_status` 看电流是否恒 0 或怪值 ⟹ **未中招**（读数见 [`params-changes.md`](../../docs/reference/params-changes.md) §A4） |
-| ~~**修复**~~ | ☠️ **作废，无此项** | ~~用 fork 自带的 `pr_fix_hkust_nxt_dual` @ `8161c4cd` —— 它相对 `main` **只差一行**（`CH(5)`→`CH(8)`）。因为 Q31=a 已要求从 fork 构建 SITL，**重编所需的工具链那时已经在手**，代价接近零~~ ⟹ **那条修复修的是 `boards/hkust/nxt-dual`，而真身树里没有 `hkust/`**，**对 z0 不适用**。⚠️ **Q37=a 的"修复"这一半作废；"重编"这件事本身仍在 Phase 3 的待办里**（因为板级目标待定），见 [`phase3/issues/04`](../phase3/issues/04-firmware-reflash.md) |
+| ~~**修复**~~ | ☠️ **作废，无此项** | ~~用 fork 自带的 `pr_fix_hkust_nxt_dual` @ `8161c4cd` —— 它相对 `main` **只差一行**（`CH(5)`→`CH(8)`）。因为 Q31=a 已要求从 fork 构建 SITL，**重编所需的工具链那时已经在手**，代价接近零~~ ⟹ **那条修复修的是 `boards/hkust/nxt-dual`，而真身树里没有 `hkust/`**，**对 z0 不适用**。⚠️ **Q37=a 的"修复"这一半作废；"重编"这件事本身仍在 Phase 4 的待办里**（因为板级目标待定），见 [`phase4/issues/04`](../phase4/issues/04-firmware-reflash.md) |
 
 **理由**（☠️ 对 z0 已不适用，保留作对照）：`ADC_CHANNELS` 是**编译期宏**，参数改不了；但**电压通道未受影响**，所以 Phase 1 可用
 「电压 + 计时」兜底，不必为一处电流读数在首飞前引入"刚刷的固件"这个新变量。

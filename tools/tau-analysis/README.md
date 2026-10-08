@@ -1,7 +1,7 @@
 # `tau-analysis` —— 从飞控 ulog 量出端到端延迟 τ
 
-服务于 ticket [`../../.scratch/phase3/issues/03-latency-tau-from-logs.md`](../../.scratch/phase3/issues/03-latency-tau-from-logs.md)
-（Phase 3 spec 的「四项前置测量」之一）。
+服务于 ticket [`../../.scratch/phase4/issues/03-latency-tau-from-logs.md`](../../.scratch/phase4/issues/03-latency-tau-from-logs.md)
+（Phase 4 spec 的「四项前置测量」之一）。
 
 **它量的是**：动捕 (`vehicle_visual_odometry`) 相对飞控 IMU (`sensor_combined`) 的滞后。
 这个数就是 Phase 2 那条「状态外推 `x + v·τ`」里的 τ（[`phase2-implementation.md`](../../docs/control/phase2-implementation.md) **D9**）。

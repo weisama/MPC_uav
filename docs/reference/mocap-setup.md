@@ -477,7 +477,7 @@ router 日志 `Requested to add endpoint: … udp-b://0.0.0.0:14555@:14550` / `l
 
 ### 6.3 ★★ τ（动捕→飞控端到端延迟）在 **z0 上**的实测：**≈ 50 ms**
 
-> **本节是 ticket [`../../.scratch/phase3/issues/03-latency-tau-from-logs.md`](../../.scratch/phase3/issues/03-latency-tau-from-logs.md) 的结论与出处。**
+> **本节是 ticket [`../../.scratch/phase4/issues/03-latency-tau-from-logs.md`](../../.scratch/phase4/issues/03-latency-tau-from-logs.md) 的结论与出处。**
 > 工具在 [`../../tools/tau-analysis/`](../../tools/tau-analysis/)（含自检与全套避坑记录）。
 > 上面 §6.2 那个「≈ 50 + 2~5 ≈ 55 ms」的拆解里，**`50` 这一项一直是从旧机借来的**
 > （出处只有 `weisama-log/25.06.28_PX4_log.md` 一句「测出动捕数据延迟 50ms」——
@@ -584,7 +584,7 @@ B（交叉）     τ 贴搜索窗边缘，r = −0.34   ← **本段飞行上无
 ⟹ **可以写进文档的说法是「τ ≈ 50 ms，量级与 50 ms 参照一致」，不要写成「49.2 ms」这种精度。**
 （旧机那句「测出动捕数据延迟 50 ms」本来也就是这个精度。）
 
-> 📌 **把 τ 用到控制器上时，Phase 3 实飞起始值取 `0`（不补偿）。**
+> 📌 **把 τ 用到控制器上时，Phase 4 实飞起始值取 `0`（不补偿）。**
 > 理由见 ticket 03 原文：在这个环节**过补偿比不补偿更危险** —— 多外推一点就是在用错误的状态喂控制器。
 > 本节的实测值用来**确定量级**、并作为 ticket 10 系绳阶段扫 τ 的**起点参照**，不是首飞就直接用 ≈ 50 ms。
 

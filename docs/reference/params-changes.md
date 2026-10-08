@@ -70,7 +70,7 @@
    ⟹ 「未中招」不是运气、也不是"本该中招却没事"，**而是这条缺陷不在这块固件里**。
    缺陷描述本身对 `boards/hkust/nxt-dual` 仍成立（第一手核对过）。
    ⚠️ **但由此冒出一个更要紧的问题：z0 的板子到底是 `hkust/nxt-dual` 还是 `micoair/h743-*`？**
-   见 ticket [11](../../.scratch/phase1/issues/11-firmware-version-conflict.md) 的 ① —— 它决定 Phase 3 该编哪块板。
+   见 ticket [11](../../.scratch/phase1/issues/11-firmware-version-conflict.md) 的 ① —— 它决定 Phase 4 该编哪块板。
 
 ---
 
@@ -165,7 +165,7 @@
 
 | # | 事项 | 结论 | 依据 |
 |---|---|---|---|
-| F1 | 电池**电流**采样读错通道 | ☠️ **2026-09-21 定案：这条缺陷不在 z0 的固件里 —— 未中招（见 A4），本行不再是待办。** 原判（前提=该缺陷存在）：❌ **只能重编重刷固件** —— `ADC_CHANNELS` 是编译期宏，带 `#ifndef`/`#error` 守卫，board_adc 模块**没有任何参数**，也从不采样通道 8；`BAT1_I_CHANNEL = 8` 这条"工作区猜想"已**被证伪**。☠️ ~~"重编"的代价已查明是 1 行：fork 的 `pr_fix_hkust_nxt_dual` @ `8161c4cd` = `main` + 一行 `CH(5)`→`CH(8)`~~ —— **那个修法是给 `boards/hkust/nxt-dual` 的，而真身树里没有 `hkust/`** ⟹ **对 z0 不适用**。~~要不要做是 Phase 1 的独立决策（Q37）~~ ⟹ **Q37 的前提消失，Phase 3 重编固件的目标与修法要重定** | §3.5.1 / refs-manifest §2.5(d)③ / §2.7 |
+| F1 | 电池**电流**采样读错通道 | ☠️ **2026-09-21 定案：这条缺陷不在 z0 的固件里 —— 未中招（见 A4），本行不再是待办。** 原判（前提=该缺陷存在）：❌ **只能重编重刷固件** —— `ADC_CHANNELS` 是编译期宏，带 `#ifndef`/`#error` 守卫，board_adc 模块**没有任何参数**，也从不采样通道 8；`BAT1_I_CHANNEL = 8` 这条"工作区猜想"已**被证伪**。☠️ ~~"重编"的代价已查明是 1 行：fork 的 `pr_fix_hkust_nxt_dual` @ `8161c4cd` = `main` + 一行 `CH(5)`→`CH(8)`~~ —— **那个修法是给 `boards/hkust/nxt-dual` 的，而真身树里没有 `hkust/`** ⟹ **对 z0 不适用**。~~要不要做是 Phase 1 的独立决策（Q37）~~ ⟹ **Q37 的前提消失，Phase 4 重编固件的目标与修法要重定** | §3.5.1 / refs-manifest §2.5(d)③ / §2.7 |
 | F2 | ~~`z0.params` 本身不是 z0 的参数~~ | ✅ **【已结案，2026-09-21】** 对账证明**它就是 z0 飞控真身**（914/915 一致）—— 原判"`z0.params` 是另一台参考机导出的"**作废**。★ **但那条第 0 步的教训换个形式仍然成立**：`CAL_*`（加速度计标定）与 `RC*_MIN/MAX/TRIM`（遥控器校准）**不要照抄** —— 飞控上那两组才是本机的 | ticket [15](../../.scratch/phase1/issues/15-fcu-param-reconciliation.md) |
 | F3 | 固件版本标签 | ☠️ **2026-09-21 更正**：本行原写「参数头的 `4a0e65f2` 与固件**真身 `5ba2e91f`** 不一致」—— **真身已被推翻**。经 git 实测，**`4a0e65f2` 才是飞控真身**（v1.14.3 系的 MicoAir 厂商构建，2024-11-18，`add micoair743-aio to PX4-Autopilot v1.14.3`），`5ba2e91f` 是 fork 上另一个 commit。⟹ 参数头与真身**本来就是一致的**，不是"不一致"。**唯一终审仍 = 在 QGC 里读飞控实际报出的版本号** | §H 的复核方式 + refs-manifest §2.5 |
 | F4 | `px4_msgs` 选版 | ☠️ **2026-09-21 定案（本行两次更正，以这次为准）**：~~「`release/1.14` 不兼容（28/184 字段布局不同）」~~ **这个判定作废** —— 它是拿 **fork `5ba2e91f`** 比出来的。对**真身 `4a0e65f2`**，`release/1.14` 在**共有的 184 个 `msg/` 文件上 blob 全同**。⟹ **`px4_msgs` = `release/1.14` @ `ffb6e80e`**（✅ 用户签字）；**SITL 被控对象 = 上游 v1.14.3（tag `1dacb4c`）**。☠️ ~~结论不变（Q31=a）：从 fork 自身 `msg/`+`srv/` 生成~~ —— **Q31=a 已被推翻**。✅ 本行与 Phase 2 文档里所有 `5ba2e91f` 的引用**已由 [ticket 10](../../.scratch/phase1/issues/10-docs-1-14-sweep.md) 清扫完毕** | §H 的复核方式 + refs-manifest §2.5(d) / §2.6 执行版 |

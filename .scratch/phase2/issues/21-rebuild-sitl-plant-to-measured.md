@@ -516,3 +516,17 @@ python3 tools/px4-sitl/mismatch_sweep.py --variants z0-mass+30 --repeats 1 \
 
 **本次只做了那条"必须在重搭之前"的前置**，没有重搭：`plant_spec.py`、
 `z0-plant/params/*.param`、`src/nmpc/nmpc/params.py` **一个字节都没动**。
+
+---
+
+### 2026-10-08 —— 收尾移交（Phase 3）
+
+本票**未结**，已移交 [Phase 3 spec](../../phase3/spec.md) 的 Further Notes ②「收尾清单」。
+
+**本轮裁定（该表「处置」列）**：**现在做** —— 纯离线、AFK 可做；
+它的前置（[20](../../phase2/issues/20-vertical-channel-mismatch-offset.md) 的两场飞完并归档）
+**2026-09-30 已满足**。
+
+⚠️ 本条**不改**本票的 `Status:` —— 标签是操作者保留的裁定，该表只记裁定结果。
+⚠️ 重搭会**作废 A/B 两档基线**（本票标题即如此），所以它是
+[11](../../phase2/issues/11-sitl-tier-b-seam3.md) 判据 ②③④ 之前的事。

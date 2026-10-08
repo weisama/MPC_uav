@@ -259,7 +259,7 @@ listener battery_status -n 5
 >
 > **→ 2026-09-21 实测判定：z0 「未中招」**（读数与判据见 [`params-changes.md`](params-changes.md) §A4）。
 > 下面整节保留作为**取证过程与版本边界的存档**，但其结论（"必须重编重刷固件"）**对 z0 不成立**；
-> Phase 3 的「重编重刷 `pr_fix_hkust_nxt_dual`」这个修法也因此**要重定**。
+> Phase 4 的「重编重刷 `pr_fix_hkust_nxt_dual`」这个修法也因此**要重定**。
 > 权威判定见 [`refs-manifest.md`](refs-manifest.md) §2.5(d) / §2.7。
 
 上面说的是"链路没配起来"。~~但 **2026-09-20 这一轮查到了更硬的事实：z0 固件里电流采样读的是错误的 ADC 通道**，

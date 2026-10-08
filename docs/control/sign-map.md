@@ -337,7 +337,7 @@ python3 tools/sign-map/test_sign_map_core.py --self-test      # 或 python3 -m p
 - ❌ **它证明不了「这套约定与真 PX4 一致」。** 符号翻转表、离线自检、假 PX4 夹具，
   三者都只在**我们自己这一侧**闭环。**唯一能回答这个问题的是 SITL 闭环**（[ticket 05](../../.scratch/phase2/issues/05-sitl-offboard-smoke.md)
   的开环单项、[ticket 09](../../.scratch/phase2/issues/09-sitl-tier-a-closed-loop.md) 的闭环判据），
-  之后再交给 Phase 3 的实机阶梯。
+  之后再交给 Phase 4 的实机阶梯。
 - ⚠️ **不要为此去造一个"与被控对象同构"的 Python 闭环来自动化这件事** ——
   它与控制器**共享同一套约定**，整条约定错了它会**一起错并且通过**。
   这个方案已被考虑并否决，理由记在 [`spec.md`](../../.scratch/phase2/spec.md) 的 Testing Decisions（seam 3 一节）。

@@ -1318,7 +1318,7 @@ def evaluate_b(obs) -> list:
        f" / **稳态最坏 {v.fmt(solve.get('steady_max'), '.3f')} ms**。"
        f"按票面字面 ⟹ {solve.get('ladder') or '（没有样本）'}；"
        f"按稳态 ⟹ {solve.get('ladder_steady') or '（没有样本）'}。"
-       f"★ **交给 Phase 3 的「实测最坏求解时间」取 `steady_max`**"
+       f"★ **交给 Phase 4 的「实测最坏求解时间」取 `steady_max`**"
        f"（冷启动那一拍是 acados 的一次性开销，不是持续负载）",
        counts=False)
     ck("⑦ D6 的另一半：这台机器真跑出多少 Hz（逐拍间隔）",
