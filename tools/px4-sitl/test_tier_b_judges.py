@@ -313,7 +313,8 @@ def lemniscate(t):
     """造一条"会动的"参考（r=0.5 的八字量级）：先爬升到 1 m，再画。
 
     ★ 判据②·轨迹2 只要求"参考动过、且整段落在 OFFBOARD 窗口里"，不要求它真是八字
-      —— 形状那件事由 `bag/4_traj3_lemniscate` 与 `mocap_model` 那边的读数保证，
+      —— 形状那件事由 `bag/old/4_traj3_lemniscate`（2026-10-08 从前一层的 `bag/` 搬进 `old/`）
+      与 `mocap_model` 那边的读数保证，
       这里造的是**判据层的输入**，不是参考本身。
     """
     return (0.5 * math.sin(t), 0.25 * math.sin(2 * t), min(1.0, t))

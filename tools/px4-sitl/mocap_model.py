@@ -24,8 +24,11 @@
     source /opt/ros/humble/setup.bash && source ~/px4_msgs_ws/install/setup.bash
     source install/setup.bash
 
-    python3 tools/px4-sitl/mocap_model.py dump bag/3_traj1_hover --noise-bag bag/1_static
-    python3 tools/px4-sitl/mocap_model.py dump bag/3_traj1_hover --json /tmp/mocap-model-3.json
+    python3 tools/px4-sitl/mocap_model.py dump bag/old/3_traj1_hover --noise-bag bag/1_static
+    python3 tools/px4-sitl/mocap_model.py dump bag/old/3_traj1_hover --json /tmp/mocap-model-3.json
+
+⚠️ 那份悬停包是 **09-29** 录的，2026-10-08 搬到了 `bag/old/3_traj1_hover/`
+（`bag/` 一层每个场景只留最新的一份）。**`bag/3_traj1_hover/` 现在是 10-08 的另一次飞行。**
 """
 
 from __future__ import annotations
@@ -465,7 +468,12 @@ def render(model: dict, noise_bag: Optional[Path]) -> str:
 
 def cmd_dump(argv: Sequence[str]) -> int:
     ap = argparse.ArgumentParser(prog="mocap_model.py dump", description=__doc__.splitlines()[0])
-    ap.add_argument("bag", nargs="?", default=str(BAG_ROOT / "3_traj1_hover"))
+    # ⚠️ 默认那份是 **09-29** 的悬停包（本仓冻结的那份 `mocap-model-3.json` 出自它）。
+    #    2026-10-08 操作者把 bag/ 清了一遍（每个场景只留最新的一份）⟹ 那份搬去了
+    #    `bag/old/3_traj1_hover/`，而 **`bag/3_traj1_hover/` 现在装的是 10-08 另一次飞行的数据**
+    #    —— 默认值不改的话，这里会**静默**换一份输入，重新生成的模型与冻结那份对不上，
+    #    而症状是"数变了"，不是"路径错了"。
+    ap.add_argument("bag", nargs="?", default=str(BAG_ROOT / "old" / "3_traj1_hover"))
     ap.add_argument("--noise-bag", default=str(BAG_ROOT / "1_static"),
                     help="噪声基线包（默认 bag/1_static；给 '' 就只用本段的飞行残差）")
     ap.add_argument("--win-s", type=float, default=0.2, help="高频残差的滑动均值窗宽 [s]")

@@ -146,7 +146,7 @@ diff   src/modules/uxrce_dds_client/dds_topics.yaml | 4 ++++     ← 全部改�
 ### 3.3 模型的来源与读数（一手，来自真实 Phase 1 包）
 
 ```bash
-python3 tools/px4-sitl/mocap_model.py dump bag/3_traj1_hover --noise-bag bag/1_static \
+python3 tools/px4-sitl/mocap_model.py dump bag/old/3_traj1_hover --noise-bag bag/1_static \
     --json tools/px4-sitl/evidence/tier-b/mocap-model-3.json
 # ⟹ 134 KiB，本票所有场次都用它（现在**以归档里这份为准**）
 ```
@@ -159,7 +159,7 @@ python3 tools/px4-sitl/mocap_model.py dump bag/3_traj1_hover --noise-bag bag/1_s
 
 | 量 | 读数 | 说明 |
 |---|---|---|
-| 参考包 | `bag/3_traj1_hover` | 场景 3（悬停），`AUTO/TRACK` 那一段 |
+| 参考包 | `bag/old/3_traj1_hover` | 场景 3（悬停），`AUTO/TRACK` 那一段。★ 这份是 **09-29** 录的那一份，2026-10-08 清 `bag/` 时搬进了 `old/` —— 别写成 `bag/3_traj1_hover`，那现在是**另一次飞行**的数据 |
 | 取用窗口 | `60.035 s` / `11368` 帧 | 由 `/control/state` 的迁移推出来（`AUTO/TRACK` ⟹ `MANUAL/LAND`） |
 | 实测发帧率 | **189.50 Hz** | 均值 |
 | 抖动 `lag`（p50 / p95 / max） | **5.34 / 18.97 / 58.47 ms** | 这就是"这台动捕的延迟" |

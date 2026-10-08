@@ -1000,7 +1000,7 @@ def _judge_traj(ck, obs, seg) -> dict:
            None,
            f"本场 `--reference-source {src}` ⟹ **这一条没做**（不是通过也不是不通过）。"
            f"★ 判它的场次是 `--reference-source traj` 那几场（夹具按 `bag/"
-           f"4_traj3_lemniscate` 里的 `/traj/reference` 逐点重发；高度由 `--ref-z-offset-m` "
+           f"old/4_traj3_lemniscate` 里的 `/traj/reference` 逐点重发；高度由 `--ref-z-offset-m` "
            f"叠在夹具侧）。", counts=False)
         out["lemniscate"] = {"ran": False, "why": "本场是 hold 档"}
     elif not tl.get("n"):
@@ -1014,7 +1014,7 @@ def _judge_traj(ck, obs, seg) -> dict:
         ck("★判据②·轨迹2 r = 0.5 m 八字（定性：跑完 + 不撞地 + 不失控；跟踪误差只留档）",
            None,
            f"参考时间线里**没有一帧在动**（共发 {tl.get('n')} 帧，全在原点）⟹ **这一条没做**。"
-           f"★ 这本身就是夹具的**征兆**：包里那条参考的移动段在 `bag/4_traj3_lemniscate` 里"
+           f"★ 这本身就是夹具的**征兆**：包里那条参考的移动段在 `bag/old/4_traj3_lemniscate` 里"
            f"是前 305 帧\n（t ≤ 6.10 s），发成不动只有两种可能 —— 模型文件里 `reference` "
            f"块是空的，或者 `--publish-reference` 没接上。", counts=False)
         out["lemniscate"] = {"ran": False, "why": "参考全程不动"}
@@ -1472,7 +1472,7 @@ def traj_model_problem(model_path, *, ref_hold_s=None, hold_s=None) -> str | Non
                 f"  改用包 4 那份（已入库）：\n"
                 f"    --model tools/px4-sitl/evidence/tier-b/mocap-model-4.json\n"
                 f"  重新生成：python3 tools/px4-sitl/mocap_model.py dump "
-                f"bag/4_traj3_lemniscate --json <路径>")
+                f"bag/old/4_traj3_lemniscate --json <路径>")
     span = ref.get("span_s")
     if ref_hold_s is not None and hold_s is not None and isinstance(span, (int, float)):
         need = float(ref_hold_s) + float(span) + STEADY_S
@@ -1564,8 +1564,11 @@ def main(argv=None) -> int:
         return report_b(obs, obs["checks"])
 
     if not Path(args.model).exists():
-        bag = ("bag/4_traj3_lemniscate" if args.reference_source == "traj"
-               else "bag/3_traj1_hover --noise-bag bag/1_static")
+        # ⚠️ 两条路径都带 `old/`：这两份包是 **2026-10-08 之前**录的，那天 `bag/` 一层
+        #    按"每个场景只留最新的一份"清过一遍 ⟹ 它们搬进了 `bag/old/`。
+        #    去掉 `old/` 会指到**同名的另一次飞行**（症状是"数变了"，不是"路径错了"）。
+        bag = ("bag/old/4_traj3_lemniscate" if args.reference_source == "traj"
+               else "bag/old/3_traj1_hover --noise-bag bag/1_static")
         raise SystemExit(f"模型 {args.model} 不存在 —— 先跑：\n"
                          f"  python3 tools/px4-sitl/mocap_model.py dump {bag} "
                          f"--json {args.model}")
