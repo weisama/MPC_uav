@@ -12,16 +12,16 @@
 
 | | |
 |---|---|
-| **当前版本** | **v1.0** —— **Phase 1 收口**：offboard 位置定点飞行**真机飞成**（2026-09-28） |
-| **日期** | 2026-09-28 |
-| **分支** | `main`（开发主线）· **`v1.0`（本版本的快照，与 `main` 同指这一个提交）** |
-| **本版对应提交** | ☠️ **本页无法自引自己的 hash** —— 用 `git rev-parse v1.0`（或 `git rev-parse main`）取 |
+| **当前版本** | **v2.0** —— **Phase 2 的代码 + 真机录制产物**的快照（2026-10-08）。⚠️ **这个标签不表示"Phase 2 收口"**：MPC（模型预测控制）在 SITL 里的闭环已经跑起来，但 seam 3 的判据**没有跑满**，未决的那些事以 [`.scratch/phase2/`](.scratch/phase2/spec.md) 的 `Status:` 行为准，别拿本行当进度表 |
+| **日期** | 2026-10-08 |
+| **分支 / 标签** | `main`（开发主线）· **`v2.0`（标签）= 本版快照**（代码 + `bag/` 的六场景录制产物一起）· **`v1.0`（分支）= Phase 1 收口**那一版的快照，指着 `5ff9709`（2026-09-28）—— ⚠️ 它是**分支**、不是标签，别改成标签：同一个名字既当分支又当标签会让 `git rev-parse v1.0` 歧义 |
+| **本版对应提交** | ☠️ **本页无法自引自己的 hash** —— 用 `git rev-parse v2.0`（或 `git rev-parse main`）取 |
 | **飞控固件** | `Minderring/PX4-Autopilot` @ `4a0e65f2` —— v1.14.3 系的 MicoAir 厂商构建，**已在机上、不刷不改** |
 | **`px4_msgs`** | `release/1.14` @ `ffb6e80`（仓库外 `~/refs/px4_msgs`；**Phase 2 起用** —— ⚠️ 现已是**构建期依赖**：`nmpc` 与 `bench` 的 `package.xml` 里各有一条 `<depend>`） |
 | **mavros** | **2.15.1 @ `22ae5b7`** —— 源码构建在 `~/mavros_ws`，**不在本仓库**（Phase 1 全靠它） |
 | **ROS 2** | **Humble** |
 | **运行环境** | Ubuntu 22.04.5 LTS · 内核 5.15.185-tegra · aarch64（Jetson Orin NX 8GB） |
-| **阶段状态** | Phase 1 🟨（见下） · Phase 2 ⬜ · Phase 3 ⬜ |
+| **阶段状态** | Phase 1 🟨 **收口**（真机自由飞成 2026-09-28；★ 残余项是**裁定不再补做 / 留待台架日**的那几条，见下） · Phase 2 🟨 **进行中**（见下） · Phase 3 ⬜ 未开始 |
 
 ★ 上表每一行的证据落点：固件与 `px4_msgs` 见 [`refs-manifest.md`](docs/reference/refs-manifest.md)
 §2.5/§2.6，mavros 版本见 [`src/control/README.md`](src/control/README.md)。
@@ -56,7 +56,7 @@ source 过之后是 **129 passed**，见 [`run/README.md`](run/README.md) 的「
 | 阶段 | 做什么 | 控制接口 | 状态 |
 |---|---|---|---|
 | **Phase 1** | **offboard 位置定点飞行** —— 用动捕让 z0 稳定悬停并跟踪简单轨迹，**PX4 跑全部内环 PID** | **(A) 级**：`/mavros/setpoint_raw/local`（位置 + yaw） | 🟨 **代码与台架测试已就绪** + **2026-09-28 真机自由飞一次成**（定点定高 + 各按键 + 三条轨迹，**目测一切正常、数值未量** ⟹ ticket 09 收 `done`）· **阶梯 1–3 级（拆桨 / 系绳 20 cm / 系绳悬停 30 s）未做** —— ★ 2026-09-28 操作者裁定**不再补做**（自由飞已覆盖其风险；**是裁定不是做过了**，那几级的读数仍然是空的）· **台架清单 T1–T8 待下一次台架日一次性全跑** · [`spec`](.scratch/phase1/spec.md) `ready-for-agent` |
-| **Phase 2** | **MPC 接管 PID —— SITL 验证**：MPC 输出角速率 + 推力，PX4 只跑角速率环；被控对象**从上游 v1.14.3 构建的 z0 同构机**（**不是 `gz_x500`**；☠️ 原写"从 fork 构建"，该 fork 与 z0 无关） | **(C) 级**：`/fmu/in/vehicle_rates_setpoint` | ⬜ 未开始 · [`spec`](.scratch/phase2/spec.md) `ready-for-agent` |
+| **Phase 2** | **MPC 接管 PID —— SITL 验证**：MPC 输出角速率 + 推力，PX4 只跑角速率环；被控对象**从上游 v1.14.3 构建的 z0 同构机**（**不是 `gz_x500`**；☠️ 原写"从 fork 构建"，该 fork 与 z0 无关） | **(C) 级**：`/fmu/in/vehicle_rates_setpoint` | 🟨 **进行中** —— MPC（模型预测控制）节点 + acados + SITL 同构机都已落地，**闭环跑得起来**；⚠️ **还没收口**（seam 3 的判据未跑满、被控对象待按真机实测重搭）。★ **本格不抄读数**（抄了就会过期）—— 进度以 [`spec`](.scratch/phase2/spec.md) 与 `.scratch/phase2/issues/` 里各票的 `Status:` 行为准 |
 | **Phase 3** | **MPC 上实机**：四项前置测量 + 一次固件重编（~~ADC 一行修复~~ ☠️ **修法要重定 —— 那条缺陷不在 z0 的固件里**），然后拆桨 → 系绳 → 自由飞四级阶梯 | 同 Phase 2（**(C) 级**） | ⬜ 未开始 · [`spec`](.scratch/phase3/spec.md) `ready-for-human` |
 
 **指导思想：每个阶段只引入一个新变量。** Phase 1 全走 mavros2（**完全不碰 uXRCE-DDS**），把"动捕链路 + 状态机 + offboard"先跑通；Phase 2 再加 MPC + acados + uXRCE-DDS，**但只在 SITL 里验证，不碰飞机**；Phase 3 才上实机，且**先在离地之前把每个能摔机的未知量量出来**。
