@@ -53,6 +53,8 @@ Phase 2 干了很久，产出摊得很开：27 张票、20 来份 `docs/`、几�
 ### 乙 —— 收尾：把 Phase 2 那 9 张票结掉
 
 逐票的来历、必要性、可行性与处置见 Further Notes ② 的**收尾清单**（操作者 2026-10-08 逐张裁定）。
+**行动单是 [`issues/`](issues/) 下新开的 6 张票（`04`–`09`）**，不是这张表 —— 一票一文件是本 tracker
+的规矩（[`docs/agents/issue-tracker.md`](../../docs/agents/issue-tracker.md)），对照见 Further Notes ② 的第二张表。
 总的口径三条：
 
 1. **能 AFK 做完的现在就做**（`21` 重搭被控对象：纯离线，它的前置已经满足）；
@@ -167,6 +169,22 @@ Phase 2 干了很久，产出摊得很开：27 张票、20 来份 `docs/`、几�
 ★ 「处置」一列是**本轮裁定的结果**；**`Status:` 行本身由操作者自己改**（标签是操作者保留的裁定）。
 ★ 表里的**「它从哪来」**都是第一手（票面原话或已归档读数），**不是转述的记忆**。
 
+★ **这张表不是行动单，行动单是 `.scratch/phase3/issues/` 下的票** ——
+本 tracker 的规矩是**一票一文件、从 `01` 编号**，**不许**拿一张合并的 tickets 文件代替
+（[`docs/agents/issue-tracker.md`](../../docs/agents/issue-tracker.md)）。
+所以乙（收尾）**逐票各开一张**，对照如下；**phase2 那几张是历史，这几张才是能被派的活**：
+
+| Phase 2 的票 | Phase 3 的行动单 | 谁做 |
+|---|---|---|
+| [21](../phase2/issues/21-rebuild-sitl-plant-to-measured.md) 重搭同构机 | [**04**](issues/04-rebuild-sitl-plant-to-measured-baseline.md) | `ready-for-agent`（纯离线） |
+| [27](../phase2/issues/27-lemniscate-doubled-and-downstream-labels.md) 八字放大 | [**05**](issues/05-repoint-t0-to-lemniscate-1m-and-model5.md) | `ready-for-agent`（纯离线接线） |
+| [11](../phase2/issues/11-sitl-tier-b-seam3.md) 跑满 seam 3 | [**06**](issues/06-fly-t0-seam3-four-criteria.md) | `ready-for-human`（占窗口 + 收口裁定） |
+| [20](../phase2/issues/20-vertical-channel-mismatch-offset.md) 振荡机理 | [**07**](issues/07-oscillation-mechanism-outside-three-param-model.md) | `ready-for-agent`（只读） |
+| [10](../phase2/issues/10-param-measure-backfill.md) 电池可持续推力 | [**08**](issues/08-battery-sustainable-thrust-from-archived-ulogs.md) | `ready-for-agent`（读 `.ulg`） |
+| [26](../phase2/issues/26-recording-six-scenes-and-the-rewrite-path.md) 录制收口 | [**09**](issues/09-recording-sixth-scene-closeout.md) | `ready-for-human`（差一次真机录） |
+| [16](../phase2/issues/16-ocp-yaw-weights-mirror-well.md) 偏航镜像井 | —— **并入 [25](../phase2/issues/25-yaw-channel-authority.md)**，不新开票 | —— |
+| [24](../phase2/issues/24-mocap-attitude-yawzeroed-vs-world-frame.md) / [25](../phase2/issues/25-yaw-channel-authority.md) | —— **不新开票** | 标签是 `needs-triage`，**终态由操作者给** |
+
 | 票 | 它从哪来（一手） | 为什么必须做完 | 卡在哪 / 可行性 | 处置 |
 |---|---|---|---|---|
 | [**10**](../phase2/issues/10-param-measure-backfill.md) 参数实测定稿并回填<br>`ready-for-human` | 四条裁定已落地（2026-09-29 第五轮）；清单只剩「一个台架/悬停测量：电池**可持续**供出多少推力/功率」（§6.2 的 15 A 瓶颈） | 它决定 `f_max = 11.8 N` **保不保守** | **不必新开台架日**：`bag/*/fcu/*.ulg` 里就有负载下的电压/电流 | 降级为"**从已归档的飞控日志读出来**"，读数落回票面 |
@@ -176,7 +194,7 @@ Phase 2 干了很久，产出摊得很开：27 张票、20 来份 `docs/`、几�
 | [**16**](../phase2/issues/16-ocp-yaw-weights-mirror-well.md) 偏航权重镜像井<br>`ready-for-human` | 权重已落地；验收第 3 项（A 档 SITL 复飞）**待飞** | 与 `25` 是同一族的两半 | — | **并入 [25](../phase2/issues/25-yaw-channel-authority.md)** |
 | [**24**](../phase2/issues/24-mocap-attitude-yawzeroed-vs-world-frame.md) `q` 与 `p`/`v` 不同系<br>`needs-triage` | `mocap` 在解锁后把姿态 `yaw_zeroed`，而位置/速度**没有**旋转 | 受影响的**只有真飞 B 档**，且 `yaw0 ≈ 0` 时看不出来 | 先量**已归档包**里的 `yaw0`；正面修法是现场规程（机头对齐动捕 `+x`） | 现场规程优先 + 坐标系写法兜底；**标签由操作者给** |
 | [**25**](../phase2/issues/25-yaw-channel-authority.md) 偏航是死通道<br>`needs-triage` | 0.40 rad（23°）的机头误差只换来求解器 **`−3.8190e-4 rad/s`**（τ ≈ 1026 s） | 任何**靠反馈回正机头**的场景都做不了 | 四条路的差别是**代价与落点**，属操作者裁定 | **路 3（接受现状）** + 把判据门槛降到**能看见这个量**（现有门槛比它高三个数量级） |
-| [**26**](../phase2/issues/26-recording-six-scenes-and-the-rewrite-path.md) 录制菜单与六场景<br>`ready-for-human` | 现场主诉逐字：「一选场景就说目录已存在，什么都没录。」 | 它是 `bag/` 那批输入的来源，而 `bag/` 是 B 档的输入 | 代码侧已落地并入库（`2665d0a`）；**场景 4 已于 2026-10-08 真机录成**（`bag/4_traj2_square`）；场景 6 本就是自由录 | 收口；**真机那两条只有操作者能做** |
+| [**26**](../phase2/issues/26-recording-six-scenes-and-the-rewrite-path.md) 录制菜单与六场景<br>`ready-for-human` | 现场主诉逐字：「一选场景就说目录已存在，什么都没录。」 | 它是 `bag/` 那批输入的来源，而 `bag/` 是 B 档的输入 | 代码侧已落地并入库（`2665d0a`）；**场景 4 已于 2026-10-08 真机录成**（`bag/4_traj2_square`） | 收口；★ **只剩场景 6 那一条要真机录**（`ls -d bag/6*` → 不存在），车侧动作由操作者亲手敲 |
 | [**27**](../phase2/issues/27-lemniscate-doubled-and-downstream-labels.md) 八字放大到 1 m<br>`ready-for-human` | 操作者指令逐字：「将轨迹3的8字飞行轨迹改为原本的2倍」 | 判据② 要飞的**就是这条 1.0 m 的** | 1.0 m 包已于 2026-10-08 录成（参考包络 **2.000 × 1.000 m**、1312 帧）；⚠️ **但 `T0` 现在接的还是 0.5 m 那份** | 收口 = 把 `T0` 与验证器的默认参考包改成新包 + 生成 `mocap-model-5.json`（回放节点吃的参考/噪声/时序**全部**来自那份 JSON） |
 
 ★ **本轮才发现的一处（记在 `27` 名下）**：`verify_tier_b_seam3.py` 的 `--reference-source traj` 默认包与
@@ -184,18 +202,22 @@ Phase 2 干了很久，产出摊得很开：27 张票、20 来份 `docs/`、几�
 2026-10-08 那次 `bag/` 整理把工具的默认路径**按路径**改指了 `bag/old/…`（改对了，那份包确实搬走了），
 但**没有跟着把语义换成 1.0 m** —— 判据②判的是当前规格那条轨迹，所以这两处必须跟着换。
 
-### ③ 依赖关系（发布为 issue 时应建立阻塞边）
+### ③ 依赖关系（已按 issue 的 `**阻塞：**` / `**被阻塞：**` 行落地）
 
 ```
 甲（整理，可随时并行）
+   ├── 02（入口层裁剪与状态订正）──▶ 先做
+   └── 03（docs/ 压缩与索引）──────▶ 与 02 无硬依赖，但 02 先做地图才准
    └── 与乙无依赖，但**先做甲**：地图不准，正文裁了也没人找得到
 
-乙（收尾）
-   ├── 21（重搭被控对象，AFK）──▶ 换基线后 11 的 ②③④ 才在"对的基线"上判
-   ├── 11（T0 那一场）───────▶ 依赖 27 把 T0 接到 1.0 m 的新包
-   ├── 20（振荡机理）────────▶ 只读，可与 21 并行
-   ├── 10 / 24 / 25 / 16 / 26 ──▶ 互相独立
-   └── 全部 ─────────────────▶ Phase 4 的前提
+乙（收尾，四张 AFK + 两张待人）
+   ├── 04（重搭被控对象，AFK）──┬─▶ 换基线后 06 的 ②③④ 才在"对的基线"上判
+   │                            └─  同时作废 A/B 两档旧读数
+   ├── 05（T0 接到 1.0 m，AFK）─┴─▶ 06（T0 那一场）
+   ├── 07（振荡机理）──────────▶ 只读，可与 04 / 05 并行
+   ├── 08（电池可持续推力）────▶ 只读 `.ulg`，独立
+   ├── 09（录制收口）──────────▶ 独立；只差一次**真机录**（操作者亲手敲）
+   └── 全部 ──────────────────▶ Phase 4 的前提
 ```
 
 ### ④ 几个必须提前知道的坑
@@ -212,3 +234,40 @@ Phase 2 干了很久，产出摊得很开：27 张票、20 来份 `docs/`、几�
 - 编号顺延的落地口径：[`phase4/README.md`](../phase4/README.md)。
 
 ## Comments
+
+### #1 乙原先只有一张表，没有票 —— 2026-10-08 操作者当场指出，已补
+
+**操作者原话**：「spec3 不是要完成 spec2 未完成的工作吗？这件事不用新开 tickets 吗」。
+
+**确实漏了。** 我第一版把乙写成了 Further Notes ② 里的**一张表**（票 / 来历 / 必要性 / 卡在哪 / 处置），
+以为"清单 + 处置"就是行动单。**但本 tracker 的第一条规矩就是不许这样**：
+
+> Implementation issues are one file per ticket at `.scratch/<feature-slug>/issues/<NN>-<slug>.md`,
+> numbered from `01`, **never a single combined tickets file**
+> —— [`docs/agents/issue-tracker.md`](../../docs/agents/issue-tracker.md)
+
+一张表**派不出活**：它没有 `Status:` 行、不能被单独指派、不能建阻塞边、做完也不能被勾。
+而且它把**阶段 spec** 和**行动单**混成一件事 —— 阶段完了之后，无从知道哪几张真的结了。
+
+**处置**（操作者选的口径：**一票对一票**）：`10 / 11 / 20 / 21 / 26 / 27` 各开一张
+（[`04`](issues/04-rebuild-sitl-plant-to-measured-baseline.md) –
+[`09`](issues/09-recording-sixth-scene-closeout.md)），
+`16` 并入 `25`、`24 / 25` 不动（`needs-triage`，终态由操作者给）。
+**表保留**（它是"为什么"的记录），但**表头已写明"这不是行动单"**并附对照表。
+
+★ 顺带订正两处**写这张表时就已过期**的说法（第一手核过，不是事后追认）：
+
+1. `26` 那一格原写「真机那两条只有操作者能做」——**实际只剩一条**：场景 4 已于 2026-10-08T09:44Z
+   录成（`bag/4_traj2_square`），**场景 6 没录**（`ls -d bag/6*` → 不存在）。
+   ⟹ 已改成"只剩场景 6"。**写"两条"的依据是母票的验收项，没有回去数 `bag/` 里实际有几个目录。**
+2. 由 1 引申：**"验收项还剩两条" ≠ "两件事都还没做"** —— 验收项是**写下来的时点**的状态，
+   不是现在的状态。这正是本阶段要治的那个病（状态词比数更毒）。
+
+### #2 一张表的额外代价：它让"乙的进度"没有落点
+
+补票之后才看得清的一点：乙是**九张票的收尾**，横向跨 6 个不同的领域（SITL 被控对象 / 轨迹接线 /
+闭环实跑 / 机理分析 / 电池读数 / 录制）。
+**用一张表记 ⟹ 只能整批说"乙做到哪了"**，而实际操作时它们是**并行、独立、可分别派人**的
+（[`04`](issues/04-rebuild-sitl-plant-to-measured-baseline.md) 与
+[`07`](issues/07-oscillation-mechanism-outside-three-param-model.md) 就是两条互不相干的 AFK 线）。
+一票一文件之后，"哪几张能现在派出去"一眼可见 —— 这也是本阶段（缩减无用文档）本该达到的效果。
