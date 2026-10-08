@@ -460,8 +460,8 @@ F = K1 * Voltage^K2 * (K3*u^2 + (1-K3)*u)
 > 逐处见各小节内的 ☠️ 注；完整证据链见 [`refs-manifest.md`](refs-manifest.md) §2.5(d)。
 > **本节对 Nxt-FC 仓库本身的描述、以及 §9.4「不要刷错固件」仍然有效。**
 
-> **来源**：第一手 `git clone` + `git ls-remote` + `strings` 验证。~~**这是本项目对"z0 参数该跟谁比"这个悬而未决问题的权威解答。**~~
-> ☠️ 上半句仍成立（描述的是 Nxt-FC 这个仓库）；下半句那张"权威解答"要按上面的 ☠️ 重读。
+> **来源**：第一手 `git clone` + `git ls-remote` + `strings` 验证 —— 这句仍成立（它描述的是 **Nxt-FC 这个仓库**）。
+> ☠️ **原写「这是本项目对"z0 参数该跟谁比"这个悬而未决问题的权威解答」—— 已作废**，按上面的 ☠️ 重读。
 
 ### 9.1 仓库构成
 
@@ -495,7 +495,7 @@ F = K1 * Voltage^K2 * (K3*u^2 + (1-K3)*u)
 > `micoair/{h743, h743-v2, h743-aio}`、**没有 `hkust/`** ⟹ 是 **MicoAir 的厂商构建**，
 > 与 `Peize-Liu` 那支 **HKUST fork 无关**。见 [`refs-manifest.md`](refs-manifest.md) §2.5(d)。
 
-### 9.3 ~~★ 板级默认参数 —— 权威的比对基准~~ ☠️ **路径不对：这条不在 z0 的固件树里**
+### 9.3 ☠️ **已作废**：「板级默认参数 —— 权威的比对基准」—— **该路径不在 z0 的固件树里**
 
 > ☠️ **2026-09-21 更正**：本小节录的是 `boards/hkust/nxt-dual/init/rc.board_defaults` 的值，
 > 而**真身树里没有 `hkust/` 这块板**（见 §9.2 的 ☠️）⟹ **它不能当 `z0.params` 的比对基准。**
@@ -552,7 +552,7 @@ MC_ROLLRATE_K 0.35  MC_PITCHRATE_K 0.4  MC_YAWRATE_K 1.2  MC_YAWRATE_MAX 360
 1. **固件策略**：**用飞控出厂自带的 PX4 1.14，不自己刷。** 那份是 MicoAir 的构建，是本平台上唯一被验证过的 1.14 组合。
    ✅ **2026-09-21 定案：这份构建的身份已查明** = `Minderring/PX4-Autopilot` @ `4a0e65f2`
    （v1.14.3 系，2024-11-18），其 `msg/` 与上游 v1.14.3 逐字节相同。见 [`refs-manifest.md`](refs-manifest.md) §2.5(d)。
-2. **排查动作**：~~在 QGC 里记录当前固件版本号。~~ ✅ **已做**：MAVLink `AUTOPILOT_VERSION` 实测
+2. **排查动作**（原写「在 QGC 里记录当前固件版本号」，已改走 MAVLink）—— ✅ **已做**：`AUTOPILOT_VERSION` 实测
    `flight_sw_version = 0x010e0300`（⟹ `1.14.3`），`flight_custom_version` ⟹ hash `4a0e65f233`。
 3. **⚠️ 一个真实的坑（已用上游 git 历史逐条核实）**：**`ADC_BATTERY_CURRENT_CHANNEL = ADC12_CH(5)` 对 `nxt-dual` 是错的。**
    ☠️ **2026-09-21 定案：这条缺陷不在 z0 的固件里 —— 实测判为「未中招」，本项已结。**
@@ -567,18 +567,18 @@ MC_ROLLRATE_K 0.35  MC_PITCHRATE_K 0.4  MC_YAWRATE_K 1.2  MC_YAWRATE_MAX 360
    **★ 三点推论（前两条仍成立，第三条 ☠️ 已证伪）**：
    - 修复**只针对 `nxt-dual`**；`nxt-v1` 在 main 上**仍是 `CH(5)`**（对它是对的）→ **不要照抄 `nxt-v1` 的写法**
    - 版本边界：**上游 v1.15.0 仍带、v1.16.0 才修** ✅（第一手核实）
-   - ☠️ ~~**z0 是 1.14.x，连 `hkust/nxt-dual` 这个板级目标都还不存在**（v1.15.0 才有）→ **1.14 的构建几乎必然带 `CH(5)`**~~
-     **—— 这是本节的错误推论**：它默认「z0 的固件是**某个含 `hkust/nxt-dual` 的构建**」，
+   - ☠️ **原写「z0 是 1.14.x，连 `hkust/nxt-dual` 这个板级目标都还不存在（v1.15.0 才有）→ 1.14 的构建几乎必然带 `CH(5)`」—— 已作废，这是本节的错误推论**：
+     它默认「z0 的固件是**某个含 `hkust/nxt-dual` 的构建**」，
      而真相是真身树里**根本没有 `hkust/`**（是 `boards/micoair/h743-aio`，其电流通道
      `/* PC1 */ ADC1_CH(11)` **与引脚相符、无此缺陷**）。
      **「板级目标在 1.14 里不存在」既推不出「必然带 `CH(5)`」，也不是 z0 的实际处境。**
 
-   → ~~**若中招，电池电流采样读的是错误通道，飞行中的电流/电量保护全是假的。**~~
+   → ☠️ **原写「若中招，电池电流采样读的是错误通道，飞行中的电流/电量保护全是假的」—— 对 z0 不成立。**
    → ✅ **排查方法已执行（2026-09-21）：上电实测未解锁电流读数 ≈0 且非恒定怪值 ⟹ 未中招**
      （读数与判据见 [`params-changes.md`](params-changes.md) §A4）。**不是运气 —— 这条缺陷不在这块固件里。**
 4. **`MC_*RATE_K` 是 PX4 角速率环增益** —— Phase 2 的 MPC 要架在这一层之上，这几条值最终决定了内环带宽。
 5. **用不上的部分**：fork 的 `feat_fast_lab_stable`（UART DMA）、Nxt-FC 的 OmniNxt docker CI，对 z0 无增量价值。
-   ~~`pr_fix_hkust_nxt_dual` 的修复已进上游。~~ ☠️ **2026-09-21：它修的是 `hkust/nxt-dual`，而 z0 的板级目标不是它** ⟹
+   ☠️ **原写「`pr_fix_hkust_nxt_dual` 的修复已进上游（可用）」—— 2026-09-21 作废：它修的是 `hkust/nxt-dual`，而 z0 的板级目标不是它** ⟹
    **Phase 4 重编固件时不能照搬这一行的修法**（详见 [`refs-manifest.md`](refs-manifest.md) §2.5(d)③ 与 §2.7 的 ☠️ 注）。
 
 ---
@@ -631,8 +631,7 @@ MC_ROLLRATE_K 0.35  MC_PITCHRATE_K 0.4  MC_YAWRATE_K 1.2  MC_YAWRATE_MAX 360
    ✅ **真身已查明**（2026-09-21）：`Minderring/PX4-Autopilot` @ `4a0e65f2`，v1.14.3 系 MicoAir 厂商构建。
    ⚠️ **别把它读成"z0 跑 `hkust_nxt-dual`"** —— 真身树里没有 `hkust/`，是 `boards/micoair/*`。
 
-2. ~~**⚠️ 电池电流采样可能是假的。**~~ ☠️ **2026-09-23 改为：这条对 z0 不成立。**
-   ~~上游有一处真实修复：`ADC_BATTERY_CURRENT_CHANNEL` 从 `ADC12_CH(5)` 改为 `ADC12_CH(8)`。**若 z0 出厂固件含此 bug，所有电流/电量保护都是空转。** 上电看 QGC 电流读数即可判断。~~
+2. ☠️ **原写「电池电流采样可能是假的（上游把 `ADC_BATTERY_CURRENT_CHANNEL` 从 `CH(5)` 改 `CH(8)`）⟹ 电流/电量保护都是空转」—— 2026-09-23 改为：这条对 z0 不成立。**
    **实测已判「未中招」**（2026-09-21：未解锁时电流读数 ≈0.37 A 且**有变化**，非恒 0 / 非恒定怪值，见 [`params-changes.md`](params-changes.md) §A4），
    **且真身里根本没有那块板**（无 `boards/hkust/`，`boards/micoair/h743-aio` 写 `/* PC1 */ ADC1_CH(11)`，与引脚相符）。
    **⟹ 缺陷描述对 `boards/hkust/nxt-dual` 仍成立（上游 v1.16.0 才修），但对 z0 从未适用** —— 不是"运气好没中招"。见 §9.5。

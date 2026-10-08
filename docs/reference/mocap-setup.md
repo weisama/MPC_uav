@@ -306,7 +306,7 @@ QGC 侧更硬的旁证（Analyze → **MAVLink Console** 里敲）：
 ### 5.4 ★★ 把飞控的 MAVLink 转给**笔记本上的 QGC**（WiFi 桥）
 
 **用途**：QGC 不用接飞控的数传口，直接从本机的 WiFi 拿到整条 MAVLink 流。这也是
-[ticket 13](../../../.scratch/phase1/issues/13-mavros-bench-vision-pose.md) 那两条**只能靠人看 QGC** 的验收
+[ticket 13](../../.scratch/phase1/issues/13-mavros-bench-vision-pose.md) 那两条**只能靠人看 QGC** 的验收
 （① `VISION_POSITION_ESTIMATE` 有数 + `LOCAL_POSITION_NED` 稳定、⑥ 轴向确认）**唯一的落地途径**。
 
 **给法（z0 实测可用，2026-09-21）**：
@@ -979,7 +979,7 @@ ros2 topic hz /mavros/vision_pose/pose
 ### ★★ 2026-09-21 ticket 03 实测：**传输层 = UDP**（上面那个未决项已闭合）+ 刚体名与大写问题
 
 > 执行者：agent，在 z0 的 Jetson（`orin-nx`）上跑**真正的 `vrpn_listener`**（vendored，见
-> [`../../../src/vrpn_listener/VENDORED.md`](../../../src/vrpn_listener/VENDORED.md)）。
+> [`../../src/vrpn_listener/VENDORED.md`](../../src/vrpn_listener/VENDORED.md)）。
 > 全部为第一手读数。
 
 #### 一、传输层判定 —— **UDP，§1 的数据流图不用改**
@@ -1080,7 +1080,7 @@ check_vrpn_cookie(): VRPN Note: minor version number doesn't match:
 | `stamp` | ✅ **严格递增、相邻间隔 < 50 ms**（5 帧逐帧核对）⟹ 是**接收时刻**（`stamp = now()` 定制生效），**mavros 不会丢** |
 | 姿态 | ✅ 近单位四元数（`x,y,z ~1e-4`，`w=1.0`）—— 静止平放，符合预期 |
 | 位置 | `(-1.2804, -0.1397, +0.0883)` —— 静止不动，`z ≈ 0.09 m`（铝柱垫起来的球心高度，与 §10 第 7 项要量 Z 偏移相关）<br>⚠️ **x 是 -1.28 m 而不是 0**：动捕原点在棚里别处 ⟹ **这正是 ticket 04 要减掉原点的原因** |
-| `twist` 的 `angular` | ✅ **全 0**（`linear` 有噪声级读数）—— 与 [`VENDORED.md`](../../../src/vrpn_listener/VENDORED.md) §2b「角速度刻意留零、应从 IMU 取」**逐条对上** |
+| `twist` 的 `angular` | ✅ **全 0**（`linear` 有噪声级读数）—— 与 [`VENDORED.md`](../../src/vrpn_listener/VENDORED.md) §2b「角速度刻意留零、应从 IMU 取」**逐条对上** |
 
 ⟹ **ticket 03 第 3 条验收「对 z0 本体」现在补齐了**：`190.9 Hz`，落在 100–400 Hz 内。
 **ticket 04 的前置条件（`/vrpn/z0/pose` 有数据）已满足，不再被阻塞。**

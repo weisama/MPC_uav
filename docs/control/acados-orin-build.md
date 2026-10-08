@@ -157,14 +157,17 @@ FileNotFoundError: [Errno 2] No such file or directory: '/home/chen/acados/lib/l
 
 ---
 
-## 6. ★ 实测数（**上游参考配置**的量级；z0 自己那一份的 P3 仍未结）
+## 6. ★ 实测数（**上游参考配置**的量级）
 
-> ⚠️ **不要把这些数当成 `phase2-implementation.md` §5 的 P3 已回填。**
-> §5 的 P3（`phase2-implementation.md:571`）问的是「**z0 自己的 OCP** 在 SITL 跑 1000 次取 max」，卡 D6；
-> 本节的数来自**上游参考实现的 x500 占位配置**（`mass=1`、`hover_thrust=0.73`），**不是 z0 的 OCP**
-> （z0 版在 [ticket 04](../../.scratch/phase2/issues/04-offline-ocp.md)，参数定稿在
-> [ticket 10](../../.scratch/phase2/issues/10-param-measure-backfill.md)）。
-> 本节能提供的是**量级与瓶颈归因**；**拿它去填 P3 就是错的口径**。§5 的 P3 维持「待实测」。
+> ⚠️ **不要把这些数当成 `phase2-implementation.md` §5 的 P3 的读数。**
+> §5 的 P3 问的是「**z0 自己的 OCP** 跑 1000 次取 max」；
+> 本节的数来自**上游参考实现的 x500 占位配置**（`mass=1`、`hover_thrust=0.73`），**不是 z0 的 OCP**。
+> 本节能提供的是**量级与瓶颈归因**；**拿它去填 P3 就是错的口径**。
+>
+> ★ **2026-10-08 订正**：本节原写「z0 自己那一份的 P3 仍未结／维持『待实测』」——**已过期**。
+> z0 版 P3 已于 **2026-09-28 由 ticket [04](../../.scratch/phase2/issues/04-offline-ocp.md) 回填**
+> （纯求解 max **3.58 ms** ⟹ D6 定 100 Hz），见 `phase2-implementation.md` **§3.1** 的 D6 行 + **§5** 的 P3 行。
+> 下面的数**只**用于量级与瓶颈归因，**不再**用于「P3 还没做」这个判断。
 
 **被求解的问题**：参考实现自带的例子 —— `MultirotorRateModel()`（x500 占位配置：`mass = 1 kg`、`hover_thrust = 0.73`、
 `max_rate = 0.5` **占位值**），`N = 50`，`Tf = 1 s`，ERK 4/3，`SQP_RTI` +
@@ -271,7 +274,7 @@ ACADOS_SOURCE_DIR=$HOME/acados-generic LD_LIBRARY_PATH=$HOME/acados-generic/lib:
 | # | 事项 | 交给谁 |
 |---|---|---|
 | 1 | ★ ★ **「缺 Tera 报 `EOFError`」这句话还在 5 个文件里原样重复**（`hardware.md:278`、`code-inventory.md:239`、`PROJECT.md:408`、`PROJECT.md:453`、`open-source-survey.md:61`、**`CONTEXT.md:93`**）。⚠️ **订正（2026-09-29）**：本行原写「5 个文件」却只枚举了 **4 个** —— 漏的正是仓库根的 `CONTEXT.md:93`（原判据 `grep -rn "EOFError" docs/ README.md` **照不到仓库根**；换宽搜法即命中）。本张只改了 `phase2-implementation.md` §S2 与 `mpc-roadmap.md` §5（acados 部署的**直接出处**）—— 那几处**本张不越界改**。⚠️ 另：经 `grep` 核对，「`GENERIC` 掉一个量级」与「OpenMP 冲突」这两句**只存在于 `phase2-implementation.md:444` 一处**，已随本张改掉，**别处没有**（`hardware.md:276` 只写「没有 A78 目标 → 用 A76」，本来就是对的） | **已另开票点名**：[ticket 13](../../.scratch/phase2/issues/13-stale-acados-claims-sweep.md)（`done` 不允许靠"留给以后"掩盖未决事项，见 `docs/agents/triage-labels.md`）。⚠️ 其中 `hardware.md:278` 是「acados 要点」那一节，**是后来者最先看到的地方**，优先改。★ **2026-09-29 已收口**：[ticket 13](../../.scratch/phase2/issues/13-stale-acados-claims-sweep.md) `done` —— 5 个文件 6 处（含上面补进表的 `CONTEXT.md:93`）全部对齐到 §4 的新口径 |
-| 2 | z0 自己的 OCP（`mass = 0.75`、`T_max` 按电池、角速率上限换实测值）的最坏耗时 —— §5 的 P3 仍是「待实测」 | ticket [04](../../.scratch/phase2/issues/04-offline-ocp.md) |
+| 2 | z0 自己的 OCP（`mass = 0.75`、`T_max` 按电池、角速率上限换实测值）的最坏耗时 | ✅ **已收口（2026-09-28，ticket [04](../../.scratch/phase2/issues/04-offline-ocp.md)）**：P3 回填**纯求解 max 3.58 ms** ⟹ D6 定 100 Hz（见 `phase2-implementation.md` §5 的 P3 行）。★ 2026-10-08 订正本行原写的「§5 的 P3 仍是『待实测』」—— 已过期 |
 | 3 | **频率定档（D6）必须带两个前提**：①**绑核**（不绑核 median 差 29%、max 差 33%）；②**机上负载**（有编译负载时 max 从 4.39 → 23.4~27.4 ms，差 5 倍以上、结论会反过来，见 §6.3） | ticket 04 / [09](../../.scratch/phase2/issues/09-sitl-tier-a-closed-loop.md) |
 | 4 | `~/acados-omp`、`~/acados-generic` 两个对照安装目录是本张的取证产物，**不是交付物**；`~/acados` 才是 | — |
 | 5 | 本机 `acados` 的 `git_commit_hash` = `00947ddc3`（第一手：`cat ~/acados/lib/git_commit_hash`）—— 与 `~/refs/acados` 的 HEAD 一致 | — |

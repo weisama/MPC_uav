@@ -180,8 +180,8 @@ python3 tools/px4-sitl/check_msg_compat.py \
     --interface-lib <px4-ros2-interface-lib 目录>
 ```
 
-☠️ ~~**（PX4 官方脚本）**：`./scripts/check-message-compatibility.py -v <你的 px4_msgs 目录> <PX4-Autopilot 目录>`~~
-—— ★ **这个路径是错的，而且照着改也还是会错**：该脚本**不在 PX4-Autopilot 里**（`Tools/` 下只有
+☠️ **原写「（PX4 官方脚本）`./scripts/check-message-compatibility.py -v <你的 px4_msgs 目录> <PX4-Autopilot 目录>`」—— 该写法已被推翻**
+—— ★ **那个路径是错的，而且照着改也还是会错**：该脚本**不在 PX4-Autopilot 里**（`Tools/` 下只有
 `generate_msg_docs.py` / `px_generate_uorb_topic_files.py` / `px_generate_uorb_topic_helper.py`，仓库根**没有 `scripts/` 目录**；
 v1.14.3 / v1.15.0 / v1.16.0 / fork `5ba2e91f` / `px4_msgs` 逐棵树查过，**全无**）。它的真身在
 **`auterion/px4-ros2-interface-lib`** 的 `scripts/` 下 —— 但**直接跑它对本项目会报假 FAILED**：
@@ -249,7 +249,7 @@ if (last_transform_stamp == stamp) { /* dropped */ return; }
 | `EKF2_EV_DELAY` 设置 | **50.0 ms** | `z0.params` ✅ 与实测吻合 |
 | uXRCE-DDS 传输 | ~1 ms | — |
 | PX4 角速率环 | 1 kHz → **1 ms** | — |
-| **MPC 求解** | **目标 ≤ 10 ms**（100 Hz） | 待实测 |
+| **MPC 求解** | **≤ 10 ms 预算**（100 Hz）；★ **实测纯求解 max `3.58 ms`** | `phase2-implementation.md` §5 的 P3 行 / D6（2026-09-28） |
 | **动捕时间戳抖动** | ✅ **~2–5 ms** | ★ 已更正，见下 |
 
 > ⚠️ **已更正的错误认知**：本文档早先版本把动捕时间戳抖动记为 **±10–100 ms**，并据此推断"真实最坏延迟可能是 150 ms"。**该数字是错的。**

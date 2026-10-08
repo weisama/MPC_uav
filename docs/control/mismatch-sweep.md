@@ -150,7 +150,7 @@ hover_thrust_机型 = m·g/(4·SIH_T_MAX) = 0.750 × 9.80665 / (4 × 2.95) = 0.6
 
 ### 2.4 ★ 发散必须自己判：A 档的判据**判不了发散**
 
-[ticket 09](09-sitl-tier-a-closed-loop.md) 的判据全部判在 **EKF 帧**上（票面指定的状态源就是那两条话题），
+[ticket 09](../../.scratch/phase2/issues/09-sitl-tier-a-closed-loop.md) 的判据全部判在 **EKF 帧**上（票面指定的状态源就是那两条话题），
 而第 6 场已经给出了反例：**位置那几条判据全 ✅，同时机头转了 13.6 圈**
 （[`tier-a-sitl-hover.md` §3](tier-a-sitl-hover.md)）。
 
@@ -192,7 +192,7 @@ hover_thrust_机型 = m·g/(4·SIH_T_MAX) = 0.750 × 9.80665 / (4 × 2.95) = 0.6
 ### 2.7 ★ 这一轮飞的是哪一份控制器代码（**第一手留档，不是"应该是 src"**）
 
 `ros2 run nmpc` 跑的是 **ament 装出来的那一份**（`install/nmpc/...`；非 symlink 安装 ⟹ 是**拷贝**，不是 `src/`），
-而 `src/nmpc/` 在同一时间**正被并行会话（[ticket 11](11-sitl-tier-b-seam3.md)）编辑**。
+而 `src/nmpc/` 在同一时间**正被并行会话（[ticket 11](../../.scratch/phase2/issues/11-sitl-tier-b-seam3.md)）编辑**。
 
 **本张实际撞到的**：第一次起扫描时**一场都没飞起来**（`DUT 0 帧`，节点 stdout 只有一句
 `Package 'nmpc' not found`）—— 因为我那条命令只 source 了 `humble` 与 `px4_msgs_ws`，**没 source 本仓库的 `install/`**，
@@ -266,7 +266,7 @@ hover_thrust_机型 = m·g/(4·SIH_T_MAX) = 0.750 × 9.80665 / (4 × 2.95) = 0.6
 
 后者同时**低于**顶约束自检的容差 `SAT_TOL_REL = 1e-3`（`1.18e-2 N`）⟹ 连"是否判顶约束"都一样。
 **结论**：本表对 `src` 那处解耦改动**数值无感**；但**仅限这一处、仅限本张口径**。
-并行会话（[ticket 11](11-sitl-tier-b-seam3.md)）那 5 场 B 档跑的是 `src`（其 `run_matrix.sh:52` 有
+并行会话（[ticket 11](../../.scratch/phase2/issues/11-sitl-tier-b-seam3.md)）那 5 场 B 档跑的是 `src`（其 `run_matrix.sh:52` 有
 `export PYTHONPATH=.../src/nmpc`，已复核），所以**两张表的控制器代码不同一份**，
 差别就是上表这一处 —— 引本表时请连同这张小表一起引，别只说"版本不同不可比"。
 ⚠️ **默认口径下的任何"顶饱和"读数**则要回看是**哪一份**跑的：旧代码里那 3.92× 会**变成一条 3.9 倍宽的推力上限**。
@@ -346,7 +346,7 @@ python3 tools/px4-sitl/mismatch_sweep.py --summarize $D --json $D/summary.json -
 > 交由操作者说明；教训与归因分开。
 
 ★ 逐场**串行**、不并行：两个 SITL 会互相看见对方的 PX4/agent ⟹ **双方的判据读数都会串**（不只是变慢）。
-这是与并行会话（[ticket 11](11-sitl-tier-b-seam3.md)）**约好独占窗口**的原因。
+这是与并行会话（[ticket 11](../../.scratch/phase2/issues/11-sitl-tier-b-seam3.md)）**约好独占窗口**的原因。
 
 夹具**不改任何共享文件**：覆盖层替换、`HOVER_THRUST` 覆盖与参数读回都走运行时补丁
 （`parse_overlay_into_env` / `ta.dut_params` / `v.World` 子类），
@@ -752,7 +752,7 @@ ck("⑤ 推力标定：PX4 解出的电机均值 ≈ m·g/(4·T_max)（★ 只�
 |---|---|---|
 | **推力曲线** | z0 固件上 `THR_MDL_FAC = 0.449999988079071045`（第一手：`docs/assets/z0.params` 里那一行 —— ★ **引用别写行号**，见本页附录），而 **SITL 侧刻意取 `0`**（端到端等价论证见 [`sitl-z0-plant.md` §5.2](sitl-z0-plant.md)）⟹ SITL 里"推力指令 → 实得推力"是**恒等**的，真机是 `throttle = (1−c)u + c·u²` | 本页的 `thrust` 档扫的是**乘性常数**失配（`SIH_T_MAX` ±30 %）。真机上的曲线失配**不是常数失配** —— 它**随工作点变**（悬停附近与满油门附近不等价）⟹ "±30 % 稳"**推不出**"曲线设错 45 % 也稳" |
 | **电池跌落** | `MC_BAT_SCALE_EN = 0` ⟹ PX4 **不按电压**缩放 `thrust_body`；而实测推力 ∝ `V^1.608` ⟹ 一个常数**必然**在某段电量上错（满电 0.159 / 标称 0.195 / 实用截止 0.273，T/W 6.3 / 5.1 / 3.7，见 [`params.py`](../../src/nmpc/nmpc/params.py) 的 `HOVER_THRUST` 段） | 本页的失配是**定值**，电池跌落是**时变**的（一场飞行里就漂）。**时变失配比定值失配难**（控制器来不及学）⟹ 本页的"稳"**不覆盖**"一块电飞到底还稳" |
-| **动捕时延** | A 档**根本不用动捕**（`state_source:=px4`，判据⑧那一行量的就是"一帧都不订"）⟹ 本页的整条链路上**没有**动捕延迟这一项 | ★ 本页的 `tau` 旋钮是**作动器**（电机）一阶滞后，**不是**端到端状态输入延迟 `τ`（Phase 4 的 P4）。两者中文里都可能被叫"延迟"，**不是同一个量**（[`sitl-z0-plant.md` §5.4](sitl-z0-plant.md)）。动捕延迟的判据在 [ticket 11 的判据 3](11-sitl-tier-b-seam3.md)（注入 50 ms） |
+| **动捕时延** | A 档**根本不用动捕**（`state_source:=px4`，判据⑧那一行量的就是"一帧都不订"）⟹ 本页的整条链路上**没有**动捕延迟这一项 | ★ 本页的 `tau` 旋钮是**作动器**（电机）一阶滞后，**不是**端到端状态输入延迟 `τ`（Phase 4 的 P4）。两者中文里都可能被叫"延迟"，**不是同一个量**（[`sitl-z0-plant.md` §5.4](sitl-z0-plant.md)）。动捕延迟的判据在 [ticket 11 的判据 3](../../.scratch/phase2/issues/11-sitl-tier-b-seam3.md)（注入 50 ms） |
 
 **另外一条不属于 sim-to-real、但同样限制本页读数解释力的**（仪器层面，必须一起标注）：
 
@@ -766,7 +766,7 @@ ck("⑤ 推力标定：PX4 解出的电机均值 ≈ m·g/(4·T_max)（★ 只�
 
 ---
 
-## 6. 回链 [ticket 11](11-sitl-tier-b-seam3.md) 的"错参数也能飞稳"
+## 6. 回链 [ticket 11](../../.scratch/phase2/issues/11-sitl-tier-b-seam3.md) 的"错参数也能飞稳"
 
 票面那一句是（[`11-sitl-tier-b-seam3.md:28`](../../.scratch/phase2/issues/11-sitl-tier-b-seam3.md)）：
 
@@ -797,7 +797,7 @@ ck("⑤ 推力标定：PX4 解出的电机均值 ≈ m·g/(4·T_max)（★ 只�
 （悬停前馈错了、竖向上没有积分作用去补），所以它表现为**偏差**；
 `inertia`/`tau`/`rate` **只打在"内环是瞬时的"这个假设上**，表现是**动态品质**而不是偏差。
 ⟹ 11 号票若要保留"错参数也能飞稳"这句话，**得把"参数"落到 `inertia`/`tau`/`rate` 那一类**
-（B 档的夹具恰好也是这一类居多 —— 它是 [ticket 08](08-sitl-z0-airframe.md) 造的 ±30 % 被控对象）；
+（B 档的夹具恰好也是这一类居多 —— 它是 [ticket 08](../../.scratch/phase2/issues/08-sitl-z0-airframe.md) 造的 ±30 % 被控对象）；
 若要用 `mass`/`thrust` 那一类，则**必须带上边界**（§4 给的那个数），否则与 A 档读数冲突。
 
 > ⚠️ **本张不改 11 号票的措辞** —— 上表是**给 11 号票的输入**，落到票面上的那一句由那张票自己定。
@@ -1004,7 +1004,7 @@ ck("⑤ 推力标定：PX4 解出的电机均值 ≈ m·g/(4·T_max)（★ 只�
 所以它从来就没进过任何一个提交。
 
 ⚠️ **盘上那份也换了**：`install/nmpc/` 已被并行会话于 **2026-09-29 12:11:55** 重建
-（[ticket 20](20-vertical-channel-mismatch-offset.md) 的 `src@d817a16`）⟹ §2.7 表里那些
+（[ticket 20](../../.scratch/phase2/issues/20-vertical-channel-mismatch-offset.md) 的 `src@d817a16`）⟹ §2.7 表里那些
 `install` mtime 与"差 54 行"的读数**此后无法再从盘上复测**，**只能靠归档里那 11 个 sha256
 钉住"是哪一份"**。（本张 13 场在 **11:29–11:43** 飞，早于这次重建 ⟹ **飞的那份仍是 08:59 快照**，
 §2.7 的结论不受影响。）
@@ -1096,7 +1096,7 @@ ValueError: could not convert string to float: '-'
 
 
 ⚠️ **"可达"不等于"发生过"**：本张**没有证据**说上面任一处真跑里被咬过，也没去查。
-修不修属 [ticket 08](../../.scratch/phase2/issues/08-sitl-z0-airframe.md) / [05](../../.scratch/phase2/issues/05-*.md) 的票面
+修不修属 [ticket 08](../../.scratch/phase2/issues/08-sitl-z0-airframe.md) / [05](../../.scratch/phase2/issues/05-sitl-offboard-smoke.md) 的票面
 （本张这轮只动了卡住批次的 `field()` 那一处，并已在代码注释里点名其余）。
 
 #### 归档那 13 场**有没有**被静默截短过？—— **这个问题现在已知不可答**

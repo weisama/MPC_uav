@@ -690,9 +690,9 @@ z0 的链路跑在 `MAVLINK_MODE_ONBOARD`，该模式配 `ESTIMATOR_STATUS` **1.
 
 1. **打杆接管的最终执行是 PX4 的事**（`COM_OBL_RC_ACT`，z0 现值 `0` = 回 Position 模式），
    夹具不模拟 PX4 ⟹ 台架只能验到"我们停发了、退到 `RC_OVERRIDE`、不抢回"。
-   连带 ~~⚠️：**`NAV_RCL_ACT = 2`（Return）是 A1 阻塞项** —— A1 不落实，"RC 丢失 ⟹ 我们请求 LAND"
-   之后 PX4 自己的 RC 失效保护仍会试图**返航**（室内无 GPS）~~
-   —— ✅ **A1 已落地**（★ 2026-09-28 第一手实测 `NAV_RCL_ACT = 1` Hold）⟹ 是**就地保持**。
+   连带 ☠️ **原写「`NAV_RCL_ACT = 2`（Return）是 A1 阻塞项（A1 不落实 ⟹ 请求 LAND 之后 PX4 自己的
+   RC 失效保护仍会试图返航，室内无 GPS）」—— 已消解**：
+   ✅ **A1 已落地**（★ 2026-09-28 第一手实测 `NAV_RCL_ACT = 1` Hold）⟹ 是**就地保持**。
 2. ✅ **`/mavros/state` 超时这条在真机上不是"请求 `AUTO.LAND` 直到结束"**（2026-09-22 第二轮复核发现，
    第一手：mavros 2.15.1 `sys_status.cpp`）—— **已由 ticket 18 收口（2026-09-22）**，见上面那条 ★★
    「可信的落地上锁」。这里保留原始记录（它是那个风险的现场）：
@@ -741,7 +741,7 @@ z0 的链路跑在 `MAVLINK_MODE_ONBOARD`，该模式配 `ESTIMATOR_STATUS` **1.
 位置误差 < 0.10 m  ∧  |v| < 0.10 m/s      持续 2 s
 ```
 
-- ☠️ ~~**位置误差**相对**轨迹原点**（§3.3），来源 `/mavros/local_position/pose`~~ —— **这句是错的，见下方 ★★**
+- ☠️ **原写「位置误差相对轨迹原点（§3.3），来源 `/mavros/local_position/pose`」—— 这句是错的**，见下方 ★★ 更正（2026-09-22，ticket 08 实现时定）
 - **位置误差**相对**悬停点**（= 起飞原点正上方 `takeoff_altitude_m`，§3.3），来源 `/mavros/local_position/pose`
 - **速度**来源 `/mavros/local_position/velocity_local`（EKF2 融合，比动捕差分干净）
 - **两者都在 EKF2 的同一个局部系里**（ROS 侧是 ENU，见 §3.1 的更正），与 setpoint 同口径，**不需要额外转换**
@@ -1030,7 +1030,7 @@ z0 的链路跑在 `MAVLINK_MODE_ONBOARD`，该模式配 `ESTIMATOR_STATUS` **1.
 - 修复**只针对 `nxt-dual`**；`nxt-v1` 在 main 上**仍是 `CH(5)`**（对它是对的）—— **不要照抄 `nxt-v1` 的写法**
 - 版本边界：**上游 v1.15.0 仍带、v1.16.0 才修**（第一手核实）
 
-→ ~~**若中招，电流/电量保护全是空转**~~ —— ✅ **排查已执行：未中招**，电流/电量保护是真的
+→ ☠️ **原写「若中招，电流/电量保护全是空转」—— 对 z0 不成立**：✅ **排查已执行：未中招**，电流/电量保护是真的
 （但 **Phase 4 重编固件时，`pr_fix_hkust_nxt_dual` 那一行对 z0 的固件不适用**，修法要重定）。
 
 ### 8.3 ⚠️ 不要刷 Nxt-FC 仓库里的预编译固件
@@ -1046,7 +1046,7 @@ z0 的链路跑在 `MAVLINK_MODE_ONBOARD`，该模式配 `ESTIMATOR_STATUS` **1.
 
 > ⚠️ **本节原先只给约束、没给通道号。** 完整占用表（含 **ch5 解锁**、**ch8 杀车** —— 本节原先漏了这两个）
 > 见 [`../reference/params-analysis.md`](../reference/params-analysis.md) §3.15；
-> ~~实际只剩 ch7 空闲~~ ☠️ **该句已作废（2026-09-21）**：未映射的通道是 **ch7 与 ch9…ch16**（共 9 个）。
+> ☠️ **原写「实际只剩 ch7 空闲」—— 该句已作废（2026-09-21）**：未映射的通道是 **ch7 与 ch9…ch16**（共 9 个）。
 >
 > ★ **2026-09-21 已定案**（ticket [02](../../.scratch/phase1/issues/02-rc-channel-decision.md)）：
 > **开始 = ch9 上升沿**（`channels[8]`）、**急停 = ch8 高值（沿用现有硬件杀车）**、**解锁 = 程序解锁**。

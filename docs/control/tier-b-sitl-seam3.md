@@ -151,8 +151,11 @@ python3 tools/px4-sitl/mocap_model.py dump bag/old/3_traj1_hover --noise-bag bag
 # ⟹ 134 KiB，本票所有场次都用它（现在**以归档里这份为准**）
 ```
 
-☠️ 当时 dump 到的是 `/tmp/mocap-model-3.json` —— **`/tmp` 是 tmpfs，机器 2026-09-29 10:40
-重启后那份没了**。归档里这份内容与当时一致（`F*-replay.json` 的 `sigma_m` 与
+☠️ 当时 dump 到的是 `/tmp/mocap-model-3.json` —— **`/tmp` 过不了重启，机器 2026-09-29 10:40
+重启后那份没了**。
+（☠️ **2026-10-08 订正机制**：本条原写"`/tmp` 是 tmpfs"——**机制错、结论对**。实测 `df -T /tmp` ⟹ 根盘是 **ext4**（无独立挂载），
+清空的真因是 `/usr/lib/tmpfiles.d/tmp.conf:11` 的 `D /tmp 1777 root root -`（**systemd-tmpfiles 开机清**）⟹ **同一次开机内 `/tmp` 持久**；
+同口径见 [`mismatch-sweep.md`](mismatch-sweep.md) **§2.8.1**。）归档里这份内容与当时一致（`F*-replay.json` 的 `sigma_m` 与
 `base_delay_ms` 都是夹具直接读模型算出来落盘的，逐位对得上，见
 [`verify_tier_b_seam3.py`](../../tools/px4-sitl/verify_tier_b_seam3.py) 的模块 docstring）
 ⟹ 验证器与 `run_matrix.sh` 的 `--model` 默认值已指向它。

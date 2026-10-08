@@ -21,7 +21,7 @@
 | `Fast-Drone-250/` | `git@github.com:ZJU-FAST-Lab/Fast-Drone-250.git` | `8ff64274b161bb829653faf5946656658e7e2c9f` | 2022-11-09 | 文档未记 commit。**FSM 设计的真正源头** |
 | `Sim2real-UAV-Params-/` | `git@github.com:Huan-qun/Sim2real-UAV-Params-.git` | `b7aeebb71cc708445fbac70a4863c736d4674630` | 2026-08-30 | `z0.params` 的出处；`S2R/assets/vrpn_listener.zip` 见 `mocap-setup.md` §6.2 |
 | `Nxt-FC/` | `git@github.com:HKUST-Aerial-Robotics/Nxt-FC.git`（分支 `main`） | `153b7d13609e870a8abc6ff909461a13ea2d69f8` | 2024-08-13 | ⚠️ **不是固件源码仓库**（仅 51 个文件：硬件 + 预览版二进制 + submodule） |
-| **`px4-z0/`** | `git@github.com:Peize-Liu/PX4-Autopilot.git` | **`5ba2e91ff227fe4da0133371e88dc81b038bb81e`** | 2024-07-02 | ☠️ ~~★ **z0 固件的真身**~~ —— **2026-09-21 定案：与 z0 无关**（z0 **不跑 fork**，真身是 `4a0e65f2`，见 §2.5(d)）。本目录现只承担「读 **fork** 源码」职责。以 **fetch-only** 方式保存（无工作树）；读文件用 `git show <ref>:<path>` |
+| **`px4-z0/`** | `git@github.com:Peize-Liu/PX4-Autopilot.git` | **`5ba2e91ff227fe4da0133371e88dc81b038bb81e`** | 2024-07-02 | ☠️ **原写「★ z0 固件的真身」—— 2026-09-21 定案：与 z0 无关**（z0 **不跑 fork**，真身是 `4a0e65f2`，见 §2.5(d)）。本目录现只承担「读 **fork** 源码」职责。以 **fetch-only** 方式保存（无工作树）；读文件用 `git show <ref>:<path>` |
 | ↑ 同上目录里的**真身** | `Minderring/PX4-Autopilot`（**按 SHA 取，未建 remote**） | **`4a0e65f2331b23b9c8352656e9ccb6edeaea5d6c`** | 2024-11-18 | ★ **z0 固件真身（v1.14.3 系的 MicoAir 厂商构建）**。commit/tree 落在 `~/refs/px4-z0/` 的**同一个对象库**里（`--depth 1 --filter=blob:none`，见 §2.5(d)②）；⚠️ **来源 URL 未在 git config 里留痕**（是一次性 `git fetch <url> <sha>`），重建时按 §2.5(d)② 的口径重取 |
 | `px4-v1.14.3/` `px4-v1.15.0/` `px4-v1.16.0/` | `git@github.com:PX4/PX4-Autopilot.git`（三个 tag） | `1dacb4c` / `30e763b` / `6ea3539` | — | 作对照用（如 ADC 通道的版本边界）。**fetch-only，无工作树** |
 | `acados/`（**2026-09-28 新增**） | `git@github.com:acados/acados.git` | **`00947ddc394b30c956d9a7794d0bbcbc44c7c050`** | 2026-09-25 | `git describe` = **`v0.6.0-41-g00947ddc3`**。ticket [02](../../.scratch/phase2/issues/02-acados-orin-build.md) 的取证与构建基准；构建方式见 [`control/acados-orin-build.md`](../control/acados-orin-build.md)（那里面用的是 **HTTPS** 地址，与本表的 SSH 写法**等价**，两条都能克隆）。⚠️ 本目录**不再是严格只读**：上游在 cmake configure 时会往 `lib/` 写 `link_libs.json` 与 `git_commit_hash`（在 acados 自己的 `.gitignore` 里，故 `git status` 仍干净）—— 所以构建走 **out-of-source**，产物落 `~/acados-build*` |
@@ -46,7 +46,7 @@
 `Nxt-FC/main` 指向 `PX4-Autopilot` @ `5ba2e91f`，该 commit 的 `boards/hkust/` 下**确实有
 `nxt-dual` 与 `nxt-v1`**。而 PX4 官方上游 **v1.14.3 无 `boards/hkust`，v1.15.0 起才有**。
 
-> ☠️ ~~这解释了为什么 z0 的固件只能来自 fork。~~ **2026-09-21 定案：这句是错的，z0 的固件与这条 submodule 线索无关。**
+> ☠️ **原写「这解释了为什么 z0 的固件只能来自 fork」—— 2026-09-21 定案：这句是错的，z0 的固件与这条 submodule 线索无关。**
 > `Nxt-FC` 的 `.gitmodules` 只说明 **Nxt-FC 这个项目**配哪支 PX4，**不等于飞控里烧的那一份**。
 > 真身是按飞控自报的 `flight_custom_version` 反查出来的 `4a0e65f2`（`Minderring/PX4-Autopilot`，
 > 2024-11-18），它的 `boards/` 里是 `micoair/{h743, h743-v2, h743-aio}`、**没有 `hkust/`** ——
@@ -54,13 +54,12 @@
 > z0 用的既不是上游的 `hkust_nxt-dual`，也不是 fork 的，而是**厂商自己的 `micoair` 板级目标**。
 > 见 §2.5(d)。
 
-> ⛔ **2026-09-20 订正一处推理（~~结论不变，理由换掉~~）**：本文档曾由「`nxt-dual` 只在 PX4 ≥ 1.15.0 存在」
+> ⛔ **2026-09-20 订正一处推理（原写「结论不变，理由换掉」；★ 2026-09-21 再订正：结论也变了，见本块末）**：本文档曾由「`nxt-dual` 只在 PX4 ≥ 1.15.0 存在」
 > **推出**「所以 z0 固件是 v1.15 世代」。**这个推理是错的** —— 上游和 fork 是两回事：
 > fork 的 `feat_deprecated_v1.14.x_high_imu` 分支（2024-03-20）**就带 `nxt-dual`**。
 > 「板级目标存在」**不能**推出世代。
-> ✅ ~~**真正扛住结论的是直接证据**：fork **四条分支**的 `msg/OffboardControlMode.msg`
-> **全部**含 `thrust_and_torque` + `direct_actuator`，且**全部**有 `srv/VehicleCommand.srv`
-> （见 §2.7）。**从"看消息定义"取代"看板子存在与否"。**~~
+> ✅ 原写「真正扛住结论的是直接证据：fork 四条分支的 `msg/` 全含 `thrust_and_torque`（见 §2.7）」
+> —— **这段"换理由"本身也作废**，理由见下。
 >
 > ☠️ **2026-09-21 再订正：块里那句「结论不变」也错了 —— 结论变了。**
 > 上面这条推理**确实**证出了「fork 的 `msg/` 是 v1.15 世代」，**但它证的是 fork，不是 z0**。
@@ -81,7 +80,7 @@
 > `Sim2real-UAV-Params-` 的存档。所以它是**旁证**（说明同源的那台机器也跑这份固件），
 > **不是** z0 飞控的读数。z0 的读数来自 §2.5(d)——那份才是第一手。
 
-## 2.5 ★★ ~~z0 固件是「v1.15 世代」，不是 1.14~~ → **2026-09-21 定案：本节 (a)(b) 结论作废，实为 v1.14.3 系**（2026-09-20）
+## 2.5 ★★ ☠️ **本节 (a)(b) 结论作废**：原写「z0 固件是「v1.15 世代」，不是 1.14」 → **2026-09-21 定案：实为 v1.14.3 系**（2026-09-20）
 
 > ⚠️⚠️ **2026-09-21 定案 —— 读 (a)(b) 之前先读 §2.5(d)。**
 > 飞控报出的 git hash 是 **`4a0e65f2`**（commit `4a0e65f2331b23b9c8352656e9ccb6edeaea5d6c`，
@@ -103,7 +102,7 @@
 > 见 §2.5(d)③ 与 §2.6 执行版。**本小节仅作留存，不要再引用。**
 
 按 Q24=a 的验收步骤，把 `px4_msgs` `release/1.14` @ `ffb6e80e` 的 `msg/*.msg` 与
-~~`Peize-Liu/PX4-Autopilot @ 5ba2e91f`~~（**☠️ 拿错的参照物 —— 这是 fork，不是 z0 的固件**）的 `msg/` **逐字节比对**（firmware 侧 216 个 blob 全部用
+`Peize-Liu/PX4-Autopilot @ 5ba2e91f`（**☠️ 拿错的参照物 —— 这是 fork，不是 z0 的固件**，见上方 ☠️）的 `msg/` **逐字节比对**（firmware 侧 216 个 blob 全部用
 `git hash-object` 对过 tree SHA，**100% 覆盖，非抽样**）：
 
 | 结果 | 数量 |
@@ -155,7 +154,7 @@ DDS 话题名**完全一样**（`/fmu/in/offboard_control_mode`、`/fmu/out/vehi
 |---|---|
 | PX4 **v1.14.3**（tag `1dacb4c`） | `bool actuator` |
 | PX4 **v1.15.0**（tag `30e763b`） | **`bool thrust_and_torque` + `bool direct_actuator`** |
-| ~~**z0 fork `5ba2e91f`**~~ **fork `5ba2e91f`（☠️ ※ 不是 z0 的固件）** | **`thrust_and_torque` + `direct_actuator`** ← **与 v1.15.0 一致，故属 v1.15 世代** |
+| **fork `5ba2e91f`**（**☠️ ※ 不是 z0 的固件**） | **`thrust_and_torque` + `direct_actuator`** ← **与 v1.15.0 一致，故属 v1.15 世代** |
 
 > ☠️ ※ **上表第三行只是 `5ba2e91f`（`feat_fast_lab_stable`，2024-07-02），与 z0 无关。**
 > z0 的固件是 `4a0e65f2`（v1.14.3 系），它的 `msg/` 与**上游 v1.14.3 逐字节相同**
@@ -165,12 +164,7 @@ DDS 话题名**完全一样**（`/fmu/in/offboard_control_mode`、`/fmu/out/vehi
 存在 `srv/` 目录、**无** `msg/versioned/`（v1.16 才有）—— 全部指向**v1.15 世代**。
 ☠️ **这四条旁证描述的同样是 `5ba2e91f`（fork），不是 z0 的固件**；真身那棵树的对应结论见 §2.5(d)。
 
-> 📌 ~~**`5ba2e91f` 是 2024-07-02 的 `main`**，早于 v1.15.0 的发布，所以它**既不是 v1.14 也不是 v1.15.0 正式版**，
-> 而是走向 v1.15 的一个中间 commit。**→ `px4_msgs` 的 `release/1.15` 也未必逐字节相同。**
-> **最稳的做法：从 fork 自身的 `msg/` 生成 `px4_msgs`**（或把它 `msg/` 下 216 个定义 +
-> `srv/VehicleCommand.srv` 直接打包成包）。**这需要在 Phase 2 的 S1 步骤里定案。**~~
->
-> ☠️ **2026-09-21 上段整块作废（Q31=a 已被推翻）。** 事实更正：
+> 📌 ☠️ **原写「`5ba2e91f` 是 2024-07-02 的 `main`……最稳的做法：从 fork 自身的 `msg/` 生成 `px4_msgs`……这需要在 Phase 2 的 S1 步骤里定案」—— 上段整块作废（Q31=a 已被推翻）。** 事实更正：
 > 1. `5ba2e91f` **不是 `main`** —— 它是 `feat_fast_lab_stable`，且与 `main` 已分叉（§2.7(a)）；
 > 2. **不需要从任何 fork 生成 `px4_msgs`** —— 真身 `4a0e65f2` 的 `msg/` 与 `release/1.14` @ `ffb6e80e`
 >    在共有的 184 个文件上 blob 全同，**直接用 `release/1.14` 即可**（§2.6 执行版，用户已签字）。
@@ -192,11 +186,11 @@ DDS 话题名**完全一样**（`/fmu/in/offboard_control_mode`、`/fmu/out/vehi
 |---|---|
 | `HEARTBEAT` | `autopilot=12`（PX4）、`type=2`（四旋翼）、`system=1 component=1` |
 | **`flight_sw_version`** | **`17695488`（`0x010e0300`）** → 按 PX4 编码 `(major<<24)\|(minor<<16)\|(patch<<8)` 解出 **`1.14.3`** |
-| `flight_custom_version` | 原始 8 字节 = `00 00 00 33 f2 65 0e 4a` → ~~**无法解出 git hash**~~ **☠️ 错判；实为 `4a0e65f233`，见 §2.5(d)①** |
+| `flight_custom_version` | 原始 8 字节 = `00 00 00 33 f2 65 0e 4a` → **原写「无法解出 git hash」—— ☠️ 错判；实为 `4a0e65f233`**，见 §2.5(d)① |
 | `vendor_id` / `product_id` | `7052` / `54` |
 | `capabilities` | `0xecff` |
 
-#### ☠️ ~~`flight_custom_version` 这一次**帮不上忙** —— 且工具原本会给出一份假证据~~
+#### ☠️ **已作废**：原写「`flight_custom_version` 这一次帮不上忙 —— 且工具原本会给出一份假证据」（实为破案关键，见下）
 > **2026-09-21 定案：本小节整段作废，两处都错。** (1) 该字段**帮得上忙**，解出的就是 git hash；
 > (2) 所谓「工具会给出假证据 / 已补第二道闸」—— 那道闸门**本身就是错的、已删除**，
 > 且它会把**任何**真固件都挡掉。完整更正见 §2.5(d)①，此处保留原文仅为记录这段弯路。
@@ -211,7 +205,7 @@ DDS 话题名**完全一样**（`/fmu/in/offboard_control_mode`、`/fmu/out/vehi
 > 也**不能**据此说"与 `5ba2e91f` 不一致"。
 >
 > ⚠️ 本节初稿曾把这一串硬按 16 进制打成 `4a0e65f233` 并判"与 5ba2e91f 不一致，§2.5 要重开" ——
-> ~~**那是错的，已作废**~~。**☠️ 2026-09-21 更正：这一段自己也错了两处** ——
+> ☠️ **原写「那是错的，已作废」；2026-09-21 更正：这一段自己也错了两处** ——
 > (1) 那个"硬凑"出来的 `4a0e65f233` **才是对的**（它确实是 hash）；
 > (2) 「已给 [`mavlink_probe.py`](../../tools/prereq-evidence/mavlink_probe.py) 补上第二道闸
 > （`b[3:8]` 必须全在 `0-9a-f` 内）」—— **那道闸门是错的，已删除**，它会把任何真固件都挡掉。
@@ -242,7 +236,7 @@ DDS 话题名**完全一样**（`/fmu/in/offboard_control_mode`、`/fmu/out/vehi
   该结论**可能反过来**。
 - ⟹ **在 Phase 2 的 S1 定案前必须解决这一条**。在此之前，**不要把 (b) 当既成事实往下游引**。
 
-#### ✅ 能立刻做的判别（~~尚未做~~ **2026-09-21 已做** —— 第 2 项就是破案手段）
+#### ✅ 能立刻做的判别（原写「尚未做」—— **2026-09-21 已做**，第 2 项就是破案手段）
 
 > 结果见 §2.5(d)：**第 2 项**（拿厂商分支源码直接看）成了关键；第 1 项（读参数表）
 > **没用上** —— 在没读参数表之前就定案了。第 3 项（uXRCE-DDS）留给 Phase 2。
@@ -389,7 +383,7 @@ memcpy(&msg.flight_custom_version, &fw_vendor_version, fw_vendor_version_length)
 > 而不是去查源码。结果是把一份**正确**的读数（`4a0e65f233`）当成假证据作废，
 > 还顺手加了一道会把真数据全挡掉的闸门。**先读源码，再判读数。**
 
-## 2.6 ★★ 已定决策（用户 Q31=a，2026-09-20；**2026-09-21 用户签字改基准**）：**~~fork `5ba2e91f`~~ → `px4_msgs release/1.14` @ `ffb6e80e` + 上游 v1.14.3 做 SITL**
+## 2.6 ★★ 已定决策（用户 Q31=a，2026-09-20；**2026-09-21 用户签字改基准**）：**原定 fork `5ba2e91f` → 改为 `px4_msgs release/1.14` @ `ffb6e80e` + 上游 v1.14.3 做 SITL**
 
 > ✅✅ **2026-09-21 用户已签字 —— 按下面「执行版」表动手。**
 > 用户的裁定（第一手）：① **硬件 = MicoAir NxtPX4v2**（看实物/订单）；
@@ -401,8 +395,8 @@ memcpy(&msg.flight_custom_version, &fw_vendor_version, fw_vendor_version_length)
 |---|---|
 | **`px4_msgs`** | **`release/1.14` @ `ffb6e80e`** — ✅ **用户签字**。已实测与真身**共有的 184 个 `msg/` 文件 blob 全同**（唯一集合差异是 `msg/CMakeLists.txt`，PX4 自己的构建文件）。**不要从任何 fork 生成** |
 | **SITL 被控对象** | **上游 `PX4-Autopilot` tag `v1.14.3`（`1dacb4c`）** — ⚠️ **此项用户未单独表态，是我按 §2.5(d)④ 的建议取的默认**（更好复现；且它与真身的 `msg/` 逐字节相同，对 `px4_msgs` 兼容性**两者无差别**）。要改成"直接编真身 `4a0e65f2`"只需说一声 |
-| **~~从 fork 构建 SITL~~** | ❌ **作废** — 飞控不跑 fork |
-| **~~从 fork 生成 `px4_msgs`~~** | ❌ **作废** — 同上 |
+| **原写「从 fork 构建 SITL」** | ❌ **作废** — 飞控不跑 fork |
+| **原写「从 fork 生成 `px4_msgs`」** | ❌ **作废** — 同上 |
 | **Q24=a 的原表述** | 「锁定 `release/1.14` @ `ffb6e80e`」→ **原表述是对的，直接执行**；09-20 那轮「已被实测否决」是拿 **fork 的 `msg/`** 比出来的，作废 |
 | **Q12「留在 1.14.x」** | 决策本身（**不刷固件**）不变；**「1.14.x」这个标签恢复有效** —— 真身就是 v1.14.3 系（09-20/21 一度判它错，是误判） |
 
@@ -413,7 +407,7 @@ memcpy(&msg.flight_custom_version, &fw_vendor_version, fw_vendor_version_length)
 
 **可行性已核实（第一手）**：两套 SITL 都在 ——
 
-| | ~~fork `5ba2e91f`~~（不再需要） | **上游 v1.14.3（执行版选它）** |
+| | fork `5ba2e91f`（原选它，**已作废**） | **上游 v1.14.3（执行版选它）** |
 |---|---|---|
 | `4001_gz_x500`（gz-sim） | ✅ 有 | ✅ **有** |
 | `Tools/simulation/gazebo-classic` | ✅ 有 | ✅ **有** |

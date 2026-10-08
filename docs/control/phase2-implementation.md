@@ -31,12 +31,12 @@
 | G3 | MPC 状态输入 | **动捕直出**（不经 EKF2） | 用户 Q9 + roadmap D8；延迟更低 |
 | G4 | 求解器 | **acados** + `SQP_RTI` + `PARTIAL_CONDENSING_HPIPM` | roadmap §4.5，与 px4-mpc 一致 |
 | G5 | 代码骨架 | **`DISCOWER/px4-mpc`**（复制改造，不引依赖） | 第一手读过三个核心文件，见 §2 |
-| G6 | 固件版本 | ★ **版本基准 = z0 固件真身 `Minderring/PX4-Autopilot` @ `4a0e65f2`**（**v1.14.3 系**的 MicoAir 厂商构建，飞控自报 `1.14.3`）。⟹ **`px4_msgs` = `release/1.14` @ `ffb6e80e`**（与真身共有的 184 个 `msg/` blob 全同，✅ 用户签字）；**SITL 被控对象 = 上游 v1.14.3（tag `1dacb4c`）**。☠️ ~~版本基准统一到 fork `5ba2e91f`（Q31=a）~~ + ☠️ ~~固件是「v1.15 世代」~~ —— **两句都反了，`5ba2e91f` 与 z0 无关**。见 [`refs-manifest.md`](../reference/refs-manifest.md) §2.5(d) 与 §2.6 执行版。⚠️ **「不刷固件」这条决定本身不变** | 用户 Q12 + [`refs-manifest.md`](../reference/refs-manifest.md) §2.5(d) / §2.6 |
+| G6 | 固件版本 | ★ **版本基准 = z0 固件真身 `Minderring/PX4-Autopilot` @ `4a0e65f2`**（**v1.14.3 系**的 MicoAir 厂商构建，飞控自报 `1.14.3`）。⟹ **`px4_msgs` = `release/1.14` @ `ffb6e80e`**（与真身共有的 184 个 `msg/` blob 全同，✅ 用户签字）；**SITL 被控对象 = 上游 v1.14.3（tag `1dacb4c`）**。☠️ **原写「版本基准统一到 fork `5ba2e91f`（Q31=a）」与「固件是「v1.15 世代」」—— 两句都反了，`5ba2e91f` 与 z0 无关**。见 [`refs-manifest.md`](../reference/refs-manifest.md) §2.5(d) 与 §2.6 执行版。⚠️ **「不刷固件」这条决定本身不变** | 用户 Q12 + [`refs-manifest.md`](../reference/refs-manifest.md) §2.5(d) / §2.6 |
 | G7 | 上线顺序 | **先 SITL 验证 MPC，再实机** | 用户 Q8(b) |
 | G8 | INDI | **第一版不做**，作为步骤 2 | roadmap D3 |
 | G9 | 参考轨迹 | **第一阶段手写**（悬停 / 正方形 / 八字），与 Phase 1 同一套 | 用户 Q15 |
 | G10 | 动捕原点 | **未起飞时静止帧为原点**，yaw 只归零偏航 | 用户 Q16 / Q21(b) |
-| G11 | 动捕输出 | **只发 `/mocap/pose_enu`（ENU / 原生）**；~~`/mocap/pose_ned`~~ **不发布**（Q14=a 已删） | 本文 §3.2 + 用户 Q14 |
+| G11 | 动捕输出 | **只发 `/mocap/pose_enu`（ENU / 原生）**；`/mocap/pose_ned` **不发布**（原写会发 —— Q14=a 已删） | 本文 §3.2 + 用户 Q14 |
 
 ---
 
@@ -652,10 +652,10 @@ Mooch 15 A），同一张表的结论**完全不同**：
 
 | 项 | 值 | 备注 |
 |---|---|---|
-| PX4 源码 | ★ **上游 `PX4/PX4-Autopilot` @ tag `v1.14.3`（`1dacb4c`）**（§2.6 执行版） | 已用 `~/refs/px4-v1.14.3-build/`（`--recursive --single-branch`）编通。**submodule 是 17 个，不是 23 个**（`grep -c '^\[submodule' .gitmodules`）。`~/refs/px4-v1.14.3` 是 `--filter=blob:none`，**不能直接构建**。✅ 机型已实测：`ROMFS/.../init.d-posix/airframes/` 共 **56 个条目**（55 airframe + CMakeLists）。☠️ ~~fork `Peize-Liu/PX4-Autopilot @ 5ba2e91f`~~ —— **作废，飞控不跑 fork** |
-| SITL 仿真后端 | ★ **SIH（`sihsim_quadx`，`SYS_AUTOSTART=10040`）** —— 2026-09-28 操作者裁定 | ☠️ ~~「gazebo-classic 或 gz-sim 都可用」~~ —— **两条在本机都不成立**：gazebo-classic 的 dev 库 apt **无候选**（jammy/arm64）；gz-sim 只支持 Garden（`gz_bridge/CMakeLists.txt` 明写 `IGN (Fortress and earlier) no longer supported`），要加 OSRF 源 + ~500 MB + 写 SDF。SIH 零外部依赖。**代价已知情并接受**：SIH 是与我们控制器同层次的简化模型，**证明不了"模型够真"**，只能证明约定对得上 —— 详见交付文档 §3 |
-| `px4_msgs` | ★ **钉 `release/1.14` @ `ffb6e80e`**（✅ **用户签字**） | ✅ 与真身 `4a0e65f2` 在**共有的 184 个 `msg/` 文件上 blob 全同**（唯一集合差异 `msg/CMakeLists.txt`，那是 PX4 的构建文件）；并已补证 **真身 ↔ 上游 v1.14.3 在 185 个文件上 blob 亦全同、无集合差异** ⟹ 拿上游当被控对象对兼容性无差别。☠️ ~~从 fork 的 `msg/` + `srv/` 生成（Q31=a）~~ + ☠️ ~~`release/1.14` 已被判为不兼容（28/184 字段不同）~~ —— **两条都作废**（那是拿 fork 比出来的）。详见 §6.1 与 [`refs-manifest.md`](../reference/refs-manifest.md) §2.5(d)/§2.6 执行版 |
-| 中间件代理 | ★ **`MicroXRCEAgent udp4 -p 8888`**（钉 `v2.4.2`） | ☠️ ~~`micro-xrce-dds-agent`~~ —— **二进制名没有小写别名**，写不对就是「命令找不到」。PX4 SITL 默认端口 8888 |
+| PX4 源码 | ★ **上游 `PX4/PX4-Autopilot` @ tag `v1.14.3`（`1dacb4c`）**（§2.6 执行版） | 已用 `~/refs/px4-v1.14.3-build/`（`--recursive --single-branch`）编通。**submodule 是 17 个，不是 23 个**（`grep -c '^\[submodule' .gitmodules`）。`~/refs/px4-v1.14.3` 是 `--filter=blob:none`，**不能直接构建**。✅ 机型已实测：`ROMFS/.../init.d-posix/airframes/` 共 **56 个条目**（55 airframe + CMakeLists）。☠️ **原写「fork `Peize-Liu/PX4-Autopilot @ 5ba2e91f`」—— 作废，飞控不跑 fork** |
+| SITL 仿真后端 | ★ **SIH（`sihsim_quadx`，`SYS_AUTOSTART=10040`）** —— 2026-09-28 操作者裁定 | ☠️ **原写「gazebo-classic 或 gz-sim 都可用」—— 两条在本机都不成立**：gazebo-classic 的 dev 库 apt **无候选**（jammy/arm64）；gz-sim 只支持 Garden（`gz_bridge/CMakeLists.txt` 明写 `IGN (Fortress and earlier) no longer supported`），要加 OSRF 源 + ~500 MB + 写 SDF。SIH 零外部依赖。**代价已知情并接受**：SIH 是与我们控制器同层次的简化模型，**证明不了"模型够真"**，只能证明约定对得上 —— 详见交付文档 §3 |
+| `px4_msgs` | ★ **钉 `release/1.14` @ `ffb6e80e`**（✅ **用户签字**） | ✅ 与真身 `4a0e65f2` 在**共有的 184 个 `msg/` 文件上 blob 全同**（唯一集合差异 `msg/CMakeLists.txt`，那是 PX4 的构建文件）；并已补证 **真身 ↔ 上游 v1.14.3 在 185 个文件上 blob 亦全同、无集合差异** ⟹ 拿上游当被控对象对兼容性无差别。☠️ **原写「从 fork 的 `msg/` + `srv/` 生成（Q31=a）」与「`release/1.14` 已被判为不兼容（28/184 字段不同）」—— 两条都作废**（那是拿 fork 比出来的）。详见 §6.1 与 [`refs-manifest.md`](../reference/refs-manifest.md) §2.5(d)/§2.6 执行版 |
+| 中间件代理 | ★ **`MicroXRCEAgent udp4 -p 8888`**（钉 `v2.4.2`） | ☠️ **原写「`micro-xrce-dds-agent`」—— 二进制名没有小写别名**，写不对就是「命令找不到」。PX4 SITL 默认端口 8888 |
 
 **⚠️ 必须做的版本校验**（roadmap 与 [`open-source-survey.md`](../reference/open-source-survey.md) §10 都强调过）：
 
@@ -666,7 +666,7 @@ PX4 侧：  python3 tools/px4-sitl/check_msg_compat.py \
 ROS 侧：  ros2 interface show px4_msgs/msg/VehicleRatesSetpoint
 ```
 
-☠️ ~~`python3 Tools/check-message-compatibility.py`~~ —— ★ **这个路径是错的，而且照着改也还是会错**：
+☠️ **原写「`python3 Tools/check-message-compatibility.py`」—— 这个路径是错的，而且照着改也还是会错**：
 该脚本**不在 PX4-Autopilot 里**（v1.14.3 / v1.15.0 / v1.16.0 / fork / `px4_msgs` 逐棵树查过，全无），
 它住在 **`auterion/px4-ros2-interface-lib`** 的 `scripts/` 下；**直接跑它对本项目会报假 FAILED**
 （它按自己仓库 main 的类型清单查，而那 20 个类型 v1.14 里根本不存在 —— 报错原文里**没有** `Some files differ` 那一段，
@@ -726,7 +726,7 @@ ROS 侧：  ros2 interface show px4_msgs/msg/VehicleRatesSetpoint
 | 悬停配平 | 状态 = 原点，`v=0`，`q=identity`，目标 = 原点 | `F ≈ T_hover = 7.36 N`，`ω ≈ 0`。★ 实测**取决于 `u_ref`**：给悬停前馈 ⟹ 精确 `7.3575`；给 `u_ref = 0` ⟹ 稳态停在 **7.8111（+6.16 %）**，那是 RTI 单步迭代的**不动点偏置**，不是冷启动（[`offline-ocp.md`](offline-ocp.md) §4.1） |
 | 差一个重力 | 同上，但目标在 `+z 0.5 m` | `F > T_hover`（实测 `9.5362`），`ω ≈ 0` |
 | 姿态响应符号 | 同上，但目标在 `+x 0.5 m` | 产生**朝 +x 倾斜**的角速率 —— ⚠️ 方向**不要猜**：推导与结论见 [`sign-map.md`](sign-map.md) §3。实测 `ω_y = +0.3239`（`u_ref = 0`）。⚠️ **缺省 `u_ref`（上一帧解）时它不收敛**：0.3225 → … → 第 11 次 **1.3487** rad/s，一路上爬 —— ⟹ 这条测试**必须显式给 `u_ref`**，且缺省路径归 ticket 06/07 在 SITL 里验（[`offline-ocp.md`](offline-ocp.md) §4.4） |
-| 约束生效 | 目标在 `+x 10 m` | `ω` 打满 `ω_max`（实测一拍即贴 3.84 并保持），**不越界**。~~`F` 打满 `T_max`~~ ← **实测：不会**。纯水平目标只需倾斜、垂直分量仍≈悬停，实测 `F = 11.4721`（上限 `f_max` = 11.8）；要顶到上限得**同时要求爬升**（`[10,0,10]` ⟹ 精确 `11.8`）。见 [`offline-ocp.md`](offline-ocp.md) §4.2 |
+| 约束生效 | 目标在 `+x 10 m` | `ω` 打满 `ω_max`（实测一拍即贴 3.84 并保持），**不越界**。原写「`F` 打满 `T_max`」← **实测：不会**。纯水平目标只需倾斜、垂直分量仍≈悬停，实测 `F = 11.4721`（上限 `f_max` = 11.8）；要顶到上限得**同时要求爬升**（`[10,0,10]` ⟹ 精确 `11.8`）。见 [`offline-ocp.md`](offline-ocp.md) §4.2 |
 | 求解耗时 | 重复 1000 次 | 报**最坏**耗时（不是平均）。★ 实测：**必须分两列**（acados 自报 vs 整周期墙钟）—— 合成一个数会得出错误结论（§5、[`offline-ocp.md`](offline-ocp.md) §5） |
 
 > ⚠️ **第 3 行的「姿态响应符号」是整个项目最容易搞错的一步。** 在 FLU/ENU 下，要往 +x（东）飞，需要绕 **−y** 轴倾斜……还是 +y？**不要靠记忆。**
@@ -759,7 +759,7 @@ ROS 侧：  ros2 interface show px4_msgs/msg/VehicleRatesSetpoint
 >       （`hold` 10 拍 → 安全悬停）、发布前全量校验、连续失败的可检索上报、两条输入合理性判据。
 >       设计与第一手依据全在 [`mpc-node-fallback.md`](mpc-node-fallback.md)；M5 的编号落点见 §2.5 的 07 那段。
 >       ⚠️ **票面拒掉的那一类不动**："退化求解照样发"仍是现行行为（分界线 = `SolveInfo.ok`）
-> - [x] 100 Hz 定时器（D6 待实测后调）—— 实测落在 100.0 Hz；**降档决定归 ticket 09/11**
+> - [x] 100 Hz 定时器（D6 已定 100 Hz）—— 实测落在 100.0 Hz；**降档决定归 ticket 09/11**
 > - [x] RViz：预测轨迹 `Path` + 参考 `Marker` —— `test_RViz_的预测轨迹与参考点`（51 点、起点≈当前位置、终点朝目标、参考点落位）
 > - [x] 另外三项票面要求：**饱和表现为打满**（`test_目标在正前方时_pitch_为负_且顶约束表现为打满`）、
 >       **软急停接口参数化**（零通道号，见 seam 1 文档 §6）、**装桨前的静态自检**
@@ -953,8 +953,8 @@ v1.15 及以前，`px4_msgs` 与固件不匹配时：话题存在、能发布、
 >
 > **⟹ `px4_msgs` = `release/1.14` @ `ffb6e80e`**（✅ **用户已签字**）。**不要从任何 fork 生成。**
 >
-> ☠️ 那次验收"附带推翻的项目前提"**同样作废**：~~`5ba2e91f` 的 `OffboardControlMode` 与上游 v1.15.0 一致
-> ⟹ z0 固件是「v1.15 世代」、「1.14.x」这个标签是错的~~。
+> ☠️ 那次验收"附带推翻的项目前提"**同样作废**：原写「`5ba2e91f` 的 `OffboardControlMode` 与上游 v1.15.0 一致
+> ⟹ z0 固件是「v1.15 世代」、「1.14.x」这个标签是错的」。
 > `OffboardControlMode` 带 `thrust_and_torque` 是 **fork 的事实**；真身那一栏是 **`bool actuator`**
 > （与上游 v1.14.3 相同）。⟹ **「z0 是 1.14.x」这个标签一直是对的**，G6 已按定案重写。
 >
@@ -964,7 +964,7 @@ v1.15 及以前，`px4_msgs` 与固件不匹配时：话题存在、能发布、
 > **→ S1 的第一步不再是"定案怎么得到与 fork 逐字节一致的 `px4_msgs`"，而是
 > 「用 `release/1.14` @ `ffb6e80e` + 上游 v1.14.3 跑 SITL，并跑一遍**消息一致性比对** **复验**」。**
 > ✅ **2026-09-28 已复验通过**（ticket 01）：比对脚本用 `tools/px4-sitl/check_msg_compat.py`
-> —— ☠️ ~~`check-message-compatibility.py`~~，那个路径**在 PX4-Autopilot 里不存在**且直接跑会给假 FAILED，
+> —— ☠️ **不写 `check-message-compatibility.py`**（原写法），那个路径**在 PX4-Autopilot 里不存在**且直接跑会给假 FAILED，
 > 理由见 §S1 与 [`px4-sitl-baseline.md`](px4-sitl-baseline.md) §2.3。
 >
 > 完整对照表见 [`refs-manifest.md`](../reference/refs-manifest.md) §2.5(d) 与 §2.6 执行版。
@@ -998,18 +998,19 @@ v1.15 及以前，`px4_msgs` 与固件不匹配时：话题存在、能发布、
 > | 条目 | 复验结果 | 真身内证据 |
 > |---|---|---|
 > | §3.3 / §6.2 / §6.3 `thrust_body` 原样透传、不受 `MPC_THR_HOVER` 影响 | ✅ **成立** | `src/modules/mc_rate_control/MulticopterRateControl.cpp:182` `_thrust_setpoint = Vector3f(vehicle_rates_setpoint.thrust_body);`（**与 v1.14.3 逐字相同**） |
-> | §3.3 `MC_BAT_SCALE_EN` 默认 **0**（关闭） | ✅ **成立** | `src/modules/mc_rate_control/mc_rate_control_params.c:400` `PARAM_DEFINE_INT32(MC_BAT_SCALE_EN, 0);`（~~原注 `:294` 是 fork 的行号~~）—— **含义**：角速率环**不做**电池电压推力补偿 → `(C)` 级的推力映射**不需要**考虑电压 sag |
-> | §6.4 QoS（订阅 `fmu/out/*` 必须 `BEST_EFFORT`） | ✅ **成立** | `src/modules/uxrce_dds_client/dds_topics.h.em:69`（`uxr_prepare_output_stream(session, best_effort_stream_id, …)`，~~原注 `:109`~~）、`utilities.hpp:114-119`（datareader QoS = `VOLATILE` + `BEST_EFFORT` + `KEEP_LAST`，~~原注 `:120-125`~~） |
-> | §6.5 时间戳单位微秒 | ✅ **成立**（两条独立证据） | `msg/VehicleRatesSetpoint.msg:1` 逐字含 `(microseconds)`；`dds_topics.h.em:52` 与 `:103` `int64_t time_offset_us = session->time_offset / 1000; // ns -> us`（~~原注 `:91/:146`~~） |
+> | §3.3 `MC_BAT_SCALE_EN` 默认 **0**（关闭） | ✅ **成立** | `src/modules/mc_rate_control/mc_rate_control_params.c:400` `PARAM_DEFINE_INT32(MC_BAT_SCALE_EN, 0);`（原注 `:294` 是 fork 的行号，**已失效**）—— **含义**：角速率环**不做**电池电压推力补偿 → `(C)` 级的推力映射**不需要**考虑电压 sag |
+> | §6.4 QoS（订阅 `fmu/out/*` 必须 `BEST_EFFORT`） | ✅ **成立** | `src/modules/uxrce_dds_client/dds_topics.h.em:69`（`uxr_prepare_output_stream(session, best_effort_stream_id, …)`，原注 `:109` 已失效）、`utilities.hpp:114-119`（datareader QoS = `VOLATILE` + `BEST_EFFORT` + `KEEP_LAST`，原注 `:120-125` 已失效） |
+> | §6.5 时间戳单位微秒 | ✅ **成立**（两条独立证据） | `msg/VehicleRatesSetpoint.msg:1` 逐字含 `(microseconds)`；`dds_topics.h.em:52` 与 `:103` `int64_t time_offset_us = session->time_offset / 1000; // ns -> us`（原注 `:91/:146` 已失效） |
 > | §6.1 `px4_msgs` 版本 | ❌ **原判被推翻 → 改判「`release/1.14` 兼容」** | 见上 |
-> | S1 SITL 机型可用性 | ✅ **上游 v1.14.3 也有 `4001_gz_x500`** | 见 [`refs-manifest.md`](../reference/refs-manifest.md) §2.6 可行性表（~~原注"fork 63 个"~~ 是对 fork 数的，已不相关） |
+> | S1 SITL 机型可用性 | ✅ **上游 v1.14.3 也有 `4001_gz_x500`** | 见 [`refs-manifest.md`](../reference/refs-manifest.md) §2.6 可行性表（原注"fork 63 个"是对 fork 数的，已不相关） |
 >
 > **★ 一条仍然成立的范围澄清**：**§2.4 的「五个坑」不需要按真身复验** ——
 > 那五条针对的是 **px4-mpc 自己的 Python 代码**（`0.07` 魔数、`raise` 兜底、代价罚 `u−0`、约束范围），
 > **与 PX4 固件版本无关**。它们已在 Q25 的那一轮里对着 px4-mpc `master` 核过。
 >
 > **→ 所有依赖「PX4 版本」的载重结论，现在都建立在真身 `4a0e65f2`（v1.14.3 系）之上。**
-> ⚠️ 仍未复验的一项：S1 要用的 **SITL 机型条目数**（v1.14.3 比 fork 少）—— 记在 S1 表里，动手前实测。
+> ✅ **本节原写「仍未复验的一项：SITL 机型条目数」—— 已复验**：`ROMFS/px4fmu_common/init.d-posix/airframes/`
+> 实测 **56** 个条目（55 airframe + `CMakeLists`），见上面 §S1 表与 [`px4-sitl-baseline.md`](px4-sitl-baseline.md)。
 
 ### 6.2 `thrust_body` 是 `[-1, 1]`，**不是** `[0,1]`、**不是**牛顿
 
