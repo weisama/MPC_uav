@@ -289,6 +289,62 @@ class TruthTap(Node):
 # ------------------------------------------------------------------ 回放夹具进程
 
 
+#: 「参考在动」的**速度**门槛 [m/s]。
+#: ★ 判"在动"只能靠**速度**，不能靠位置：包 5 的 `pre` 段 1500 帧停在起点
+#:   `(0.004136, 0.004135)` —— 离原点 **4 mm**，比"位置非零"的旧门槛（`1e-6`）
+#:   大三个量级，于是那 1500 帧**静止帧**被算成"在动"（ticket 10 缺陷 B）。
+#:   两段的实际取值分得很开：`pre` / `hold` 的速度**恒为 0**，移动段最小 0.354 ⟹
+#:   门槛在 (0, 0.354) 里怎么取都一样，取 `1e-6` 只是"明显非零"。
+REF_MOVE_V_MIN = 1e-6
+
+
+def ref_moving_rows(rows) -> list:
+    """`rows` 里**被命令在动**的那些帧（水平速度非零）；定点保持段不算。
+
+    ⚠️ 缺 `velocity` 列**当场炸**，不退回"按位置判" —— 那正是本票要修的错
+      （位置那一路会把停在起点的 `pre` 段算成在动，理由见 `REF_MOVE_V_MIN`）。
+      `mocap_replay.py` 的参考逐帧日志**恒带**这一列（`:469`）。
+    """
+    out = []
+    for r in rows:
+        v = r.get("velocity")
+        if v is None:
+            raise KeyError(
+                "参考逐帧里没有 `velocity` 列 ⟹ 判不了'在动'（见 REF_MOVE_V_MIN）；"
+                "不退回按位置判 —— 那会把停在起点的 `pre` 段算成'在动'。")
+        if math.hypot(float(v[0]), float(v[1])) > REF_MOVE_V_MIN:
+            out.append(r)
+    return out
+
+
+def ref_timeline_from_rows(rows, t0: float) -> dict:
+    """参考逐帧 → **与记录器同一根墙钟**上的时间线（判层只能吃 obs）。
+
+    ★★ 为什么要在采集侧算好：判据层是 obs 的**纯函数**（`--replay` 不重跑 SITL），
+      让判据去读文件就等于"重判时读到的可能是另一次跑的文件"。
+    ★ 为什么不能只看"夹具在发帧"：参考流**照着时间表**发，与 DUT 起没起来、
+      进没进 OFFBOARD **完全无关**。若 DUT 起得慢，整条八字会在**地面上**放完，
+      而夹具的汇总里一切正常（帧数、节奏、掩码全对）⟹
+      "跑完了三条轨迹"会变成一句**没被验证**的话。这个时间线就是用来判它的。
+    ★★ `t0` = **记录器钟的零点**（`rec.t0`）⟹ 这里算出来的秒数与
+      `obs["t"]["offboard_enter_t"]` 是**同一根钟**（traj 档靠它与参考移动段对表）。
+      ⚠️ 它与逐帧日志的 `wall_ns`（**绝对**墙钟）不是一回事 —— 判层要拿绝对钟去筛
+      `frames` / 真值时，得先过 `rec_clock_zero()` 换算（ticket 10 缺陷 A）。
+    ★ 「在动」按**速度**判（`ref_moving_rows`），不按位置：见 `REF_MOVE_V_MIN`。
+    """
+    by_phase = collections.Counter(r["phase"] for r in rows)
+    move = ref_moving_rows(rows)
+    out = {"n": len(rows), "by_phase": dict(by_phase), "n_moving": len(move),
+           "first_s": round(rows[0]["wall_ns"] * 1e-9 - t0, 3),
+           "last_s": round(rows[-1]["wall_ns"] * 1e-9 - t0, 3)}
+    if move:
+        out["move_first_s"] = round(move[0]["wall_ns"] * 1e-9 - t0, 3)
+        out["move_last_s"] = round(move[-1]["wall_ns"] * 1e-9 - t0, 3)
+        out["move_span_s"] = round(move[-1]["wall_ns"] * 1e-9
+                                   - move[0]["wall_ns"] * 1e-9, 3)
+    return out
+
+
 class ReplayProc:
     """`mocap_replay.py` 的子进程（**同目录脚本，不是 ROS 包** ⟹ 不能 `ros2 run`）。
 
@@ -371,12 +427,8 @@ class ReplayProc:
     def ref_timeline(self, t0: float) -> dict:
         """夹具那份参考逐帧日志 → **与记录器同一根墙钟**上的时间线（判层只能吃 obs）。
 
-        ★★ 为什么要在采集侧算好：判据层是 obs 的**纯函数**（`--replay` 不重跑 SITL），
-          让判据去读文件就等于"重判时读到的可能是另一次跑的文件"。
-        ★ 为什么不能只看"夹具在发帧"：参考流**照着时间表**发，与 DUT 起没起来、
-          进没进 OFFBOARD **完全无关**。若 DUT 起得慢，整条八字会在**地面上**放完，
-          而夹具的汇总里一切正常（帧数、节奏、掩码全对）⟹
-          "跑完了三条轨迹"会变成一句**没被验证**的话。这个时间线就是用来判它的。
+        口径与理由都在 `ref_timeline_from_rows()`（纯函数，`--replay` 与离线重判共用
+        同一支规则）；这里只负责"读盘 + 没日志时的三元组"。
         """
         path = getattr(self, "ref_out", None)
         if path is None or not path.exists():
@@ -387,20 +439,7 @@ class ReplayProc:
                 rows.append(json.loads(line))
         if not rows:
             return {"n": 0, "why": f"{path} 是空的"}
-        by_phase = collections.Counter(r["phase"] for r in rows)
-        #: "在动"的帧 = 水平位置非零。八字的移动段就是这么认出来的（包 5：帧 0..609）；
-        #: 用 `--ref-z-offset-m` 叠出来的 z 不算"动"（那是高度，不是轨迹）。
-        move = [r for r in rows if abs(r["position"][0]) > 1e-6 or abs(r["position"][1]) > 1e-6]
-        out = {"n": len(rows), "by_phase": dict(by_phase), "n_moving": len(move),
-               "first_s": round(rows[0]["wall_ns"] * 1e-9 - t0, 3),
-               "last_s": round(rows[-1]["wall_ns"] * 1e-9 - t0, 3),
-               "log": str(path)}
-        if move:
-            out["move_first_s"] = round(move[0]["wall_ns"] * 1e-9 - t0, 3)
-            out["move_last_s"] = round(move[-1]["wall_ns"] * 1e-9 - t0, 3)
-            out["move_span_s"] = round(move[-1]["wall_ns"] * 1e-9
-                                       - move[0]["wall_ns"] * 1e-9, 3)
-        return out
+        return {**ref_timeline_from_rows(rows, t0), "log": str(path)}
 
 
 # ------------------------------------------------------------------ 被控对象（换机型）
@@ -963,6 +1002,35 @@ def divergence(truth, t_lo: float, t_hi: float, t_air_abs=None) -> dict:
 # ------------------------------------------------------------------ 判据层
 
 
+def rec_clock_zero(frames, tt):
+    """**记录器钟 → 绝对墙钟** 的零点（即 `rec.t0`，秒）；取不到返回 `None`。
+
+    ★★ 为什么需要它（ticket 10 缺陷 A）：`obs["t"]["offboard_enter_t"] / ["flight_end_t"]`
+      与 `obs["reference_timeline"]` 里的秒数都是**记录器钟**（`rec.now()`，`rec.t0` 起算），
+      而逐帧日志的 `wall_ns` 与真值第 7 列（`T_WALL`）是**绝对**墙钟。
+      两者直接相减或取 `max`，就是拿两根零点不同的钟算 —— 窗口会变成
+      `[1791527428.111, 48.562]` 这种**一头 epoch、一头相对秒**的东西，
+      与 `frames[].wall_ns` 的交集**恒空**，而每一场的读数还长得一模一样
+      （六场归档实测 `DUT 帧 0 帧、真值 0 点`）⟹ 看着像"仪器没覆盖到"，其实是判层自己错。
+    ★★ 零点 **obs 自己带着**：`frames[0]["wall_ns"]` 是 DUT 写它**第一帧**时的绝对墙钟，
+      而 `tt["first_frame"]` 是**记录器**在同一刻读到的秒数（`wait_until(dut.frames())`
+      一返回就取）⟹ 相减即 `rec.t0`。`obs` 里**没有** `rec.t0` 这个键（`grep` 可查），
+      所以这是判层唯一能从 obs 自己拿到的换算锚点。
+    ⚠️ 精度：两者"同一刻"只到**轮询延迟 + `first_frame` 落盘到 0.01 s** 为止。
+      拿 T0 的参考日志交叉核对（它第一帧的 `wall_ns` 减落盘时间线的 `first_s`）
+      实测偏差 **4 ms** —— 而它界定的是 `flight_end_t`（"收手"这个**松**界限）
+      与参考移动段的边界，4 ms 不改变任何一条读数。
+    ⚠️ 取不到（没有逐帧日志，或 obs 里没有 `first_frame`）就返回 `None`：
+      **不退回"当作同一根钟"**（那正是本票要修的缺陷），也不瞎猜一个零点 ——
+      调用方一律记「判不了」+ `counts=False`。
+    """
+    fs = [f for f in (frames or []) if f.get("wall_ns")]
+    ff = (tt or {}).get("first_frame")
+    if not fs or not isinstance(ff, (int, float)):
+        return None
+    return fs[0]["wall_ns"] / 1e9 - float(ff)
+
+
 def _judge_traj(ck, obs, seg) -> dict:
     """判据② —— 两条轨迹，**定性判**：跑完 + 不撞地 + 不失控；跟踪误差**只留档**。
 
@@ -999,17 +1067,34 @@ def _judge_traj(ck, obs, seg) -> dict:
     #: `窗口内最低点 > GROUND_M` —— 窗口若从 OFFBOARD 起算，**任何一场都会读成撞地**。
     #: 真值第 7 列（`T_WALL`）才是绝对墙钟，第 0 列是流自己的时基：两者相加不能写反。
     t_air_abs = (truth[0][T_WALL] + lo) if (truth and lo is not None) else None
+    #: 记录器钟 → 绝对墙钟 的零点（`rec.t0`）。★★ **所有**拿 `offboard_enter_t` /
+    #: `flight_end_t` / `reference_timeline` 的秒数去和 `frames` / 真值对的**每一处**，
+    #: 都必须先过它 —— 否则就是 ticket 10 那处"两根钟取 max"的静默缺陷。
+    zero = rec_clock_zero(frames, tt)
     out = {}
 
     def _flight_window():
-        """控制住的那段窗口（绝对墙钟）—— 判据② 只在窗口里读，不读停机后的自由落体。"""
+        """控制住的那段窗口 + 它的取法，**上下界同一根绝对墙钟**；判不了返回 `(None, 为什么)`。
+
+        ★★ 主分支那两个键是**记录器钟**（写它们的 `:610-613` 自己就写明了），
+          而 `_window_health()` 是拿 `frames[].wall_ns` 与真值第 7 列（绝对墙钟）筛的
+          ⟹ 必须 `+ zero` 换算。**取不到零点就不给窗口**（记判不了），
+          不退回"当作同一根钟"—— 那正是缺陷本身。
+        ★ 退路分支（旧 obs 没有 `offboard_enter_t`）本来就是绝对墙钟，不用换算。
+          两个分支给的**必须是同一根钟**，否则"走过的路是绿的、没走过的路是坏的"
+          又会把这类缺陷再藏一轮（ticket 10 记过这一次）。
+        """
         ov, end = tt.get("offboard_enter_t"), tt.get("flight_end_t")
         if all(isinstance(x, (int, float)) for x in (ov, end)) and end > ov:
-            return float(ov), float(end), "OFFBOARD 起 → 收手前"
+            if zero is None:
+                return None, ("有 OFFBOARD 窗口，但**取不到记录器钟的零点**"
+                              "（obs 里没有 `first_frame` 或没有逐帧日志）")
+            return ((float(ov) + zero, float(end) + zero),
+                    "OFFBOARD 起 → 收手前（记录器钟已换算到绝对墙钟）")
         fs = [f for f in frames if f.get("wall_ns")]
         if len(fs) < 2:
-            return None
-        return (fs[0]["wall_ns"] / 1e9, fs[-1]["wall_ns"] / 1e9,
+            return None, "没有逐帧日志"
+        return ((fs[0]["wall_ns"] / 1e9, fs[-1]["wall_ns"] / 1e9),
                 "DUT 首帧 → 末帧（☠️ 旧 obs 没有 `offboard_enter_t` 时的退路；"
                 "它含停机后那一段，读数偏悲观）")
 
@@ -1021,11 +1106,10 @@ def _judge_traj(ck, obs, seg) -> dict:
            f"飞机原地悬停，就是 Phase 1 轨迹 1 的真身。", counts=False)
         out["hover"] = {"ran": False, "why": "本场是 traj 档"}
     else:
-        w = _flight_window()
+        w, why = _flight_window()
         if w is None:
             ck("★判据②·轨迹1 原地悬停（定性：跑完 + 不撞地 + 不失控）", None,
-               "没有逐帧日志也没有真值 ⟹ **这一条判不了**，不当作通过也不当作不通过",
-               counts=False)
+               f"{why} ⟹ **这一条判不了**，不当作通过也不当作不通过", counts=False)
         else:
             h = _window_health(frames, truth, max(w[0], t_air_abs or w[0]), w[1])
             out["hover"] = h
@@ -1033,13 +1117,13 @@ def _judge_traj(ck, obs, seg) -> dict:
                     f"{LOSS_TILT_DEG:g}° 才是「没翻过去」⇔ 未失控，**旁证，不设界**）")
             if not h["ran"]:
                 ck("★判据②·轨迹1 原地悬停（定性：跑完 + 不撞地 + 不失控）", None,
-                   f"{_health_detail(h)}；窗口（{w[2]}）里数据不够 ⟹ **这一条判不了**"
+                   f"{_health_detail(h)}；窗口（{why}）里数据不够 ⟹ **这一条判不了**"
                    f"（仪器没覆盖到窗口，不是飞机飞得不好）", counts=False)
             else:
                 ok = bool(h["offboard_kept"] and h["air"] and lo is not None)
                 ck("★判据②·轨迹1 原地悬停（定性：跑完 + 不撞地 + 不失控）", ok,
                    f"{_health_detail(h)}；起飞于 t={v.fmt(lo, '.2f')}s（真值流时基）；"
-                   f"窗口取法 {w[2]}；{tilt}。"
+                   f"窗口取法 {why}；{tilt}。"
                    f"★ 判的是**三条定性**（跑完 {h['offboard_kept'] and h['ran']}、"
                    f"不撞地 {h['air']}、不失控 {h['offboard_kept']}）；"
                    f"精度那条在 **★判据①**，不在这里重复。")
@@ -1064,7 +1148,8 @@ def _judge_traj(ck, obs, seg) -> dict:
     elif not tl.get("n_moving"):
         ck("★判据②·轨迹2 r = 1.0 m 八字（定性：跑完 + 不撞地 + 不失控；跟踪误差只留档）",
            None,
-           f"参考时间线里**没有一帧在动**（共发 {tl.get('n')} 帧，全在原点）⟹ **这一条没做**。"
+           f"参考时间线里**没有一帧在动**（共发 {tl.get('n')} 帧，水平速度全程为 0 —— "
+           f"停在原点或停在别处都算）⟹ **这一条没做**。"
            f"★ 这本身就是夹具的**征兆**：包里那条参考的移动段在 `bag/5_traj3_lemniscate` 里"
            f"是前 610 帧\n（t ≤ 12.18 s），发成不动只有两种可能 —— 模型文件里 `reference` "
            f"块是空的，或者 `--publish-reference` 没接上。", counts=False)
@@ -1073,33 +1158,46 @@ def _judge_traj(ck, obs, seg) -> dict:
         #: `r_lo/r_hi` = 参考**自己**的移动段（判"跑完"用），`m_lo/m_hi` = 判据**读数的窗口**
         #: （从离地那一刻起，见上）。两者分开：把窗口下界抬到离地会让"参考在离地前就动了"
         #: 这件事**看不出来**，而那正是"八字没跑完"的一种。
+        #: ★★ `r_lo/r_hi` 是**记录器钟**（与 `offboard_enter_t` 同源），而
+        #:   `_window_health` / `traj_err_metrics` 筛的是绝对墙钟 ⟹ 读数窗口必须 `+ zero`。
+        #:   取不到零点就**判不了** —— 绝不拿记录器钟的秒数直接和绝对墙钟比（缺陷 A）。
         r_lo, r_hi = tl["move_first_s"], tl["move_last_s"]
-        m_lo, m_hi = max(r_lo, t_air_abs or r_lo), r_hi
-        h = _window_health(frames, truth, m_lo, m_hi)
-        er = traj_err_metrics(frames, truth, m_lo, m_hi)
-        out["lemniscate"] = {**h, "ref": tl, "err": er}   # ← 误差读数随判据块留档
         ov, end = tt.get("offboard_enter_t"), tt.get("flight_end_t")
         # 跑完的**接线**判据：移动段必须整段落在 OFFBOARD 窗口里。
         # ★ 只有 ov/end 都在才判它（旧 obs 没有 ⟹ 这一项 `None`，不冒充通过）。
+        # ★★ 这里**两根都是记录器钟**，故意**不换算** —— 换成绝对钟反而会让这条判错。
         fits = (None if not all(isinstance(x, (int, float)) for x in (ov, end))
                 else bool(r_lo >= ov and r_hi <= end))
         tilt = (f"全程最大倾角 {v.fmt(obs.get('tilt_deg_max'), '.2f')}°"
                 f"（旁证，不设界；★ 它含停机后那一段，别拿它当窗口判据）")
-        head = (f"参考移动段 [{v.fmt(r_lo, '.3f')}, {v.fmt(r_hi, '.3f')}] s，"
+        head = (f"参考移动段 [{v.fmt(r_lo, '.3f')}, {v.fmt(r_hi, '.3f')}] s（记录器钟），"
                 f"长 {v.fmt(tl.get('move_span_s'), '.2f')} s、共 {tl['n_moving']} 帧"
                 f"（时间线共 {tl['n']} 帧，相位分布 {tl.get('by_phase')}）；"
-                f"OFFBOARD 窗口 [{v.fmt(ov, '.3f')}, {v.fmt(end, '.3f')}] s ⟹ "
+                f"OFFBOARD 窗口 [{v.fmt(ov, '.3f')}, {v.fmt(end, '.3f')}] s（记录器钟）⟹ "
                 f"参考移动段整段落在窗口内={fits}（★ 判的是**参考**那一段，不是窗口；"
-                f"读数窗口另从离地那一刻算，见下）；{_health_detail(h)}；{tilt}。")
+                f"读数窗口另从离地那一刻算，见下）")
+        if zero is None:
+            ck("★判据②·轨迹2 r = 1.0 m 八字（定性：跑完 + 不撞地 + 不失控；跟踪误差只留档）",
+               None,
+               f"{head}；★ **取不到记录器钟的零点**（obs 里没有 `first_frame` 或没有逐帧日志）"
+               f"⟹ 读数的窗口换算不出来，**这一条判不了**，不当作通过也不当作不通过"
+               f"（也**不**拿记录器钟的秒数当绝对钟用 —— 那正是 ticket 10 缺陷 A）", counts=False)
+            out["lemniscate"] = {"ran": False, "why": "取不到记录器钟的零点"}
+            return out
+        m_lo, m_hi = max(r_lo + zero, t_air_abs or (r_lo + zero)), r_hi + zero
+        h = _window_health(frames, truth, m_lo, m_hi)
+        er = traj_err_metrics(frames, truth, m_lo, m_hi)
+        out["lemniscate"] = {**h, "ref": tl, "err": er}   # ← 误差读数随判据块留档
+        full = f"{head}；{_health_detail(h)}；{tilt}。"
         if not h["ran"]:
             ck("★判据②·轨迹2 r = 1.0 m 八字（定性：跑完 + 不撞地 + 不失控；跟踪误差只留档）",
                None,
-               f"{head}★ 移动段里数据不够 ⟹ **这一条判不了**（仪器没覆盖到窗口，"
+               f"{full}★ 移动段里数据不够 ⟹ **这一条判不了**（仪器没覆盖到窗口，"
                f"不是飞机飞得不好）", counts=False)
         else:
             ck("★判据②·轨迹2 r = 1.0 m 八字（定性：跑完 + 不撞地 + 不失控；跟踪误差只留档）",
                bool(h["offboard_kept"] and h["air"] and fits is not False),
-               f"{head}**跟踪误差（只留档，spec 没有数值界 ⟹ 不设判据）**："
+               f"{full}**跟踪误差（只留档，spec 没有数值界 ⟹ 不设判据）**："
                f"真值 − DUT 自己的 `x_ref0`，水平均值 "
                f"{v.fmt(er.get('h_mean'), '.4f')} m / 最大 {v.fmt(er.get('h_max'), '.4f')} m、"
                f"3D 均值 {v.fmt(er.get('d3_mean'), '.4f')} m（配对上 "

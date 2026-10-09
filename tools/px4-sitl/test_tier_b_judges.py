@@ -20,7 +20,11 @@ A 档已经栽过两次同类：判据⑤ 在一场爬升里照样过、判据�
      只有第三者才计数；而"仪器没覆盖到窗口"另有一条**计数**的前置行兜底；
   5. **判据④ 的 A/B/C 三层分开** —— 阶梯走没走（结构证据：悬停帧的推力恒等于
      −hover_thrust）、高度保没保住、这一场该记在谁头上，是**三个**读数；
-     合成到一个 ❌ 里就会写出"阶梯坏了"这种归因错误的结论。
+     合成到一个 ❌ 里就会写出"阶梯坏了"这种归因错误的结论；
+  6. **两根钟不许混用**（ticket 10 缺陷 A/B）—— `obs["t"]["offboard_enter_t"]` /
+     `reference_timeline` 的秒数是**记录器钟**，`frames[].wall_ns` / 真值第 7 列是
+     **绝对墙钟**；混用的症状是"窗口交集恒空"⇒ 一句"仪器没覆盖到"把判层的错记到飞机头上，
+     而且**每一场读数都一模一样**。判"参考在动"同理：按**速度**判，不按位置。
 
 （要 `rclpy` / `px4_msgs` / `nmpc`：被测模块导入期就 import 它们。没有环境直接 skip。）
 """
@@ -326,18 +330,26 @@ def traj_obs(*, ref_fn=lemniscate, truth_fn=lemniscate, move=None, n_moving=None
     """`--reference-source traj` 的一场（参考会动、时间线落在 OFFBOARD 窗口里）。
 
     `x_ref0` 与真值走**同一条**路径 ⟹ 跟踪误差 ≈ 0；要造误差就传另一个 `truth_fn`。
+
+    ★★ 时基照 obs 的**真身**造：`offboard_enter_t` / `flight_end_t` / `move_*_s` 都是
+      **记录器钟**（`rec.t0` 起算），而 `frames[].wall_ns` / 真值第 7 列是**绝对**墙钟。
+      这里把 `T_ABS0` 当记录器钟的零点，并由 `t["first_frame"]=0.0` 告诉判层
+      （判层靠 `rec_clock_zero()` 换算 —— ticket 10 缺陷 A）。
+      ⚠️ 别图省事把两根钟**混着造**：那样测的是"两根钟恰好同源"这个假前提，
+        真机上 (`rec.t0 ≈ 1.79e9`) 一跑就现原形。
     """
-    ov, end = T_ABS0 + 2.0, T_ABS0 + 18.0
+    ov, end = 2.0, 18.0                                    # ← 记录器钟的秒数
     frames = [frame(i, ref=ref_fn(wall(i) - T_ABS0), nav_state=nav_state)
               for i in range(int(DUR_S * FRAME_HZ))]
     obs = make_obs(frames=frames, truth=truth_(fn=truth_fn))
     obs["reference_source"] = "traj"
-    obs["t"] = {"offboard_enter": 2.0, "offboard_enter_t": ov, "flight_end_t": end}
-    m_lo, m_hi = move or (T_ABS0 + 3.0, T_ABS0 + 14.0)
+    obs["t"] = {"offboard_enter": 2.0, "first_frame": 0.0,
+                "offboard_enter_t": ov, "flight_end_t": end}
+    m_lo, m_hi = move or (3.0, 14.0)                       # ← 也是记录器钟
     obs["reference_timeline"] = {
         "n": 1300, "n_moving": 900 if n_moving is None else n_moving,
         "by_phase": {"pre": 200, "bag": 900, "hold": 200},
-        "first_s": T_ABS0 + 2.5, "last_s": T_ABS0 + 17.5,
+        "first_s": 2.5, "last_s": 17.5,
         "move_first_s": m_lo, "move_last_s": m_hi,
         "move_span_s": round(m_hi - m_lo, 3)}
     return obs
@@ -390,7 +402,7 @@ def test_判据2_跟踪误差只留档_再大也不改判():
 
 def test_判据2_八字没在OFFBOARD窗口里跑完就不过():
     """八字**跑出**了 OFFBOARD 窗口 ⟹ 那一段不受控 —— 判"没跑完"，且**计数**。"""
-    obs = traj_obs(move=(T_ABS0 + 1.0, T_ABS0 + 19.0))     # 起点早于 OFFBOARD、终点晚于收手
+    obs = traj_obs(move=(1.0, 19.0))                       # 起点早于 OFFBOARD、终点晚于收手
     lem = one(b.evaluate_b(obs), "★判据②·轨迹2")
     assert lem["ok"] is False and lem["counts"] is True
     assert "整段落在窗口内=False" in lem["detail"]
@@ -957,11 +969,15 @@ def test_高度只由夹具叠_默认取hold_z():
 
 
 def _ref_rows(t0_abs, phases):
-    """造一份夹具的参考逐帧日志行（`wall_ns` 是**绝对**墙钟，`ref_timeline` 负责换算）。"""
+    """造一份夹具的参考逐帧日志行（`wall_ns` 是**绝对**墙钟，`ref_timeline` 负责换算）。
+
+    ★ 一条一行 `(phase, x, y, z, vx, vy)` —— **速度是必填的**：`ref_timeline` 判"在动"
+      只看它（ticket 10 缺陷 B），所以造行的人必须像 `mocap_replay.py` 那样把速度写对。
+    """
     out = []
-    for i, (phase, x, y, z) in enumerate(phases):
+    for i, (phase, x, y, z, vx, vy) in enumerate(phases):
         out.append({"wall_ns": int((t0_abs + i * 0.02) * 1e9), "phase": phase, "i": i,
-                    "position": [x, y, z], "velocity": [0.0, 0.0, 0.0], "yaw": 0.0})
+                    "position": [x, y, z], "velocity": [vx, vy, 0.0], "yaw": 0.0})
     return "\n".join(json.dumps(r) for r in out) + "\n"
 
 
@@ -970,22 +986,26 @@ def test_参考时间线_换算到记录器墙钟_并认得出移动段(tmp_path
 
     为什么不能只看"夹具在发帧"：参考流**照着时间表**发，与 DUT 起没起来、进没进 OFFBOARD
     **完全无关**。DUT 起得慢 ⟹ 整条八字在**地面上**放完，而夹具汇总里帧数/节奏/掩码全对。
+
+    ★ `pre` 那三帧**故意停在离原点 4 mm 的地方**（真身：`(0.004136, 0.004135)`）——
+      按位置判的话它们全都会被算成"在动"（ticket 10 缺陷 B），按速度判才是 0。
     """
     t0 = T_ABS0
-    phases = ([("pre", 0.0, 0.0, 1.0)] * 3
-              + [("bag", 0.3, 0.0, 1.0), ("bag", 0.5, 0.1, 1.0), ("bag", 0.0, 0.0, 1.0)]
-              + [("hold", 0.0, 0.0, 1.0)] * 2)
+    phases = ([("pre", 0.004136, 0.004135, 1.0, 0.0, 0.0)] * 3
+              + [("bag", 0.3, 0.0, 1.0, 0.5, 0.0), ("bag", 0.5, 0.1, 1.0, 0.5, 0.5),
+                 ("bag", 0.0, 0.0, 1.0, 0.5, 0.5)]
+              + [("hold", 0.0, 0.0, 1.0, 0.0, 0.0)] * 2)
     f = tmp_path / "ref.jsonl"
     f.write_text(_ref_rows(t0, phases), encoding="utf-8")
     proc = b.ReplayProc(_cfg(reference_source="traj"), tmp_path / "frames.jsonl", tmp_path / "s.json")
     proc.ref_out = f
     tl = proc.ref_timeline(t0)
     assert tl["n"] == 8 and tl["by_phase"] == {"pre": 3, "bag": 3, "hold": 2}
-    # z 叠上去的那 1 m **不算"在动"**（那是高度，不是轨迹）
-    assert tl["n_moving"] == 2, tl
+    # 移动段 = `bag` 那三帧；`pre` 虽然离原点 4 mm、`hold` 虽然 z=1 m，都不算"在动"
+    assert tl["n_moving"] == 3, tl
     # 首帧在 0.0 s、移动段从第 4 帧起（3 帧 pre × 20 ms）
     assert tl["first_s"] == pytest.approx(0.0) and tl["move_first_s"] == pytest.approx(0.06)
-    assert tl["move_span_s"] == pytest.approx(0.02)
+    assert tl["move_span_s"] == pytest.approx(0.04)
 
 
 def test_参考时间线_没有日志时说没做_不抛(tmp_path):
@@ -995,3 +1015,229 @@ def test_参考时间线_没有日志时说没做_不抛(tmp_path):
     assert proc.ref_timeline(T_ABS0)["n"] == 0            # 没设 ref_out
     proc.ref_out = tmp_path / "nope.jsonl"                # 设了但文件不存在
     assert proc.ref_timeline(T_ABS0)["n"] == 0
+
+
+# ────────────── 判层两处「写错了完全静默」的缺陷（ticket 10）
+#
+# ★★ 两处都在**判层**，都能只靠**离线重判归档 obs** 复现 —— 归档是 06 号票那批六场
+#   （`evidence/tier-b/20261009-rebuild/`），拿它们重判能证明"修前红、修后绿"。
+#   修前实测：六场**全部** `ok=None / counts=False`，逐场读数一模一样地
+#   `DUT 帧 0 帧、真值 0 点` —— 六场读数全同，本身就是"不是飞机的事"的指纹。
+
+ARCHIVE = HERE / "evidence" / "tier-b" / "20261009-rebuild"
+#: 重判前**必须删掉**的块 —— `evaluate_b` 会把它们写回 `obs`，留着就等于"读到上一次判留下的"。
+#: ⚠️ 它**不等于** `evaluate_b` docstring 里那张"写回的派生块"清单：那张表里还有
+#:   `att_err_deg`，而它是**本场落盘的结果**、不是从 `frames` 现算的派生块 ⟹
+#:   **不能删**（删了会退化成"判不了"、凭空少一条计入，实测 11 → 10；
+#:   见 `docs/control/tier-b-sitl-seam3.md` §6.3）。
+_DROP_BEFORE_REJUDGE = ("checks", "steady", "osc", "diverge", "m5", "fallback_report", "traj")
+
+
+def archive_obs(tag):
+    """读一份归档 obs，并把**参考时间线**按现行规则从落盘的原始逐帧重算。
+
+    ★ 为什么要重算：落盘的那条 `reference_timeline` 是**缺陷 B 的错值**
+      （`move_first_s = 6.380` —— 停在起点的 `pre` 段被算成"在动"）。
+      归档**不就地改**（改它等于涂改实验记录），所以原始逐帧单独入了一份库；
+      这里用的正是判层自己那支 `ref_timeline_from_rows`，**不是**另写一份规则。
+    ★ `t0` 用**判层自己那支** `rec_clock_zero(obs["frames"], obs["t"])` —— 与判窗口时
+      走的是**同一个**锚点，所以这份 obs 的状态就是判层真实会看到的状态。
+      （另有一条**精确但循环**的取法：从落盘时间线的 `first_s` 反解，`first_s = wall − t0`。
+      它能还原"采集当时那支代码本来会写下什么"，但它把待检验的值又读回去当输入了，
+      **自证不了** `rec_clock_zero` 准不准 ⟹ 这里不用它，改用下面那条独立测试交叉核对。
+      两者差 **3 ms**，来自 `first_frame` 在采集侧落盘到 0.01 s —— 见
+      `test_零点锚点的精度_拿T0的参考日志交叉核对`。）
+    """
+    obs = json.loads((ARCHIVE / f"{tag}-summary.json").read_text(encoding="utf-8"))
+    for k in _DROP_BEFORE_REJUDGE:
+        obs.pop(k, None)
+    ref = ARCHIVE / f"{tag}-replay-frames-reference.jsonl"
+    if ref.exists():
+        rows = [json.loads(l) for l in ref.read_text(encoding="utf-8").splitlines() if l.strip()]
+        t0 = b.rec_clock_zero(obs.get("frames"), obs.get("t"))
+        if t0 is not None:
+            obs["reference_timeline"] = {**b.ref_timeline_from_rows(rows, t0), "log": str(ref)}
+    return obs
+
+
+# ── 缺陷 A：窗口的零点错配（记录器钟 ↔ 绝对墙钟）
+
+def test_零点由obs里同刻的两根钟推出来():
+    """`frames[0].wall_ns`（绝对）与 `t["first_frame"]`（记录器钟）是**同一刻**的两次读数。"""
+    assert b.rec_clock_zero([frame(0)], {"first_frame": 4.0}) == pytest.approx(T_ABS0 - 4.0)
+
+
+def test_取不到零点返回None_不瞎猜也不当同一根钟():
+    """没有逐帧日志、或没有 `first_frame` ⟹ `None`（调用方一律记「判不了」）。
+
+    ★ 退回"当作同一根钟"等于把本票要修的缺陷装回去；瞎猜一个零点更糟。
+    """
+    assert b.rec_clock_zero([], {"first_frame": 1.0}) is None
+    assert b.rec_clock_zero([frame(0)], {}) is None
+
+
+def test_判据2_记录器钟的窗口不换算就恒空():
+    """★★ 缺陷 A 的靶心：`offboard_enter_t` / `flight_end_t` 是**记录器钟**的秒数，
+    判层却拿它们当绝对墙钟使 ⟹ 窗口变成 `[1.79e9, 18.0]`（**一头 epoch、一头相对秒**），
+    与 `frames[].wall_ns` 的交集**恒空** —— 读出来的正是那句
+    "仪器没覆盖到窗口，不是飞机飞得不好"（把判层的错记到飞机头上）。
+
+    这里造一场**本该判得出**的悬停场（记录器钟零点 = `T_ABS0`）：修前 → 0 帧 ⟹ 判不了。
+    """
+    obs = make_obs()
+    obs["t"] = {"offboard_enter": 2.0, "first_frame": 0.0,
+                "offboard_enter_t": 2.0, "flight_end_t": 18.0}
+    hover = one(b.evaluate_b(obs), "★判据②·轨迹1")
+    assert hover["ok"] is True and hover["counts"] is True
+    h = obs["traj"]["hover"]
+    # ★ 这两条就是变异测试的抓手：修前 `n_frames == 0`、`window == [T_ABS0-…, 18.0]`
+    assert h["n_frames"] > 1000 and h["n_truth"] > 1000
+    assert h["window"][0] > T_ABS0 and h["window"][1] > T_ABS0
+
+
+def test_判据2_有窗口但取不到零点_记判不了不计数():
+    """取不到零点 ⟹ 「判不了」（`ok=None` + `counts=False`），**不是**不通过。
+
+    ★ 这条钉住"不许把判不了写成不通过"，也钉住"不许退回当作同一根钟"。
+    """
+    obs = make_obs()
+    obs["t"] = {"offboard_enter": 2.0, "offboard_enter_t": 2.0, "flight_end_t": 18.0}
+    hover = one(b.evaluate_b(obs), "★判据②·轨迹1")
+    assert hover["ok"] is None and hover["counts"] is False
+    assert "零点" in hover["detail"]
+
+
+def test_判据2_traj档取不到零点也记判不了():
+    obs = traj_obs()
+    del obs["t"]["first_frame"]
+    lem = one(b.evaluate_b(obs), "★判据②·轨迹2")
+    assert lem["ok"] is None and lem["counts"] is False
+    assert "零点" in lem["detail"]
+
+
+# ── 缺陷 B：「在动」的门槛（位置 → 速度）
+
+def test_参考在动按速度判_停在起点四毫米的不算():
+    """★★ 缺陷 B 的靶心：包 5 的 `pre` 段 1500 帧停在 `(0.004136, 0.004135)` —— 离原点
+    **4 mm**，比"位置非零"的旧门槛（`1e-6`）大三个量级 ⟹ 那些**静止帧**被算成"在动"，
+    `move_first_s` 从 **36.388 s** 掉到 **6.380 s**、`n_moving` 从 610 涨到 2110。
+    """
+    rows = [{"wall_ns": int((T_ABS0 + 0.00) * 1e9), "phase": "pre", "i": 0,
+             "position": [0.004136, 0.004135, 1.0], "velocity": [0.0, 0.0, 0.0], "yaw": 0.0},
+            {"wall_ns": int((T_ABS0 + 0.02) * 1e9), "phase": "pre", "i": 1,
+             "position": [0.004136, 0.004135, 1.0], "velocity": [0.0, 0.0, 0.0], "yaw": 0.0},
+            {"wall_ns": int((T_ABS0 + 0.04) * 1e9), "phase": "bag", "i": 2,
+             "position": [0.10, 0.00, 1.0], "velocity": [0.5, 0.0, 0.0], "yaw": 0.0},
+            {"wall_ns": int((T_ABS0 + 0.06) * 1e9), "phase": "hold", "i": 3,
+             "position": [0.10, 0.00, 1.0], "velocity": [0.0, 0.0, 0.0], "yaw": 0.0}]
+    tl = b.ref_timeline_from_rows(rows, T_ABS0)
+    assert tl["n"] == 4 and tl["n_moving"] == 1          # ← 按位置判是 3
+    assert tl["move_first_s"] == pytest.approx(0.04)
+    assert tl["move_span_s"] == pytest.approx(0.0)
+
+
+def test_参考逐帧缺velocity列当场炸_不退回按位置判():
+    """缺列就**炸**：退回位置那一路会把 `pre` 段算成"在动"，是同一个缺陷换张皮。"""
+    with pytest.raises(KeyError):
+        b.ref_timeline_from_rows(
+            [{"wall_ns": int(T_ABS0 * 1e9), "phase": "pre", "i": 0,
+              "position": [0.1, 0.0, 1.0]}], T_ABS0)
+
+
+def test_零点锚点的精度_拿T0的参考日志交叉核对():
+    """★ 判层自己推的零点 vs 真值：T0 的参考日志里**藏着**同一根钟的零点
+    （`first_s = 参考首帧的绝对墙钟 − t0`）⟹ 正好拿来检验 `rec_clock_zero()` 准不准。
+
+    实测偏差 **4 ms**（= 轮询延迟 + `first_frame` 落盘到 0.01 s）。它界定的是"收手"这种
+    **松**界限与参考移动段的边界，4 ms 不改变任何一条读数 —— 但**必须**是可核的，
+    否则"零点能从 obs 自己推出来"这句话就没有证据。
+    """
+    obs = json.loads((ARCHIVE / "T0-summary.json").read_text(encoding="utf-8"))
+    rows = [json.loads(l) for l in (ARCHIVE / "T0-replay-frames-reference.jsonl")
+            .read_text(encoding="utf-8").splitlines() if l.strip()]
+    truth_zero = rows[0]["wall_ns"] * 1e-9 - obs["reference_timeline"]["first_s"]
+    assert b.rec_clock_zero(obs["frames"], obs["t"]) == pytest.approx(truth_zero, abs=0.02)
+
+
+def test_归档T0的参考时间线重算_移动段是36_388到48_565():
+    """拿**入库的原始逐帧**重算 —— 与 06 号票离线预演那列"真值"同量级、差 3 ms（取法差）。
+
+    容差取 5 ms：`t0` 是从 `first_frame`（落盘到 0.01 s）推的，再往下传一个数量级就失真了。
+    ★ 别把这三行当成"抄预演"—— 它们是**重算出来**的，预演那列（36.385 / 48.562 / 2747 点）
+      用的是另一种 `t0` 取法，已在 06 号票 Comments #3 点名作废。
+    """
+    tl = archive_obs("T0")["reference_timeline"]
+    assert tl["n"] == 3770 and tl["by_phase"] == {"pre": 1500, "bag": 1312, "hold": 958}
+    assert tl["n_moving"] == 610                          # ← 修前（按位置判）是 2110
+    assert tl["move_first_s"] == pytest.approx(36.388, abs=5e-3)
+    assert tl["move_last_s"] == pytest.approx(48.565, abs=5e-3)
+    assert tl["move_span_s"] == pytest.approx(12.177, abs=5e-3)
+
+
+# ── 归档离线重判（验收里的变异测试：同一份归档，修前红、修后绿）
+
+def test_归档T0重判_判据2轨迹2从判不了变成通过():
+    """★★ 同一份归档 obs（`T0-summary.json` + 落盘原始逐帧）：
+
+    | 场 | 判定行 | 修前 | 修后 |
+    |---|---|---|---|
+    | `T0` | 判据②·轨迹2 | ⏭️ 不计数（窗口 `[1791527428.111, 48.562]`，0 帧 0 点）| ✅ 计数 |
+
+    ★ 帧数/点数（1218 / 2746）**只有两个缺陷都修掉**才读得出来（窗口换算 + 按速度判"在动"），
+      所以把它们钉死在这里：任一处回退，这几个断言会一起红。
+      ⚠️ 点数与 06 号票预演那份（2747）差 1，纯粹是 `t0` 取法差 —— 见 `archive_obs` 的 docstring。
+    """
+    obs = archive_obs("T0")
+    checks = b.evaluate_b(obs)
+    lem = one(checks, "★判据②·轨迹2")
+    assert lem["ok"] is True and lem["counts"] is True
+    h = obs["traj"]["lemniscate"]
+    assert (h["n_frames"], h["n_truth"]) == (1218, 2746)
+    assert h["window"][0] > 1e9 and h["window"][1] > h["window"][0]
+    assert "整段落在窗口内=True" in lem["detail"]
+    # ★ 别把"修 bug"顺手做成"多计一条"：traj 档里悬停那条仍记「本场不做」
+    hover = one(checks, "★判据②·轨迹1")
+    assert hover["ok"] is None and hover["counts"] is False
+
+
+#: 归档五场重判后，判据②·轨迹1 的**实测**判定（修前**五场全是** `⏭️ 不计数`）。
+#: ★ `F3` 是**真的不通过**，不是判层的问题：它是唯一一场 **`mass+30` 且注入求解失败**
+#:   的（`inject_solve_fail_after_frames=700`）—— 兜底发的悬停推力是**模型**的
+#:   （`mpc_node.py:405`），按 +30% 的被控对象不够 ⟹ 飞机在窗口内从 +0.45 m 落回地面
+#:   （真值高度区间 `[-0.003, +1.061] m`）⟹ "不撞地=False"。
+#:   对照：`F4` 同样注入、但被控对象是**标称**（`mismatch=none`）⟹ ✅ —— 同一处境只
+#:   换被控对象，把"兜底机制坏了"与"兜底的推力口径在被控对象上是错的"分开。
+#: ⚠️ 这一行 ❌ **修前根本读不出来**（窗口恒空）⟹ 它是本票**新读出来的**一条，
+#:   要登记回 06 号票。它不是"修 bug 顺手多计一条"（那条禁令针对的是把"判不了"当"通过"；
+#:   这里相反：把**没读过**的真读数读出来）。
+_RUN1_EXPECT = {"F0": True, "F1": True, "F2": True, "F3": False, "F4": True}
+
+
+@pytest.mark.parametrize("tag", sorted(_RUN1_EXPECT))
+def test_归档五场重判_悬停那条判得出_轨迹2仍记本场不做(tag):
+    """`hold` 档那五场：判据②·轨迹1 从 `⏭️ 不计数` 变成**真判**（逐场见 `_RUN1_EXPECT`），
+    而轨迹2 **仍**记「本场不做」（`ok=None` + `counts=False`）—— 别把修 bug 作成多计一条。
+
+    ⚠️ ticket 10 的验收原文写「`F0`–`F4` 本来走**退路**分支、不受影响」—— **不成立**：
+      那五份 obs **都带** `offboard_enter_t`（`grep -rl '"offboard_enter_t"' evidence/`
+      命中六份、全在本批），走的是**主**分支、与 `T0` 一样判不了。所以它们**受影响**。
+    """
+    obs = archive_obs(tag)
+    checks = b.evaluate_b(obs)
+    hover = one(checks, "★判据②·轨迹1")
+    assert hover["ok"] is _RUN1_EXPECT[tag] and hover["counts"] is True
+    h = obs["traj"]["hover"]
+    assert h["n_frames"] > 1000 and h["n_truth"] > 1000
+    assert h["window"][0] > 1e9                       # ← 修前窗口是 [1.79e9, 30.3]，交集恒空
+    lem = one(checks, "★判据②·轨迹2")
+    assert lem["ok"] is None and lem["counts"] is False
+    assert "没做" in lem["detail"]
+
+
+def test_归档F0重判的窗口读数_与登记表逐位对上():
+    """`F0` 是 06 号票 Comments #3 那张登记表里的第一场（DUT 1493 帧 / 真值 3442 点）——
+    钉死这两个数，表一改这里就红。"""
+    obs = archive_obs("F0")
+    b.evaluate_b(obs)
+    h = obs["traj"]["hover"]
+    assert (h["n_frames"], h["n_truth"]) == (1493, 3442)
