@@ -428,7 +428,7 @@ PX4 官方 Offboard 文档明确标注了每种 setpoint 所需的**状态估计
 | # | 里程碑 | 内容 | 验收标准 | 依赖 |
 |---|---|---|---|---|
 | **0** | **环境就绪** | 装 acados（含 Tera）、CasADi、uXRCE-DDS Agent；★ **`px4_msgs` 钉 `release/1.14` @ `ffb6e80e`** 并与真身 `4a0e65f2` 的 `msg/` 逐字节比对通过（共有的 184 个文件 blob 全同）。☠️ 原写「**从 fork `5ba2e91f` 的 `msg/` 生成**」—— **作废**（真身不跑 fork，见 §7.1 与 [`reference/refs-manifest.md`](reference/refs-manifest.md) §2.6 执行版） | MPC 求解器能编译并跑通官方 `quadrotor_nav` 示例；**且 `px4_msgs` 与固件消息定义逐字节一致** | — |
-| **1** | **z0 动捕定点** | 移植旧机的动捕链路到 z0：VRPN 驱动 → `/mavros/vision_pose/pose` → EKF2；重标 `EKF2_EV_POS_*` 外参；重调 `EKF2_EVP_NOISE` | z0 能用动捕自主定点悬停 | 动捕场地 + 网段打通（见第 7 节） |
+| **1** | **z0 动捕定点** | 移植旧机的动捕链路到 z0：VRPN 驱动 → `/mavros/vision_pose/pose` → EKF2；~~重标 `EKF2_EV_POS_*` 外参~~（★ **2026-10-09 改判**：外参落在 **`mocap` 节点**的 `body_to_imu_*`，飞控该参数**保持 `0`** —— 见 O4）；重调 `EKF2_EVP_NOISE` | z0 能用动捕自主定点悬停 | 动捕场地 + 网段打通（见第 7 节） |
 | **2** | **系统辨识** | 用 `thrust_calibrate.py` 测推力曲线；辨识 kt/kq/惯量；测推力在不同电压下的漂移 | 得到完整的建模参数表（替换 2.3 里的 ❌ 项） | 里程碑 1 |
 | **3** | **仿真闭环** | 先在 Python/CasADi 对自写模型验 MPC 数学；再进 PX4 SITL 验接口与闭环 | SITL 里轨迹跟踪不发散 | 里程碑 0 |
 | **4** | **实机 `(C)` 闭环** | MPC → `VehicleRatesSetpoint` → PX4 rate loop，动捕定位 | 实机完成给定轨迹跟踪 | 里程碑 1、2、3 |

@@ -374,7 +374,7 @@ ADC(uint32_t base_address = SYSTEM_ADC_BASE, uint32_t channels = ADC_CHANNELS, b
 > （`BAT_LOW_THR = 0.15` / `CRIT = 0.07` 都已设值、`COM_LOW_BAT_ACT = 0` 却无动作），
 > **不再**靠"电流不可信"来支撑。
 
-### 3.6 ⚠️ `EKF2_EV_POS_X/Y/Z = 0` —— 外参可能没标
+### 3.6 `EKF2_EV_POS_X/Y/Z = 0` —— 外参落在 **`mocap` 节点**里（这个 `0` 于是是**对的**；曾判为"漏标"）
 
 > ★★ **2026-10-09 改判（本节结论的落点变了，先读这段）**：操作者裁定**外参做在 `mocap` 节点里**
 > （`body_to_imu_x/y/z = 0/0/−0.080` m，机体系 FLU，按该帧姿态旋转），
