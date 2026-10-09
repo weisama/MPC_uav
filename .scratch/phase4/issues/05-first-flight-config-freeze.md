@@ -7,7 +7,12 @@ Type: task
 
 **冻结的意思是**：从本票之后到阶梯 4 结束，**每一级只有一个新变量**（阶梯本身引入的那一个除外）。任何"顺手调的"参数都是无法归因的变量。
 
-**Blocked by:** [01](01-geometry-and-extrinsics.md)（几何判定结果）、[02](02-hover-thrust-backfill.md)（悬停油门实测值）、[03](03-latency-tau-from-logs.md)（τ）、[04](04-firmware-reflash.md)（刷后参数基线），以及跨 feature 的 [`phase2/issues/09-sitl-tier-a-closed-loop.md`](../../phase2/issues/09-sitl-tier-a-closed-loop.md) —— **实测最坏求解耗时**，没有这个数字就定不了实机 MPC（模型预测控制）频率。
+**Blocked by:** [01](01-geometry-and-extrinsics.md)（几何判定结果）、[02](02-hover-thrust-backfill.md)（悬停油门实测值）、[03](03-latency-tau-from-logs.md)（τ），以及跨 feature 的 [`phase2/issues/09-sitl-tier-a-closed-loop.md`](../../phase2/issues/09-sitl-tier-a-closed-loop.md) —— **实测最坏求解耗时**，没有这个数字就定不了实机 MPC（模型预测控制）频率。
+
+> ★ **2026-10-09 移除一项阻塞**：原写 ~~**[04](04-firmware-reflash.md)（刷后参数基线）**~~ ——
+> **04 已裁定 `wontfix`（不重刷固件）**，没有"刷后"，也就不存在"刷后参数基线"这个前置。
+> ⟹ **本票的 PX4 参数基线 = 现在飞控里的这套 + `docs/assets/z0.params`（2026-09-29 导出）**，
+> 不需要等任何刷写动作。04 那边 `MC_BAT_SCALE_EN` 一条也转到了本票（见「飞控参数」第 2 条，本来就有）。
 
 ## 飞控参数
 

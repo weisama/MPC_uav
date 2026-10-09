@@ -1,6 +1,8 @@
 # PX4 SITL 基线（ticket 01）—— 上游 v1.14.3 + `px4_msgs` + micro-XRCE-DDS Agent
 
-> **这是 Phase 2 全部后续工作的地基**，也是 **Phase 4 重编固件要复用的构建环境**（Q37=a）。
+> **这是 Phase 2 全部后续工作的地基**，原本也是 ~~Phase 4 重编固件要复用的构建环境~~（Q37=a）。
+> ☠️ **2026-10-09 操作者裁定不重刷固件**（[`.scratch/phase4/issues/04`](../../.scratch/phase4/issues/04-firmware-reflash.md)，
+> `wontfix`）⟹ "重编要复用它"这个下游用途**已取消**；本页作为 **SITL 环境**的记录仍然有效。
 > ⚠️ **一句话挡住最常见的误读：在这里编 SITL ≠ 刷飞控。** Q12 的「不刷固件」决策不变 ——
 > 本页只编了一份给仿真器跑的 posix 二进制，飞控里烧着的仍是出厂那份
 > `Minderring/PX4-Autopilot` @ `4a0e65f2`，**一个字都没动**。
@@ -261,9 +263,13 @@ PX4 v1.14.3 的模板调用是 empy **3.x** 的 API。全树用到 `em.RAW_OPT` 
 ## 7. 给 Phase 4 的交接
 
 1. **构建环境已就位**：`~/refs/px4-v1.14.3-build/` + venv + 脚本三件套。
-   重编固件（Q37=a）时**复用这套工具链**（`make <board>_default` 而不是 `px4_sitl_default`）。
-   ⚠️ 但「**改哪一行**」仍不是已知答案 —— 原定的 ADC 一行修复指向 `boards/hkust/nxt-dual`，
-   而真身树里**没有 `hkust/`**（`params-analysis.md` §3.5.1）。
+   这套工具链**留着备用**：编板级目标用 `make <board>_default`（不是 `px4_sitl_default`），
+   ☠️ ~~重编固件（Q37=a）时复用~~ —— **2026-10-09 起不再需要**（裁定不重刷固件，见下）。
+   ☠️ ~~⚠️ 但「**改哪一行**」仍不是已知答案 —— 原定的 ADC 一行修复指向 `boards/hkust/nxt-dual`，
+   而真身树里**没有 `hkust/`**~~ —— **2026-10-09 更正**：z0 的目标**就是** `hkust/nxt-dual`，
+   而且那份配置里那一行**早就是修好的 `ADC12_CH(8)`** ⟹ **没有"改哪一行"这个问题**。
+   ⚠️ 同日操作者裁定**不重刷固件**（[`.scratch/phase4/issues/04`](../../.scratch/phase4/issues/04-firmware-reflash.md)，`wontfix`）
+   ⟹ 本条的"复用工具链"只作**将来参考**；要让结论可复现，基线树取 `33bdd21f`（不是 `4a0e65f2`）。
 2. **`px4_msgs` 的比对方法可复用**：`check_msg_compat.py` 不依赖 SITL，将来换任何 PX4 树都能跑。
 3. **遗留（本张不做，但已开票点名）**：
    `PROJECT.md:450` 与 `docs/reference/px4-interface.md:178`、`:284`（**2 文件 3 处**）仍在引用不存在的脚本路径

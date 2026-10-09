@@ -64,7 +64,7 @@
 | 以太网 | **无** | 🔶 |
 | 电机输出 | 8 路 DShot / BDShot | 🔶 |
 | 尺寸 / 重量 | 27 × 32 × 8 mm / 6.5 g | 🔶 |
-| PX4 目标板名 | `hkust_nxt-dual`（HKUST OmniNxt 同款） | 🔶 |
+| PX4 目标板名 | `hkust_nxt-dual`（HKUST OmniNxt 同款） | ✅ **2026-10-09 已是第一手实测值**（飞控自报 `ver_hw = HKUST_NXT_DUAL`，8 份飞行日志一致；此前只是 🔶 推断）。⚠️ 该目标**不在上游 1.14.3 里**，来自厂商分支（详见 [`refs-manifest.md`](refs-manifest.md) §2.5(d)④） |
 | 固件版本 | **PX4 1.14.x** | ✅ 用户确认 |
 
 **对本项目的意义**：

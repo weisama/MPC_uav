@@ -455,10 +455,17 @@ F = K1 * Voltage^K2 * (K3*u^2 + (1-K3)*u)
 > ☠️ **2026-09-21 定案：本节的框架错了一处 —— "Nxt-FC 的 submodule 钉的那支 PX4" ≠ "z0 飞控里烧的固件"。**
 > 真身是 **`Minderring/PX4-Autopilot` @ `4a0e65f2`**（v1.14.3 系的 **MicoAir** 厂商构建，
 > 由飞控自报的 `flight_custom_version` 反查出来），**不是 `Peize-Liu/PX4-Autopilot @ 5ba2e91f`**。
-> 后果：**§9.3 的「权威比对基准」路径要换**（真身树里没有 `boards/hkust/`）、
-> **§9.5.3 的 ADC 推论整段作废**（那条缺陷不在这块固件里）、**§9.2 的"必然是 HKUST fork 的构建"要改成"MicoAir 厂商构建"**。
+> 后果：☠️ ~~**§9.3 的「权威比对基准」路径要换**（真身树里没有 `boards/hkust/`）~~、
+> **§9.5.3 的 ADC 推论整段作废**（☠️ ~~那条缺陷不在这块固件里~~ → **2026-10-09 更正：缺陷在，但那份配置本来就带修好的值**）、**§9.2 的"必然是 HKUST fork 的构建"要改成"MicoAir 厂商构建"**。
 > 逐处见各小节内的 ☠️ 注；完整证据链见 [`refs-manifest.md`](refs-manifest.md) §2.5(d)。
 > **本节对 Nxt-FC 仓库本身的描述、以及 §9.4「不要刷错固件」仍然有效。**
+>
+> ☠️ **2026-10-09 再更正两处（上面这条 ☠️ 自己也有半句说错了）**：
+> ① ~~"§9.3 的路径要换"~~ —— **不用换，`boards/hkust/nxt-dual/init/rc.board_defaults` 就是
+> `z0.params` 的权威比对基准**（见 §9.3 的新更正）；
+> ② ~~"那条缺陷不在这块固件里"~~ —— 缺陷**在** z0 的板级目标里，但 z0 那份配置**本来就带修好的值**。
+> 根因是**把 `4a0e65f2` 一棵树当成了"构建用的那棵树"**：飞控自报 `ver_hw = HKUST_NXT_DUAL`，
+> 而板级目录来自它的**子提交 `33bdd21f`**（版本头只记裸 `HEAD`、不带 dirty 标记）。
 
 > **来源**：第一手 `git clone` + `git ls-remote` + `strings` 验证 —— 这句仍成立（它描述的是 **Nxt-FC 这个仓库**）。
 > ☠️ **原写「这是本项目对"z0 参数该跟谁比"这个悬而未决问题的权威解答」—— 已作废**，按上面的 ☠️ 重读。
@@ -494,23 +501,35 @@ F = K1 * Voltage^K2 * (K3*u^2 + (1-K3)*u)
 > 实测真身 = **`Minderring/PX4-Autopilot @ 4a0e65f2`**，它的 `boards/` 里是
 > `micoair/{h743, h743-v2, h743-aio}`、**没有 `hkust/`** ⟹ 是 **MicoAir 的厂商构建**，
 > 与 `Peize-Liu` 那支 **HKUST fork 无关**。见 [`refs-manifest.md`](refs-manifest.md) §2.5(d)。
+>
+> ☠️ **2026-10-09 再更正**：上面这段的**结论一半错**。真相是 —— **z0 跑的就是 `hkust_nxt-dual`**
+> （飞控自报 `ver_hw = HKUST_NXT_DUAL`，8 份飞行日志一致），只是那个板级目录**不在 `4a0e65f2` 这棵树上**，
+> 而在它的**子提交 `33bdd21f`** 上（Minderring 自己加的，2024-11-19）。
+> 所以正确说法是：**既是 MicoAir 的厂商构建，也跑 `hkust_nxt-dual` 这个板级目标** ——
+> 这两件事**不互斥**，正是 §9.2 上半段那句"`hkust_nxt-dual` 是 NxtPX4v2 在 PX4 里的板级目标"的意思。
 
-### 9.3 ☠️ **已作废**：「板级默认参数 —— 权威的比对基准」—— **该路径不在 z0 的固件树里**
+### 9.3 ★★ **恢复有效（2026-10-09）**：「板级默认参数 —— 权威的比对基准」**
 
-> ☠️ **2026-09-21 更正**：本小节录的是 `boards/hkust/nxt-dual/init/rc.board_defaults` 的值，
-> 而**真身树里没有 `hkust/` 这块板**（见 §9.2 的 ☠️）⟹ **它不能当 `z0.params` 的比对基准。**
-> 真身树里的对应文件是 `boards/micoair/{h743, h743-v2, h743-aio}/init/rc.board_defaults`，
-> 三块板的默认值**互不相同**：
+> ☠️ **2026-09-21 曾把本节整节作废**（理由：真身树里没有 `hkust/` 这块板）——
+> **那个理由 2026-10-09 被推翻了**：z0 跑的板级目标**就是 `hkust_nxt-dual`**
+> （飞控自报 `ver_hw = HKUST_NXT_DUAL`），板级目录来自 `4a0e65f2` 的**子提交 `33bdd21f`**。
+> ⟹ **本节录的 `boards/hkust/nxt-dual/init/rc.board_defaults` 就是 `z0.params` 的权威比对基准。**
+>
+> ✅ **而且它对得上**：把该文件的 **18 条**与 `z0.params` 逐条比，**15 条数值相同**、
+> **3 条被改过**（`BAT1_N_CELLS` 4→6 = 6S 电池、`BAT1_V_DIV` 10.1→10.02 = 分压标定、
+> `RC_INPUT_PROTO` -1→6）。全文与比对方法见 [`refs-manifest.md`](refs-manifest.md) §2.5(d)④ 的 2026-10-09 块。
+>
+> ☠️ **作废当时用来替换它的那张表**（`micoair/{h743,h743-v2,h743-aio}` 的默认值）——
+> 那三块板**不在候选里**，表里的 `IMU_GYRO_CUTOFF 80/80/100` 等值对 z0 **没有意义**：
 >
 > | 板 | `BAT1_A_PER_V` | `BAT1_V_DIV` | `IMU_GYRO_CUTOFF` | `SYS_HAS_MAG` |
 > |---|---|---|---|---|
-> | `micoair/h743` | 40 | 21.2 | 80 | 1 |
-> | `micoair/h743-v2` | 40 | 21.12 | 80 | 1 |
-> | `micoair/h743-aio` | 14.14 | 21.12 | 100 | 0 |
+> | ~~`micoair/h743`~~ | ~~40~~ | ~~21.2~~ | ~~80~~ | ~~1~~ |
+> | ~~`micoair/h743-v2`~~ | ~~40~~ | ~~21.12~~ | ~~80~~ | ~~1~~ |
+> | ~~`micoair/h743-aio`~~ | ~~14.14~~ | ~~21.12~~ | ~~100~~ | ~~0~~ |
 >
-> ⚠️ **该拿哪一块当基准，取决于"板名 NxtPX4v2 ≠ 固件目标名"这个未决项**
-> （[`refs-manifest.md`](refs-manifest.md) §2.5(d)④）—— **定案前不要拿本节的任何一组值当"权威基准"。**
-> 下面原文保留，作为 **`nxt-dual` 那块板**（不是 z0 这块）的记录。
+> ☠️ ~~⚠️ **该拿哪一块当基准，取决于"板名 NxtPX4v2 ≠ 固件目标名"这个未决项**…… **定案前不要拿本节的任何一组值当"权威基准"**~~
+> —— **已定案**：基准就是本节下面这份 `nxt-dual` 的值。
 
 `boards/hkust/nxt-dual/init/rc.board_defaults`：
 
@@ -555,7 +574,10 @@ MC_ROLLRATE_K 0.35  MC_PITCHRATE_K 0.4  MC_YAWRATE_K 1.2  MC_YAWRATE_MAX 360
 2. **排查动作**（原写「在 QGC 里记录当前固件版本号」，已改走 MAVLink）—— ✅ **已做**：`AUTOPILOT_VERSION` 实测
    `flight_sw_version = 0x010e0300`（⟹ `1.14.3`），`flight_custom_version` ⟹ hash `4a0e65f233`。
 3. **⚠️ 一个真实的坑（已用上游 git 历史逐条核实）**：**`ADC_BATTERY_CURRENT_CHANNEL = ADC12_CH(5)` 对 `nxt-dual` 是错的。**
-   ☠️ **2026-09-21 定案：这条缺陷不在 z0 的固件里 —— 实测判为「未中招」，本项已结。**
+   ☠️ **2026-09-21 定案：实测判为「未中招」，本项已结。**
+   ★ **2026-10-09 更正解释**：☠️ ~~这条缺陷不在 z0 的固件里~~ —— **缺陷就在 z0 的板级目标里**
+   （`hkust/nxt-dual`，飞控自报 `ver_hw` 证实），但 **z0 那份 `board_config.h:98` 早就是 `ADC12_CH(8)`**
+   （厂商分支 `33bdd21f`，与 fork 修复提交 `8161c4cd` 同一 blob）⟹ 「未中招」= **这份配置本来就修好了**。
 
    上游修复 commit：**`129c0f188a`，2024-11-19，*"hkust_nxt-dual: fix ADC_BATTERY_CURRENT channel mismatch"***
 
@@ -564,22 +586,29 @@ MC_ROLLRATE_K 0.35  MC_PITCHRATE_K 0.4  MC_YAWRATE_K 1.2  MC_YAWRATE_MAX 360
    | v1.15.0（2024-08-23） | `ADC12_CH(5)` ❌ | `ADC12_CH(5)` |
    | v1.16.0 / main | **`ADC12_CH(8)`** ✅ | `ADC12_CH(5)` |
 
-   **★ 三点推论（前两条仍成立，第三条 ☠️ 已证伪）**：
+   **★ 三点推论（前两条仍成立，第三条 ☠️ 已证伪 —— 但证伪它的理由 2026-10-09 又换了一次）**：
    - 修复**只针对 `nxt-dual`**；`nxt-v1` 在 main 上**仍是 `CH(5)`**（对它是对的）→ **不要照抄 `nxt-v1` 的写法**
-   - 版本边界：**上游 v1.15.0 仍带、v1.16.0 才修** ✅（第一手核实）
-   - ☠️ **原写「z0 是 1.14.x，连 `hkust/nxt-dual` 这个板级目标都还不存在（v1.15.0 才有）→ 1.14 的构建几乎必然带 `CH(5)`」—— 已作废，这是本节的错误推论**：
-     它默认「z0 的固件是**某个含 `hkust/nxt-dual` 的构建**」，
-     而真相是真身树里**根本没有 `hkust/`**（是 `boards/micoair/h743-aio`，其电流通道
-     `/* PC1 */ ADC1_CH(11)` **与引脚相符、无此缺陷**）。
-     **「板级目标在 1.14 里不存在」既推不出「必然带 `CH(5)`」，也不是 z0 的实际处境。**
+   - 版本边界：**上游 v1.15.0 仍带、v1.16.0 才修** ✅（第一手核实，**指上游官方树**）
+   - ☠️ **原写「z0 是 1.14.x，连 `hkust/nxt-dual` 这个板级目标都还不存在（v1.15.0 才有）→ 1.14 的构建几乎必然带 `CH(5)`」—— 已作废，这是本节的错误推论。**
+     ☠️ 2026-09-21 给的作废理由是「真身树里根本没有 `hkust/`，是 `boards/micoair/h743-aio`」——
+     **这个理由 2026-10-09 也作废了**：**z0 的固件恰恰就是含 `hkust/nxt-dual` 的构建**
+     （它不在上游 1.14 里，而在厂商分支 `33bdd21f` 里）。**真正的作废理由是**：
+     那句话假定"1.14 的构建必然沿用上游那份 `CH(5)`"，而厂商**加这块板时给的就是修好的 `CH(8)`**
+     ⟹ **「板级目标在 1.14 里不存在」推不出「必然带 `CH(5)`」**（这条推理错误本身仍然成立）。
 
    → ☠️ **原写「若中招，电池电流采样读的是错误通道，飞行中的电流/电量保护全是假的」—— 对 z0 不成立。**
    → ✅ **排查方法已执行（2026-09-21）：上电实测未解锁电流读数 ≈0 且非恒定怪值 ⟹ 未中招**
-     （读数与判据见 [`params-changes.md`](params-changes.md) §A4）。**不是运气 —— 这条缺陷不在这块固件里。**
+     （读数与判据见 [`params-changes.md`](params-changes.md) §A4）。
+     ★ **2026-10-09 更正解释**：☠️ ~~"不是运气 —— 这条缺陷不在这块固件里"~~ ⟹
+     **缺陷在 z0 的板级目标里，但这份配置从厂商加这块板起就是修好的 `ADC12_CH(8)`**
+     （`33bdd21f:boards/hkust/nxt-dual/src/board_config.h:98`）。**是"本来就修好了"，不是"运气"。**
 4. **`MC_*RATE_K` 是 PX4 角速率环增益** —— Phase 2 的 MPC 要架在这一层之上，这几条值最终决定了内环带宽。
 5. **用不上的部分**：fork 的 `feat_fast_lab_stable`（UART DMA）、Nxt-FC 的 OmniNxt docker CI，对 z0 无增量价值。
-   ☠️ **原写「`pr_fix_hkust_nxt_dual` 的修复已进上游（可用）」—— 2026-09-21 作废：它修的是 `hkust/nxt-dual`，而 z0 的板级目标不是它** ⟹
-   **Phase 4 重编固件时不能照搬这一行的修法**（详见 [`refs-manifest.md`](refs-manifest.md) §2.5(d)③ 与 §2.7 的 ☠️ 注）。
+   ☠️ **原写「`pr_fix_hkust_nxt_dual` 的修复已进上游（可用）」—— 2026-09-21 作废**（理由当时写的是"它修的是 `hkust/nxt-dual`，而 z0 的板级目标不是它"）。
+   ⚠️ **2026-10-09 再更正**：**z0 的板级目标就是 `hkust/nxt-dual`**，所以那条修法**本来是对口的** ——
+   只是 **z0 那份 `board_config.h` 里那一行早就是 `CH(8)`**，**没有东西要打** ⟹
+   ~~"Phase 4 重编固件时不能照搬这一行的修法"~~ 这个告诫随之失效（Phase 4 且裁定**不重刷固件**）。
+   详见 [`refs-manifest.md`](refs-manifest.md) §2.5(d)④ 的 2026-10-09 块 / §2.7 的 ☠️ 注。
 
 ---
 
@@ -604,7 +633,7 @@ MC_ROLLRATE_K 0.35  MC_PITCHRATE_K 0.4  MC_YAWRATE_K 1.2  MC_YAWRATE_MAX 360
 
 拿来即用的：
   ├─ acados（源码编译，aarch64）                ← 唯一"必用"依赖（§1）
-  ├─ z0.params（928 行，已归档）                ← 待与**真身的** `boards/micoair/*/init/rc.board_defaults` diff（§9.3 的 ☠️ 注；拿哪一块未定）
+  ├─ z0.params（928 行，已归档）                ← 与 **`boards/hkust/nxt-dual/init/rc.board_defaults`** diff（★ 2026-10-09 定案：这一份就是基准；已比过 18 条：15 同 / 3 改）
   ├─ vrpn_listener（用户已验证的 zip）           ← 动捕链路，不改 stamp（mocap-setup 6.2）
   └─ 6 篇论文                                   ← 理论依据，已在仓库
 
@@ -629,12 +658,16 @@ MC_ROLLRATE_K 0.35  MC_PITCHRATE_K 0.4  MC_YAWRATE_K 1.2  MC_YAWRATE_MAX 360
 
 1. **⚠️ 本项目不在 PX4 官方支持矩阵内。** `hkust_nxt-dual` 板级目标 **2024-04-02 才进上游（≥ v1.15.0）**，而 z0 是 **1.14.x**（飞控出厂自带）。→ **不刷固件、不追上游，把 1.14 当作既定事实。** 见 §9.2。
    ✅ **真身已查明**（2026-09-21）：`Minderring/PX4-Autopilot` @ `4a0e65f2`，v1.14.3 系 MicoAir 厂商构建。
-   ⚠️ **别把它读成"z0 跑 `hkust_nxt-dual`"** —— 真身树里没有 `hkust/`，是 `boards/micoair/*`。
+   ☠️ ~~⚠️ **别把它读成"z0 跑 `hkust_nxt-dual`"** —— 真身树里没有 `hkust/`，是 `boards/micoair/*`。~~
+   —— **2026-10-09 更正：恰恰相反，z0 跑的就是 `hkust_nxt-dual`**（飞控自报 `ver_hw = HKUST_NXT_DUAL`）。
+   `4a0e65f2` 那棵树里没有 `boards/hkust/`，是因为板级目录来自它的**子提交 `33bdd21f`**。
+   ⚠️ 该结论**不派生动作**：同日操作者裁定**不重刷固件**。
 
 2. ☠️ **原写「电池电流采样可能是假的（上游把 `ADC_BATTERY_CURRENT_CHANNEL` 从 `CH(5)` 改 `CH(8)`）⟹ 电流/电量保护都是空转」—— 2026-09-23 改为：这条对 z0 不成立。**
-   **实测已判「未中招」**（2026-09-21：未解锁时电流读数 ≈0.37 A 且**有变化**，非恒 0 / 非恒定怪值，见 [`params-changes.md`](params-changes.md) §A4），
-   **且真身里根本没有那块板**（无 `boards/hkust/`，`boards/micoair/h743-aio` 写 `/* PC1 */ ADC1_CH(11)`，与引脚相符）。
-   **⟹ 缺陷描述对 `boards/hkust/nxt-dual` 仍成立（上游 v1.16.0 才修），但对 z0 从未适用** —— 不是"运气好没中招"。见 §9.5。
+   **实测已判「未中招」**（2026-09-21：未解锁时电流读数 ≈0.37 A 且**有变化**，非恒 0 / 非恒定怪值，见 [`params-changes.md`](params-changes.md) §A4）。
+   ★ **2026-10-09 更正解释（观测不变）**：☠️ ~~**且真身里根本没有那块板**（无 `boards/hkust/`，`boards/micoair/h743-aio` 写 `/* PC1 */ ADC1_CH(11)`，与引脚相符）~~ ——
+   **缺陷就在 z0 的板级目标里，但 z0 那份配置从厂商加这块板起就是修好的 `ADC12_CH(8)`**。
+   **⟹ 缺陷描述对上游 `boards/hkust/nxt-dual` 成立（上游 v1.16.0 才修），对 z0 不适用（已修好）** —— 不是"运气好没中招"。见 §9.5。
 
 3. **✅ 架构解耦是对的。** `(C)` 级 `VehicleRatesSetpoint` 在 PX4 文档里标注"**所需状态估计：none**"——MPC 链路完全不依赖飞控定位，与"动捕→EKF2"安全网链路可**独立调试、独立失败**。agilicious 的 `guard` 模块用同样思路（独立 pipeline + 3D 边界）做了三年。见 §2 与 [`px4-interface.md`](px4-interface.md) 3.1。
 

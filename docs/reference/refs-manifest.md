@@ -335,6 +335,10 @@ memcpy(&msg.flight_custom_version, &fw_vendor_version, fw_vendor_version_length)
 **没有 `hkust/`**（上游 `hkust/` 要到 **v1.15.0 才出现**，v1.14.3 里根本没有 —— 第一手核对过
 `git ls-tree v1.14.3:boards/`，且这两个克隆是 `blob:none` 而 **tree 是本地齐的**，故该否定结论成立）。
 
+> ☠️ **2026-10-09 提示**：上面这句只对 **`4a0e65f2` 这一棵树**成立，**不能推出"飞控跑的是 `micoair` 板"**。
+> 飞控自报的目标是 `hkust_nxt-dual` ⟹ 编它用的树里**有** `boards/hkust/nxt-dual/`（那是 `4a0e65f2` 的
+> 子提交 `33bdd21f` 加进去的）。详见 ④ 的 2026-10-09 块。
+
 #### ③ 后果（**都要改**）
 
 - **§2.5(a) 作废**：那张表是拿 **fork** 比的。对**真身在用的**基准（v1.14.3），`release/1.14`
@@ -343,25 +347,87 @@ memcpy(&msg.flight_custom_version, &fw_vendor_version, fw_vendor_version_length)
 - **§2.6 的决策前提被推翻**：原则「以 z0 固件真身为准」仍成立，但真身**不是 `5ba2e91f`**。
   Phase 2 的 `px4_msgs` 基准回到 **[`release/1.14` @ `ffb6e80e`]**（已实测逐字节相同）——
   **这正是 Q24=a 最初的表述**。
-- **§2.7 的 ADC 缺陷与 z0 的固件无关**：那个 `ADC_BATTERY_CURRENT_CHANNEL = ADC12_CH(5)`
-  在 `boards/hkust/nxt-dual/src/board_config.h` 里，而运行固件的树里没有这块板；
-  它的 `boards/micoair/h743-aio` 写的是 `/* PC1 */ ADC1_CH(11)`，**与引脚相符、无此缺陷**。
-  ⟹ ④「未中招」**有了解释**（不是运气），Phase 4「重编重刷 `pr_fix_hkust_nxt_dual`」的修法
-  **对这块固件不适用，要重定**。
+- ☠️ **本条 2026-10-09 作废 —— 原因判错了。** ~~**§2.7 的 ADC 缺陷与 z0 的固件无关**：
+  那个 `ADC_BATTERY_CURRENT_CHANNEL = ADC12_CH(5)` 在 `boards/hkust/nxt-dual/src/board_config.h` 里，
+  而运行固件的树里没有这块板；它的 `boards/micoair/h743-aio` 写的是 `/* PC1 */ ADC1_CH(11)`，
+  **与引脚相符、无此缺陷**。~~
+  **正确的是**：z0 跑的就是 `hkust_nxt-dual`（飞控自报，见 ④ 的 2026-10-09 块），
+  缺陷**就在 z0 的板级目标里**；但 z0 那份板级配置自厂商加入该板的那一提交（`33bdd21f`）起
+  **就是修好的值 `ADC12_CH(8)`**（`board_config.h:98`，blob `91fca7fd18`）。
+  ⟹ 「未中招」的解释是「**这份构建本来就带修好的值**」，而不是「这块板不在固件里」。
+  Phase 4 原定的「重编重刷 `pr_fix_hkust_nxt_dual`」修法**仍然不适用**（要修的那行早已是修好的），
+  **但理由换了一个**。
 - **`CLAUDE.md` 里「PX4 1.14.x」这个标签反而一直是对的** —— 09-20/21 一度把它判成错的，是误判。
 
-#### ④ 待拍板项（**2026-09-21 已裁定**）
+#### ④ 待拍板项（**2026-09-21 已裁定**；**2026-10-09 第 1 项定案**）
 
 1. **硬件到底是哪块板** → ✅ **MicoAir NxtPX4v2**（用户看实物/订单，第一手）。
-   ⚠️ **但张力没消，反而更尖锐**：NxtPX4v2 的上游目标名是 `hkust_nxt-dual`，
+   ☠️ ~~**但张力没消，反而更尖锐**：NxtPX4v2 的上游目标名是 `hkust_nxt-dual`，
    而飞控固件树里**只有 `micoair/h743-*`、没有 `hkust/`** ⟹ 要么「板名 ≠ 固件目标名」，
    要么标签与固件不符。**Phase 4 重编前必须查清该编哪个目标**（按 `hkust_nxt-dual` 编 = 换板级目标，
    会连引脚/传感器/ADC 通道一起换，**不是打一行补丁**）。
+   要把 ① 钉死到能指导 Phase 4，唯一便宜的硬办法是**只读**读参数表的 `CAL_ACC*_ID` / `CAL_BARO0_ID`。~~
+   **⟹ 已被下面的 2026-10-09 块解开，无需再钉。**
    ☠️ **附带更正**：本文原先拿「`micoair/h743-aio` 是 BMI270」当"不是 NxtPX4v2"的判据 ——
    **错的**：三块 micoair 板**全都带 BMI088**（实测 `default.px4board`），只剩气压计（DPS310 vs SPL06）有差。
-   要把 ① 钉死到能指导 Phase 4，唯一便宜的硬办法是**只读**读参数表的 `CAL_ACC*_ID` / `CAL_BARO0_ID`。
+
+> ★★ **2026-10-09 补：① 解开了 —— 板级目标就是 `hkust_nxt-dual`，不是 `micoair/*`。**
+>
+> **四条判据，全部第一手：**
+>
+> 1. **飞控自报**：8 份 z0 飞行日志（`bag/*/fcu/*.ulg`）的 `ver_hw` **全是 `HKUST_NXT_DUAL`**。
+>    `PX4_BOARD_NAME` 由**板目录名**推出（源码链已核：`src/modules/logger/logger.cpp:2046`
+>    → `src/lib/version/version.h:54` → `cmake/px4_config.cmake:96–105`，`VENDOR_MODEL` 取自 glob
+>    `boards/<vendor>/<model>/*.px4board`）⟹ **编这块固件的那棵树里必然有 `boards/hkust/nxt-dual/`**。
+>    这一条单独就把「真身树里没有 `hkust/`」**证伪**了。
+> 2. **传感器逐条对上**：ulog 里是 `bmi088` SPI bus **1** 与 **4**（rotation 2）+ 气压计 `spl06`；
+>    `boards/hkust/nxt-dual/init/rc.board_sensors` 恰是 `bmi088 -b 1 / -b 4 -R 2` + `spl06`。
+>    三个 `micoair` 板用的是 bus **2** + `dps310`/`ICM42688P`，对不上。
+> 3. **板级默认值对上**：`BAT1_A_PER_V = 17` 与 `SYS_HAS_MAG = 0` 只在 `hkust/nxt-dual` 的
+>    `init/rc.board_defaults` 里出现（`z0.params` 实测 = `17.0` / `0`）；三个 `micoair` 板是
+>    40 / 40 / 14.14 与 1 / 1 / 0（这也解释了 2026-09-23 那条"弱证据"为什么对不上：**候选名单里压根没有正确的板**）。
+>    而且不止这两个 —— 把那份 `rc.board_defaults` 的 **18 条**与 `z0.params` 逐条比（只比数值、忽略浮点写法）：
+>    **15 条数值相同** —— `SYS_HAS_MAG 0`、`PWM_MAIN_TIM0 -4`、`IMU_GYRO_RATEMAX 2000`、`SYS_AUTOSTART 4001`、
+>    `MAV_TYPE 2`、`CA_AIRFRAME 0`、`CA_ROTOR_COUNT 4`、`CBRK_SUPPLY_CHK 894281`、`BAT1_A_PER_V 17`、
+>    `BAT1_V_CHARGED 4.2`、`BAT1_V_EMPTY 3.2`、`MC_ROLLRATE_K 0.35`、`MC_PITCHRATE_K 0.4`、
+>    `MC_YAWRATE_K 1.2`、`MC_YAWRATE_MAX 360` ⟹ **这些参数从未被改过**；
+>    **3 条被改过**：`BAT1_N_CELLS` `4` → **`6`**（6S 电池）、`BAT1_V_DIV` `10.1` → **`10.02`**（分压标定）、
+>    `RC_INPUT_PROTO` `-1` → **`6`**。
+>    （复现：`git show 33bdd21f:boards/hkust/nxt-dual/init/rc.board_defaults` 与 `docs/assets/z0.params` 比。
+>    ⚠️ "数值相同"**单独看不是判据**（人也可以手工设成同一个值）—— 它的作用是让第 1/2 条**没有反例**。）
+> 4. **「`4a0e65f2` 的树里没有 `hkust/`」怎么解释**：版本头 `PX4_GIT_VERSION_STR` 是
+>    `git rev-parse --verify HEAD` 的**裸值、不带 dirty 标记**（`src/lib/version/px_update_git_header.py`）
+>    ⟹ HEAD 停在 `4a0e65f2`、而**板级目录在（未提交/后加的）工作树里**时，飞控照样只报 `4a0e65f2`。
+>    该分支上唯一带这两块板的提交是 **`33bdd21f`**（**parent = `4a0e65f2`**，2024-11-19，
+>    commit message `add NxtPX4v2 to PX4-Autopilot v1.14.3`，只加 `boards/hkust/{nxt-dual,nxt-v1}`
+>    共 55 个文件），其 `nxt-dual` 内容与上面第 2/3 条**逐条吻合**。
+>    （两次独立核实 `4a0e65f2` 无 `hkust/`：本地 `git ls-tree` + GitHub API `contents/boards?ref=4a0e65f2`；
+>    `git grep -c HKUST 4a0e65f2` 全树 **0 命中**。）
+>
+> **⟹ 结论：**
+>
+> - **板级目标 = `hkust_nxt-dual`** —— z0 的"板名 NxtPX4v2"与固件目标名**指的是同一块板**，
+>   `hkust_nxt-dual` 既是上游目标名、也是 z0 实跑的目标。**① 至此定案。**
+> - **若要重编，基线取 `33bdd21f`，不是 `4a0e65f2`**（后者的树里没有板级目录，编不出 `HKUST_NXT_DUAL`）。
+>   ⚠️ 该板目录在整条 `micoair743-v1.14.3` 分支上**没变过**：`33bdd21f` 与分支 tip `08310a5e`（2025-01-09）
+>   的 `boards/hkust/nxt-dual/src/board_config.h` 是**同一 blob `91fca7fd18`**（该分支此后只改 `boards/micoair/h743-v2`）。
+> - **ADC 的解释换掉了**：`33bdd21f` 的 `board_config.h:98` 已经是
+>   `ADC_BATTERY_CURRENT_CHANNEL ADC12_CH(8)` —— 与 fork 修复提交
+>   `8161c4cd7798b15d087eaf4f45954c7755ea52f9` 的版本**同一 blob**（即"未修"的那一版不在 z0 的链上）。
+>   ⟹ 「2026-09-21 实测未中招」= **这份板级配置本来就带修好的值**，
+>   **不是** ③ 里那句"这块板不在固件里"（☠️ 那半句已作废）。
+> - ⚠️ **本块只派生一条动作，而且已被裁定掉**：Phase 4 **不重刷固件**（2026-10-09 操作者裁定，
+>   理由"现行固件与参数已反复实测"，**无实测证据作锚**）⟹ 上面"基线取 `33bdd21f`"只作**事实存档**，
+>   见 [`.scratch/phase4/issues/04`](../../.scratch/phase4/issues/04-firmware-reflash.md)。
+> - **`px4_msgs` 选版不受影响**：`33bdd21f` 相对 `4a0e65f2` **只加了 `boards/`**，`msg/` 逐字节未动
+>   ⟹ `release/1.14` @ `ffb6e80e` 的结论照旧（见 §2.6「执行版」）。
+
 2. **§2.6 怎么改** → ✅ **用户已签字**，见 §2.6「执行版」。
 
+> ⚠️ **2026-10-09：下面这条旁证的前提没了** —— 它拿 `micoair/*` 当候选，而正确的板级目标是
+> `hkust_nxt-dual`（见上面那个 ★★ 块），`z0.params` 的 `BAT1_A_PER_V = 17` **与它正相吻合**。
+> 留着是因为**方法教训**仍然有效（**"标定值 ≠ 板级默认值"这条告诫本身没错**，不要把"不匹配"当判据）。
+>
 > **★ 2026-09-23 给 ① 补一条旁证（弱证据，别当判据用）**：真身树里三个 `micoair` 目标的板级默认值**互不相同**，
 > 而 `z0.params` 的实测值**与三个都不匹配**：
 >
@@ -424,10 +490,19 @@ memcpy(&msg.flight_custom_version, &fw_vendor_version, fw_vendor_version_length)
 ## 2.7 ★ fork 分支拓扑 + **ADC bug 的一行修复就藏在 fork 里**（2026-09-20 新增）
 
 > ⚠️⚠️ **2026-09-21：本节讲的全是 fork —— 而 z0 的飞控不跑 fork（见 §2.5(d)）。**
-> 飞控跑的是**基于 v1.14.3 的 MicoAir 构建**，其树里**没有 `boards/hkust/`**，
+> ~~飞控跑的是**基于 v1.14.3 的 MicoAir 构建**，其树里**没有 `boards/hkust/`**，
 > 所以本节 (b) 那两个「修复途径」**对 z0 的固件都不适用** —— 要修也得针对
-> `boards/micoair/h743-*`（而它的电流通道 `/* PC1 */ ADC1_CH(11)` **本身就是对的**）。
-> 本节作为**fork 的拓扑记录**仍然有效，但**不要拿它当 z0 固件的修复方案**。
+> `boards/micoair/h743-*`（而它的电流通道 `/* PC1 */ ADC1_CH(11)` **本身就是对的**）。~~
+>
+> ☠️ **2026-10-09 更正：上面那半段又错了一次。** z0 跑的**就是** `hkust_nxt-dual`
+> —— 那个板级目录在其**子提交 `33bdd21f`** 上（`4a0e65f2` 那棵树里才看不到它），
+> 判据见 §2.5(d)④ 的 2026-10-09 块。
+> **但 (b) 那两个「修复途径」仍然不需要**，理由换了：不是"没有对象"，而是
+> **`33bdd21f` 那份 `hkust/nxt-dual/src/board_config.h` 里 ADC 电流通道早就是 `ADC12_CH(8)`**
+> —— 与 fork 修复提交 `8161c4cd` 的 blob **完全相同**（`91fca7fd18`）。
+> ⟹ 本节作为 **fork 的拓扑记录**有效；而 z0 的固件**从厂商加板起就是修好的**，
+> **没有东西要打**。且 2026-10-09 操作者已裁定**不重刷固件**（[`phase4/issues/04`](../../.scratch/phase4/issues/04-firmware-reflash.md)，
+> `wontfix`）⟹ 整个 §2.7 只剩存档价值。
 
 ### (a) 分支拓扑（`git ls-remote --heads` 第一手）
 
@@ -465,7 +540,11 @@ fork 只有**四条**分支（**没有 `.gitmodules` 里写的 `develop`** —�
 
 > 📌 注意 `pr_fix_` 前缀 + 它**没有**被合进 `main`（`main` 仍是 `CH(5)`）→ 这是一个**未合并的
 > 提案分支**。**用它 = 我们自己做一次 fork 上的补丁**，不是"上游已修好，跟着走"。
-> **→ 这正是 Q12「不刷固件」与 A4「必须重编」正面相撞的地方 —— 决策见第 8 轮问答（Q37）。**
+> ~~**→ 这正是 Q12「不刷固件」与 A4「必须重编」正面相撞的地方 —— 决策见第 8 轮问答（Q37）。**~~
+> ☠️ **2026-10-09 已解，而且撞车消失了**：Q12 的「不刷固件」与 A4 的「必须重编」现在**同一档**
+> —— 操作者裁定**不重刷固件**（[`phase4/issues/04`](../../.scratch/phase4/issues/04-firmware-reflash.md)，
+> `wontfix`）。A4 里"必须重编"的那一半**已收回**：z0 的固件**本来就是 `ADC12_CH(8)`**
+> （厂商的 `33bdd21f` 那份配置，与 fork 修复提交的 blob 相同），所以那行补丁**从来不需要打**。
 
 ## 3. 使用纪律
 

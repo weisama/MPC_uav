@@ -17,7 +17,10 @@
 > z0 固件**真身 = `Minderring/PX4-Autopilot` @ `4a0e65f2`**（v1.14.3 系的 MicoAir 厂商构建）。
 > 全文已逐处按真身重新核对，「行号变了」的都已就地标注；**判词被推翻的只有一处**：
 > §3.5.1（ADC 电流通道）—— 由"中招/必须重刷"**改为「未中招」**。
-> 权威判定与分支对照见 [`refs-manifest.md`](refs-manifest.md) §2.5(d) / §2.6 / §2.7。
+> ⚠️ **2026-10-09 又更正一次（仅改理由，不改观测）**：z0 跑的板级目标**就是** `hkust_nxt-dual`
+> （飞控自报 `ver_hw = HKUST_NXT_DUAL`）—— 本文件里那些"真身树里没有 `hkust/`、用的是 `micoair/*`"
+> 的说法**作废**；「未中招」是因为 z0 那份板级配置**本来就带修好的 `ADC12_CH(8)`**。
+> 权威判定与分支对照见 [`refs-manifest.md`](refs-manifest.md) §2.5(d)④ 的 2026-10-09 块 / §2.6 / §2.7。
 
 ---
 
@@ -275,13 +278,19 @@ listener battery_status -n 5
 > 而该前提是错的。** fork 与 z0 **无关**（它是 v1.15 世代；`Nxt-FC` 的 submodule 指认是一条**错的线索**）。
 >
 > z0 固件**真身** = `Minderring/PX4-Autopilot` @ `4a0e65f2`（v1.14.3 系的 MicoAir 厂商构建）。
-> **真身那棵树里根本没有 `boards/hkust/`** —— 只有 `boards/micoair/{h743, h743-v2, h743-aio}`。
-> 而 `boards/micoair/h743-aio` 写的是 `/* PC1 */ ADC1_CH(11)`，**与引脚相符、无此缺陷**。
+> ☠️ ~~**真身那棵树里根本没有 `boards/hkust/`** —— 只有 `boards/micoair/{h743, h743-v2, h743-aio}`。
+> 而 `boards/micoair/h743-aio` 写的是 `/* PC1 */ ADC1_CH(11)`，**与引脚相符、无此缺陷**。~~
+> —— **2026-10-09 更正：这段理由错了。** 飞控**自报** `ver_hw = HKUST_NXT_DUAL`（8 份飞行日志一致）
+> ⟹ **z0 跑的就是 `hkust/nxt-dual`**；`4a0e65f2` 那棵树里看不到 `boards/hkust/`，是因为
+> **板级目录来自它的子提交 `33bdd21f`**（2024-11-19）—— 版本头只记裸 `HEAD`、**不带 dirty 标记**。
+> 而那行 ADC：z0 那份 `board_config.h:98` **早就是 `ADC12_CH(8)`**（与 fork 修复提交 `8161c4cd` 同一 blob）。
 >
 > **→ 2026-09-21 实测判定：z0 「未中招」**（读数与判据见 [`params-changes.md`](params-changes.md) §A4）。
+> ⟹ **正确的解释是「这份构建本来就带修好的值」**，不是「缺陷不在固件里」。
 > 下面整节保留作为**取证过程与版本边界的存档**，但其结论（"必须重编重刷固件"）**对 z0 不成立**；
-> Phase 4 的「重编重刷 `pr_fix_hkust_nxt_dual`」这个修法也因此**要重定**。
-> 权威判定见 [`refs-manifest.md`](refs-manifest.md) §2.5(d) / §2.7。
+> Phase 4 的「重编重刷 `pr_fix_hkust_nxt_dual`」这个修法也因此**没有对象**（要修的那行早修好了），
+> 且 2026-10-09 操作者已裁定**不重刷固件**。
+> 权威判定见 [`refs-manifest.md`](refs-manifest.md) §2.5(d)④ 的 2026-10-09 块 / §2.7。
 
 上面说的是"链路没配起来"。☠️ **原写「2026-09-20 这一轮查到了更硬的事实：z0 固件里电流采样读的是错误的 ADC 通道 —— 这不是"没配"，是"配错了"」—— 已作废**：**对 fork 成立，对 z0 不成立**（见上方更正块）。
 
@@ -325,7 +334,8 @@ Nxt-FC/main 钉在 commit  5ba2e91ff227fe4da0133371e88dc81b038bb81e   (2024-07-0
 | 固件 | `boards/hkust/nxt-dual` 的 `ADC_BATTERY_CURRENT_CHANNEL` |
 |---|---|
 | `Peize-Liu/PX4-Autopilot @ 5ba2e91f`（**☠️ 不是 z0 的固件，仅作对照**） | `ADC12_CH(5)` |
-| **z0 固件真身** `Minderring/PX4-Autopilot @ 4a0e65f2` | **没有 `boards/hkust/`**（其 `boards/micoair/h743-aio` 写 `/* PC1 */ ADC1_CH(11)`，**与引脚相符、无此缺陷** ⟹ **未中招**） |
+| **z0 固件真身** `Minderring/PX4-Autopilot @ 4a0e65f2` | ★ **2026-10-09 重查**：这一棵**没有 `boards/hkust/`**，但**不是构建时用的那一棵** —— 板级目录来自它的**子提交 `33bdd21f`**（厂商分支 `micoair743-v1.14.3`，2024-11-19）。**那一棵里 `nxt-dual` 的电流通道已经是 `ADC12_CH(8)`** ⟹ **z0 未中招是因为这份配置已修好**。（☠️ ~~其 `boards/micoair/h743-aio` 写 `/* PC1 */ ADC1_CH(11)`，无此缺陷 ⟹ 未中招~~ —— 那段理由作废） |
+| **z0 用的那棵树** `Minderring/… @ 33bdd21f`（`4a0e65f2` 的子提交，只加 `boards/hkust/`） | `ADC12_CH(8)` ← **已修**（`board_config.h:98`，blob `91fca7fd18`，与下面 fork 修复提交 `8161c4cd` **同一 blob**） |
 | PX4 上游 **v1.14.3**（tag `1dacb4c`） | 无 `boards/hkust`（该板级目标尚不存在） |
 | PX4 上游 **v1.15.0** | `ADC12_CH(5)` ← **仍带 bug** |
 | PX4 上游 **v1.16.0** | `ADC12_CH(8)` ← **已修** |
@@ -358,7 +368,10 @@ ADC(uint32_t base_address = SYSTEM_ADC_BASE, uint32_t channels = ADC_CHANNELS, b
 **通道 8 永远不会出现在 `adc_report` 里 → 把 `BAT1_I_CHANNEL` 设成 `8` 拿不到任何有效读数。**
 
 > **→ 结论：** ☠️ **原写「这个 bug 无法用参数绕过，必须重编重刷固件」—— 已作废**；
-> **该结论只对 fork 成立。对 z0：这个 bug 不在它的固件里，无需绕、也无需重刷**（见本节页首更正块）。
+> **该结论只对 fork 成立。对 z0：这份板级配置里那一行本来就是 `ADC12_CH(8)`，
+> 无需绕、也无需重刷**（☠️ ~~这个 bug 不在它的固件里~~ —— **2026-10-09 更正**：bug 在 z0 的板级目标
+> `hkust/nxt-dual` 里，只是**这份构建已修好**；见本节页首更正块）。
+> ⚠️ 因此下面那条"待台架验证的次要猜测"**没有对象**（`BAT1_I_CHANNEL` 不必改）。
 > 附带一个**待台架验证的次要猜测**（**不是修复方案**）：把 `BAT1_I_CHANNEL` 设成 `8`
 > 也许能把"读到错误引脚的天晓得的垃圾值"变成"干净的 0"，即把**不可判定**的坏读数变成
 > **可判定**的"无电流采样"。这可能比现在好（假电流会骗过库仑计），但**只能在台架上试**，

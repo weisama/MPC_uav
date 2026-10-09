@@ -347,15 +347,24 @@ Status: ready-for-agent
 ① 本文旧版写「z0 跑的 1.14.x 连这个板级目标都还不存在」；
 ② 09-20 改成「z0 是 v1.15 世代，且 fork 上一直有 `nxt-dual`」；
 ③ **两版都不对**。第一手定案（[`refs-manifest.md`](../../docs/reference/refs-manifest.md) §2.5(d)）：
-**z0 的固件树里根本没有 `hkust/` 这块板** —— 它是 `boards/micoair/{h743, h743-v2, h743-aio}`，
+☠️ ~~**z0 的固件树里根本没有 `hkust/` 这块板** —— 它是 `boards/micoair/{h743, h743-v2, h743-aio}`，
 `h743-aio` 的电流通道写 `/* PC1 */ ADC1_CH(11)`，**与引脚相符、无此缺陷**。
 ⟹ 上面那张版本边界表是**对 `nxt-dual` 这块板**说的，**对 z0 不适用** ——
 `pr_fix_hkust_nxt_dual` 那条"一行修复"因此**也修不到 z0**（Phase 4 要重编时，
-「该编哪块板」还是个待定项，见 [ticket 11](issues/11-firmware-version-conflict.md)）。
-⚠️ **实测也确实未中招**（A4 的读数）。）
+「该编哪块板」还是个待定项，见 [ticket 11](issues/11-firmware-version-conflict.md)）。~~
+→ ★★ **2026-10-09 第四次更正：上面这半段又错了一次。z0 跑的就是 `hkust/nxt-dual`**
+（飞控自报 `ver_hw = HKUST_NXT_DUAL`，8 份飞行日志一致）—— 那个板级目录**不在 `4a0e65f2` 这棵树上**，
+而在它的**子提交 `33bdd21f`** 上（版本头只记裸 `HEAD`、不带 dirty 标记）。
+⟹ **上面那张版本边界表对 z0 是适用的**，只是 **z0 那份 `board_config.h:98` 早就是 `ADC12_CH(8)`**
+（厂商加这块板时给的就已经是修好的值）⟹ **没有东西要修**，也**不需要"编哪块板"**。
+"那次重编" **2026-10-09 由操作者裁定取消**（不重刷固件）。
+⚠️ **实测也确实未中招**（A4 的读数）—— 解释见 [`refs-manifest.md`](../../docs/reference/refs-manifest.md) §2.5(d)④ 的 2026-10-09 块。）
 
 ~~**后果**：电流/电量保护可能是假的。**上电后必须在 QGC 核对读数。**~~
-☠️ **后果不成立** —— 上面 ③ 的定案 + A4 的实测都要它作废：**电流/电量保护不是假的**，那处缺陷不在这块固件里。
+☠️ **后果不成立** —— A4 的实测要它作废：**电流/电量保护不是假的**。
+（☠️ **2026-10-09 更正理由**：~~"那处缺陷不在这块固件里"~~ —— 缺陷**就在** z0 的板级目标
+`hkust/nxt-dual` 里，但 z0 那份配置**本来就带修好的值 `ADC12_CH(8)`**，所以照样不成立。
+见 [`refs-manifest.md`](../../docs/reference/refs-manifest.md) §2.5(d)④ 的 2026-10-09 块。）
 （"上电核对读数"这个动作**已经做了**，见 A4；它的价值从"判定是否中招"变成"留一条基线"。）
 
 **★ 已定（Q37=a）——分两步，不阻塞 Phase 1：**
@@ -363,11 +372,12 @@ Status: ready-for-agent
 | | 时机 | 内容 |
 |---|---|---|
 | **核实** | ★ ~~Phase 1 首飞前（阻塞）~~ ✅ **已于 2026-09-21 完成** | QGC / `listener battery_status` 看电流是否恒 0 或怪值 ⟹ **未中招**（读数见 [`params-changes.md`](../../docs/reference/params-changes.md) §A4） |
-| ~~**修复**~~ | ☠️ **作废，无此项** | ~~用 fork 自带的 `pr_fix_hkust_nxt_dual` @ `8161c4cd` —— 它相对 `main` **只差一行**（`CH(5)`→`CH(8)`）。因为 Q31=a 已要求从 fork 构建 SITL，**重编所需的工具链那时已经在手**，代价接近零~~ ⟹ **那条修复修的是 `boards/hkust/nxt-dual`，而真身树里没有 `hkust/`**，**对 z0 不适用**。⚠️ **Q37=a 的"修复"这一半作废；"重编"这件事本身仍在 Phase 4 的待办里**（因为板级目标待定），见 [`phase4/issues/04`](../phase4/issues/04-firmware-reflash.md) |
+| ~~**修复**~~ | ☠️ **作废，无此项** | ~~用 fork 自带的 `pr_fix_hkust_nxt_dual` @ `8161c4cd` —— 它相对 `main` **只差一行**（`CH(5)`→`CH(8)`）。因为 Q31=a 已要求从 fork 构建 SITL，**重编所需的工具链那时已经在手**，代价接近零~~ ⟹ **那条修复修的是 `boards/hkust/nxt-dual`；z0 跑的板级目标确实就是它，但 z0 那份配置本来就带修好的 `ADC12_CH(8)`** ⟹ **没有东西要修、对 z0 不适用**。⚠️ **Q37=a 的"修复"这一半作废**；☠️ ~~"重编"这件事本身仍在 Phase 4 的待办里（因为板级目标待定）~~ —— **2026-10-09 也取消了**：板级目标已查清（= `hkust_nxt-dual`），但**同日裁定不重刷固件**（沿用现行固件与参数），见 [`phase4/issues/04`](../phase4/issues/04-firmware-reflash.md)（`wontfix`）与 [`refs-manifest.md`](../../docs/reference/refs-manifest.md) §2.5(d)④ |
 
 **理由**（☠️ 对 z0 已不适用，保留作对照）：`ADC_CHANNELS` 是**编译期宏**，参数改不了；但**电压通道未受影响**，所以 Phase 1 可用
 「电压 + 计时」兜底，不必为一处电流读数在首飞前引入"刚刷的固件"这个新变量。
-⟹ 对 z0 而言这条**没有对象**（缺陷不在），但 Phase 1 用「电压 + 计时」的兜底做法**照样是对的**，保留不动。
+⟹ 对 z0 而言这条**没有对象**（☠️ ~~缺陷不在~~ —— **2026-10-09 更正：缺陷在，只是那份配置已经修好了**），
+但 Phase 1 用「电压 + 计时」的兜底做法**照样是对的**，保留不动。
 详见 [`params-changes.md`](../../docs/reference/params-changes.md) A4/F1 与 [`refs-manifest.md`](../../docs/reference/refs-manifest.md) §2.7(b)。
 
 ### 关于 50 ms 动捕延迟
