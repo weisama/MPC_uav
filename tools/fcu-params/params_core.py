@@ -7,12 +7,18 @@
 from __future__ import annotations
 
 import re
+import struct
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
 
 __all__ = [
     "REL_TOL", "ABS_TOL", "NAME_RE", "Param", "ExportParseError",
     "parse_qgc_export", "decode_export", "same_value", "Diff", "diff",
+    "MAV_PARAM_TYPE_UINT8", "MAV_PARAM_TYPE_INT8", "MAV_PARAM_TYPE_UINT16",
+    "MAV_PARAM_TYPE_INT16", "MAV_PARAM_TYPE_UINT32", "MAV_PARAM_TYPE_INT32",
+    "MAV_PARAM_TYPE_UINT64", "MAV_PARAM_TYPE_INT64", "MAV_PARAM_TYPE_REAL32",
+    "MAV_PARAM_TYPE_REAL64", "INT_PARAM_TYPES", "UNSIGNED_PARAM_TYPES",
+    "decode_param_value", "Collected", "collect_params",
 ]
 
 #: 数值相等的**相对**容差。两边的来源不同、打印位数也不同：
@@ -37,16 +43,78 @@ class ExportParseError(Exception):
     """导出文件里**一行参数都没解出来** —— 那说明文件选错了，不是"文件是空的"。"""
 
 
+#: MAVLink `PARAM_VALUE.param_type` 的取值（`common.xml` 的 `MAV_PARAM_TYPE` 枚举）。
+#: ★ PX4 只会发出 **`INT32`(6)** 与 **`REAL32`(9)** 两种（见下 `decode_param_value` 的依据）；
+#: 外加一条 **`UINT32`(5)** 的**伪参数**（`_HASH_CHECK`，参数哈希）。其余档位是协议允许、PX4 不发。
+MAV_PARAM_TYPE_UINT8 = 1
+MAV_PARAM_TYPE_INT8 = 2
+MAV_PARAM_TYPE_UINT16 = 3
+MAV_PARAM_TYPE_INT16 = 4
+MAV_PARAM_TYPE_UINT32 = 5
+MAV_PARAM_TYPE_INT32 = 6
+MAV_PARAM_TYPE_UINT64 = 7
+MAV_PARAM_TYPE_INT64 = 8
+MAV_PARAM_TYPE_REAL32 = 9
+MAV_PARAM_TYPE_REAL64 = 10
+
+#: 整型那几档 —— 它们在线上是**位型**，不是数值（见 `decode_param_value`）。
+INT_PARAM_TYPES = frozenset({MAV_PARAM_TYPE_UINT8, MAV_PARAM_TYPE_INT8,
+                             MAV_PARAM_TYPE_UINT16, MAV_PARAM_TYPE_INT16,
+                             MAV_PARAM_TYPE_UINT32, MAV_PARAM_TYPE_INT32,
+                             MAV_PARAM_TYPE_UINT64, MAV_PARAM_TYPE_INT64})
+
+#: 无符号的那几档 —— 用 `<I` 而不是 `<i` 解（`-1` 与 `4294967295` 是同一个位型）。
+UNSIGNED_PARAM_TYPES = frozenset({MAV_PARAM_TYPE_UINT8, MAV_PARAM_TYPE_UINT16,
+                                  MAV_PARAM_TYPE_UINT32, MAV_PARAM_TYPE_UINT64})
+
+
 @dataclass(frozen=True)
 class Param:
-    """一条参数的三个面：名字、**原样字符串**（导出文件里那一列）、解析出的数。"""
+    """一条参数的四个面：名字、**字符串形式的值**、解析出的数、MAVLink 里的类型。"""
 
     name: str
     text: str
     value: Optional[float]  # 解不出数就是 None（枚举/字符串型参数）
+    ptype: Optional[int] = None  # `PARAM_VALUE.param_type`；导出文件那一侧没有这个概念 ⟹ None
 
     def __str__(self) -> str:
         return self.text
+
+
+def decode_param_value(raw: float, ptype: Optional[int]) -> Tuple[float, str]:
+    """把 MAVLink 的 `PARAM_VALUE.param_value` 解成**真值**。返回 `(值, 字符串形式)`。
+
+    ★★ 这是本工具最容易静默错的地方，机理是**第一手**的
+    （`refs/px4-v1.14.3-build/src/modules/mavlink/mavlink_parameters.cpp`，
+    `MavlinkParametersManager::send_param`，源码里那句注释自己就写着
+    "since MAVLink encodes float and int params in the same space during transmission,
+    copy param onto float val_buf"）：
+
+    ```cpp
+    if (param_type(param) == PARAM_TYPE_INT32) {
+            int32_t param_value;
+            param_get(param, &param_value);
+            memcpy(&msg.param_value, &param_value, sizeof(param_value));  // ← 位型塞进 float 字段
+    } else {
+            msg.param_value = param_value;                                // ← 数值直传
+    }
+    ```
+
+    ⟹ **不按 `param_type` 解，整型参数会以 float32 的位型现身**：
+    `NAV_RCL_ACT = 1` 读成 `1.401298464324817e-45`（= 0x00000001 当 float32）、
+    `-1` 读成 `nan`（= 0xFFFFFFFF）、`921600` 读成 `1.2914366647217514e-39`。
+    ☠️ 后果是**看上去像"飞控上有一两百条参数被改了"**，而那正是这个工具唯一要回答的问题 ——
+    整批假差异会把真差异（本例里只有 5 条：3 条 `CAL_ACC0_*` 与 2 个计时器）淹掉。
+
+    ⚠️ `param_value` 字段只有 **4 字节**，所以 64 位档位（`UINT64`/`INT64`）实际也只承载 32 位；
+    PX4 不发这两档，这里按 32 位解并在 `Param.ptype` 里留下原始类型以便复核。
+    """
+    v = float(raw)
+    if ptype in INT_PARAM_TYPES:
+        bits = struct.pack("<f", v)
+        n = struct.unpack("<I" if ptype in UNSIGNED_PARAM_TYPES else "<i", bits)[0]
+        return float(n), str(n)
+    return v, repr(v)
 
 
 def decode_export(data: bytes) -> str:
@@ -97,6 +165,63 @@ def parse_qgc_export(text: str) -> Tuple[Dict[str, Param], List[str]]:
             "这份文件里一行参数都没解出来 —— 大概率是选错了文件"
             "（要的是 QGC 导出的 `.params`，不是 ulog / 不是 yaml）")
     return params, skipped
+
+
+@dataclass(frozen=True)
+class Collected:
+    """一遍全量读取的**汇总**。★ 它不是"读到了什么"，而是"这次读**可不可信**"。"""
+
+    params: Dict[str, Param]        # 真参数：名字 ⟹ `Param`
+    pseudo: List[str]               # `param_index < 0` 的伪参数（`_HASH_CHECK`）
+    duplicates: List[str]           # 重名 ⟹ 飞控**重传过**（不是新参数）
+    expected: Optional[int]         # 飞控自报的参数条数（`PARAM_VALUE.param_count`）
+    missing_indices: List[int]      # 在 `[0, expected)` 里**没收到**的索引 ⟹ 链路上丢了
+
+    @property
+    def complete(self) -> bool:
+        return self.expected is not None and not self.missing_indices
+
+
+def collect_params(msgs) -> Collected:
+    """把一串**已拆好字段**的 `PARAM_VALUE` 汇总成 `Collected`。
+
+    ★ 纯函数：`msgs` 是 `(name, raw_value, param_type, param_index, param_count)` 的序列，
+      **不碰串口、不 import pymavlink** ⟹ 离线就能把这三件事逐个造出来验：
+
+      ① **伪参数**：PX4 回全量时第一条永远是 `_HASH_CHECK`（`param_index = -1`），
+         它**不是**参数、QGC 导出里也没有。混进 `params` 就会在对账的"飞控多出"那一栏
+         冒充一条新增参数。
+      ② **重传**：同一条来两遍。按名字去重的 `dict` 会把它**悄悄吃掉**，
+         看着像"没收全"；这里单独记下来，两种毛病才分得开。
+      ③ **丢包**：完整性按 **`param_index` 覆盖**判，不按名字个数判。
+         `param_count` 是飞控自报的 **used 参数个数**（`param_count_used()`），
+         而每条真参数的 `param_index` 是 `param_get_used_index(param)`（`send_param` 里那行），
+         取值恰好是 `[0, param_count_used())` 且**不重不漏** ⟹ 缺的索引就是 `[0, expected)` 减收到的。
+
+    ⚠️ `msgs` 要是一个**可重复遍历**的序列（list/tuple），不是一次性生成器。
+    """
+    msgs = list(msgs)
+    params: Dict[str, Param] = {}
+    pseudo: List[str] = []
+    indices: set = set()
+    dupes: List[str] = []
+    expected: Optional[int] = None
+    for name, raw_value, ptype, index, count in msgs:
+        if count is not None:
+            expected = int(count)
+        if index < 0:
+            # ★ 伪参数（参数哈希）**不进** `params` —— 它不是参数，QGC 导出里也没有。
+            if name not in pseudo:
+                pseudo.append(name)
+            continue
+        value, text = decode_param_value(raw_value, ptype)
+        if name in params:
+            dupes.append(name)
+        params[name] = Param(name=name, text=text, value=value, ptype=ptype)
+        indices.add(int(index))
+    missing = sorted(set(range(expected)) - indices) if expected else []
+    return Collected(params=params, pseudo=pseudo, duplicates=sorted(set(dupes)),
+                     expected=expected, missing_indices=missing)
 
 
 def same_value(a: Optional[float], b: Optional[float]) -> bool:

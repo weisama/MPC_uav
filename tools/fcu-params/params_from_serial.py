@@ -35,6 +35,7 @@
 from __future__ import annotations
 
 import argparse
+import struct
 import sys
 import time
 from pathlib import Path
@@ -43,7 +44,10 @@ from typing import Dict, List, Optional, Tuple
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from params_core import (  # noqa: E402  （同目录，先插路径再 import）
-    ExportParseError, Param, decode_export, diff, parse_qgc_export, same_value,
+    MAV_PARAM_TYPE_INT32 as INT32, MAV_PARAM_TYPE_REAL32 as REAL32,
+    MAV_PARAM_TYPE_UINT32 as UINT32,
+    ExportParseError, Param, collect_params, decode_export, decode_param_value, diff,
+    parse_qgc_export, same_value,
 )
 
 #: 本仓库定案的那条链路。命令行可以覆盖，但默认值就是它。
@@ -64,6 +68,16 @@ def pull_params(port: str, baud: int, timeout_s: float,
     """开串口、要一遍全量参数、读完就关。返回 `(params, info)`。
 
     ⚠️ 这里是**唯一**碰硬件的地方，且只有两件事：等 `HEARTBEAT`、发 `PARAM_REQUEST_LIST`。
+
+    ★★ 三条**容易静默错**的处理，都在这里：
+
+    ① **按 `param_type` 解值**（`decode_param_value`）。不这么做，整型参数会以 float32 位型现身，
+       对账时变成一两百条假差异 —— 2026-10-09 真踩到过，见 `params_core.decode_param_value` 的注释。
+    ② **把伪参数挑出去**。PX4 回全量时**第一条永远是 `_HASH_CHECK`**（`send_one()`：
+       `if (_send_all_index == PARAM_HASH) {... param_index = -1; param_type = UINT32; memcpy(&hash)}`）
+       —— 它不是参数、QGC 导出里也没有。混进来就会在"飞控多出"那一栏冒充一条新增参数。
+    ③ **完整性按 `param_index` 数，不按名字数**。名字会重（重了就说明**重传过**），
+       按 `len(dict)` 数两者都看不出来；按索引数才能同时报出"缺哪几个索引"与"哪几条重了"。
     """
     from pymavlink import mavutil  # 延迟 import：`--self-test` 不需要 pymavlink（也就不用串口权限）
 
@@ -83,8 +97,8 @@ def pull_params(port: str, baud: int, timeout_s: float,
         }
         conn.mav.param_request_list_send(conn.target_system, conn.target_component)
 
-        params: Dict[str, Param] = {}
-        expected: Optional[int] = None
+        raw = []          # `(名字, 线上值, param_type, param_index, param_count)` —— 拆包，交给纯函数
+        got = 0
         t0 = time.time()
         while time.time() - t0 < timeout_s:
             msg = conn.recv_match(type="PARAM_VALUE", blocking=True, timeout=1.0)
@@ -96,31 +110,46 @@ def pull_params(port: str, baud: int, timeout_s: float,
             pid = pid.split("\x00")[0].strip()
             if not pid:
                 continue
-            params[pid] = Param(name=pid, text=repr(float(msg.param_value)),
-                               value=float(msg.param_value))
-            expected = int(msg.param_count)
-            if not quiet and len(params) % 50 == 0:
-                print(f"\r  收到 {len(params)}/{expected} 条…", end="", flush=True)
-            if expected and len(params) >= expected:
+            count = int(msg.param_count)
+            idx = int(msg.param_index)
+            raw.append((pid, msg.param_value, int(msg.param_type), idx, count))
+            if idx >= 0:
+                got += 1
+            if not quiet and got and got % 50 == 0:
+                print(f"\r  收到 {got}/{count} 条…", end="", flush=True)
+            if count and got >= count:
                 break
+        c = collect_params(raw)
         if not quiet:
-            print(f"\r  收到 {len(params)}/{expected} 条。      ")
-        if not params:
+            print(f"\r  收到 {len(c.params)}/{c.expected} 条。      ")
+        if not c.params:
             raise RuntimeError("一条 PARAM_VALUE 都没收到（HEARTBEAT 到了、参数没来）")
-        if expected and len(params) < expected:
+        if c.duplicates:
+            # ⚠️ 重传**必须说出来**：按名字去重的 `dict` 会把它悄悄吃掉，
+            #    看着像"没收全"，其实是同一条来了两遍 —— 两种毛病得分开。
+            print(f"⚠️ 有重传：{c.duplicates} —— 同一条收到了不止一次")
+        if not c.complete:
             # ⚠️ 收不全**必须说出来**：少了的那几条在对账里会变成"only_reference"，
             #    看上去像"飞控把这参数删了"，其实是这次没读全。
-            print(f"⚠️ 没收全：{len(params)}/{expected} —— 对账里"
-                  f"「快照有、此刻没有」那几条可能只是**这次没读到**，不是被删了")
-        info["expected"] = expected
-        return params, info
+            print(f"⚠️ 没收全：{len(c.params)}/{c.expected} —— 缺的 param_index 是 "
+                  f"{c.missing_indices}。对账里「快照有、此刻没有」那几条可能只是"
+                  f"**这次没读到**，不是被删了")
+        info.update(expected=c.expected, pseudo=c.pseudo, duplicates=c.duplicates,
+                    missing_indices=c.missing_indices)
+        return c.params, info
     finally:
         conn.close()
 
 
 def fmt_params_yaml(params: Dict[str, Param]) -> str:
-    """全量快照的落盘格式：`名字: 值`（名字有序，便于 diff 两份快照）。"""
+    """全量快照的落盘格式：`名字: 值`（名字有序，便于 diff 两份快照）。
+
+    ★ 这里的值已经是**真值**（`decode_param_value` 解过）：整型参数落成 `1` / `-1` 这样的整数，
+      不再是一串 `1.4e-45`。PX4 只发 `INT32` / `REAL32` 两档 ⟹ "看值是不是整数" 就能反推类型，
+      所以不必再单独存一列（伪参数 `_HASH_CHECK` 已经不在这个文件里）。
+    """
     lines = ["# 由 tools/fcu-params/params_from_serial.py 从串口**只读**读回",
+             "# 值已按 MAVLink 的 param_type 解过（整型是整数、不是 float32 位型）",
              f"# 条数: {len(params)}"]
     for name in sorted(params):
         lines.append(f"{name}: {params[name].text}")
@@ -128,9 +157,13 @@ def fmt_params_yaml(params: Dict[str, Param]) -> str:
 
 
 def print_report(cur: Dict[str, Param], ref: Optional[Dict[str, Param]],
-                 names: List[str]) -> int:
+                 names: List[str], info: Optional[Dict[str, object]] = None) -> int:
     """打印对账结果。返回退出码（0 = 对上；1 = 有差异）。"""
     print(f"此刻从飞控读回 **{len(cur)}** 条参数。")
+    if info and info.get("pseudo"):
+        # ★ 不是参数、也不该出现在对账里。单独说一句，免得下一个人再被它骗一次。
+        print(f"（另有伪参数 {', '.join(info['pseudo'])} —— `param_index = -1` 的参数哈希，"
+              f"PX4 回全量时**第一条永远是它**，QGC 导出会滤掉；已从对账里剔除）")
     if names:
         print()
         print("指定的几条：")
@@ -221,6 +254,30 @@ def self_test(export: str = "docs/assets/z0.params") -> int:
             print(f"❌ float32 的两种写法被判成了改动：{d3.changed}")
             return 1
         print("   ✅ float32 的表示误差没有被当成改动（`%r` vs `0.45`）" % p2.value)
+
+    # ④ ☠️ 整型参数的**位型**解码 —— 2026-10-09 真踩到过的那个坑
+    #    （不按 param_type 解，`NAV_RCL_ACT = 1` 会读成 1.4e-45，一整批参数看着像"被改了"）
+    bit = lambda u: struct.unpack("<f", struct.pack("<I", u & 0xFFFFFFFF))[0]  # noqa: E731
+    cases = [  # (线上的位型, param_type, 期望的真值, 说明)
+        (bit(1), INT32, 1.0, "NAV_RCL_ACT = 1"),
+        (bit(0xFFFFFFFF), INT32, -1.0, "`-1` 不许读成 nan"),
+        (bit(921600), INT32, 921600.0, "SER_TEL2_BAUD = 921600"),
+        (bit(30), INT32, 30.0, "COM_FLIGHT_UUID = 30"),
+        (bit(0xDEADBEEF), UINT32, float(0xDEADBEEF), "无符号档（伪参数 `_HASH_CHECK` 那种）"),
+        (0.5, REAL32, 0.5, "浮点**直传**，不许动它"),
+        (-0.061959743499755859, REAL32, -0.061959743499755859, "同上，负值"),
+    ]
+    bad4 = []
+    for raw, pt, want, why in cases:
+        got, _ = decode_param_value(raw, pt)
+        if got != want:
+            bad4.append(f"{why}: 位型 {raw!r} 应解出 {want}，实得 {got}")
+    if bad4:
+        print("❌ 整型位型解码不对：\n   " + "\n   ".join(bad4))
+        return 1
+    print(f"   ✅ {len(cases)} 条位型解码对得上"
+          f"（整型按 param_type 还原，浮点原样过）")
+
     print("\n自检通过。")
     return 0
 
@@ -268,7 +325,7 @@ def main(argv=None) -> int:
         print(f"全量快照已写：{args.yaml}")
 
     names = [n.strip() for n in args.name.split(",")] if args.name else []
-    return print_report(cur, ref, names)
+    return print_report(cur, ref, names, info)
 
 
 if __name__ == "__main__":

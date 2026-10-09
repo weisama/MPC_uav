@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+import struct
 import sys
 from pathlib import Path
 
@@ -15,8 +16,20 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from params_core import (  # noqa: E402
-    ExportParseError, Param, decode_export, diff, parse_qgc_export, same_value,
+    MAV_PARAM_TYPE_INT32, MAV_PARAM_TYPE_REAL32, MAV_PARAM_TYPE_UINT32,
+    ExportParseError, Param, collect_params, decode_export, decode_param_value, diff,
+    parse_qgc_export, same_value,
 )
+
+
+def _msg(name, wire, ptype, index, count):
+    """一条 `PARAM_VALUE` 拆出来的五元组 —— `pull_params` 喂给纯函数的正是这个形状。"""
+    return (name, wire, ptype, index, count)
+
+
+def _bit(u: int) -> float:
+    """造一个"位型是 `u` 的 float32" —— 也就是 PX4 把一个 int32 塞进 `param_value` 之后的样子。"""
+    return struct.unpack("<f", struct.pack("<I", u & 0xFFFFFFFF))[0]
 
 #: 仓库里那份真导出（2026-09-29）。用来钉"解析器在**真文件**上确实能用"。
 Z0_EXPORT = Path(__file__).resolve().parents[2] / "docs/assets/z0.params"
@@ -113,6 +126,131 @@ def test_对账_三类都要有且_clean_只看三类():
     only_gone = diff({"A": a}, {"A": a, "GONE": Param("GONE", "3.0", 3.0)})
     assert only_gone.changed == [] and only_gone.only_reference == ["GONE"]
     assert not only_gone.clean, "少了一条同理（可能是被删、改名，或这次没读全）"
+
+
+def test_位型解码_整型按param_type还原_浮点直传():
+    """★★ 2026-10-09 真踩到的那个坑（`MavlinkParametersManager::send_param`）。
+
+    PX4 对 `PARAM_TYPE_INT32` 是 `memcpy(&msg.param_value, &param_value, 4)` —— **位型**塞进
+    那个 float 字段；浮点才是数值直传。不按 `param_type` 解，整批整型参数会以 float32 位型现身。
+    """
+    assert decode_param_value(_bit(1), MAV_PARAM_TYPE_INT32)[0] == 1.0
+    assert decode_param_value(_bit(30), MAV_PARAM_TYPE_INT32)[0] == 30.0
+    assert decode_param_value(_bit(921600), MAV_PARAM_TYPE_INT32)[0] == 921600.0
+    assert decode_param_value(_bit(121212), MAV_PARAM_TYPE_INT32)[0] == 121212.0
+    assert decode_param_value(_bit(0xFFFFFFFF), MAV_PARAM_TYPE_INT32)[0] == -1.0   # ★ 不是 nan
+    # 无符号档（伪参数 `_HASH_CHECK` 那种）要按 `<I` 解
+    assert decode_param_value(_bit(0xFFFFFFFF), MAV_PARAM_TYPE_UINT32)[0] == 4294967295.0
+    # 浮点直传，一个 bit 都不许动
+    assert decode_param_value(0.5, MAV_PARAM_TYPE_REAL32)[0] == 0.5
+    assert decode_param_value(-0.061959743499755859, MAV_PARAM_TYPE_REAL32)[0] == -0.061959743499755859
+    # `param_type` 未知（None）时按直传处理 —— 但**别**指望它；这是兜底，不是正路
+    assert decode_param_value(0.5, None)[0] == 0.5
+
+
+def test_位型解码_搞反了长什么样_负控():
+    """⛔ 负控：把 `param_type` 丢掉（当成浮点直传），上面那几条**必须**面目全非。
+
+    ★ 这一条存在的意义是让"忽略 `param_type`"这个 bug **无法静默**：
+    `NAV_RCL_ACT = 1` 会读成 1.4e-45，`-1` 会读成 nan —— 而对账那边看上去就是
+    "飞控上一两百条参数被改了"。这正是 2026-10-09 第一版工具的读数。
+    """
+    assert abs(decode_param_value(_bit(1), None)[0]) < 1e-44          # 1.4e-45，不是 1
+    assert abs(decode_param_value(_bit(921600), None)[0]) < 1e-38     # 1.3e-39，不是 921600
+    nan_like = decode_param_value(_bit(0xFFFFFFFF), None)[0]
+    assert nan_like != nan_like                                       # NaN 自己不等于自己
+    # 而按 param_type 解，三者都是干净的数
+    assert decode_param_value(_bit(1), MAV_PARAM_TYPE_INT32)[0] == 1.0
+    assert decode_param_value(_bit(921600), MAV_PARAM_TYPE_INT32)[0] == 921600.0
+    assert decode_param_value(_bit(0xFFFFFFFF), MAV_PARAM_TYPE_INT32)[0] == -1.0
+
+
+def test_位型解码_端到端_整批整型参数不该报成改动():
+    """★★ 回归测试：把一批**已知类型**的真值编成线上位型，再走解码 + 对账，必须**干净**。
+
+    ★ 挑的都是本票真在意的那几条（`NAV_RCL_ACT` / `MPC_USE_HTE` 是"此刻飞控里还是不是它"
+      那几个框里的两条）。第一版工具在这份输入上会报出 8 条假差异里的绝大多数。
+    """
+    truth = {   # 名字 ⟹ (真值, param_type)
+        "NAV_RCL_ACT": (1, MAV_PARAM_TYPE_INT32),
+        "MPC_USE_HTE": (1, MAV_PARAM_TYPE_INT32),
+        "COM_FLTMODE2": (-1, MAV_PARAM_TYPE_INT32),
+        "SER_TEL2_BAUD": (921600, MAV_PARAM_TYPE_INT32),
+        "MAV_1_CONFIG": (102, MAV_PARAM_TYPE_INT32),
+        "MPC_THR_HOVER": (0.5, MAV_PARAM_TYPE_REAL32),
+        "HTE_THR_RANGE": (0.2, MAV_PARAM_TYPE_REAL32),
+        "MPC_THR_MIN": (0.12, MAV_PARAM_TYPE_REAL32),
+    }
+    def wire(n):
+        v, pt = truth[n]
+        return _bit(v) if pt == MAV_PARAM_TYPE_INT32 else float(v)
+
+    # 快照那一侧：真值是**十进制字面**（QGC 导出就是这种）
+    ref = {n: Param(n, str(truth[n][0]), float(truth[n][0])) for n in truth}
+    # 此刻那一侧：按 PX4 的规则编成线上值，再走**生产那条解码**
+    cur = {}
+    for n in truth:
+        value, text = decode_param_value(wire(n), truth[n][1])
+        cur[n] = Param(n, text, value, truth[n][1])
+
+    d = diff(cur, ref)
+    assert d.clean, f"整型参数的位型没解对 ⟹ 假差异：{d.changed}"
+    assert d.same == len(truth)
+
+
+def test_汇总_伪参数不算参数也不占计数():
+    """★★ `_HASH_CHECK` 是 PX4 **回全量的第一条**（`param_index = -1`），不是参数。
+
+    ⚠️ 把它算进 `params`，对账的"飞控多出"那一栏就会凭空多一条 —— 2026-10-09 的读数里
+    它就在那儿（`only_current: _HASH_CHECK`），看上去像飞控新加了一个参数。
+    """
+    c = collect_params([
+        _msg("_HASH_CHECK", _bit(0xDEADBEEF), MAV_PARAM_TYPE_UINT32, -1, 3),
+        _msg("NAV_RCL_ACT", _bit(1), MAV_PARAM_TYPE_INT32, 0, 3),
+        _msg("MPC_THR_HOVER", 0.5, MAV_PARAM_TYPE_REAL32, 1, 3),
+        _msg("SER_TEL2_BAUD", _bit(921600), MAV_PARAM_TYPE_INT32, 2, 3),
+    ])
+    assert set(c.params) == {"NAV_RCL_ACT", "MPC_THR_HOVER", "SER_TEL2_BAUD"}
+    assert c.pseudo == ["_HASH_CHECK"]
+    assert c.params["NAV_RCL_ACT"].value == 1.0
+    assert c.params["SER_TEL2_BAUD"].value == 921600.0
+    assert c.complete and c.missing_indices == []
+
+
+def test_汇总_丢包按param_index报而不是按名字个数():
+    """★★ 完整性只能按索引判：`param_count` 是飞控自报的 used 条数，缺哪个索引要能指名。"""
+    c = collect_params([
+        _msg("A", _bit(1), MAV_PARAM_TYPE_INT32, 0, 4),
+        _msg("B", _bit(2), MAV_PARAM_TYPE_INT32, 2, 4),   # index 1 没来
+        _msg("C", _bit(3), MAV_PARAM_TYPE_INT32, 3, 4),
+    ])
+    assert c.missing_indices == [1]
+    assert not c.complete
+    assert len(c.params) == 3
+
+
+def test_汇总_重传单独记_且不冒充没收全():
+    """★ 重传与丢包是**两件事**，必须分得开。
+
+    按名字去重的 `dict` 会把重传悄悄吃掉，于是"收到 3 条 / 应有 4 条"看着像丢包；
+    按索引判就不会：索引齐了就是齐了，重传另记一栏。
+    """
+    c = collect_params([
+        _msg("A", _bit(1), MAV_PARAM_TYPE_INT32, 0, 2),
+        _msg("A", _bit(1), MAV_PARAM_TYPE_INT32, 0, 2),   # 同一条来两遍
+        _msg("B", _bit(2), MAV_PARAM_TYPE_INT32, 1, 2),
+    ])
+    assert c.duplicates == ["A"]
+    assert c.missing_indices == []
+    assert c.complete, "重传不该被判成没读全 —— 索引是齐的"
+    assert len(c.params) == 2, "重传不该把参数算成两条"
+
+
+def test_汇总_没有param_count就不敢判完整():
+    """`count is None`（消息里没给）时**不许**说"读全了" —— 没依据。"""
+    c = collect_params([_msg("A", _bit(1), MAV_PARAM_TYPE_INT32, 0, None)])
+    assert c.expected is None
+    assert not c.complete
 
 
 def test_对账_枚举型参数按原样字符串比():
