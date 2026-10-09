@@ -1,6 +1,6 @@
 # 04: 把 SITL 同构机按真机实测口径重搭（换基线，会作废 A/B 两档全部读数）
 
-Status: ready-for-agent
+Status: done
 Type: task
 **对着 Phase 2 的：[`21`](../../phase2/issues/21-rebuild-sitl-plant-to-measured.md)**（518 行，`ready-for-agent`）
 **阻塞：** 无（前置「20 的两场飞完并归档」**2026-09-30 已满足**） · **被阻塞：** [06](06-fly-t0-seam3-four-criteria.md)
