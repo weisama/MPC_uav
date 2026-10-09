@@ -23,8 +23,8 @@ PX4_SIMULATOR=${PX4_SIMULATOR:=sihsim}
 PX4_SIM_MODEL=${PX4_SIM_MODEL:=z0}
 
 param set-default SIH_MASS 0.75
-param set-default SIH_T_MAX 2.95
-param set-default SIH_Q_MAX 0.1475
+param set-default SIH_T_MAX 11.5757
+param set-default SIH_Q_MAX 0.578784
 param set-default SIH_L_ROLL 0.0537401
 param set-default SIH_L_PITCH 0.0537401
 param set-default SIH_IXX 0.002166

@@ -48,8 +48,9 @@ from pathlib import Path
 
 import numpy as np
 
-#: B 档 SITL 的模型口径（`--hover-thrust` 的默认值）：见 `evidence/tier-b/F1b-summary.json`
-#: 的 `model_hover_thrust`。默认 0.1589 是**另一件事**（模型满量程 46.3 N），别混。
+#: B 档 SITL 的模型口径（**重搭前**）：见 `evidence/tier-b/F1b-summary.json` 的 `model_hover_thrust`。
+#: ⚠️ 被控对象已于 2026-10-09 按真机实测重搭（落地记录见 ticket 21 / phase3 的 `04`）⟹ 本常数
+#:    **不再是现行口径**，仅为回放那批旧归档而保留；现行 B 档用节点默认值（`0.1589`）。
 HOVER_THRUST_SITL = 0.6235
 
 

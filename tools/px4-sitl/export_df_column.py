@@ -42,8 +42,11 @@ import json
 import pathlib
 import statistics as st
 
-F_MAX = 11.8  # 节点发出去那一路的口径（N）
-HOVER_THRUST = 0.6235  # B 档逐场显式传的口径，与 SITL 被控对象对得上
+F_MAX = 11.8  # 节点发出去那一路的**上限**口径（N，按电池的 `f_max`；与重搭无关）
+# ⚠️ **重搭前**的 B 档口径（旧被控对象 `T_MAX_TOTAL = 11.8 N` ⟹ 解析悬停 0.6235）。
+#    被控对象已于 2026-10-09 按真机实测重搭（落地记录见 ticket 21 / phase3 的 `04`）⟹ 本常数
+#    仅为**回放旧归档**而保留；跑新基线前必须同步改（或直接改用节点默认值）。
+HOVER_THRUST = 0.6235
 MASS = 0.75  # SIH 标称质量（kg）
 
 

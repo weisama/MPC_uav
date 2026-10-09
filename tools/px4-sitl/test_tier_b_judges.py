@@ -124,7 +124,7 @@ def truth_(dur_s=DUR_S, fn=None, hz=TRUTH_HZ, t_abs0=T_ABS0, n=None):
 
 
 def make_obs(*, frames=None, truth=None, extra_delay_ms=0.0, inject=0,
-             mismatch="none", model_ht=0.6235, plant_param="z0.param",
+             mismatch="none", model_ht=0.1589, plant_param="z0.param",
              ref_span_z=0.0):
     """一份最小但**判据层跑得动**的 obs（形状与 `run_flight_b` 的输出一致）。"""
     frames = [frame(i) for i in range(int(DUR_S * FRAME_HZ))] if frames is None else frames
@@ -232,7 +232,7 @@ def test_判据3的好飞机不该被地面段判成触地():
 def test_稳定窗口止于最后一次正常帧():
     """★ 判据④ 那场里注入之后**全程**都是兜底帧。窗口若取到整场末尾，
     "兜底保不住高度"就会被记成"判据① 悬停精度不行" —— 一条 ❌ 混两件事。"""
-    fs = [frame(i) for i in range(100)] + [frame(i, fallback="hover", thrust=-0.6235)
+    fs = [frame(i) for i in range(100)] + [frame(i, fallback="hover", thrust=-0.1589)
                                           for i in range(100, 300)]
     lo, hi = b.steady_bounds(fs, steady_s=1.0)
     assert hi == pytest.approx(fs[99]["wall_ns"] / 1e9)
@@ -519,7 +519,7 @@ def test_判据3_慢慢漂走也算发散():
 
 
 def _m5_obs(*, descent_pred=0.0, plant_param="z0-mass+30.param", mismatch="mass+30",
-            hold_n=5, hover_n=500, model_ht=0.6235):
+            hold_n=5, hover_n=500, model_ht=0.1589):
     """造一场"注入求解失败"的观测：前段正常，中段 `hold`，后段 `hover`；高度按
     `descent_pred` 匀加速往下掉（0 = 兜底把高度保持住了）。"""
     n_head, n = 20, 20 + hold_n + hover_n
@@ -551,7 +551,7 @@ def test_判据4A_阶梯按_hold_到_hover_走了_就算阶梯通过():
     a = one(b.evaluate_b(obs), "★判据④-A")
     assert a["ok"] is True, a["detail"]
     assert obs["fallback_report"]["order"] == ["normal", "hold", "hover"]
-    assert obs["fallback_report"]["hover_thrust_body_z_seen"] == [-0.6235]
+    assert obs["fallback_report"]["hover_thrust_body_z_seen"] == [-0.1589]
 
 
 def test_判据4A_只进hover没经过hold_不算走完阶梯():
@@ -583,13 +583,13 @@ def test_判据4B_预测下降率与机型文件同源_且符号对():
     b.evaluate_b(obs)
     pred = obs["m5"]["predicted_descent_ms2"]
     want = b.plant_hover_thrust("z0-mass+30.param")["hover_thrust"]
-    assert pred == pytest.approx((1.0 - 0.6235 / want) * 9.81)
+    assert pred == pytest.approx((1.0 - 0.1589 / want) * 9.81)
     assert pred > 0                                    # 模型推力不足 ⟹ 下坠
     assert pred == pytest.approx(2.264, abs=0.01)
 
 
 def test_判据4B_对得上的被控对象_预测值应该是零():
-    obs = _m5_obs(plant_param="z0.param", mismatch="none", model_ht=0.6235)
+    obs = _m5_obs(plant_param="z0.param", mismatch="none", model_ht=0.1589)
     b.evaluate_b(obs)
     assert abs(obs["m5"]["predicted_descent_ms2"]) < 0.01
 
@@ -787,7 +787,7 @@ def test_重判一份存下来的obs_会复用已存的姿态误差读数_不重
 def _cfg(**kw):
     """`--reference-source traj` 那一档的 cfg（只有 `dut_params_b`/`ref_z_offset_m` 用到的字段）。"""
     import types
-    base = dict(log_file="/tmp/x.jsonl", hover_thrust=0.6235, rate_hz=100.0,
+    base = dict(log_file="/tmp/x.jsonl", hover_thrust=0.1589, rate_hz=100.0,
                 hold_x=0.0, hold_y=0.0, hold_z=1.0,
                 reference_source="hold", ref_hold_s=30.0, ref_z_offset_m=None,
                 inject_solve_fail_after_frames=0)
@@ -813,7 +813,7 @@ def test_hold档的DUT参数_逐字不变():
     p = b.dut_params_b(_cfg(hold_x=0.1, hold_y=-0.2, hold_z=1.5))
     for want in ("hold_offset_x:=0.1", "hold_offset_y:=-0.2", "hold_offset_z:=1.5",
                  "reference_source:=hold", "state_source:=mocap",
-                 "hover_thrust:=0.6235", "rate_hz:=100.0"):
+                 "hover_thrust:=0.1589", "rate_hz:=100.0"):
         assert want in p, f"{want} 丢了：{p}"
 
 

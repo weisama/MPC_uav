@@ -39,7 +39,9 @@ import argparse
 import sys
 import numpy as np
 
-#: 模型口径（B 档 SITL）：与 `evidence/tier-b/F*-summary.json` 的 `model_hover_thrust` 同源
+#: 模型口径（B 档 SITL，**重搭前**）：与 `evidence/tier-b/F*-summary.json` 的 `model_hover_thrust` 同源。
+#: ⚠️ 被控对象已于 2026-10-09 按真机实测重搭（落地记录见 ticket 21 / phase3 的 `04`）⟹ 本常数
+#:    **不再是现行口径**，仅为回放那批旧归档而保留；现行 B 档用节点默认值（`0.1589`）。
 HOVER_THRUST_SITL = 0.6235
 #: 被控对象：`mass+30` 的 SIH 机型（`z0-mass+30.param` ⟹ 见 `F1b-summary.json` 的 `plant_hover`）
 PLANT_MASS = 0.975

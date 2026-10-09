@@ -1,0 +1,3854 @@
+[
+  {
+    "variant": "z0",
+    "overlay": "/home/chen/ros_ws/tools/px4-sitl/z0-plant/params/z0.param",
+    "checks": [
+      {
+        "name": "param CA_ROTOR0_CT",
+        "ok": true,
+        "detail": "期望 6.5，读到 6.5"
+      },
+      {
+        "name": "param CA_ROTOR0_KM",
+        "ok": true,
+        "detail": "期望 0.05，读到 0.05"
+      },
+      {
+        "name": "param CA_ROTOR0_PX",
+        "ok": true,
+        "detail": "期望 0.0537401，读到 0.0537"
+      },
+      {
+        "name": "param CA_ROTOR0_PY",
+        "ok": true,
+        "detail": "期望 0.0537401，读到 0.0537"
+      },
+      {
+        "name": "param CA_ROTOR1_KM",
+        "ok": true,
+        "detail": "期望 0.05，读到 0.05"
+      },
+      {
+        "name": "param CA_ROTOR1_PX",
+        "ok": true,
+        "detail": "期望 -0.0537401，读到 -0.0537"
+      },
+      {
+        "name": "param CA_ROTOR1_PY",
+        "ok": true,
+        "detail": "期望 -0.0537401，读到 -0.0537"
+      },
+      {
+        "name": "param CA_ROTOR2_KM",
+        "ok": true,
+        "detail": "期望 -0.05，读到 -0.05"
+      },
+      {
+        "name": "param CA_ROTOR2_PX",
+        "ok": true,
+        "detail": "期望 0.0537401，读到 0.0537"
+      },
+      {
+        "name": "param CA_ROTOR2_PY",
+        "ok": true,
+        "detail": "期望 -0.0537401，读到 -0.0537"
+      },
+      {
+        "name": "param CA_ROTOR3_KM",
+        "ok": true,
+        "detail": "期望 -0.05，读到 -0.05"
+      },
+      {
+        "name": "param CA_ROTOR3_PX",
+        "ok": true,
+        "detail": "期望 -0.0537401，读到 -0.0537"
+      },
+      {
+        "name": "param CA_ROTOR3_PY",
+        "ok": true,
+        "detail": "期望 0.0537401，读到 0.0537"
+      },
+      {
+        "name": "param CA_ROTOR_COUNT",
+        "ok": true,
+        "detail": "期望 4，读到 4"
+      },
+      {
+        "name": "param CBRK_IO_SAFETY",
+        "ok": true,
+        "detail": "期望 22027，读到 22027"
+      },
+      {
+        "name": "param CBRK_SUPPLY_CHK",
+        "ok": true,
+        "detail": "期望 894281，读到 894281"
+      },
+      {
+        "name": "param MC_AIRMODE",
+        "ok": true,
+        "detail": "期望 0，读到 0"
+      },
+      {
+        "name": "param MC_BAT_SCALE_EN",
+        "ok": true,
+        "detail": "期望 0，读到 0"
+      },
+      {
+        "name": "param MC_PITCHRATE_MAX",
+        "ok": true,
+        "detail": "期望 220，读到 220"
+      },
+      {
+        "name": "param MC_PITCHRATE_P",
+        "ok": true,
+        "detail": "期望 0.15，读到 0.15"
+      },
+      {
+        "name": "param MC_ROLLRATE_MAX",
+        "ok": true,
+        "detail": "期望 220，读到 220"
+      },
+      {
+        "name": "param MC_ROLLRATE_P",
+        "ok": true,
+        "detail": "期望 0.15，读到 0.15"
+      },
+      {
+        "name": "param MC_YAWRATE_MAX",
+        "ok": true,
+        "detail": "期望 360，读到 360"
+      },
+      {
+        "name": "param MC_YAWRATE_P",
+        "ok": true,
+        "detail": "期望 0.2，读到 0.2"
+      },
+      {
+        "name": "param MPC_TILTMAX_AIR",
+        "ok": true,
+        "detail": "期望 45，读到 45"
+      },
+      {
+        "name": "param PWM_MAIN_FUNC1",
+        "ok": true,
+        "detail": "期望 101，读到 101"
+      },
+      {
+        "name": "param PWM_MAIN_FUNC2",
+        "ok": true,
+        "detail": "期望 102，读到 102"
+      },
+      {
+        "name": "param PWM_MAIN_FUNC3",
+        "ok": true,
+        "detail": "期望 103，读到 103"
+      },
+      {
+        "name": "param PWM_MAIN_FUNC4",
+        "ok": true,
+        "detail": "期望 104，读到 104"
+      },
+      {
+        "name": "param SENS_EN_BAROSIM",
+        "ok": true,
+        "detail": "期望 1，读到 1"
+      },
+      {
+        "name": "param SENS_EN_GPSSIM",
+        "ok": true,
+        "detail": "期望 1，读到 1"
+      },
+      {
+        "name": "param SENS_EN_MAGSIM",
+        "ok": true,
+        "detail": "期望 1，读到 1"
+      },
+      {
+        "name": "param SIH_IXX",
+        "ok": true,
+        "detail": "期望 0.002166，读到 0.0022"
+      },
+      {
+        "name": "param SIH_IXY",
+        "ok": true,
+        "detail": "期望 0，读到 0"
+      },
+      {
+        "name": "param SIH_IXZ",
+        "ok": true,
+        "detail": "期望 0，读到 0"
+      },
+      {
+        "name": "param SIH_IYY",
+        "ok": true,
+        "detail": "期望 0.002166，读到 0.0022"
+      },
+      {
+        "name": "param SIH_IYZ",
+        "ok": true,
+        "detail": "期望 0，读到 0"
+      },
+      {
+        "name": "param SIH_IZZ",
+        "ok": true,
+        "detail": "期望 0.004332，读到 0.0043"
+      },
+      {
+        "name": "param SIH_KDV",
+        "ok": true,
+        "detail": "期望 1，读到 1"
+      },
+      {
+        "name": "param SIH_KDW",
+        "ok": true,
+        "detail": "期望 0.025，读到 0.025"
+      },
+      {
+        "name": "param SIH_L_PITCH",
+        "ok": true,
+        "detail": "期望 0.0537401，读到 0.0537"
+      },
+      {
+        "name": "param SIH_L_ROLL",
+        "ok": true,
+        "detail": "期望 0.0537401，读到 0.0537"
+      },
+      {
+        "name": "param SIH_MASS",
+        "ok": true,
+        "detail": "期望 0.75，读到 0.75"
+      },
+      {
+        "name": "param SIH_Q_MAX",
+        "ok": true,
+        "detail": "期望 0.578784，读到 0.5788"
+      },
+      {
+        "name": "param SIH_T_MAX",
+        "ok": true,
+        "detail": "期望 11.5757，读到 11.5757"
+      },
+      {
+        "name": "param SIH_T_TAU",
+        "ok": true,
+        "detail": "期望 0.05，读到 0.05"
+      },
+      {
+        "name": "param SIH_VEHICLE_TYPE",
+        "ok": true,
+        "detail": "期望 0，读到 0"
+      },
+      {
+        "name": "param THR_MDL_FAC",
+        "ok": true,
+        "detail": "期望 0，读到 0"
+      },
+      {
+        "name": "动态基线：落地静止（az==0 且 z≈0）",
+        "ok": true,
+        "detail": "z=0.00016, az=0.0, vz=0.0"
+      },
+      {
+        "name": "动态：四条电机命令都落到位（`actuator_outputs_sim` = 电机信号）",
+        "ok": true,
+        "detail": "读到 [0.184, 0.184, 0.184, 0.184]，期望 0.1842（-v 0.1842 过混控器曲线，THR_MDL_FAC 0.0）"
+      },
+      {
+        "name": "动态：真的离地了（否则竖向下式不成立）",
+        "ok": true,
+        "detail": "z=-0.85994"
+      },
+      {
+        "name": "动态：姿态基本水平（倾斜 <15°，公式只按 cosθ 修正）",
+        "ok": true,
+        "detail": "cosθ=0.9984（3.2°）"
+      },
+      {
+        "name": "动态：实测总推力 ≈ 4 × SIH_T_MAX × 电机信号",
+        "ok": true,
+        "detail": "实测 8.521 N vs 期望 8.528 N（-0.1%）"
+      }
+    ],
+    "ok": true,
+    "dynamic": {
+      "checks": [],
+      "mass": 0.75,
+      "t_max": 11.575675,
+      "sum_u_hover": 0.6353830338187622,
+      "motor_signal": 0.18416899530978612,
+      "motor_signal_expect": 0.18416899530978612,
+      "thrust_cmd": 0.18416899530978612,
+      "thrust_pred": 8.527521739130433,
+      "thr_mdl_fac": 0.0,
+      "before": {
+        "z": 0.00016,
+        "az": 0.0,
+        "vz": 0.0
+      },
+      "after": {
+        "z": -0.85994,
+        "az": -0.24499,
+        "vz": -0.96853,
+        "cos_tilt": 0.9984238956,
+        "outputs": [
+          0.184,
+          0.184,
+          0.184,
+          0.184,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "reads": 2,
+        "resent_motors": [
+          1,
+          2,
+          3,
+          4
+        ]
+      },
+      "thrust_est": 8.520689496206003,
+      "thrust_err_rel": -0.0008011991213201846
+    }
+  },
+  {
+    "variant": "z0-mass+30",
+    "overlay": "/home/chen/ros_ws/tools/px4-sitl/z0-plant/params/z0-mass+30.param",
+    "checks": [
+      {
+        "name": "param CA_ROTOR0_CT",
+        "ok": true,
+        "detail": "期望 6.5，读到 6.5"
+      },
+      {
+        "name": "param CA_ROTOR0_KM",
+        "ok": true,
+        "detail": "期望 0.05，读到 0.05"
+      },
+      {
+        "name": "param CA_ROTOR0_PX",
+        "ok": true,
+        "detail": "期望 0.0537401，读到 0.0537"
+      },
+      {
+        "name": "param CA_ROTOR0_PY",
+        "ok": true,
+        "detail": "期望 0.0537401，读到 0.0537"
+      },
+      {
+        "name": "param CA_ROTOR1_KM",
+        "ok": true,
+        "detail": "期望 0.05，读到 0.05"
+      },
+      {
+        "name": "param CA_ROTOR1_PX",
+        "ok": true,
+        "detail": "期望 -0.0537401，读到 -0.0537"
+      },
+      {
+        "name": "param CA_ROTOR1_PY",
+        "ok": true,
+        "detail": "期望 -0.0537401，读到 -0.0537"
+      },
+      {
+        "name": "param CA_ROTOR2_KM",
+        "ok": true,
+        "detail": "期望 -0.05，读到 -0.05"
+      },
+      {
+        "name": "param CA_ROTOR2_PX",
+        "ok": true,
+        "detail": "期望 0.0537401，读到 0.0537"
+      },
+      {
+        "name": "param CA_ROTOR2_PY",
+        "ok": true,
+        "detail": "期望 -0.0537401，读到 -0.0537"
+      },
+      {
+        "name": "param CA_ROTOR3_KM",
+        "ok": true,
+        "detail": "期望 -0.05，读到 -0.05"
+      },
+      {
+        "name": "param CA_ROTOR3_PX",
+        "ok": true,
+        "detail": "期望 -0.0537401，读到 -0.0537"
+      },
+      {
+        "name": "param CA_ROTOR3_PY",
+        "ok": true,
+        "detail": "期望 0.0537401，读到 0.0537"
+      },
+      {
+        "name": "param CA_ROTOR_COUNT",
+        "ok": true,
+        "detail": "期望 4，读到 4"
+      },
+      {
+        "name": "param CBRK_IO_SAFETY",
+        "ok": true,
+        "detail": "期望 22027，读到 22027"
+      },
+      {
+        "name": "param CBRK_SUPPLY_CHK",
+        "ok": true,
+        "detail": "期望 894281，读到 894281"
+      },
+      {
+        "name": "param MC_AIRMODE",
+        "ok": true,
+        "detail": "期望 0，读到 0"
+      },
+      {
+        "name": "param MC_BAT_SCALE_EN",
+        "ok": true,
+        "detail": "期望 0，读到 0"
+      },
+      {
+        "name": "param MC_PITCHRATE_MAX",
+        "ok": true,
+        "detail": "期望 220，读到 220"
+      },
+      {
+        "name": "param MC_PITCHRATE_P",
+        "ok": true,
+        "detail": "期望 0.15，读到 0.15"
+      },
+      {
+        "name": "param MC_ROLLRATE_MAX",
+        "ok": true,
+        "detail": "期望 220，读到 220"
+      },
+      {
+        "name": "param MC_ROLLRATE_P",
+        "ok": true,
+        "detail": "期望 0.15，读到 0.15"
+      },
+      {
+        "name": "param MC_YAWRATE_MAX",
+        "ok": true,
+        "detail": "期望 360，读到 360"
+      },
+      {
+        "name": "param MC_YAWRATE_P",
+        "ok": true,
+        "detail": "期望 0.2，读到 0.2"
+      },
+      {
+        "name": "param MPC_TILTMAX_AIR",
+        "ok": true,
+        "detail": "期望 45，读到 45"
+      },
+      {
+        "name": "param PWM_MAIN_FUNC1",
+        "ok": true,
+        "detail": "期望 101，读到 101"
+      },
+      {
+        "name": "param PWM_MAIN_FUNC2",
+        "ok": true,
+        "detail": "期望 102，读到 102"
+      },
+      {
+        "name": "param PWM_MAIN_FUNC3",
+        "ok": true,
+        "detail": "期望 103，读到 103"
+      },
+      {
+        "name": "param PWM_MAIN_FUNC4",
+        "ok": true,
+        "detail": "期望 104，读到 104"
+      },
+      {
+        "name": "param SENS_EN_BAROSIM",
+        "ok": true,
+        "detail": "期望 1，读到 1"
+      },
+      {
+        "name": "param SENS_EN_GPSSIM",
+        "ok": true,
+        "detail": "期望 1，读到 1"
+      },
+      {
+        "name": "param SENS_EN_MAGSIM",
+        "ok": true,
+        "detail": "期望 1，读到 1"
+      },
+      {
+        "name": "param SIH_IXX",
+        "ok": true,
+        "detail": "期望 0.002166，读到 0.0022"
+      },
+      {
+        "name": "param SIH_IXY",
+        "ok": true,
+        "detail": "期望 0，读到 0"
+      },
+      {
+        "name": "param SIH_IXZ",
+        "ok": true,
+        "detail": "期望 0，读到 0"
+      },
+      {
+        "name": "param SIH_IYY",
+        "ok": true,
+        "detail": "期望 0.002166，读到 0.0022"
+      },
+      {
+        "name": "param SIH_IYZ",
+        "ok": true,
+        "detail": "期望 0，读到 0"
+      },
+      {
+        "name": "param SIH_IZZ",
+        "ok": true,
+        "detail": "期望 0.004332，读到 0.0043"
+      },
+      {
+        "name": "param SIH_KDV",
+        "ok": true,
+        "detail": "期望 1，读到 1"
+      },
+      {
+        "name": "param SIH_KDW",
+        "ok": true,
+        "detail": "期望 0.025，读到 0.025"
+      },
+      {
+        "name": "param SIH_L_PITCH",
+        "ok": true,
+        "detail": "期望 0.0537401，读到 0.0537"
+      },
+      {
+        "name": "param SIH_L_ROLL",
+        "ok": true,
+        "detail": "期望 0.0537401，读到 0.0537"
+      },
+      {
+        "name": "param SIH_MASS",
+        "ok": true,
+        "detail": "期望 0.975，读到 0.975"
+      },
+      {
+        "name": "param SIH_Q_MAX",
+        "ok": true,
+        "detail": "期望 0.578784，读到 0.5788"
+      },
+      {
+        "name": "param SIH_T_MAX",
+        "ok": true,
+        "detail": "期望 11.5757，读到 11.5757"
+      },
+      {
+        "name": "param SIH_T_TAU",
+        "ok": true,
+        "detail": "期望 0.05，读到 0.05"
+      },
+      {
+        "name": "param SIH_VEHICLE_TYPE",
+        "ok": true,
+        "detail": "期望 0，读到 0"
+      },
+      {
+        "name": "param THR_MDL_FAC",
+        "ok": true,
+        "detail": "期望 0，读到 0"
+      },
+      {
+        "name": "动态基线：落地静止（az==0 且 z≈0）",
+        "ok": true,
+        "detail": "z=0.00016, az=0.0, vz=0.0"
+      },
+      {
+        "name": "动态：四条电机命令都落到位（`actuator_outputs_sim` = 电机信号）",
+        "ok": true,
+        "detail": "读到 [0.239, 0.239, 0.239, 0.239]，期望 0.2394（-v 0.2394 过混控器曲线，THR_MDL_FAC 0.0）"
+      },
+      {
+        "name": "动态：真的离地了（否则竖向下式不成立）",
+        "ok": true,
+        "detail": "z=-0.9493"
+      },
+      {
+        "name": "动态：姿态基本水平（倾斜 <15°，公式只按 cosθ 修正）",
+        "ok": true,
+        "detail": "cosθ=0.9973（4.2°）"
+      },
+      {
+        "name": "动态：实测总推力 ≈ 4 × SIH_T_MAX × 电机信号",
+        "ok": true,
+        "detail": "实测 11.068 N vs 期望 11.086 N（-0.2%）"
+      }
+    ],
+    "ok": true,
+    "dynamic": {
+      "checks": [],
+      "mass": 0.9750000000000001,
+      "t_max": 11.575675,
+      "sum_u_hover": 0.8259979439643909,
+      "motor_signal": 0.23941969390272197,
+      "motor_signal_expect": 0.23941969390272197,
+      "thrust_cmd": 0.23941969390272197,
+      "thrust_pred": 11.085778260869565,
+      "thr_mdl_fac": 0.0,
+      "before": {
+        "z": 0.00016,
+        "az": 0.0,
+        "vz": 0.0
+      },
+      "after": {
+        "z": -0.9493,
+        "az": -0.36716,
+        "vz": -1.11896,
+        "cos_tilt": 0.9973425534,
+        "outputs": [
+          0.239,
+          0.239,
+          0.239,
+          0.239,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "reads": 2,
+        "resent_motors": [
+          1,
+          2,
+          3,
+          4
+        ]
+      },
+      "thrust_est": 11.067836935633956,
+      "thrust_err_rel": -0.0016184091737554047
+    }
+  },
+  {
+    "variant": "z0-mass-30",
+    "overlay": "/home/chen/ros_ws/tools/px4-sitl/z0-plant/params/z0-mass-30.param",
+    "checks": [
+      {
+        "name": "param CA_ROTOR0_CT",
+        "ok": true,
+        "detail": "期望 6.5，读到 6.5"
+      },
+      {
+        "name": "param CA_ROTOR0_KM",
+        "ok": true,
+        "detail": "期望 0.05，读到 0.05"
+      },
+      {
+        "name": "param CA_ROTOR0_PX",
+        "ok": true,
+        "detail": "期望 0.0537401，读到 0.0537"
+      },
+      {
+        "name": "param CA_ROTOR0_PY",
+        "ok": true,
+        "detail": "期望 0.0537401，读到 0.0537"
+      },
+      {
+        "name": "param CA_ROTOR1_KM",
+        "ok": true,
+        "detail": "期望 0.05，读到 0.05"
+      },
+      {
+        "name": "param CA_ROTOR1_PX",
+        "ok": true,
+        "detail": "期望 -0.0537401，读到 -0.0537"
+      },
+      {
+        "name": "param CA_ROTOR1_PY",
+        "ok": true,
+        "detail": "期望 -0.0537401，读到 -0.0537"
+      },
+      {
+        "name": "param CA_ROTOR2_KM",
+        "ok": true,
+        "detail": "期望 -0.05，读到 -0.05"
+      },
+      {
+        "name": "param CA_ROTOR2_PX",
+        "ok": true,
+        "detail": "期望 0.0537401，读到 0.0537"
+      },
+      {
+        "name": "param CA_ROTOR2_PY",
+        "ok": true,
+        "detail": "期望 -0.0537401，读到 -0.0537"
+      },
+      {
+        "name": "param CA_ROTOR3_KM",
+        "ok": true,
+        "detail": "期望 -0.05，读到 -0.05"
+      },
+      {
+        "name": "param CA_ROTOR3_PX",
+        "ok": true,
+        "detail": "期望 -0.0537401，读到 -0.0537"
+      },
+      {
+        "name": "param CA_ROTOR3_PY",
+        "ok": true,
+        "detail": "期望 0.0537401，读到 0.0537"
+      },
+      {
+        "name": "param CA_ROTOR_COUNT",
+        "ok": true,
+        "detail": "期望 4，读到 4"
+      },
+      {
+        "name": "param CBRK_IO_SAFETY",
+        "ok": true,
+        "detail": "期望 22027，读到 22027"
+      },
+      {
+        "name": "param CBRK_SUPPLY_CHK",
+        "ok": true,
+        "detail": "期望 894281，读到 894281"
+      },
+      {
+        "name": "param MC_AIRMODE",
+        "ok": true,
+        "detail": "期望 0，读到 0"
+      },
+      {
+        "name": "param MC_BAT_SCALE_EN",
+        "ok": true,
+        "detail": "期望 0，读到 0"
+      },
+      {
+        "name": "param MC_PITCHRATE_MAX",
+        "ok": true,
+        "detail": "期望 220，读到 220"
+      },
+      {
+        "name": "param MC_PITCHRATE_P",
+        "ok": true,
+        "detail": "期望 0.15，读到 0.15"
+      },
+      {
+        "name": "param MC_ROLLRATE_MAX",
+        "ok": true,
+        "detail": "期望 220，读到 220"
+      },
+      {
+        "name": "param MC_ROLLRATE_P",
+        "ok": true,
+        "detail": "期望 0.15，读到 0.15"
+      },
+      {
+        "name": "param MC_YAWRATE_MAX",
+        "ok": true,
+        "detail": "期望 360，读到 360"
+      },
+      {
+        "name": "param MC_YAWRATE_P",
+        "ok": true,
+        "detail": "期望 0.2，读到 0.2"
+      },
+      {
+        "name": "param MPC_TILTMAX_AIR",
+        "ok": true,
+        "detail": "期望 45，读到 45"
+      },
+      {
+        "name": "param PWM_MAIN_FUNC1",
+        "ok": true,
+        "detail": "期望 101，读到 101"
+      },
+      {
+        "name": "param PWM_MAIN_FUNC2",
+        "ok": true,
+        "detail": "期望 102，读到 102"
+      },
+      {
+        "name": "param PWM_MAIN_FUNC3",
+        "ok": true,
+        "detail": "期望 103，读到 103"
+      },
+      {
+        "name": "param PWM_MAIN_FUNC4",
+        "ok": true,
+        "detail": "期望 104，读到 104"
+      },
+      {
+        "name": "param SENS_EN_BAROSIM",
+        "ok": true,
+        "detail": "期望 1，读到 1"
+      },
+      {
+        "name": "param SENS_EN_GPSSIM",
+        "ok": true,
+        "detail": "期望 1，读到 1"
+      },
+      {
+        "name": "param SENS_EN_MAGSIM",
+        "ok": true,
+        "detail": "期望 1，读到 1"
+      },
+      {
+        "name": "param SIH_IXX",
+        "ok": true,
+        "detail": "期望 0.002166，读到 0.0022"
+      },
+      {
+        "name": "param SIH_IXY",
+        "ok": true,
+        "detail": "期望 0，读到 0"
+      },
+      {
+        "name": "param SIH_IXZ",
+        "ok": true,
+        "detail": "期望 0，读到 0"
+      },
+      {
+        "name": "param SIH_IYY",
+        "ok": true,
+        "detail": "期望 0.002166，读到 0.0022"
+      },
+      {
+        "name": "param SIH_IYZ",
+        "ok": true,
+        "detail": "期望 0，读到 0"
+      },
+      {
+        "name": "param SIH_IZZ",
+        "ok": true,
+        "detail": "期望 0.004332，读到 0.0043"
+      },
+      {
+        "name": "param SIH_KDV",
+        "ok": true,
+        "detail": "期望 1，读到 1"
+      },
+      {
+        "name": "param SIH_KDW",
+        "ok": true,
+        "detail": "期望 0.025，读到 0.025"
+      },
+      {
+        "name": "param SIH_L_PITCH",
+        "ok": true,
+        "detail": "期望 0.0537401，读到 0.0537"
+      },
+      {
+        "name": "param SIH_L_ROLL",
+        "ok": true,
+        "detail": "期望 0.0537401，读到 0.0537"
+      },
+      {
+        "name": "param SIH_MASS",
+        "ok": true,
+        "detail": "期望 0.525，读到 0.525"
+      },
+      {
+        "name": "param SIH_Q_MAX",
+        "ok": true,
+        "detail": "期望 0.578784，读到 0.5788"
+      },
+      {
+        "name": "param SIH_T_MAX",
+        "ok": true,
+        "detail": "期望 11.5757，读到 11.5757"
+      },
+      {
+        "name": "param SIH_T_TAU",
+        "ok": true,
+        "detail": "期望 0.05，读到 0.05"
+      },
+      {
+        "name": "param SIH_VEHICLE_TYPE",
+        "ok": true,
+        "detail": "期望 0，读到 0"
+      },
+      {
+        "name": "param THR_MDL_FAC",
+        "ok": true,
+        "detail": "期望 0，读到 0"
+      },
+      {
+        "name": "动态基线：落地静止（az==0 且 z≈0）",
+        "ok": true,
+        "detail": "z=0.00016, az=0.0, vz=0.0"
+      },
+      {
+        "name": "动态：四条电机命令都落到位（`actuator_outputs_sim` = 电机信号）",
+        "ok": true,
+        "detail": "读到 [0.128, 0.128, 0.128, 0.128]，期望 0.1289（-v 0.1289 过混控器曲线，THR_MDL_FAC 0.0）"
+      },
+      {
+        "name": "动态：真的离地了（否则竖向下式不成立）",
+        "ok": true,
+        "detail": "z=-0.68998"
+      },
+      {
+        "name": "动态：姿态基本水平（倾斜 <15°，公式只按 cosθ 修正）",
+        "ok": true,
+        "detail": "cosθ=0.9992（2.2°）"
+      },
+      {
+        "name": "动态：实测总推力 ≈ 4 × SIH_T_MAX × 电机信号",
+        "ok": true,
+        "detail": "实测 5.927 N vs 期望 5.969 N（-0.7%）"
+      }
+    ],
+    "ok": true,
+    "dynamic": {
+      "checks": [],
+      "mass": 0.5249999999999999,
+      "t_max": 11.575675,
+      "sum_u_hover": 0.4447681236731334,
+      "motor_signal": 0.12891829671685026,
+      "motor_signal_expect": 0.12891829671685026,
+      "thrust_cmd": 0.12891829671685026,
+      "thrust_pred": 5.969265217391303,
+      "thr_mdl_fac": 0.0,
+      "before": {
+        "z": 0.00016,
+        "az": 0.0,
+        "vz": 0.0
+      },
+      "after": {
+        "z": -0.68998,
+        "az": -0.10672,
+        "vz": -0.71814,
+        "cos_tilt": 0.999237132,
+        "outputs": [
+          0.128,
+          0.128,
+          0.128,
+          0.128,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "reads": 2,
+        "resent_motors": [
+          1,
+          2,
+          3,
+          4
+        ]
+      },
+      "thrust_est": 5.927180906643889,
+      "thrust_err_rel": -0.007050166011187257
+    }
+  },
+  {
+    "variant": "z0-thrust+30",
+    "overlay": "/home/chen/ros_ws/tools/px4-sitl/z0-plant/params/z0-thrust+30.param",
+    "checks": [
+      {
+        "name": "param CA_ROTOR0_CT",
+        "ok": true,
+        "detail": "期望 6.5，读到 6.5"
+      },
+      {
+        "name": "param CA_ROTOR0_KM",
+        "ok": true,
+        "detail": "期望 0.05，读到 0.05"
+      },
+      {
+        "name": "param CA_ROTOR0_PX",
+        "ok": true,
+        "detail": "期望 0.0537401，读到 0.0537"
+      },
+      {
+        "name": "param CA_ROTOR0_PY",
+        "ok": true,
+        "detail": "期望 0.0537401，读到 0.0537"
+      },
+      {
+        "name": "param CA_ROTOR1_KM",
+        "ok": true,
+        "detail": "期望 0.05，读到 0.05"
+      },
+      {
+        "name": "param CA_ROTOR1_PX",
+        "ok": true,
+        "detail": "期望 -0.0537401，读到 -0.0537"
+      },
+      {
+        "name": "param CA_ROTOR1_PY",
+        "ok": true,
+        "detail": "期望 -0.0537401，读到 -0.0537"
+      },
+      {
+        "name": "param CA_ROTOR2_KM",
+        "ok": true,
+        "detail": "期望 -0.05，读到 -0.05"
+      },
+      {
+        "name": "param CA_ROTOR2_PX",
+        "ok": true,
+        "detail": "期望 0.0537401，读到 0.0537"
+      },
+      {
+        "name": "param CA_ROTOR2_PY",
+        "ok": true,
+        "detail": "期望 -0.0537401，读到 -0.0537"
+      },
+      {
+        "name": "param CA_ROTOR3_KM",
+        "ok": true,
+        "detail": "期望 -0.05，读到 -0.05"
+      },
+      {
+        "name": "param CA_ROTOR3_PX",
+        "ok": true,
+        "detail": "期望 -0.0537401，读到 -0.0537"
+      },
+      {
+        "name": "param CA_ROTOR3_PY",
+        "ok": true,
+        "detail": "期望 0.0537401，读到 0.0537"
+      },
+      {
+        "name": "param CA_ROTOR_COUNT",
+        "ok": true,
+        "detail": "期望 4，读到 4"
+      },
+      {
+        "name": "param CBRK_IO_SAFETY",
+        "ok": true,
+        "detail": "期望 22027，读到 22027"
+      },
+      {
+        "name": "param CBRK_SUPPLY_CHK",
+        "ok": true,
+        "detail": "期望 894281，读到 894281"
+      },
+      {
+        "name": "param MC_AIRMODE",
+        "ok": true,
+        "detail": "期望 0，读到 0"
+      },
+      {
+        "name": "param MC_BAT_SCALE_EN",
+        "ok": true,
+        "detail": "期望 0，读到 0"
+      },
+      {
+        "name": "param MC_PITCHRATE_MAX",
+        "ok": true,
+        "detail": "期望 220，读到 220"
+      },
+      {
+        "name": "param MC_PITCHRATE_P",
+        "ok": true,
+        "detail": "期望 0.15，读到 0.15"
+      },
+      {
+        "name": "param MC_ROLLRATE_MAX",
+        "ok": true,
+        "detail": "期望 220，读到 220"
+      },
+      {
+        "name": "param MC_ROLLRATE_P",
+        "ok": true,
+        "detail": "期望 0.15，读到 0.15"
+      },
+      {
+        "name": "param MC_YAWRATE_MAX",
+        "ok": true,
+        "detail": "期望 360，读到 360"
+      },
+      {
+        "name": "param MC_YAWRATE_P",
+        "ok": true,
+        "detail": "期望 0.2，读到 0.2"
+      },
+      {
+        "name": "param MPC_TILTMAX_AIR",
+        "ok": true,
+        "detail": "期望 45，读到 45"
+      },
+      {
+        "name": "param PWM_MAIN_FUNC1",
+        "ok": true,
+        "detail": "期望 101，读到 101"
+      },
+      {
+        "name": "param PWM_MAIN_FUNC2",
+        "ok": true,
+        "detail": "期望 102，读到 102"
+      },
+      {
+        "name": "param PWM_MAIN_FUNC3",
+        "ok": true,
+        "detail": "期望 103，读到 103"
+      },
+      {
+        "name": "param PWM_MAIN_FUNC4",
+        "ok": true,
+        "detail": "期望 104，读到 104"
+      },
+      {
+        "name": "param SENS_EN_BAROSIM",
+        "ok": true,
+        "detail": "期望 1，读到 1"
+      },
+      {
+        "name": "param SENS_EN_GPSSIM",
+        "ok": true,
+        "detail": "期望 1，读到 1"
+      },
+      {
+        "name": "param SENS_EN_MAGSIM",
+        "ok": true,
+        "detail": "期望 1，读到 1"
+      },
+      {
+        "name": "param SIH_IXX",
+        "ok": true,
+        "detail": "期望 0.002166，读到 0.0022"
+      },
+      {
+        "name": "param SIH_IXY",
+        "ok": true,
+        "detail": "期望 0，读到 0"
+      },
+      {
+        "name": "param SIH_IXZ",
+        "ok": true,
+        "detail": "期望 0，读到 0"
+      },
+      {
+        "name": "param SIH_IYY",
+        "ok": true,
+        "detail": "期望 0.002166，读到 0.0022"
+      },
+      {
+        "name": "param SIH_IYZ",
+        "ok": true,
+        "detail": "期望 0，读到 0"
+      },
+      {
+        "name": "param SIH_IZZ",
+        "ok": true,
+        "detail": "期望 0.004332，读到 0.0043"
+      },
+      {
+        "name": "param SIH_KDV",
+        "ok": true,
+        "detail": "期望 1，读到 1"
+      },
+      {
+        "name": "param SIH_KDW",
+        "ok": true,
+        "detail": "期望 0.025，读到 0.025"
+      },
+      {
+        "name": "param SIH_L_PITCH",
+        "ok": true,
+        "detail": "期望 0.0537401，读到 0.0537"
+      },
+      {
+        "name": "param SIH_L_ROLL",
+        "ok": true,
+        "detail": "期望 0.0537401，读到 0.0537"
+      },
+      {
+        "name": "param SIH_MASS",
+        "ok": true,
+        "detail": "期望 0.75，读到 0.75"
+      },
+      {
+        "name": "param SIH_Q_MAX",
+        "ok": true,
+        "detail": "期望 0.752419，读到 0.7524"
+      },
+      {
+        "name": "param SIH_T_MAX",
+        "ok": true,
+        "detail": "期望 15.0484，读到 15.0484"
+      },
+      {
+        "name": "param SIH_T_TAU",
+        "ok": true,
+        "detail": "期望 0.05，读到 0.05"
+      },
+      {
+        "name": "param SIH_VEHICLE_TYPE",
+        "ok": true,
+        "detail": "期望 0，读到 0"
+      },
+      {
+        "name": "param THR_MDL_FAC",
+        "ok": true,
+        "detail": "期望 0，读到 0"
+      },
+      {
+        "name": "动态基线：落地静止（az==0 且 z≈0）",
+        "ok": true,
+        "detail": "z=0.00016, az=0.0, vz=0.0"
+      },
+      {
+        "name": "动态：四条电机命令都落到位（`actuator_outputs_sim` = 电机信号）",
+        "ok": true,
+        "detail": "读到 [0.141, 0.141, 0.141, 0.141]，期望 0.1417（-v 0.1417 过混控器曲线，THR_MDL_FAC 0.0）"
+      },
+      {
+        "name": "动态：真的离地了（否则竖向下式不成立）",
+        "ok": true,
+        "detail": "z=-0.81565"
+      },
+      {
+        "name": "动态：姿态基本水平（倾斜 <15°，公式只按 cosθ 修正）",
+        "ok": true,
+        "detail": "cosθ=0.9864（9.5°）"
+      },
+      {
+        "name": "动态：实测总推力 ≈ 4 × SIH_T_MAX × 电机信号",
+        "ok": true,
+        "detail": "实测 8.488 N vs 期望 8.528 N（-0.5%）"
+      }
+    ],
+    "ok": true,
+    "dynamic": {
+      "checks": [],
+      "mass": 0.75,
+      "t_max": 15.0483775,
+      "sum_u_hover": 0.4887561798605863,
+      "motor_signal": 0.1416684579306047,
+      "motor_signal_expect": 0.1416684579306047,
+      "thrust_cmd": 0.1416684579306047,
+      "thrust_pred": 8.527521739130433,
+      "thr_mdl_fac": 0.0,
+      "before": {
+        "z": 0.00016,
+        "az": 0.0,
+        "vz": 0.0
+      },
+      "after": {
+        "z": -0.81565,
+        "az": -0.19754,
+        "vz": -0.86936,
+        "cos_tilt": 0.986382299,
+        "outputs": [
+          0.141,
+          0.141,
+          0.141,
+          0.141,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "reads": 2,
+        "resent_motors": [
+          1,
+          2,
+          3,
+          4
+        ]
+      },
+      "thrust_est": 8.48809078233469,
+      "thrust_err_rel": -0.004623964382853055
+    }
+  },
+  {
+    "variant": "z0-thrust-30",
+    "overlay": "/home/chen/ros_ws/tools/px4-sitl/z0-plant/params/z0-thrust-30.param",
+    "checks": [
+      {
+        "name": "param CA_ROTOR0_CT",
+        "ok": true,
+        "detail": "期望 6.5，读到 6.5"
+      },
+      {
+        "name": "param CA_ROTOR0_KM",
+        "ok": true,
+        "detail": "期望 0.05，读到 0.05"
+      },
+      {
+        "name": "param CA_ROTOR0_PX",
+        "ok": true,
+        "detail": "期望 0.0537401，读到 0.0537"
+      },
+      {
+        "name": "param CA_ROTOR0_PY",
+        "ok": true,
+        "detail": "期望 0.0537401，读到 0.0537"
+      },
+      {
+        "name": "param CA_ROTOR1_KM",
+        "ok": true,
+        "detail": "期望 0.05，读到 0.05"
+      },
+      {
+        "name": "param CA_ROTOR1_PX",
+        "ok": true,
+        "detail": "期望 -0.0537401，读到 -0.0537"
+      },
+      {
+        "name": "param CA_ROTOR1_PY",
+        "ok": true,
+        "detail": "期望 -0.0537401，读到 -0.0537"
+      },
+      {
+        "name": "param CA_ROTOR2_KM",
+        "ok": true,
+        "detail": "期望 -0.05，读到 -0.05"
+      },
+      {
+        "name": "param CA_ROTOR2_PX",
+        "ok": true,
+        "detail": "期望 0.0537401，读到 0.0537"
+      },
+      {
+        "name": "param CA_ROTOR2_PY",
+        "ok": true,
+        "detail": "期望 -0.0537401，读到 -0.0537"
+      },
+      {
+        "name": "param CA_ROTOR3_KM",
+        "ok": true,
+        "detail": "期望 -0.05，读到 -0.05"
+      },
+      {
+        "name": "param CA_ROTOR3_PX",
+        "ok": true,
+        "detail": "期望 -0.0537401，读到 -0.0537"
+      },
+      {
+        "name": "param CA_ROTOR3_PY",
+        "ok": true,
+        "detail": "期望 0.0537401，读到 0.0537"
+      },
+      {
+        "name": "param CA_ROTOR_COUNT",
+        "ok": true,
+        "detail": "期望 4，读到 4"
+      },
+      {
+        "name": "param CBRK_IO_SAFETY",
+        "ok": true,
+        "detail": "期望 22027，读到 22027"
+      },
+      {
+        "name": "param CBRK_SUPPLY_CHK",
+        "ok": true,
+        "detail": "期望 894281，读到 894281"
+      },
+      {
+        "name": "param MC_AIRMODE",
+        "ok": true,
+        "detail": "期望 0，读到 0"
+      },
+      {
+        "name": "param MC_BAT_SCALE_EN",
+        "ok": true,
+        "detail": "期望 0，读到 0"
+      },
+      {
+        "name": "param MC_PITCHRATE_MAX",
+        "ok": true,
+        "detail": "期望 220，读到 220"
+      },
+      {
+        "name": "param MC_PITCHRATE_P",
+        "ok": true,
+        "detail": "期望 0.15，读到 0.15"
+      },
+      {
+        "name": "param MC_ROLLRATE_MAX",
+        "ok": true,
+        "detail": "期望 220，读到 220"
+      },
+      {
+        "name": "param MC_ROLLRATE_P",
+        "ok": true,
+        "detail": "期望 0.15，读到 0.15"
+      },
+      {
+        "name": "param MC_YAWRATE_MAX",
+        "ok": true,
+        "detail": "期望 360，读到 360"
+      },
+      {
+        "name": "param MC_YAWRATE_P",
+        "ok": true,
+        "detail": "期望 0.2，读到 0.2"
+      },
+      {
+        "name": "param MPC_TILTMAX_AIR",
+        "ok": true,
+        "detail": "期望 45，读到 45"
+      },
+      {
+        "name": "param PWM_MAIN_FUNC1",
+        "ok": true,
+        "detail": "期望 101，读到 101"
+      },
+      {
+        "name": "param PWM_MAIN_FUNC2",
+        "ok": true,
+        "detail": "期望 102，读到 102"
+      },
+      {
+        "name": "param PWM_MAIN_FUNC3",
+        "ok": true,
+        "detail": "期望 103，读到 103"
+      },
+      {
+        "name": "param PWM_MAIN_FUNC4",
+        "ok": true,
+        "detail": "期望 104，读到 104"
+      },
+      {
+        "name": "param SENS_EN_BAROSIM",
+        "ok": true,
+        "detail": "期望 1，读到 1"
+      },
+      {
+        "name": "param SENS_EN_GPSSIM",
+        "ok": true,
+        "detail": "期望 1，读到 1"
+      },
+      {
+        "name": "param SENS_EN_MAGSIM",
+        "ok": true,
+        "detail": "期望 1，读到 1"
+      },
+      {
+        "name": "param SIH_IXX",
+        "ok": true,
+        "detail": "期望 0.002166，读到 0.0022"
+      },
+      {
+        "name": "param SIH_IXY",
+        "ok": true,
+        "detail": "期望 0，读到 0"
+      },
+      {
+        "name": "param SIH_IXZ",
+        "ok": true,
+        "detail": "期望 0，读到 0"
+      },
+      {
+        "name": "param SIH_IYY",
+        "ok": true,
+        "detail": "期望 0.002166，读到 0.0022"
+      },
+      {
+        "name": "param SIH_IYZ",
+        "ok": true,
+        "detail": "期望 0，读到 0"
+      },
+      {
+        "name": "param SIH_IZZ",
+        "ok": true,
+        "detail": "期望 0.004332，读到 0.0043"
+      },
+      {
+        "name": "param SIH_KDV",
+        "ok": true,
+        "detail": "期望 1，读到 1"
+      },
+      {
+        "name": "param SIH_KDW",
+        "ok": true,
+        "detail": "期望 0.025，读到 0.025"
+      },
+      {
+        "name": "param SIH_L_PITCH",
+        "ok": true,
+        "detail": "期望 0.0537401，读到 0.0537"
+      },
+      {
+        "name": "param SIH_L_ROLL",
+        "ok": true,
+        "detail": "期望 0.0537401，读到 0.0537"
+      },
+      {
+        "name": "param SIH_MASS",
+        "ok": true,
+        "detail": "期望 0.75，读到 0.75"
+      },
+      {
+        "name": "param SIH_Q_MAX",
+        "ok": true,
+        "detail": "期望 0.405149，读到 0.4051"
+      },
+      {
+        "name": "param SIH_T_MAX",
+        "ok": true,
+        "detail": "期望 8.10297，读到 8.103"
+      },
+      {
+        "name": "param SIH_T_TAU",
+        "ok": true,
+        "detail": "期望 0.05，读到 0.05"
+      },
+      {
+        "name": "param SIH_VEHICLE_TYPE",
+        "ok": true,
+        "detail": "期望 0，读到 0"
+      },
+      {
+        "name": "param THR_MDL_FAC",
+        "ok": true,
+        "detail": "期望 0，读到 0"
+      },
+      {
+        "name": "动态基线：落地静止（az==0 且 z≈0）",
+        "ok": true,
+        "detail": "z=0.00016, az=0.0, vz=0.0"
+      },
+      {
+        "name": "动态：四条电机命令都落到位（`actuator_outputs_sim` = 电机信号）",
+        "ok": true,
+        "detail": "读到 [0.263, 0.263, 0.263, 0.263]，期望 0.2631（-v 0.2631 过混控器曲线，THR_MDL_FAC 0.0）"
+      },
+      {
+        "name": "动态：真的离地了（否则竖向下式不成立）",
+        "ok": true,
+        "detail": "z=-0.86471"
+      },
+      {
+        "name": "动态：姿态基本水平（倾斜 <15°，公式只按 cosθ 修正）",
+        "ok": true,
+        "detail": "cosθ=0.9984（3.2°）"
+      },
+      {
+        "name": "动态：实测总推力 ≈ 4 × SIH_T_MAX × 电机信号",
+        "ok": true,
+        "detail": "实测 8.525 N vs 期望 8.528 N（-0.0%）"
+      }
+    ],
+    "ok": true,
+    "dynamic": {
+      "checks": [],
+      "mass": 0.75,
+      "t_max": 8.1029725,
+      "sum_u_hover": 0.9076900483125174,
+      "motor_signal": 0.2630985647282659,
+      "motor_signal_expect": 0.2630985647282659,
+      "thrust_cmd": 0.2630985647282659,
+      "thrust_pred": 8.527521739130435,
+      "thr_mdl_fac": 0.0,
+      "before": {
+        "z": 0.00016,
+        "az": 0.0,
+        "vz": 0.0
+      },
+      "after": {
+        "z": -0.86471,
+        "az": -0.24547,
+        "vz": -0.97267,
+        "cos_tilt": 0.9984122918,
+        "outputs": [
+          0.263,
+          0.263,
+          0.263,
+          0.263,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "reads": 2,
+        "resent_motors": [
+          1,
+          2,
+          3,
+          4
+        ]
+      },
+      "thrust_est": 8.525295681861515,
+      "thrust_err_rel": -0.00026104386913560076
+    }
+  },
+  {
+    "variant": "z0-inertia+30",
+    "overlay": "/home/chen/ros_ws/tools/px4-sitl/z0-plant/params/z0-inertia+30.param",
+    "checks": [
+      {
+        "name": "param CA_ROTOR0_CT",
+        "ok": true,
+        "detail": "期望 6.5，读到 6.5"
+      },
+      {
+        "name": "param CA_ROTOR0_KM",
+        "ok": true,
+        "detail": "期望 0.05，读到 0.05"
+      },
+      {
+        "name": "param CA_ROTOR0_PX",
+        "ok": true,
+        "detail": "期望 0.0537401，读到 0.0537"
+      },
+      {
+        "name": "param CA_ROTOR0_PY",
+        "ok": true,
+        "detail": "期望 0.0537401，读到 0.0537"
+      },
+      {
+        "name": "param CA_ROTOR1_KM",
+        "ok": true,
+        "detail": "期望 0.05，读到 0.05"
+      },
+      {
+        "name": "param CA_ROTOR1_PX",
+        "ok": true,
+        "detail": "期望 -0.0537401，读到 -0.0537"
+      },
+      {
+        "name": "param CA_ROTOR1_PY",
+        "ok": true,
+        "detail": "期望 -0.0537401，读到 -0.0537"
+      },
+      {
+        "name": "param CA_ROTOR2_KM",
+        "ok": true,
+        "detail": "期望 -0.05，读到 -0.05"
+      },
+      {
+        "name": "param CA_ROTOR2_PX",
+        "ok": true,
+        "detail": "期望 0.0537401，读到 0.0537"
+      },
+      {
+        "name": "param CA_ROTOR2_PY",
+        "ok": true,
+        "detail": "期望 -0.0537401，读到 -0.0537"
+      },
+      {
+        "name": "param CA_ROTOR3_KM",
+        "ok": true,
+        "detail": "期望 -0.05，读到 -0.05"
+      },
+      {
+        "name": "param CA_ROTOR3_PX",
+        "ok": true,
+        "detail": "期望 -0.0537401，读到 -0.0537"
+      },
+      {
+        "name": "param CA_ROTOR3_PY",
+        "ok": true,
+        "detail": "期望 0.0537401，读到 0.0537"
+      },
+      {
+        "name": "param CA_ROTOR_COUNT",
+        "ok": true,
+        "detail": "期望 4，读到 4"
+      },
+      {
+        "name": "param CBRK_IO_SAFETY",
+        "ok": true,
+        "detail": "期望 22027，读到 22027"
+      },
+      {
+        "name": "param CBRK_SUPPLY_CHK",
+        "ok": true,
+        "detail": "期望 894281，读到 894281"
+      },
+      {
+        "name": "param MC_AIRMODE",
+        "ok": true,
+        "detail": "期望 0，读到 0"
+      },
+      {
+        "name": "param MC_BAT_SCALE_EN",
+        "ok": true,
+        "detail": "期望 0，读到 0"
+      },
+      {
+        "name": "param MC_PITCHRATE_MAX",
+        "ok": true,
+        "detail": "期望 220，读到 220"
+      },
+      {
+        "name": "param MC_PITCHRATE_P",
+        "ok": true,
+        "detail": "期望 0.15，读到 0.15"
+      },
+      {
+        "name": "param MC_ROLLRATE_MAX",
+        "ok": true,
+        "detail": "期望 220，读到 220"
+      },
+      {
+        "name": "param MC_ROLLRATE_P",
+        "ok": true,
+        "detail": "期望 0.15，读到 0.15"
+      },
+      {
+        "name": "param MC_YAWRATE_MAX",
+        "ok": true,
+        "detail": "期望 360，读到 360"
+      },
+      {
+        "name": "param MC_YAWRATE_P",
+        "ok": true,
+        "detail": "期望 0.2，读到 0.2"
+      },
+      {
+        "name": "param MPC_TILTMAX_AIR",
+        "ok": true,
+        "detail": "期望 45，读到 45"
+      },
+      {
+        "name": "param PWM_MAIN_FUNC1",
+        "ok": true,
+        "detail": "期望 101，读到 101"
+      },
+      {
+        "name": "param PWM_MAIN_FUNC2",
+        "ok": true,
+        "detail": "期望 102，读到 102"
+      },
+      {
+        "name": "param PWM_MAIN_FUNC3",
+        "ok": true,
+        "detail": "期望 103，读到 103"
+      },
+      {
+        "name": "param PWM_MAIN_FUNC4",
+        "ok": true,
+        "detail": "期望 104，读到 104"
+      },
+      {
+        "name": "param SENS_EN_BAROSIM",
+        "ok": true,
+        "detail": "期望 1，读到 1"
+      },
+      {
+        "name": "param SENS_EN_GPSSIM",
+        "ok": true,
+        "detail": "期望 1，读到 1"
+      },
+      {
+        "name": "param SENS_EN_MAGSIM",
+        "ok": true,
+        "detail": "期望 1，读到 1"
+      },
+      {
+        "name": "param SIH_IXX",
+        "ok": true,
+        "detail": "期望 0.0028158，读到 0.0028"
+      },
+      {
+        "name": "param SIH_IXY",
+        "ok": true,
+        "detail": "期望 0，读到 0"
+      },
+      {
+        "name": "param SIH_IXZ",
+        "ok": true,
+        "detail": "期望 0，读到 0"
+      },
+      {
+        "name": "param SIH_IYY",
+        "ok": true,
+        "detail": "期望 0.0028158，读到 0.0028"
+      },
+      {
+        "name": "param SIH_IYZ",
+        "ok": true,
+        "detail": "期望 0，读到 0"
+      },
+      {
+        "name": "param SIH_IZZ",
+        "ok": true,
+        "detail": "期望 0.0056316，读到 0.0056"
+      },
+      {
+        "name": "param SIH_KDV",
+        "ok": true,
+        "detail": "期望 1，读到 1"
+      },
+      {
+        "name": "param SIH_KDW",
+        "ok": true,
+        "detail": "期望 0.025，读到 0.025"
+      },
+      {
+        "name": "param SIH_L_PITCH",
+        "ok": true,
+        "detail": "期望 0.0537401，读到 0.0537"
+      },
+      {
+        "name": "param SIH_L_ROLL",
+        "ok": true,
+        "detail": "期望 0.0537401，读到 0.0537"
+      },
+      {
+        "name": "param SIH_MASS",
+        "ok": true,
+        "detail": "期望 0.75，读到 0.75"
+      },
+      {
+        "name": "param SIH_Q_MAX",
+        "ok": true,
+        "detail": "期望 0.578784，读到 0.5788"
+      },
+      {
+        "name": "param SIH_T_MAX",
+        "ok": true,
+        "detail": "期望 11.5757，读到 11.5757"
+      },
+      {
+        "name": "param SIH_T_TAU",
+        "ok": true,
+        "detail": "期望 0.05，读到 0.05"
+      },
+      {
+        "name": "param SIH_VEHICLE_TYPE",
+        "ok": true,
+        "detail": "期望 0，读到 0"
+      },
+      {
+        "name": "param THR_MDL_FAC",
+        "ok": true,
+        "detail": "期望 0，读到 0"
+      },
+      {
+        "name": "动态基线：落地静止（az==0 且 z≈0）",
+        "ok": true,
+        "detail": "z=0.00016, az=0.0, vz=0.0"
+      },
+      {
+        "name": "动态：四条电机命令都落到位（`actuator_outputs_sim` = 电机信号）",
+        "ok": true,
+        "detail": "读到 [0.184, 0.184, 0.184, 0.184]，期望 0.1842（-v 0.1842 过混控器曲线，THR_MDL_FAC 0.0）"
+      },
+      {
+        "name": "动态：真的离地了（否则竖向下式不成立）",
+        "ok": true,
+        "detail": "z=-0.85751"
+      },
+      {
+        "name": "动态：姿态基本水平（倾斜 <15°，公式只按 cosθ 修正）",
+        "ok": true,
+        "detail": "cosθ=0.9981（3.5°）"
+      },
+      {
+        "name": "动态：实测总推力 ≈ 4 × SIH_T_MAX × 电机信号",
+        "ok": true,
+        "detail": "实测 8.521 N vs 期望 8.528 N（-0.1%）"
+      }
+    ],
+    "ok": true,
+    "dynamic": {
+      "checks": [],
+      "mass": 0.75,
+      "t_max": 11.575675,
+      "sum_u_hover": 0.6353830338187622,
+      "motor_signal": 0.18416899530978612,
+      "motor_signal_expect": 0.18416899530978612,
+      "thrust_cmd": 0.18416899530978612,
+      "thrust_pred": 8.527521739130433,
+      "thr_mdl_fac": 0.0,
+      "before": {
+        "z": 0.00016,
+        "az": 0.0,
+        "vz": 0.0
+      },
+      "after": {
+        "z": -0.85751,
+        "az": -0.24458,
+        "vz": -0.9664,
+        "cos_tilt": 0.9981371948,
+        "outputs": [
+          0.184,
+          0.184,
+          0.184,
+          0.184,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "reads": 2,
+        "resent_motors": [
+          1,
+          2,
+          3,
+          4
+        ]
+      },
+      "thrust_est": 8.520694894757568,
+      "thrust_err_rel": -0.0008005660474060928
+    }
+  },
+  {
+    "variant": "z0-inertia-30",
+    "overlay": "/home/chen/ros_ws/tools/px4-sitl/z0-plant/params/z0-inertia-30.param",
+    "checks": [
+      {
+        "name": "param CA_ROTOR0_CT",
+        "ok": true,
+        "detail": "期望 6.5，读到 6.5"
+      },
+      {
+        "name": "param CA_ROTOR0_KM",
+        "ok": true,
+        "detail": "期望 0.05，读到 0.05"
+      },
+      {
+        "name": "param CA_ROTOR0_PX",
+        "ok": true,
+        "detail": "期望 0.0537401，读到 0.0537"
+      },
+      {
+        "name": "param CA_ROTOR0_PY",
+        "ok": true,
+        "detail": "期望 0.0537401，读到 0.0537"
+      },
+      {
+        "name": "param CA_ROTOR1_KM",
+        "ok": true,
+        "detail": "期望 0.05，读到 0.05"
+      },
+      {
+        "name": "param CA_ROTOR1_PX",
+        "ok": true,
+        "detail": "期望 -0.0537401，读到 -0.0537"
+      },
+      {
+        "name": "param CA_ROTOR1_PY",
+        "ok": true,
+        "detail": "期望 -0.0537401，读到 -0.0537"
+      },
+      {
+        "name": "param CA_ROTOR2_KM",
+        "ok": true,
+        "detail": "期望 -0.05，读到 -0.05"
+      },
+      {
+        "name": "param CA_ROTOR2_PX",
+        "ok": true,
+        "detail": "期望 0.0537401，读到 0.0537"
+      },
+      {
+        "name": "param CA_ROTOR2_PY",
+        "ok": true,
+        "detail": "期望 -0.0537401，读到 -0.0537"
+      },
+      {
+        "name": "param CA_ROTOR3_KM",
+        "ok": true,
+        "detail": "期望 -0.05，读到 -0.05"
+      },
+      {
+        "name": "param CA_ROTOR3_PX",
+        "ok": true,
+        "detail": "期望 -0.0537401，读到 -0.0537"
+      },
+      {
+        "name": "param CA_ROTOR3_PY",
+        "ok": true,
+        "detail": "期望 0.0537401，读到 0.0537"
+      },
+      {
+        "name": "param CA_ROTOR_COUNT",
+        "ok": true,
+        "detail": "期望 4，读到 4"
+      },
+      {
+        "name": "param CBRK_IO_SAFETY",
+        "ok": true,
+        "detail": "期望 22027，读到 22027"
+      },
+      {
+        "name": "param CBRK_SUPPLY_CHK",
+        "ok": true,
+        "detail": "期望 894281，读到 894281"
+      },
+      {
+        "name": "param MC_AIRMODE",
+        "ok": true,
+        "detail": "期望 0，读到 0"
+      },
+      {
+        "name": "param MC_BAT_SCALE_EN",
+        "ok": true,
+        "detail": "期望 0，读到 0"
+      },
+      {
+        "name": "param MC_PITCHRATE_MAX",
+        "ok": true,
+        "detail": "期望 220，读到 220"
+      },
+      {
+        "name": "param MC_PITCHRATE_P",
+        "ok": true,
+        "detail": "期望 0.15，读到 0.15"
+      },
+      {
+        "name": "param MC_ROLLRATE_MAX",
+        "ok": true,
+        "detail": "期望 220，读到 220"
+      },
+      {
+        "name": "param MC_ROLLRATE_P",
+        "ok": true,
+        "detail": "期望 0.15，读到 0.15"
+      },
+      {
+        "name": "param MC_YAWRATE_MAX",
+        "ok": true,
+        "detail": "期望 360，读到 360"
+      },
+      {
+        "name": "param MC_YAWRATE_P",
+        "ok": true,
+        "detail": "期望 0.2，读到 0.2"
+      },
+      {
+        "name": "param MPC_TILTMAX_AIR",
+        "ok": true,
+        "detail": "期望 45，读到 45"
+      },
+      {
+        "name": "param PWM_MAIN_FUNC1",
+        "ok": true,
+        "detail": "期望 101，读到 101"
+      },
+      {
+        "name": "param PWM_MAIN_FUNC2",
+        "ok": true,
+        "detail": "期望 102，读到 102"
+      },
+      {
+        "name": "param PWM_MAIN_FUNC3",
+        "ok": true,
+        "detail": "期望 103，读到 103"
+      },
+      {
+        "name": "param PWM_MAIN_FUNC4",
+        "ok": true,
+        "detail": "期望 104，读到 104"
+      },
+      {
+        "name": "param SENS_EN_BAROSIM",
+        "ok": true,
+        "detail": "期望 1，读到 1"
+      },
+      {
+        "name": "param SENS_EN_GPSSIM",
+        "ok": true,
+        "detail": "期望 1，读到 1"
+      },
+      {
+        "name": "param SENS_EN_MAGSIM",
+        "ok": true,
+        "detail": "期望 1，读到 1"
+      },
+      {
+        "name": "param SIH_IXX",
+        "ok": true,
+        "detail": "期望 0.0015162，读到 0.0015"
+      },
+      {
+        "name": "param SIH_IXY",
+        "ok": true,
+        "detail": "期望 0，读到 0"
+      },
+      {
+        "name": "param SIH_IXZ",
+        "ok": true,
+        "detail": "期望 0，读到 0"
+      },
+      {
+        "name": "param SIH_IYY",
+        "ok": true,
+        "detail": "期望 0.0015162，读到 0.0015"
+      },
+      {
+        "name": "param SIH_IYZ",
+        "ok": true,
+        "detail": "期望 0，读到 0"
+      },
+      {
+        "name": "param SIH_IZZ",
+        "ok": true,
+        "detail": "期望 0.0030324，读到 0.003"
+      },
+      {
+        "name": "param SIH_KDV",
+        "ok": true,
+        "detail": "期望 1，读到 1"
+      },
+      {
+        "name": "param SIH_KDW",
+        "ok": true,
+        "detail": "期望 0.025，读到 0.025"
+      },
+      {
+        "name": "param SIH_L_PITCH",
+        "ok": true,
+        "detail": "期望 0.0537401，读到 0.0537"
+      },
+      {
+        "name": "param SIH_L_ROLL",
+        "ok": true,
+        "detail": "期望 0.0537401，读到 0.0537"
+      },
+      {
+        "name": "param SIH_MASS",
+        "ok": true,
+        "detail": "期望 0.75，读到 0.75"
+      },
+      {
+        "name": "param SIH_Q_MAX",
+        "ok": true,
+        "detail": "期望 0.578784，读到 0.5788"
+      },
+      {
+        "name": "param SIH_T_MAX",
+        "ok": true,
+        "detail": "期望 11.5757，读到 11.5757"
+      },
+      {
+        "name": "param SIH_T_TAU",
+        "ok": true,
+        "detail": "期望 0.05，读到 0.05"
+      },
+      {
+        "name": "param SIH_VEHICLE_TYPE",
+        "ok": true,
+        "detail": "期望 0，读到 0"
+      },
+      {
+        "name": "param THR_MDL_FAC",
+        "ok": true,
+        "detail": "期望 0，读到 0"
+      },
+      {
+        "name": "动态基线：落地静止（az==0 且 z≈0）",
+        "ok": true,
+        "detail": "z=0.00016, az=0.0, vz=0.0"
+      },
+      {
+        "name": "动态：四条电机命令都落到位（`actuator_outputs_sim` = 电机信号）",
+        "ok": true,
+        "detail": "读到 [0.184, 0.184, 0.184, 0.184]，期望 0.1842（-v 0.1842 过混控器曲线，THR_MDL_FAC 0.0）"
+      },
+      {
+        "name": "动态：真的离地了（否则竖向下式不成立）",
+        "ok": true,
+        "detail": "z=-0.86342"
+      },
+      {
+        "name": "动态：姿态基本水平（倾斜 <15°，公式只按 cosθ 修正）",
+        "ok": true,
+        "detail": "cosθ=0.9984（3.2°）"
+      },
+      {
+        "name": "动态：实测总推力 ≈ 4 × SIH_T_MAX × 电机信号",
+        "ok": true,
+        "detail": "实测 8.521 N vs 期望 8.528 N（-0.1%）"
+      }
+    ],
+    "ok": true,
+    "dynamic": {
+      "checks": [],
+      "mass": 0.75,
+      "t_max": 11.575675,
+      "sum_u_hover": 0.6353830338187622,
+      "motor_signal": 0.18416899530978612,
+      "motor_signal_expect": 0.18416899530978612,
+      "thrust_cmd": 0.18416899530978612,
+      "thrust_pred": 8.527521739130433,
+      "thr_mdl_fac": 0.0,
+      "before": {
+        "z": 0.00016,
+        "az": 0.0,
+        "vz": 0.0
+      },
+      "after": {
+        "z": -0.86342,
+        "az": -0.24387,
+        "vz": -0.96937,
+        "cos_tilt": 0.9984239,
+        "outputs": [
+          0.184,
+          0.184,
+          0.184,
+          0.184,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "reads": 2,
+        "resent_motors": [
+          1,
+          2,
+          3,
+          4
+        ]
+      },
+      "thrust_est": 8.520689458655786,
+      "thrust_err_rel": -0.000801203524735187
+    }
+  },
+  {
+    "variant": "z0-tau+30",
+    "overlay": "/home/chen/ros_ws/tools/px4-sitl/z0-plant/params/z0-tau+30.param",
+    "checks": [
+      {
+        "name": "param CA_ROTOR0_CT",
+        "ok": true,
+        "detail": "期望 6.5，读到 6.5"
+      },
+      {
+        "name": "param CA_ROTOR0_KM",
+        "ok": true,
+        "detail": "期望 0.05，读到 0.05"
+      },
+      {
+        "name": "param CA_ROTOR0_PX",
+        "ok": true,
+        "detail": "期望 0.0537401，读到 0.0537"
+      },
+      {
+        "name": "param CA_ROTOR0_PY",
+        "ok": true,
+        "detail": "期望 0.0537401，读到 0.0537"
+      },
+      {
+        "name": "param CA_ROTOR1_KM",
+        "ok": true,
+        "detail": "期望 0.05，读到 0.05"
+      },
+      {
+        "name": "param CA_ROTOR1_PX",
+        "ok": true,
+        "detail": "期望 -0.0537401，读到 -0.0537"
+      },
+      {
+        "name": "param CA_ROTOR1_PY",
+        "ok": true,
+        "detail": "期望 -0.0537401，读到 -0.0537"
+      },
+      {
+        "name": "param CA_ROTOR2_KM",
+        "ok": true,
+        "detail": "期望 -0.05，读到 -0.05"
+      },
+      {
+        "name": "param CA_ROTOR2_PX",
+        "ok": true,
+        "detail": "期望 0.0537401，读到 0.0537"
+      },
+      {
+        "name": "param CA_ROTOR2_PY",
+        "ok": true,
+        "detail": "期望 -0.0537401，读到 -0.0537"
+      },
+      {
+        "name": "param CA_ROTOR3_KM",
+        "ok": true,
+        "detail": "期望 -0.05，读到 -0.05"
+      },
+      {
+        "name": "param CA_ROTOR3_PX",
+        "ok": true,
+        "detail": "期望 -0.0537401，读到 -0.0537"
+      },
+      {
+        "name": "param CA_ROTOR3_PY",
+        "ok": true,
+        "detail": "期望 0.0537401，读到 0.0537"
+      },
+      {
+        "name": "param CA_ROTOR_COUNT",
+        "ok": true,
+        "detail": "期望 4，读到 4"
+      },
+      {
+        "name": "param CBRK_IO_SAFETY",
+        "ok": true,
+        "detail": "期望 22027，读到 22027"
+      },
+      {
+        "name": "param CBRK_SUPPLY_CHK",
+        "ok": true,
+        "detail": "期望 894281，读到 894281"
+      },
+      {
+        "name": "param MC_AIRMODE",
+        "ok": true,
+        "detail": "期望 0，读到 0"
+      },
+      {
+        "name": "param MC_BAT_SCALE_EN",
+        "ok": true,
+        "detail": "期望 0，读到 0"
+      },
+      {
+        "name": "param MC_PITCHRATE_MAX",
+        "ok": true,
+        "detail": "期望 220，读到 220"
+      },
+      {
+        "name": "param MC_PITCHRATE_P",
+        "ok": true,
+        "detail": "期望 0.15，读到 0.15"
+      },
+      {
+        "name": "param MC_ROLLRATE_MAX",
+        "ok": true,
+        "detail": "期望 220，读到 220"
+      },
+      {
+        "name": "param MC_ROLLRATE_P",
+        "ok": true,
+        "detail": "期望 0.15，读到 0.15"
+      },
+      {
+        "name": "param MC_YAWRATE_MAX",
+        "ok": true,
+        "detail": "期望 360，读到 360"
+      },
+      {
+        "name": "param MC_YAWRATE_P",
+        "ok": true,
+        "detail": "期望 0.2，读到 0.2"
+      },
+      {
+        "name": "param MPC_TILTMAX_AIR",
+        "ok": true,
+        "detail": "期望 45，读到 45"
+      },
+      {
+        "name": "param PWM_MAIN_FUNC1",
+        "ok": true,
+        "detail": "期望 101，读到 101"
+      },
+      {
+        "name": "param PWM_MAIN_FUNC2",
+        "ok": true,
+        "detail": "期望 102，读到 102"
+      },
+      {
+        "name": "param PWM_MAIN_FUNC3",
+        "ok": true,
+        "detail": "期望 103，读到 103"
+      },
+      {
+        "name": "param PWM_MAIN_FUNC4",
+        "ok": true,
+        "detail": "期望 104，读到 104"
+      },
+      {
+        "name": "param SENS_EN_BAROSIM",
+        "ok": true,
+        "detail": "期望 1，读到 1"
+      },
+      {
+        "name": "param SENS_EN_GPSSIM",
+        "ok": true,
+        "detail": "期望 1，读到 1"
+      },
+      {
+        "name": "param SENS_EN_MAGSIM",
+        "ok": true,
+        "detail": "期望 1，读到 1"
+      },
+      {
+        "name": "param SIH_IXX",
+        "ok": true,
+        "detail": "期望 0.002166，读到 0.0022"
+      },
+      {
+        "name": "param SIH_IXY",
+        "ok": true,
+        "detail": "期望 0，读到 0"
+      },
+      {
+        "name": "param SIH_IXZ",
+        "ok": true,
+        "detail": "期望 0，读到 0"
+      },
+      {
+        "name": "param SIH_IYY",
+        "ok": true,
+        "detail": "期望 0.002166，读到 0.0022"
+      },
+      {
+        "name": "param SIH_IYZ",
+        "ok": true,
+        "detail": "期望 0，读到 0"
+      },
+      {
+        "name": "param SIH_IZZ",
+        "ok": true,
+        "detail": "期望 0.004332，读到 0.0043"
+      },
+      {
+        "name": "param SIH_KDV",
+        "ok": true,
+        "detail": "期望 1，读到 1"
+      },
+      {
+        "name": "param SIH_KDW",
+        "ok": true,
+        "detail": "期望 0.025，读到 0.025"
+      },
+      {
+        "name": "param SIH_L_PITCH",
+        "ok": true,
+        "detail": "期望 0.0537401，读到 0.0537"
+      },
+      {
+        "name": "param SIH_L_ROLL",
+        "ok": true,
+        "detail": "期望 0.0537401，读到 0.0537"
+      },
+      {
+        "name": "param SIH_MASS",
+        "ok": true,
+        "detail": "期望 0.75，读到 0.75"
+      },
+      {
+        "name": "param SIH_Q_MAX",
+        "ok": true,
+        "detail": "期望 0.578784，读到 0.5788"
+      },
+      {
+        "name": "param SIH_T_MAX",
+        "ok": true,
+        "detail": "期望 11.5757，读到 11.5757"
+      },
+      {
+        "name": "param SIH_T_TAU",
+        "ok": true,
+        "detail": "期望 0.065，读到 0.065"
+      },
+      {
+        "name": "param SIH_VEHICLE_TYPE",
+        "ok": true,
+        "detail": "期望 0，读到 0"
+      },
+      {
+        "name": "param THR_MDL_FAC",
+        "ok": true,
+        "detail": "期望 0，读到 0"
+      },
+      {
+        "name": "动态基线：落地静止（az==0 且 z≈0）",
+        "ok": true,
+        "detail": "z=0.00016, az=0.0, vz=0.0"
+      },
+      {
+        "name": "动态：四条电机命令都落到位（`actuator_outputs_sim` = 电机信号）",
+        "ok": true,
+        "detail": "读到 [0.184, 0.184, 0.184, 0.184]，期望 0.1842（-v 0.1842 过混控器曲线，THR_MDL_FAC 0.0）"
+      },
+      {
+        "name": "动态：真的离地了（否则竖向下式不成立）",
+        "ok": true,
+        "detail": "z=-0.81844"
+      },
+      {
+        "name": "动态：姿态基本水平（倾斜 <15°，公式只按 cosθ 修正）",
+        "ok": true,
+        "detail": "cosθ=0.9972（4.3°）"
+      },
+      {
+        "name": "动态：实测总推力 ≈ 4 × SIH_T_MAX × 电机信号",
+        "ok": true,
+        "detail": "实测 8.521 N vs 期望 8.528 N（-0.1%）"
+      }
+    ],
+    "ok": true,
+    "dynamic": {
+      "checks": [],
+      "mass": 0.75,
+      "t_max": 11.575675,
+      "sum_u_hover": 0.6353830338187622,
+      "motor_signal": 0.18416899530978612,
+      "motor_signal_expect": 0.18416899530978612,
+      "thrust_cmd": 0.18416899530978612,
+      "thrust_pred": 8.527521739130433,
+      "thr_mdl_fac": 0.0,
+      "before": {
+        "z": 0.00016,
+        "az": 0.0,
+        "vz": 0.0
+      },
+      "after": {
+        "z": -0.81844,
+        "az": -0.25473,
+        "vz": -0.95048,
+        "cos_tilt": 0.9971580078,
+        "outputs": [
+          0.184,
+          0.184,
+          0.184,
+          0.184,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "reads": 2,
+        "resent_motors": [
+          1,
+          2,
+          3,
+          4
+        ]
+      },
+      "thrust_est": 8.52073085061575,
+      "thrust_err_rel": -0.0007963495986789792
+    }
+  },
+  {
+    "variant": "z0-tau-30",
+    "overlay": "/home/chen/ros_ws/tools/px4-sitl/z0-plant/params/z0-tau-30.param",
+    "checks": [
+      {
+        "name": "param CA_ROTOR0_CT",
+        "ok": true,
+        "detail": "期望 6.5，读到 6.5"
+      },
+      {
+        "name": "param CA_ROTOR0_KM",
+        "ok": true,
+        "detail": "期望 0.05，读到 0.05"
+      },
+      {
+        "name": "param CA_ROTOR0_PX",
+        "ok": true,
+        "detail": "期望 0.0537401，读到 0.0537"
+      },
+      {
+        "name": "param CA_ROTOR0_PY",
+        "ok": true,
+        "detail": "期望 0.0537401，读到 0.0537"
+      },
+      {
+        "name": "param CA_ROTOR1_KM",
+        "ok": true,
+        "detail": "期望 0.05，读到 0.05"
+      },
+      {
+        "name": "param CA_ROTOR1_PX",
+        "ok": true,
+        "detail": "期望 -0.0537401，读到 -0.0537"
+      },
+      {
+        "name": "param CA_ROTOR1_PY",
+        "ok": true,
+        "detail": "期望 -0.0537401，读到 -0.0537"
+      },
+      {
+        "name": "param CA_ROTOR2_KM",
+        "ok": true,
+        "detail": "期望 -0.05，读到 -0.05"
+      },
+      {
+        "name": "param CA_ROTOR2_PX",
+        "ok": true,
+        "detail": "期望 0.0537401，读到 0.0537"
+      },
+      {
+        "name": "param CA_ROTOR2_PY",
+        "ok": true,
+        "detail": "期望 -0.0537401，读到 -0.0537"
+      },
+      {
+        "name": "param CA_ROTOR3_KM",
+        "ok": true,
+        "detail": "期望 -0.05，读到 -0.05"
+      },
+      {
+        "name": "param CA_ROTOR3_PX",
+        "ok": true,
+        "detail": "期望 -0.0537401，读到 -0.0537"
+      },
+      {
+        "name": "param CA_ROTOR3_PY",
+        "ok": true,
+        "detail": "期望 0.0537401，读到 0.0537"
+      },
+      {
+        "name": "param CA_ROTOR_COUNT",
+        "ok": true,
+        "detail": "期望 4，读到 4"
+      },
+      {
+        "name": "param CBRK_IO_SAFETY",
+        "ok": true,
+        "detail": "期望 22027，读到 22027"
+      },
+      {
+        "name": "param CBRK_SUPPLY_CHK",
+        "ok": true,
+        "detail": "期望 894281，读到 894281"
+      },
+      {
+        "name": "param MC_AIRMODE",
+        "ok": true,
+        "detail": "期望 0，读到 0"
+      },
+      {
+        "name": "param MC_BAT_SCALE_EN",
+        "ok": true,
+        "detail": "期望 0，读到 0"
+      },
+      {
+        "name": "param MC_PITCHRATE_MAX",
+        "ok": true,
+        "detail": "期望 220，读到 220"
+      },
+      {
+        "name": "param MC_PITCHRATE_P",
+        "ok": true,
+        "detail": "期望 0.15，读到 0.15"
+      },
+      {
+        "name": "param MC_ROLLRATE_MAX",
+        "ok": true,
+        "detail": "期望 220，读到 220"
+      },
+      {
+        "name": "param MC_ROLLRATE_P",
+        "ok": true,
+        "detail": "期望 0.15，读到 0.15"
+      },
+      {
+        "name": "param MC_YAWRATE_MAX",
+        "ok": true,
+        "detail": "期望 360，读到 360"
+      },
+      {
+        "name": "param MC_YAWRATE_P",
+        "ok": true,
+        "detail": "期望 0.2，读到 0.2"
+      },
+      {
+        "name": "param MPC_TILTMAX_AIR",
+        "ok": true,
+        "detail": "期望 45，读到 45"
+      },
+      {
+        "name": "param PWM_MAIN_FUNC1",
+        "ok": true,
+        "detail": "期望 101，读到 101"
+      },
+      {
+        "name": "param PWM_MAIN_FUNC2",
+        "ok": true,
+        "detail": "期望 102，读到 102"
+      },
+      {
+        "name": "param PWM_MAIN_FUNC3",
+        "ok": true,
+        "detail": "期望 103，读到 103"
+      },
+      {
+        "name": "param PWM_MAIN_FUNC4",
+        "ok": true,
+        "detail": "期望 104，读到 104"
+      },
+      {
+        "name": "param SENS_EN_BAROSIM",
+        "ok": true,
+        "detail": "期望 1，读到 1"
+      },
+      {
+        "name": "param SENS_EN_GPSSIM",
+        "ok": true,
+        "detail": "期望 1，读到 1"
+      },
+      {
+        "name": "param SENS_EN_MAGSIM",
+        "ok": true,
+        "detail": "期望 1，读到 1"
+      },
+      {
+        "name": "param SIH_IXX",
+        "ok": true,
+        "detail": "期望 0.002166，读到 0.0022"
+      },
+      {
+        "name": "param SIH_IXY",
+        "ok": true,
+        "detail": "期望 0，读到 0"
+      },
+      {
+        "name": "param SIH_IXZ",
+        "ok": true,
+        "detail": "期望 0，读到 0"
+      },
+      {
+        "name": "param SIH_IYY",
+        "ok": true,
+        "detail": "期望 0.002166，读到 0.0022"
+      },
+      {
+        "name": "param SIH_IYZ",
+        "ok": true,
+        "detail": "期望 0，读到 0"
+      },
+      {
+        "name": "param SIH_IZZ",
+        "ok": true,
+        "detail": "期望 0.004332，读到 0.0043"
+      },
+      {
+        "name": "param SIH_KDV",
+        "ok": true,
+        "detail": "期望 1，读到 1"
+      },
+      {
+        "name": "param SIH_KDW",
+        "ok": true,
+        "detail": "期望 0.025，读到 0.025"
+      },
+      {
+        "name": "param SIH_L_PITCH",
+        "ok": true,
+        "detail": "期望 0.0537401，读到 0.0537"
+      },
+      {
+        "name": "param SIH_L_ROLL",
+        "ok": true,
+        "detail": "期望 0.0537401，读到 0.0537"
+      },
+      {
+        "name": "param SIH_MASS",
+        "ok": true,
+        "detail": "期望 0.75，读到 0.75"
+      },
+      {
+        "name": "param SIH_Q_MAX",
+        "ok": true,
+        "detail": "期望 0.578784，读到 0.5788"
+      },
+      {
+        "name": "param SIH_T_MAX",
+        "ok": true,
+        "detail": "期望 11.5757，读到 11.5757"
+      },
+      {
+        "name": "param SIH_T_TAU",
+        "ok": true,
+        "detail": "期望 0.035，读到 0.035"
+      },
+      {
+        "name": "param SIH_VEHICLE_TYPE",
+        "ok": true,
+        "detail": "期望 0，读到 0"
+      },
+      {
+        "name": "param THR_MDL_FAC",
+        "ok": true,
+        "detail": "期望 0，读到 0"
+      },
+      {
+        "name": "动态基线：落地静止（az==0 且 z≈0）",
+        "ok": true,
+        "detail": "z=0.00016, az=0.0, vz=0.0"
+      },
+      {
+        "name": "动态：四条电机命令都落到位（`actuator_outputs_sim` = 电机信号）",
+        "ok": true,
+        "detail": "读到 [0.184, 0.184, 0.184, 0.184]，期望 0.1842（-v 0.1842 过混控器曲线，THR_MDL_FAC 0.0）"
+      },
+      {
+        "name": "动态：真的离地了（否则竖向下式不成立）",
+        "ok": true,
+        "detail": "z=-0.90826"
+      },
+      {
+        "name": "动态：姿态基本水平（倾斜 <15°，公式只按 cosθ 修正）",
+        "ok": true,
+        "detail": "cosθ=0.9993（2.1°）"
+      },
+      {
+        "name": "动态：实测总推力 ≈ 4 × SIH_T_MAX × 电机信号",
+        "ok": true,
+        "detail": "实测 8.521 N vs 期望 8.528 N（-0.1%）"
+      }
+    ],
+    "ok": true,
+    "dynamic": {
+      "checks": [],
+      "mass": 0.75,
+      "t_max": 11.575675,
+      "sum_u_hover": 0.6353830338187622,
+      "motor_signal": 0.18416899530978612,
+      "motor_signal_expect": 0.18416899530978612,
+      "thrust_cmd": 0.18416899530978612,
+      "thrust_pred": 8.527521739130433,
+      "thr_mdl_fac": 0.0,
+      "before": {
+        "z": 0.00016,
+        "az": 0.0,
+        "vz": 0.0
+      },
+      "after": {
+        "z": -0.90826,
+        "az": -0.23245,
+        "vz": -0.98558,
+        "cos_tilt": 0.9993265926,
+        "outputs": [
+          0.184,
+          0.184,
+          0.184,
+          0.184,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "reads": 2,
+        "resent_motors": [
+          1,
+          2,
+          3,
+          4
+        ]
+      },
+      "thrust_est": 8.520642863957347,
+      "thrust_err_rel": -0.0008066675622204672
+    }
+  },
+  {
+    "variant": "z0-rate+30",
+    "overlay": "/home/chen/ros_ws/tools/px4-sitl/z0-plant/params/z0-rate+30.param",
+    "checks": [
+      {
+        "name": "param CA_ROTOR0_CT",
+        "ok": true,
+        "detail": "期望 6.5，读到 6.5"
+      },
+      {
+        "name": "param CA_ROTOR0_KM",
+        "ok": true,
+        "detail": "期望 0.05，读到 0.05"
+      },
+      {
+        "name": "param CA_ROTOR0_PX",
+        "ok": true,
+        "detail": "期望 0.0537401，读到 0.0537"
+      },
+      {
+        "name": "param CA_ROTOR0_PY",
+        "ok": true,
+        "detail": "期望 0.0537401，读到 0.0537"
+      },
+      {
+        "name": "param CA_ROTOR1_KM",
+        "ok": true,
+        "detail": "期望 0.05，读到 0.05"
+      },
+      {
+        "name": "param CA_ROTOR1_PX",
+        "ok": true,
+        "detail": "期望 -0.0537401，读到 -0.0537"
+      },
+      {
+        "name": "param CA_ROTOR1_PY",
+        "ok": true,
+        "detail": "期望 -0.0537401，读到 -0.0537"
+      },
+      {
+        "name": "param CA_ROTOR2_KM",
+        "ok": true,
+        "detail": "期望 -0.05，读到 -0.05"
+      },
+      {
+        "name": "param CA_ROTOR2_PX",
+        "ok": true,
+        "detail": "期望 0.0537401，读到 0.0537"
+      },
+      {
+        "name": "param CA_ROTOR2_PY",
+        "ok": true,
+        "detail": "期望 -0.0537401，读到 -0.0537"
+      },
+      {
+        "name": "param CA_ROTOR3_KM",
+        "ok": true,
+        "detail": "期望 -0.05，读到 -0.05"
+      },
+      {
+        "name": "param CA_ROTOR3_PX",
+        "ok": true,
+        "detail": "期望 -0.0537401，读到 -0.0537"
+      },
+      {
+        "name": "param CA_ROTOR3_PY",
+        "ok": true,
+        "detail": "期望 0.0537401，读到 0.0537"
+      },
+      {
+        "name": "param CA_ROTOR_COUNT",
+        "ok": true,
+        "detail": "期望 4，读到 4"
+      },
+      {
+        "name": "param CBRK_IO_SAFETY",
+        "ok": true,
+        "detail": "期望 22027，读到 22027"
+      },
+      {
+        "name": "param CBRK_SUPPLY_CHK",
+        "ok": true,
+        "detail": "期望 894281，读到 894281"
+      },
+      {
+        "name": "param MC_AIRMODE",
+        "ok": true,
+        "detail": "期望 0，读到 0"
+      },
+      {
+        "name": "param MC_BAT_SCALE_EN",
+        "ok": true,
+        "detail": "期望 0，读到 0"
+      },
+      {
+        "name": "param MC_PITCHRATE_MAX",
+        "ok": true,
+        "detail": "期望 220，读到 220"
+      },
+      {
+        "name": "param MC_PITCHRATE_P",
+        "ok": true,
+        "detail": "期望 0.195，读到 0.195"
+      },
+      {
+        "name": "param MC_ROLLRATE_MAX",
+        "ok": true,
+        "detail": "期望 220，读到 220"
+      },
+      {
+        "name": "param MC_ROLLRATE_P",
+        "ok": true,
+        "detail": "期望 0.195，读到 0.195"
+      },
+      {
+        "name": "param MC_YAWRATE_MAX",
+        "ok": true,
+        "detail": "期望 360，读到 360"
+      },
+      {
+        "name": "param MC_YAWRATE_P",
+        "ok": true,
+        "detail": "期望 0.26，读到 0.26"
+      },
+      {
+        "name": "param MPC_TILTMAX_AIR",
+        "ok": true,
+        "detail": "期望 45，读到 45"
+      },
+      {
+        "name": "param PWM_MAIN_FUNC1",
+        "ok": true,
+        "detail": "期望 101，读到 101"
+      },
+      {
+        "name": "param PWM_MAIN_FUNC2",
+        "ok": true,
+        "detail": "期望 102，读到 102"
+      },
+      {
+        "name": "param PWM_MAIN_FUNC3",
+        "ok": true,
+        "detail": "期望 103，读到 103"
+      },
+      {
+        "name": "param PWM_MAIN_FUNC4",
+        "ok": true,
+        "detail": "期望 104，读到 104"
+      },
+      {
+        "name": "param SENS_EN_BAROSIM",
+        "ok": true,
+        "detail": "期望 1，读到 1"
+      },
+      {
+        "name": "param SENS_EN_GPSSIM",
+        "ok": true,
+        "detail": "期望 1，读到 1"
+      },
+      {
+        "name": "param SENS_EN_MAGSIM",
+        "ok": true,
+        "detail": "期望 1，读到 1"
+      },
+      {
+        "name": "param SIH_IXX",
+        "ok": true,
+        "detail": "期望 0.002166，读到 0.0022"
+      },
+      {
+        "name": "param SIH_IXY",
+        "ok": true,
+        "detail": "期望 0，读到 0"
+      },
+      {
+        "name": "param SIH_IXZ",
+        "ok": true,
+        "detail": "期望 0，读到 0"
+      },
+      {
+        "name": "param SIH_IYY",
+        "ok": true,
+        "detail": "期望 0.002166，读到 0.0022"
+      },
+      {
+        "name": "param SIH_IYZ",
+        "ok": true,
+        "detail": "期望 0，读到 0"
+      },
+      {
+        "name": "param SIH_IZZ",
+        "ok": true,
+        "detail": "期望 0.004332，读到 0.0043"
+      },
+      {
+        "name": "param SIH_KDV",
+        "ok": true,
+        "detail": "期望 1，读到 1"
+      },
+      {
+        "name": "param SIH_KDW",
+        "ok": true,
+        "detail": "期望 0.025，读到 0.025"
+      },
+      {
+        "name": "param SIH_L_PITCH",
+        "ok": true,
+        "detail": "期望 0.0537401，读到 0.0537"
+      },
+      {
+        "name": "param SIH_L_ROLL",
+        "ok": true,
+        "detail": "期望 0.0537401，读到 0.0537"
+      },
+      {
+        "name": "param SIH_MASS",
+        "ok": true,
+        "detail": "期望 0.75，读到 0.75"
+      },
+      {
+        "name": "param SIH_Q_MAX",
+        "ok": true,
+        "detail": "期望 0.578784，读到 0.5788"
+      },
+      {
+        "name": "param SIH_T_MAX",
+        "ok": true,
+        "detail": "期望 11.5757，读到 11.5757"
+      },
+      {
+        "name": "param SIH_T_TAU",
+        "ok": true,
+        "detail": "期望 0.05，读到 0.05"
+      },
+      {
+        "name": "param SIH_VEHICLE_TYPE",
+        "ok": true,
+        "detail": "期望 0，读到 0"
+      },
+      {
+        "name": "param THR_MDL_FAC",
+        "ok": true,
+        "detail": "期望 0，读到 0"
+      },
+      {
+        "name": "动态基线：落地静止（az==0 且 z≈0）",
+        "ok": true,
+        "detail": "z=0.00016, az=0.0, vz=0.0"
+      },
+      {
+        "name": "动态：四条电机命令都落到位（`actuator_outputs_sim` = 电机信号）",
+        "ok": true,
+        "detail": "读到 [0.184, 0.184, 0.184, 0.184]，期望 0.1842（-v 0.1842 过混控器曲线，THR_MDL_FAC 0.0）"
+      },
+      {
+        "name": "动态：真的离地了（否则竖向下式不成立）",
+        "ok": true,
+        "detail": "z=-0.85607"
+      },
+      {
+        "name": "动态：姿态基本水平（倾斜 <15°，公式只按 cosθ 修正）",
+        "ok": true,
+        "detail": "cosθ=0.9984（3.2°）"
+      },
+      {
+        "name": "动态：实测总推力 ≈ 4 × SIH_T_MAX × 电机信号",
+        "ok": true,
+        "detail": "实测 8.521 N vs 期望 8.528 N（-0.1%）"
+      }
+    ],
+    "ok": true,
+    "dynamic": {
+      "checks": [],
+      "mass": 0.75,
+      "t_max": 11.575675,
+      "sum_u_hover": 0.6353830338187622,
+      "motor_signal": 0.18416899530978612,
+      "motor_signal_expect": 0.18416899530978612,
+      "thrust_cmd": 0.18416899530978612,
+      "thrust_pred": 8.527521739130433,
+      "thr_mdl_fac": 0.0,
+      "before": {
+        "z": 0.00016,
+        "az": 0.0,
+        "vz": 0.0
+      },
+      "after": {
+        "z": -0.85607,
+        "az": -0.2463,
+        "vz": -0.96755,
+        "cos_tilt": 0.9984238956,
+        "outputs": [
+          0.184,
+          0.184,
+          0.184,
+          0.184,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "reads": 2,
+        "resent_motors": [
+          1,
+          2,
+          3,
+          4
+        ]
+      },
+      "thrust_est": 8.520692000152485,
+      "thrust_err_rel": -0.000800905490115496
+    }
+  },
+  {
+    "variant": "z0-rate-30",
+    "overlay": "/home/chen/ros_ws/tools/px4-sitl/z0-plant/params/z0-rate-30.param",
+    "checks": [
+      {
+        "name": "param CA_ROTOR0_CT",
+        "ok": true,
+        "detail": "期望 6.5，读到 6.5"
+      },
+      {
+        "name": "param CA_ROTOR0_KM",
+        "ok": true,
+        "detail": "期望 0.05，读到 0.05"
+      },
+      {
+        "name": "param CA_ROTOR0_PX",
+        "ok": true,
+        "detail": "期望 0.0537401，读到 0.0537"
+      },
+      {
+        "name": "param CA_ROTOR0_PY",
+        "ok": true,
+        "detail": "期望 0.0537401，读到 0.0537"
+      },
+      {
+        "name": "param CA_ROTOR1_KM",
+        "ok": true,
+        "detail": "期望 0.05，读到 0.05"
+      },
+      {
+        "name": "param CA_ROTOR1_PX",
+        "ok": true,
+        "detail": "期望 -0.0537401，读到 -0.0537"
+      },
+      {
+        "name": "param CA_ROTOR1_PY",
+        "ok": true,
+        "detail": "期望 -0.0537401，读到 -0.0537"
+      },
+      {
+        "name": "param CA_ROTOR2_KM",
+        "ok": true,
+        "detail": "期望 -0.05，读到 -0.05"
+      },
+      {
+        "name": "param CA_ROTOR2_PX",
+        "ok": true,
+        "detail": "期望 0.0537401，读到 0.0537"
+      },
+      {
+        "name": "param CA_ROTOR2_PY",
+        "ok": true,
+        "detail": "期望 -0.0537401，读到 -0.0537"
+      },
+      {
+        "name": "param CA_ROTOR3_KM",
+        "ok": true,
+        "detail": "期望 -0.05，读到 -0.05"
+      },
+      {
+        "name": "param CA_ROTOR3_PX",
+        "ok": true,
+        "detail": "期望 -0.0537401，读到 -0.0537"
+      },
+      {
+        "name": "param CA_ROTOR3_PY",
+        "ok": true,
+        "detail": "期望 0.0537401，读到 0.0537"
+      },
+      {
+        "name": "param CA_ROTOR_COUNT",
+        "ok": true,
+        "detail": "期望 4，读到 4"
+      },
+      {
+        "name": "param CBRK_IO_SAFETY",
+        "ok": true,
+        "detail": "期望 22027，读到 22027"
+      },
+      {
+        "name": "param CBRK_SUPPLY_CHK",
+        "ok": true,
+        "detail": "期望 894281，读到 894281"
+      },
+      {
+        "name": "param MC_AIRMODE",
+        "ok": true,
+        "detail": "期望 0，读到 0"
+      },
+      {
+        "name": "param MC_BAT_SCALE_EN",
+        "ok": true,
+        "detail": "期望 0，读到 0"
+      },
+      {
+        "name": "param MC_PITCHRATE_MAX",
+        "ok": true,
+        "detail": "期望 220，读到 220"
+      },
+      {
+        "name": "param MC_PITCHRATE_P",
+        "ok": true,
+        "detail": "期望 0.105，读到 0.105"
+      },
+      {
+        "name": "param MC_ROLLRATE_MAX",
+        "ok": true,
+        "detail": "期望 220，读到 220"
+      },
+      {
+        "name": "param MC_ROLLRATE_P",
+        "ok": true,
+        "detail": "期望 0.105，读到 0.105"
+      },
+      {
+        "name": "param MC_YAWRATE_MAX",
+        "ok": true,
+        "detail": "期望 360，读到 360"
+      },
+      {
+        "name": "param MC_YAWRATE_P",
+        "ok": true,
+        "detail": "期望 0.14，读到 0.14"
+      },
+      {
+        "name": "param MPC_TILTMAX_AIR",
+        "ok": true,
+        "detail": "期望 45，读到 45"
+      },
+      {
+        "name": "param PWM_MAIN_FUNC1",
+        "ok": true,
+        "detail": "期望 101，读到 101"
+      },
+      {
+        "name": "param PWM_MAIN_FUNC2",
+        "ok": true,
+        "detail": "期望 102，读到 102"
+      },
+      {
+        "name": "param PWM_MAIN_FUNC3",
+        "ok": true,
+        "detail": "期望 103，读到 103"
+      },
+      {
+        "name": "param PWM_MAIN_FUNC4",
+        "ok": true,
+        "detail": "期望 104，读到 104"
+      },
+      {
+        "name": "param SENS_EN_BAROSIM",
+        "ok": true,
+        "detail": "期望 1，读到 1"
+      },
+      {
+        "name": "param SENS_EN_GPSSIM",
+        "ok": true,
+        "detail": "期望 1，读到 1"
+      },
+      {
+        "name": "param SENS_EN_MAGSIM",
+        "ok": true,
+        "detail": "期望 1，读到 1"
+      },
+      {
+        "name": "param SIH_IXX",
+        "ok": true,
+        "detail": "期望 0.002166，读到 0.0022"
+      },
+      {
+        "name": "param SIH_IXY",
+        "ok": true,
+        "detail": "期望 0，读到 0"
+      },
+      {
+        "name": "param SIH_IXZ",
+        "ok": true,
+        "detail": "期望 0，读到 0"
+      },
+      {
+        "name": "param SIH_IYY",
+        "ok": true,
+        "detail": "期望 0.002166，读到 0.0022"
+      },
+      {
+        "name": "param SIH_IYZ",
+        "ok": true,
+        "detail": "期望 0，读到 0"
+      },
+      {
+        "name": "param SIH_IZZ",
+        "ok": true,
+        "detail": "期望 0.004332，读到 0.0043"
+      },
+      {
+        "name": "param SIH_KDV",
+        "ok": true,
+        "detail": "期望 1，读到 1"
+      },
+      {
+        "name": "param SIH_KDW",
+        "ok": true,
+        "detail": "期望 0.025，读到 0.025"
+      },
+      {
+        "name": "param SIH_L_PITCH",
+        "ok": true,
+        "detail": "期望 0.0537401，读到 0.0537"
+      },
+      {
+        "name": "param SIH_L_ROLL",
+        "ok": true,
+        "detail": "期望 0.0537401，读到 0.0537"
+      },
+      {
+        "name": "param SIH_MASS",
+        "ok": true,
+        "detail": "期望 0.75，读到 0.75"
+      },
+      {
+        "name": "param SIH_Q_MAX",
+        "ok": true,
+        "detail": "期望 0.578784，读到 0.5788"
+      },
+      {
+        "name": "param SIH_T_MAX",
+        "ok": true,
+        "detail": "期望 11.5757，读到 11.5757"
+      },
+      {
+        "name": "param SIH_T_TAU",
+        "ok": true,
+        "detail": "期望 0.05，读到 0.05"
+      },
+      {
+        "name": "param SIH_VEHICLE_TYPE",
+        "ok": true,
+        "detail": "期望 0，读到 0"
+      },
+      {
+        "name": "param THR_MDL_FAC",
+        "ok": true,
+        "detail": "期望 0，读到 0"
+      },
+      {
+        "name": "动态基线：落地静止（az==0 且 z≈0）",
+        "ok": true,
+        "detail": "z=0.00016, az=0.0, vz=0.0"
+      },
+      {
+        "name": "动态：四条电机命令都落到位（`actuator_outputs_sim` = 电机信号）",
+        "ok": true,
+        "detail": "读到 [0.184, 0.184, 0.184, 0.184]，期望 0.1842（-v 0.1842 过混控器曲线，THR_MDL_FAC 0.0）"
+      },
+      {
+        "name": "动态：真的离地了（否则竖向下式不成立）",
+        "ok": true,
+        "detail": "z=-0.89142"
+      },
+      {
+        "name": "动态：姿态基本水平（倾斜 <15°，公式只按 cosθ 修正）",
+        "ok": true,
+        "detail": "cosθ=1.0000（0.0°）"
+      },
+      {
+        "name": "动态：实测总推力 ≈ 4 × SIH_T_MAX × 电机信号",
+        "ok": true,
+        "detail": "实测 8.521 N vs 期望 8.528 N（-0.1%）"
+      }
+    ],
+    "ok": true,
+    "dynamic": {
+      "checks": [],
+      "mass": 0.75,
+      "t_max": 11.575675,
+      "sum_u_hover": 0.6353830338187622,
+      "motor_signal": 0.18416899530978612,
+      "motor_signal_expect": 0.18416899530978612,
+      "thrust_cmd": 0.18416899530978612,
+      "thrust_pred": 8.527521739130433,
+      "thr_mdl_fac": 0.0,
+      "before": {
+        "z": 0.00016,
+        "az": 0.0,
+        "vz": 0.0
+      },
+      "after": {
+        "z": -0.89142,
+        "az": -0.24081,
+        "vz": -0.98508,
+        "cos_tilt": 1.0,
+        "outputs": [
+          0.184,
+          0.184,
+          0.184,
+          0.184,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "reads": 2,
+        "resent_motors": [
+          1,
+          2,
+          3,
+          4
+        ]
+      },
+      "thrust_est": 8.520674999999999,
+      "thrust_err_rel": -0.0008028990531934682
+    }
+  },
+  {
+    "variant": "z0-thrcurve",
+    "overlay": "/home/chen/ros_ws/tools/px4-sitl/z0-plant/params/z0-thrcurve.param",
+    "checks": [
+      {
+        "name": "param CA_ROTOR0_CT",
+        "ok": true,
+        "detail": "期望 6.5，读到 6.5"
+      },
+      {
+        "name": "param CA_ROTOR0_KM",
+        "ok": true,
+        "detail": "期望 0.05，读到 0.05"
+      },
+      {
+        "name": "param CA_ROTOR0_PX",
+        "ok": true,
+        "detail": "期望 0.0537401，读到 0.0537"
+      },
+      {
+        "name": "param CA_ROTOR0_PY",
+        "ok": true,
+        "detail": "期望 0.0537401，读到 0.0537"
+      },
+      {
+        "name": "param CA_ROTOR1_KM",
+        "ok": true,
+        "detail": "期望 0.05，读到 0.05"
+      },
+      {
+        "name": "param CA_ROTOR1_PX",
+        "ok": true,
+        "detail": "期望 -0.0537401，读到 -0.0537"
+      },
+      {
+        "name": "param CA_ROTOR1_PY",
+        "ok": true,
+        "detail": "期望 -0.0537401，读到 -0.0537"
+      },
+      {
+        "name": "param CA_ROTOR2_KM",
+        "ok": true,
+        "detail": "期望 -0.05，读到 -0.05"
+      },
+      {
+        "name": "param CA_ROTOR2_PX",
+        "ok": true,
+        "detail": "期望 0.0537401，读到 0.0537"
+      },
+      {
+        "name": "param CA_ROTOR2_PY",
+        "ok": true,
+        "detail": "期望 -0.0537401，读到 -0.0537"
+      },
+      {
+        "name": "param CA_ROTOR3_KM",
+        "ok": true,
+        "detail": "期望 -0.05，读到 -0.05"
+      },
+      {
+        "name": "param CA_ROTOR3_PX",
+        "ok": true,
+        "detail": "期望 -0.0537401，读到 -0.0537"
+      },
+      {
+        "name": "param CA_ROTOR3_PY",
+        "ok": true,
+        "detail": "期望 0.0537401，读到 0.0537"
+      },
+      {
+        "name": "param CA_ROTOR_COUNT",
+        "ok": true,
+        "detail": "期望 4，读到 4"
+      },
+      {
+        "name": "param CBRK_IO_SAFETY",
+        "ok": true,
+        "detail": "期望 22027，读到 22027"
+      },
+      {
+        "name": "param CBRK_SUPPLY_CHK",
+        "ok": true,
+        "detail": "期望 894281，读到 894281"
+      },
+      {
+        "name": "param MC_AIRMODE",
+        "ok": true,
+        "detail": "期望 0，读到 0"
+      },
+      {
+        "name": "param MC_BAT_SCALE_EN",
+        "ok": true,
+        "detail": "期望 0，读到 0"
+      },
+      {
+        "name": "param MC_PITCHRATE_MAX",
+        "ok": true,
+        "detail": "期望 220，读到 220"
+      },
+      {
+        "name": "param MC_PITCHRATE_P",
+        "ok": true,
+        "detail": "期望 0.15，读到 0.15"
+      },
+      {
+        "name": "param MC_ROLLRATE_MAX",
+        "ok": true,
+        "detail": "期望 220，读到 220"
+      },
+      {
+        "name": "param MC_ROLLRATE_P",
+        "ok": true,
+        "detail": "期望 0.15，读到 0.15"
+      },
+      {
+        "name": "param MC_YAWRATE_MAX",
+        "ok": true,
+        "detail": "期望 360，读到 360"
+      },
+      {
+        "name": "param MC_YAWRATE_P",
+        "ok": true,
+        "detail": "期望 0.2，读到 0.2"
+      },
+      {
+        "name": "param MPC_TILTMAX_AIR",
+        "ok": true,
+        "detail": "期望 45，读到 45"
+      },
+      {
+        "name": "param PWM_MAIN_FUNC1",
+        "ok": true,
+        "detail": "期望 101，读到 101"
+      },
+      {
+        "name": "param PWM_MAIN_FUNC2",
+        "ok": true,
+        "detail": "期望 102，读到 102"
+      },
+      {
+        "name": "param PWM_MAIN_FUNC3",
+        "ok": true,
+        "detail": "期望 103，读到 103"
+      },
+      {
+        "name": "param PWM_MAIN_FUNC4",
+        "ok": true,
+        "detail": "期望 104，读到 104"
+      },
+      {
+        "name": "param SENS_EN_BAROSIM",
+        "ok": true,
+        "detail": "期望 1，读到 1"
+      },
+      {
+        "name": "param SENS_EN_GPSSIM",
+        "ok": true,
+        "detail": "期望 1，读到 1"
+      },
+      {
+        "name": "param SENS_EN_MAGSIM",
+        "ok": true,
+        "detail": "期望 1，读到 1"
+      },
+      {
+        "name": "param SIH_IXX",
+        "ok": true,
+        "detail": "期望 0.002166，读到 0.0022"
+      },
+      {
+        "name": "param SIH_IXY",
+        "ok": true,
+        "detail": "期望 0，读到 0"
+      },
+      {
+        "name": "param SIH_IXZ",
+        "ok": true,
+        "detail": "期望 0，读到 0"
+      },
+      {
+        "name": "param SIH_IYY",
+        "ok": true,
+        "detail": "期望 0.002166，读到 0.0022"
+      },
+      {
+        "name": "param SIH_IYZ",
+        "ok": true,
+        "detail": "期望 0，读到 0"
+      },
+      {
+        "name": "param SIH_IZZ",
+        "ok": true,
+        "detail": "期望 0.004332，读到 0.0043"
+      },
+      {
+        "name": "param SIH_KDV",
+        "ok": true,
+        "detail": "期望 1，读到 1"
+      },
+      {
+        "name": "param SIH_KDW",
+        "ok": true,
+        "detail": "期望 0.025，读到 0.025"
+      },
+      {
+        "name": "param SIH_L_PITCH",
+        "ok": true,
+        "detail": "期望 0.0537401，读到 0.0537"
+      },
+      {
+        "name": "param SIH_L_ROLL",
+        "ok": true,
+        "detail": "期望 0.0537401，读到 0.0537"
+      },
+      {
+        "name": "param SIH_MASS",
+        "ok": true,
+        "detail": "期望 0.75，读到 0.75"
+      },
+      {
+        "name": "param SIH_Q_MAX",
+        "ok": true,
+        "detail": "期望 0.578784，读到 0.5788"
+      },
+      {
+        "name": "param SIH_T_MAX",
+        "ok": true,
+        "detail": "期望 11.5757，读到 11.5757"
+      },
+      {
+        "name": "param SIH_T_TAU",
+        "ok": true,
+        "detail": "期望 0.05，读到 0.05"
+      },
+      {
+        "name": "param SIH_VEHICLE_TYPE",
+        "ok": true,
+        "detail": "期望 0，读到 0"
+      },
+      {
+        "name": "param THR_MDL_FAC",
+        "ok": true,
+        "detail": "期望 0.45，读到 0.45"
+      },
+      {
+        "name": "动态基线：落地静止（az==0 且 z≈0）",
+        "ok": true,
+        "detail": "z=0.00016, az=0.0, vz=0.0"
+      },
+      {
+        "name": "动态：四条电机命令都落到位（`actuator_outputs_sim` = 电机信号）",
+        "ok": true,
+        "detail": "读到 [0.184, 0.184, 0.184, 0.184]，期望 0.1842（-v 0.1166 过混控器曲线，THR_MDL_FAC 0.45）"
+      },
+      {
+        "name": "动态：真的离地了（否则竖向下式不成立）",
+        "ok": true,
+        "detail": "z=-0.88748"
+      },
+      {
+        "name": "动态：姿态基本水平（倾斜 <15°，公式只按 cosθ 修正）",
+        "ok": true,
+        "detail": "cosθ=1.0000（0.0°）"
+      },
+      {
+        "name": "动态：实测总推力 ≈ 4 × SIH_T_MAX × 电机信号",
+        "ok": true,
+        "detail": "实测 8.521 N vs 期望 8.528 N（-0.1%）"
+      }
+    ],
+    "ok": true,
+    "dynamic": {
+      "checks": [],
+      "mass": 0.75,
+      "t_max": 11.575675,
+      "sum_u_hover": 0.6353830338187622,
+      "motor_signal": 0.18416899530978612,
+      "motor_signal_expect": 0.18416899530978603,
+      "thrust_cmd": 0.11655614589541959,
+      "thrust_pred": 8.527521739130433,
+      "thr_mdl_fac": 0.45,
+      "before": {
+        "z": 0.00016,
+        "az": 0.0,
+        "vz": 0.0
+      },
+      "after": {
+        "z": -0.88748,
+        "az": -0.2421,
+        "vz": -0.98411,
+        "cos_tilt": 1.0,
+        "outputs": [
+          0.184,
+          0.184,
+          0.184,
+          0.184,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "reads": 2,
+        "resent_motors": [
+          1,
+          2,
+          3,
+          4
+        ]
+      },
+      "thrust_est": 8.5206725,
+      "thrust_err_rel": -0.0008031922216045842
+    }
+  }
+]

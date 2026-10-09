@@ -98,17 +98,15 @@ G0 = 9.80665
 
 
 def plant_hover_thrust() -> float:
-    """SITL 被控对象的**标称**归一化悬停推力 = `m·g / (4·SIH_T_MAX)`（从 `plant_spec` 推）。
+    """SITL 被控对象的**标称**归一化悬停推力 = `m·g / (4·SIH_T_MAX)`（从 `plant_spec` 真源推）。
 
-    ★ 为什么要它、而不是直接用 `nmpc/params.py` 里的 `HOVER_THRUST`：
-      `params.py` 的值是 **z0 真机满电口径**（ticket 10 实测回填的 `0.1589`），
-      而被控对象是 **SIH 同构机**（解析值 `0.6233`）—— 两者差 **3.92 倍**。
-      拿 `0.1589` 去飞 SITL，节点以为自己有 `T_max = 46.3 N`（实际 11.8 N），
-      推力指令只有所需的一半 ⟹ **飞机根本不离地**，量到的是**参数域错误**，不是失配。
-      第一手读数：`docs/control/mismatch-sweep.md` §1（本张的冒烟场：
-      真值 `z` 全程 `+0.0002 m`、电机均值 0.2625 ⟹ 总推力 3.1 N < `m·g` = 7.36 N）。
-      ⚠️ 这条**不是本张发明的口径**：ticket 11 的 B 档夹具已按同一条处理
-      （操作者裁定「11 补、10 不动」），本张沿用；`params.py` 一个字没动。
+    ★★ **2026-10-09 重搭后它与 `nmpc/params.py` 的 `HOVER_THRUST` 同档**：
+      被控对象在 ticket 21（Phase 3 的 `04`）里按**真机实测口径**重搭，
+      `T_MAX_TOTAL = 46.3027 N`（**按电机**，不按电池）⟹ 解析悬停 `≈0.158846`，
+      节点默认 `0.1589` —— 差 0.03 %（就是 `g` 取 9.80665 vs 9.81 的差）。
+      ⚠️ **重搭前**两者差 **3.92 倍**（被控对象解析值 `0.6233` vs 节点 `0.1589`），
+      拿 `0.1589` 去飞那时的机型会让飞机不离地 —— 那段历史账**已随重搭归零**，别再引。
+    ★ 保留这个函数是为了 `--hover-thrust auto` 的语义：从**被控对象真源**现算 ⟹ 永远与它同源。
     """
     nominal = expected_params("z0")
     return nominal["SIH_MASS"] * G0 / (4.0 * nominal["SIH_T_MAX"])
@@ -505,7 +503,12 @@ def refix_controller_codes(outdir: Path, dry_run: bool = False) -> list[dict]:
 
 
 def _resolve_hover_thrust(text) -> float | None:
-    """`auto` / `none` / 数字 → 给节点的 `hover_thrust`（`None` = 不覆盖）。"""
+    """`auto` / `none` / 数字 → 给节点的 `hover_thrust`（`None` = 不覆盖）。
+
+    ★ 重搭后被控对象口径与节点默认**同档**（`plant_hover_thrust()` ≈ 0.1588、节点 0.1589）
+      ⟹ `auto` 与 `none` 实质上等价；保留 `auto` 是为让"跟被控对象同源"这件事显式、
+      且在有人改了机型常数时**自动跟随**（这正是 `auto` 该有的行为）。
+    """
     s = str(text).strip().lower()
     if s in ("none", "", "null"):     # 驱动往子进程传 `str(ht)`，`None` 会变成字面量
         return None
@@ -1162,10 +1165,13 @@ def vertical_gain(s: dict, frame: str = "ekf") -> dict:
     这里刻意**逐档各算一个 k 再取中位数**：四个档给出四个 k，它们散得开就说明"线性弹簧"
     这个模型本身不成立，那时 `resolvable=False`，不要报一个看着很精确的数。
 
-    `ΔF` 一律换算到**基准被控对象**的推力口径 `4·SIH_T_MAX(z0)`（= 模型信的 `f_max`）：
+    `ΔF` 一律换算到**基准被控对象**的推力满量程 `4·SIH_T_MAX(z0)`（**换算基准**，不是 `f_max`：
+      `f_max` 是约束层按电池的 11.8 N，被控对象的满量程按电机、重搭后是 46.30 N —— 两者解耦）：
       `mass`：`ΔF = Δm·g`（同高度悬停所需的力差）；
       `thrust`：`ΔF = (frac_变体 − frac_基准)·4·T_max`，`frac = m·g/(4·T_max)`
         （悬停所需**没变**，但模型按基准的油门比例去命令 ⟹ 多命令的那部分）。
+    ⚠️ **`ΔF` 的数值对满量程尺度不敏感**：`mass` 档两边约掉 `4·T_max`、`thrust` 档只看比值
+      `T0/T1` ⟹ 重搭（`T_MAX_TOTAL` 11.8→46.3）**不改 `ΔF`**，只改 `f_scale` 那一列的显示值。
 
     `frame`：`ekf`（票 09 操作者裁定判在 EKF 帧上）或 `gt`。
     """
@@ -1176,7 +1182,7 @@ def vertical_gain(s: dict, frame: str = "ekf") -> dict:
                 "note": "没有基准（`z0`）读数 ⟹ **反推不出刚度**"}
     p0 = expected_params("z0")
     frac0 = p0["SIH_MASS"] * G0 / (4.0 * p0["SIH_T_MAX"])
-    f_scale = 4.0 * p0["SIH_T_MAX"]                 # = 模型信的推力上限（牛顿）
+    f_scale = 4.0 * p0["SIH_T_MAX"]                 # = 基准被控对象的推力满量程（换算基准，牛顿）
 
     rows = []
     for variant, rs in sorted((s.get("by_variant") or {}).items()):
@@ -1221,7 +1227,8 @@ def render_gain(g: dict) -> str:
     #   当成实测（它是从机型口径 `m·g/(4·T_max)` 解析算的），进而以为 `ΔF` 与别的票"互为旁证"。
     #   真正**互不相干地量出来的只有 `Δz`**；`k` 是"量的 Δz ÷ 算的 ΔF"，所以 `k` 的**可比性**
     #   来自"两台不同的仪器量到了同一个 Δz 对应的斜率"（见 docstring ★）。
-    out = ["| 变体 | 旋钮 | ΔF（**算**：按**控制器口径** `4·SIH_T_MAX(z0)`=11.80 N，N） | Δz（**量**：相对基准中位数，m） | "
+    out = [f"| 变体 | 旋钮 | ΔF（**算**：按**基准被控对象**满量程 `4·SIH_T_MAX(z0)`"
+           f"={g['f_scale_n']:.2f} N，N） | Δz（**量**：相对基准中位数，m） | "
            "k = −ΔF/Δz（N/m） |",
            "|---|---|---|---|---|"]
     for r in g["rows"]:
@@ -1339,7 +1346,8 @@ def run_variant(variant: str, rep: int, outdir: Path, extras: list[str],
 
     if hover_thrust is not None:
         # ★ 另一处：`dut_params()` 只给 `log_file/state_source/hold_*/rate_hz`，
-        #   **不传** `hover_thrust` ⟹ 节点会用 `mpc_node.py` 自己的默认值（= 真机口径）。
+        #   **不传** `hover_thrust` ⟹ 节点会用 `mpc_node.py` 自己的默认值（= `params.py` 的
+        #   `HOVER_THRUST`，重搭后与 `auto` 同档；重搭前它才是那个会掉飞机的真机口径）。
         #   这里把开关补上（`mpc_node` 本来就有这个参数：`mpc_node.py` 的 `_PARAMS`）。
         #   ⚠️ 用**包装**而不是改 `verify_tier_a_hover.py`：那是 ticket 11 正在动的文件，
         #     本张不碰它（改法记进文档，属"该做进工具里"的后续）。
@@ -1458,8 +1466,9 @@ def main(argv=None) -> int:
     ap.add_argument("--timeout-s", type=float, default=1200.0, help="单场墙钟上限")
     ap.add_argument("--hover-thrust", default="auto",
                     help="给节点的 `hover_thrust`（**推力口径**）。`auto`（默认）= 按 SITL 机型现算 "
-                         "`m·g/(4·SIH_T_MAX)`；`none` = 不覆盖（用节点自己的默认值 = 真机口径，"
-                         "在本被控对象上**飞机起不来**，见 `plant_hover_thrust()`）")
+                         "`m·g/(4·SIH_T_MAX)`；`none` = 不覆盖（用节点自己的默认值）。"
+                         "★ 重搭后两者同档（≈0.1588 / 0.1589），`auto` 只是让「与被控对象同源」显式化 "
+                         "—— 见 `plant_hover_thrust()`")
     ap.add_argument("--run", default=None, help=argparse.SUPPRESS)   # 内部：单场模式
     ap.add_argument("--rep", type=int, default=1, help=argparse.SUPPRESS)
     args, extras = ap.parse_known_args(argv)

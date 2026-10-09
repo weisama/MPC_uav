@@ -5,8 +5,8 @@
 # 历史残留无关，这一条是 ticket 12 能复现的前提。
 
 param set SIH_MASS 0.75
-param set SIH_T_MAX 3.245
-param set SIH_Q_MAX 0.16225
+param set SIH_T_MAX 12.7332
+param set SIH_Q_MAX 0.636662
 param set SIH_L_ROLL 0.0537401
 param set SIH_L_PITCH 0.0537401
 param set SIH_IXX 0.002166

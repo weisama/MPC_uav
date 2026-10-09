@@ -38,15 +38,13 @@
 **被控对象**：`--mismatch mass+30` ⟹ `z0-mass+30.param`（ticket 08 那版机型 + 参数故意差 ±30%）。
   票面要的"错参数也能飞稳"就是这一条。
 
-☠☠ **一处必须先说的航电口径**（操作者 2026-09-29 裁定「用 0.6235」，全文见 11 号票 Comments）：
-  SITL 机型自己推出来的悬停归一化推力是 **0.6235**（`4 × SIH_T_MAX = 11.8 N`，
-  `m·g/11.8 = 0.6235`；A 档实飞也量到同一个数 0.6233，见 `tier-a-sitl-hover.md:214`）。
-  而 `nmpc/params.py` 在 ticket 10 回填后是 **0.1589**（真机满电口径）—— 两者差 **3.92×**。
-  `thrust_body_z = -thrust_n / t_max`（`sign_map.py:69`）而 `t_max = m·g/hover_thrust`
-  ⟹ 用 0.1589 时模型的控制效能高估 3.92 倍，飞机在悬停点上会以 ~7.3 m/s² 往下掉，
-  **那量的是参数域错误、不是控制器**。所以本工具默认 `--hover-thrust 0.6235`
-  （= 与 SITL 被控对象对得上的那个值），A/B 两场都从它起算；
-  这个 3.92× 单独记账，**不动 `params.py`**（操作者：「11 补、10 不动」）。
+**悬停口径**（★ 2026-10-09 重搭后被控对象换了基线，见 ticket 21 / phase3 的 04）：
+  SITL 机型的悬停归一化推力 `m·g/(4×SIH_T_MAX)` 现在与被控对象**同源**。
+  重搭前 `T_MAX_TOTAL = 11.8 N`（按电池，解析悬停 `0.6235`）⟹ 与 `params.py` 的 `0.1589`
+  差 **3.92×**；重搭后 `T_MAX_TOTAL = 46.3027 N`（按电机，解析悬停 `≈0.1588`）⟹ **两者同档**。
+  ⚠️ 于是历史上那个「本工具默认 `--hover-thrust 0.6235`、单独记 3.92× 的账」**已作废**：
+  默认改成**不覆盖**（`--hover-thrust` 缺省 = `None`），让 DUT 用 `params.py` 的节点默认值 ——
+  它与重搭后的被控对象对得上（**同构**的定义）。要手工给别的口径时才传 `--hover-thrust <数>`。
 
 **两组读数各自回答什么**（★ 别混）：
 
@@ -470,6 +468,16 @@ def plant_hover_thrust(param_file: str):
             "hover_thrust": t_hover / tmax_total, "t_hover_n": t_hover}
 
 
+def node_default_hover_thrust() -> float:
+    """`nmpc/params.py` 里的 `HOVER_THRUST`（节点默认口径）。
+
+    ★ `--hover-thrust` 缺省（`None`）时 DUT 用的就是这个数 ⟹ 观测要如实记下它，
+      否则判据④ 的预测下降率拿不到"模型实际给的推力"。重搭后它与被控对象同源。
+    """
+    import nmpc.params as np_params
+    return float(np_params.HOVER_THRUST)
+
+
 # ------------------------------------------------------------------ DUT 参数
 
 
@@ -489,7 +497,8 @@ def dut_params_b(cfg) -> list:
 
     ★ `state_source:=mocap` 是 B 档的**全部意义**：状态源换成 `/mocap/pose_enu`
       （默认就是 mocap，但**显式写出来** —— 这条参数就是本档的身份，让它出现在日志里）。
-    ★ `hover_thrust` 显式给：见模块 docstring 的 ☠☠（SITL 机型是 0.6235，不是 0.1589）。
+    ★ `hover_thrust` **只在显式给了才写**：见模块 docstring「悬停口径」。缺省时让 DUT 用它自己
+      的默认值（`params.py`），那个值与重搭后的被控对象同源 ⟹ 不再需要覆盖。
     ★ `rate_hz` 不改：D6 是"先按 100 Hz 量最坏耗时、再按实测降档"。
     ★★ `--reference-source traj`（判据② 的八字那条）下 **`hold_offset` 必须全 0** —— 不是我们
       客气，是 `mpc_node._validate` 会**拒跑**非零（`mpc_node.py:1415`）。所以那一档：
@@ -501,12 +510,14 @@ def dut_params_b(cfg) -> list:
     traj = getattr(cfg, "reference_source", "hold") == "traj"
     params = [f"log_file:={cfg.log_file}",
               "state_source:=mocap",
-              f"hover_thrust:={cfg.hover_thrust}",
               f"hold_offset_x:={0.0 if traj else cfg.hold_x}",
               f"hold_offset_y:={0.0 if traj else cfg.hold_y}",
               f"hold_offset_z:={0.0 if traj else cfg.hold_z}",
               f"reference_source:={getattr(cfg, 'reference_source', 'hold')}",
               f"rate_hz:={cfg.rate_hz}"]
+    # ★ 只在显式给了才覆盖 —— 缺省时 DUT 用 `params.py` 的默认值（重搭后与被控对象同源）
+    if getattr(cfg, "hover_thrust", None) is not None:
+        params.append(f"hover_thrust:={cfg.hover_thrust}")
     if cfg.inject_solve_fail_after_frames > 0:
         params += [f"inject_solve_fail_after_frames:={cfg.inject_solve_fail_after_frames}"]
     return params
@@ -1361,7 +1372,8 @@ def _judge_m5(ck, obs, fb, ph, truth) -> None:
       而被控对象需要的悬停推力是 `m_plant·g / T_max_plant`。票面要求被控对象故意
       差 ±30 %，于是**这两个数本来就不相等**：
 
-          模型 0.6235  vs  被控对象 mass+30 需要 0.8106  ⟹  净下坠 (1 − 0.6235/0.8106)·g ≈ 2.3 m/s²
+          模型 0.1589（节点默认）  vs  被控对象 mass+30 需要 ≈0.2065  ⟹  净下坠 ≈ 2.3 m/s²
+          （★ 这组数是按**重搭后**的被控对象算的；重搭前是 0.6235 vs 0.8106、同一机理）
 
       ⟹ 在失配被控对象上，M5 **必然**保不住高度 —— 那是**兜底口径的前提被打破**
       （"模型 hover_thrust 正确"这一条本来就是 M5 的假设），**不是阶梯坏了**。
@@ -1517,9 +1529,10 @@ def main(argv=None) -> int:
                          "`/tmp/mocap-model-3.json` 已不存在，见模块 docstring）")
     ap.add_argument("--mismatch", default="none", choices=sorted(MISMATCHES),
                     help="被控对象的失配变体（`mass+30` = 票面要的那一档；`none` = 归因对照）")
-    ap.add_argument("--hover-thrust", type=float, default=0.6235,
-                    help="DUT 模型的悬停油门。★ 默认 0.6235 = **SITL 机型自己推出来的值**"
-                         "（m·g/(4·SIH_T_MAX)），不是 `params.py` 的 0.1589 —— 理由见模块 docstring ☠☠")
+    ap.add_argument("--hover-thrust", type=float, default=None,
+                    help="DUT 模型的悬停油门（**推力域**的归一化常数）。★ 默认**不传** = 用 "
+                         "`params.py` 的节点默认值，它与重搭后的被控对象同源（m·g/(4·SIH_T_MAX) ≈ 0.1588）"
+                         "—— 见模块 docstring「悬停口径」。★ 要手工给别的口径时才传一个数。")
     ap.add_argument("--extra-delay-ms", type=float, default=0.0,
                     help="在模型基延迟上再叠多少（判据③ 用 50）")
     ap.add_argument("--base-delay-ms", type=float, default=None,
@@ -1592,7 +1605,9 @@ def main(argv=None) -> int:
                              "（包里的参考 z ≡ 0，锚点又定在地面那一拍）—— "
                              "用 --hold-z（或 --ref-z-offset-m）给一个起飞高度")
     args.plant_param = plant_param_file(args.mismatch)
-    args.model_hover_thrust = args.hover_thrust
+    # ★ 模型**实际**用的悬停口径：显式给了就用它，否则 = 节点默认（`params.py`，DUT 不覆盖时用的就是它）
+    args.model_hover_thrust = (args.hover_thrust if args.hover_thrust is not None
+                               else node_default_hover_thrust())
     args.build_dir = args.build_dir or str(Path(args.src) / "build/px4_sitl_default")
     args.replay_summary = Path(args.outdir) / f"{args.tag}-replay.json"
     outdir = Path(args.outdir)
@@ -1615,7 +1630,8 @@ def main(argv=None) -> int:
         with BWorld(args) as world:
             print(f"[verify] 被控对象 = {args.plant_param}"
                   f"（COM_OF_LOSS_T = {world.com_of_loss_t}）", file=sys.stderr)
-            print(f"[verify] 模型 hover_thrust = {args.hover_thrust}；"
+            print(f"[verify] 模型 hover_thrust = {args.hover_thrust}"
+                  f"{'（未覆盖 ⟹ 用节点默认）' if args.hover_thrust is None else ''}；"
                   f"被控对象需要 {plant_hover_thrust(args.plant_param)}", file=sys.stderr)
             tap = TruthTap(outdir / f"{args.tag}-truth.jsonl")
             replay = ReplayProc(args, outdir / f"{args.tag}-replay-frames.jsonl",
@@ -1628,7 +1644,7 @@ def main(argv=None) -> int:
             agent = ta.ArmAgent()
             with ta.MpcDut(argv_dut, Path(cfg.log_file)) as dut:
                 obs.update(run_flight_b(world.px, rec, tap, dut, replay, cfg, agent))
-            obs["model_hover_thrust"] = args.hover_thrust
+            obs["model_hover_thrust"] = args.model_hover_thrust
             obs["plant_param"] = args.plant_param
             # 判据层自己炸了也要把这一场说完（观测已在手上，`finally` 落盘 + `--replay`）
             try:

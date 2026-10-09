@@ -777,7 +777,9 @@ ROS 侧：  ros2 interface show px4_msgs/msg/VehicleRatesSetpoint
 > `PARAM_DEFINE_FLOAT` 默认值 + `init.d-posix/airframes/10040_sihsim_quadx`）：
 > `SIH_MASS 1.0` / `SIH_L_ROLL 0.2` / `SIH_T_MAX 5.0`（单电机）/ `SIH_IXX 0.025`，
 > 而机型里 `CA_ROTORn_PX/PY = ±0.15`（**与 SIH 的 0.2 自相矛盾**）。
-> 对 z0 的 0.75 / 0.0537 / 2.95 / 0.002166：**力臂 2.8 倍、`IXX` 11.5 倍**。
+> 对 z0 的 0.75 / 0.0537 / **11.5757** / 0.002166：**力臂 2.8 倍、`IXX` 11.5 倍**
+> （★ 第三个值 2026-10-09 基线已换：`SIH_T_MAX` 由按电池的 `2.95` 改成按电机的 `11.5757`，
+> ticket 21 / phase3 的 `04`；那两条比值不涉及 `T_MAX`，故不变）。
 > "在 x500 上能飞"因此**不蕴含**"在 z0 上能飞"，拿它做 SITL 验收等于把本步的判据换成另一台飞机的。
 > 验收用的被控对象是 `sihsim_z0`（ticket 08 交付），参数、切换与复原见
 > [`sitl-z0-plant.md`](sitl-z0-plant.md)。
@@ -786,7 +788,10 @@ ROS 侧：  ros2 interface show px4_msgs/msg/VehicleRatesSetpoint
 > z0 同构机 `sihsim_z0`（`SYS_AUTOSTART=10046`）已能起，
 > 参数、±30 % 失配开关、复原方式、验收脚本全在 [`sitl-z0-plant.md`](sitl-z0-plant.md)。
 > **S5 本身（闭环）仍未开始** —— 收口的是"拿什么当被控对象"，不是"闭环跑通了"。
-> 一句话记值：`SIH_MASS 0.75` / `SIH_T_MAX 2.95` / 力臂 `0.0537401` / `MPC_TILTMAX_AIR 45`（**与飞机一致** —— 2026-09-28 裁定「两边都回 45」，原打算在 SITL 侧收成 30° 的那版**已作废**）。
+> 一句话记值：`SIH_MASS 0.75` / `SIH_T_MAX 11.5757` / 力臂 `0.0537401` / `MPC_TILTMAX_AIR 45`（**与飞机一致** —— 2026-09-28 裁定「两边都回 45」，原打算在 SITL 侧收成 30° 的那版**已作废**）。
+> ☠️ **`SIH_T_MAX` 这格 2026-10-09 已换**：按电池的 `2.95` → **按电机的 `11.5757`**
+> （ticket 21 / phase3 的 [`04`](../../.scratch/phase3/issues/04-rebuild-sitl-plant-to-measured-baseline.md)）；
+> 本段其余结论（"验收用 `sihsim_z0`"、"五个旋钮"）不受影响。
 > 失配开关是**五个**旋钮（质量 / 推力系数 / 转动惯量 / 作动器滞后 `tau` / 内环闭环带宽 `rate`），其中 `rate` 动的是**控制器**、其余四个动**被控对象** —— 与上一段 Q11 记的四个不完全是一回事，见 `sitl-z0-plant.md` §5.4。
 
 在（z0 参数的）SITL 被控对象上跑通完整链路。**SITL 里 PX4 状态话题可用，所以这一步有两个可选的输入源**：

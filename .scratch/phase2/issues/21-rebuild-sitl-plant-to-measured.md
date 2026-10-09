@@ -530,3 +530,35 @@ python3 tools/px4-sitl/mismatch_sweep.py --variants z0-mass+30 --repeats 1 \
 ⚠️ 本条**不改**本票的 `Status:` —— 标签是操作者保留的裁定，该表只记裁定结果。
 ⚠️ 重搭会**作废 A/B 两档基线**（本票标题即如此），所以它是
 [11](../../phase2/issues/11-sitl-tier-b-seam3.md) 判据 ②③④ 之前的事。
+
+---
+
+### 2026-10-09 —— **重搭已落地**（Phase 3 的 [`04`](../../phase3/issues/04-rebuild-sitl-plant-to-measured-baseline.md) 完成）
+
+⚠️ **本票的 `Status:` 行不动** —— 标签是操作者保留的裁定；本票只把结论记在这儿。
+
+**落地清单逐条**（与上面那份清单一一对）：
+
+| 清单条 | 结果 |
+|---|---|
+| `T_MAX_TOTAL` → 46.3027 N（**并把"按电池"的角色说法改对**） | ✅ `plant_spec.py`：`11.8` → `46.3027`，注释改成"被控对象按**电机**" |
+| `.param` 全部重生成、逐份核（含 `z0-thrust±30` 仍相对**新基准** ∓30 %） | ✅ `--emit` 生成 **21 份**、`--check` 通过；`z0-thrust±30` 实测 `15.0484 / 8.1030 N` = `11.5757 × 1.30 / 0.70` |
+| 复算解析悬停油门并与 `params.py` 对账 | ✅ 新值 **0.158846** vs 节点默认 `HOVER_THRUST = 0.1589`，差 **0.034 %**（就是 `g` 取 `9.80665` vs `9.81` 的差）—— "同构"成立 |
+| 摘掉兜底覆盖 + 清掉它的记账 | ✅ `mismatch_sweep.py`（12 号票已 `done`，闸门解除）+ `verify_tier_b_seam3.py`（**本票按操作者 2026-10-09 裁定顺手改**，理由写在 [`04`](../../phase3/issues/04-rebuild-sitl-plant-to-measured-baseline.md) 的 Comments） |
+| `test_mismatch_sweep.py` 三条断言同批改 | ✅ 按**新基线重算**（不是反抄原式） |
+| `--hover-thrust auto` 仍等于**标称**（不许改成"按本场推"） | ✅ `_resolve_hover_thrust("auto")` 仍只调**无参** `plant_hover_thrust()`（`expected_params("z0")`，无 per-scenario 入参）；两个同名函数**签名没动** |
+| `test_tier_b_judges.py` 的 `model_ht=0.6235` 夹具逐条判 | ✅ 8 处逐个判：**全是"DUT/模型口径"的记录**，不是夹具自洽常数 ⟹ 全部跟到 `0.1589` |
+| 跑一次冒烟证"不传覆盖也能悬停" | ❌ **未做** —— 要占飞行窗口；操作者裁定留 Phase 3 的 [`06`](../../phase3/issues/06-fly-t0-seam3-four-criteria.md) |
+| 归档记 harness 身份 / 重跑留痕 | ⏸ **不适用**（本轮没跑扫描）；`06` 重跑时照办 |
+| 《失效清单》逐份记「基线已换」 | ✅ 6 份清单条目全处理，**另超出 5 份**（理由与逐份点名见 [`04`](../../phase3/issues/04-rebuild-sitl-plant-to-measured-baseline.md) 的 Comments） |
+| 不改 `src/nmpc/nmpc/params.py`（「11 补、10 不动」） | ✅ **一个字节没动** |
+| 新数字一律"从手上这批 run 现算" | ✅ `sitl-z0-plant.md` §6.2 **整表重跑覆盖**，逐格从 `/tmp/z0_all_rebuild.{log,json}` 现算 |
+| 重搭后若有新不达标，如实记 | ⚠️ **`--variants-all` 全绿（636/636）**；但**顺带查出一条**：`offboard_smoke.py` 的 `t_max_n` 默认仍是 `11.8`（按电池）⟹ 重搭后 [05](05-sitl-offboard-smoke.md) 的两条 `⑤` 判据**会红**（**推算、未实跑**）。修它属 05/10 的域，本票没动，交操作者裁定 |
+
+**一句话结论**：被控对象已从"按电池的 11.8 N"换成"**按电机的 46.3027 N**"，
+解析悬停油门与节点默认**同档**（`0.158846` vs `0.1589`）—— 那个被反复记账的 **3.92× 口径差归零**。
+**A/B 两档的全部历史读数从此作废**，须在 [`06`](../../phase3/issues/06-fly-t0-seam3-four-criteria.md) 里重飞。
+
+⚠️ 与重搭无关、但重跑前必须知道的那条**复现性缺口**（见本票末节）：[12](12-mismatch-sweep.md)
+那轮扫描飞的 `install/` 快照**不是某一棵提交的树**、其中 `params.py` 的字节**已在仓库里永久丢失**
+⟹ **旧基线本身不可完整重跑**；新表的数字只能来自**新跑的那批**，逐格现算。
