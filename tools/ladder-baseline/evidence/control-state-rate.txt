@@ -1,0 +1,24 @@
+# /control/state 的发布周期 —— 窗口边界精度的来源
+# 生成：python3 tools/ladder-baseline/ladder_from_bag.py bag/<每份> --caliber a
+# 日期：2026-10-09  机上：z0 的 Jetson Orin NX
+
+## bag/old/3_traj1_hover
+窗口    AUTO/TRACK  [1790666860.030, 1790666919.232]  59.20 s
+      窗口边界来自 /control/state（118 条，周期中位 1000 ms、最大 1024 ms）⟹ 两端各 ±1 拍
+
+## bag/old/4_traj3_lemniscate
+窗口    AUTO/TRACK  [1790667098.201, 1790667104.280]  6.08 s
+      窗口边界来自 /control/state（53 条，周期中位 998 ms、最大 1031 ms）⟹ 两端各 ±1 拍
+
+## bag/3_traj1_hover
+窗口    AUTO/TRACK  [1791452468.005, 1791452507.205]  39.20 s
+      窗口边界来自 /control/state（109 条，周期中位 1000 ms、最大 1038 ms）⟹ 两端各 ±1 拍
+
+## bag/4_traj2_square
+窗口    AUTO/TRACK  [1791452671.969, 1791452679.968]  8.00 s
+      窗口边界来自 /control/state（50 条，周期中位 999 ms、最大 1021 ms）⟹ 两端各 ±1 拍
+
+## bag/5_traj3_lemniscate
+窗口    AUTO/TRACK  [1791454734.787, 1791454746.808]  12.02 s
+      窗口边界来自 /control/state（63 条，周期中位 1000 ms、最大 1025 ms）⟹ 两端各 ±1 拍
+
