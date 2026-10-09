@@ -1,6 +1,6 @@
 # Phase 3 Spec —— 整理 Phase 2 的产出，并收口它没做完的收尾
 
-Status: ready-for-agent
+Status: done
 
 > **范围**：两件事，各自有各自的验收判据（见 Testing Decisions）。
 > **甲 = 整理**：把 Phase 2 产出的文档裁到"够用"—— 目的是**让上线的人/agent 读得完**，不是为了好看。
@@ -176,6 +176,11 @@ Phase 2 干了很久，产出摊得很开：27 张票、20 来份 `docs/`、几�
 ★ 「处置」一列是**本轮裁定的结果**；**`Status:` 行本身由操作者自己改**（标签是操作者保留的裁定）。
 ★ 表里的**「它从哪来」**都是第一手（票面原话或已归档读数），**不是转述的记忆**。
 
+> ☠️ **2026-10-09 收口**：操作者裁定「**将 spec2 的 tickets 都收口并注明在 spec3 里已完成**」⟹
+> **9 张票的 `Status:` 全部切 `done`**（由我执行、裁定归操作者），验收框逐条勾上并注明证据在 phase3 的哪张票。
+> ★ 其中 **`24` / `25`（含并入的 `16`）是「裁定收、不做了」，没有实测证据作锚** ——
+> 别把这三张的 `done` 读成「做完了」。逐张的收口语写在各票票首与其 Comments 末节。
+
 ★ **这张表不是行动单，行动单是 `.scratch/phase3/issues/` 下的票** ——
 本 tracker 的规矩是**一票一文件、从 `01` 编号**，**不许**拿一张合并的 tickets 文件代替
 （[`docs/agents/issue-tracker.md`](../../docs/agents/issue-tracker.md)）。
@@ -183,14 +188,14 @@ Phase 2 干了很久，产出摊得很开：27 张票、20 来份 `docs/`、几�
 
 | Phase 2 的票 | Phase 3 的行动单 | 谁做 |
 |---|---|---|
-| [21](../phase2/issues/21-rebuild-sitl-plant-to-measured.md) 重搭同构机 | [**04**](issues/04-rebuild-sitl-plant-to-measured-baseline.md) | `ready-for-agent`（纯离线） |
-| [27](../phase2/issues/27-lemniscate-doubled-and-downstream-labels.md) 八字放大 | [**05**](issues/05-repoint-t0-to-lemniscate-1m-and-model5.md) | `ready-for-agent`（纯离线接线） |
+| [21](../phase2/issues/21-rebuild-sitl-plant-to-measured.md) 重搭同构机 | [**04**](issues/04-rebuild-sitl-plant-to-measured-baseline.md) | `done`（2026-10-09；`T_MAX_TOTAL` → **46.3027 N**） |
+| [27](../phase2/issues/27-lemniscate-doubled-and-downstream-labels.md) 八字放大 | [**05**](issues/05-repoint-t0-to-lemniscate-1m-and-model5.md) | `done`（2026-10-09；`T0` 已接到 1.0 m 新包 + `mocap-model-5.json` 入库） |
 | [11](../phase2/issues/11-sitl-tier-b-seam3.md) 跑满 seam 3 | [**06**](issues/06-fly-t0-seam3-four-criteria.md) | `done`（2026-10-09 操作者切；⚠️ **`11` 本身仍未收口** —— ② 判不了，等 [`10`](issues/10-tier-b-judge-window-datum-mismatch.md) 修完重判） |
 | [20](../phase2/issues/20-vertical-channel-mismatch-offset.md) 振荡机理 | [**07**](issues/07-oscillation-mechanism-outside-three-param-model.md) | `done`（2026-10-09 操作者收口；机理 = **三参数模型的阻尼项没有输入**；⚠️ **它只解释了一半** —— 母票 `20` 仍是 `ready-for-human`） |
 | [10](../phase2/issues/10-param-measure-backfill.md) 电池可持续推力 | [**08**](issues/08-battery-sustainable-thrust-from-archived-ulogs.md) | `done`（2026-10-09 操作者收口；结论 = **归档答不了"电池能供出多少"（能力），只能给需求的下界** —— 逐场读数在票面，本格不抄；⚠️ **"`f_max` 保不保守"本票答不了**，须另做独立电流基准的台架量 —— 母票 `10` 仍是 `ready-for-human`） |
 | [26](../phase2/issues/26-recording-six-scenes-and-the-rewrite-path.md) 录制收口 | [**09**](issues/09-recording-sixth-scene-closeout.md) | `done`（2026-10-09 操作者裁定收口；★ **按裁定收，没有入库的场景 6 包**） |
-| [16](../phase2/issues/16-ocp-yaw-weights-mirror-well.md) 偏航镜像井 | —— **并入 [25](../phase2/issues/25-yaw-channel-authority.md)**，不新开票 | —— |
-| [24](../phase2/issues/24-mocap-attitude-yawzeroed-vs-world-frame.md) / [25](../phase2/issues/25-yaw-channel-authority.md) | —— **不新开票** | 标签是 `needs-triage`，**终态由操作者给** |
+| [16](../phase2/issues/16-ocp-yaw-weights-mirror-well.md) 偏航镜像井 | —— **并入 [25](../phase2/issues/25-yaw-channel-authority.md)**，不新开票 | 随 `25` 切 `done`（2026-10-09） |
+| [24](../phase2/issues/24-mocap-attitude-yawzeroed-vs-world-frame.md) / [25](../phase2/issues/25-yaw-channel-authority.md) | —— **不新开票** | `done`（2026-10-09 操作者裁定「议决完毕」；★ **裁定收，无实测证据作锚**） |
 
 | 票 | 它从哪来（一手） | 为什么必须做完 | 卡在哪 / 可行性 | 处置 |
 |---|---|---|---|---|
@@ -198,9 +203,9 @@ Phase 2 干了很久，产出摊得很开：27 张票、20 来份 `docs/`、几�
 | [**11**](../phase2/issues/11-sitl-tier-b-seam3.md) SITL B 档闭环 + seam 3 量化验收 ★<br>`ready-for-human` | Phase 2 的最高验收关卡（spec 原话：「seam 3 就是 Phase 2 的最高验收关卡」、「判据必须真的跑满」） | 它是 Phase 2 能否收口的**唯一闸门**，也是 Phase 4 的前置 | 判据① 已**双过**（20 §13.3）；②③④ 见票面。**只差一场 `T0`** | 飞一场 `T0` + **订正票面两处过期理由**（正方形那条已不判，理由却还挂在验收项里） |
 | [**20**](../phase2/issues/20-vertical-channel-mismatch-offset.md) 垂直通道的失配偏差<br>`ready-for-human` | 换落点后判据① **双过**（§13.3），但 §13.5 的**振荡余量 6.4× → 1.4×** | 余量 1.4× 意味着再来点扰动就可能振起来 | 机理**未解释**（§13.8 第 3 条） | **查清振荡机理**；查不动就如实写成已知风险 + 重开条件 |
 | [**21**](../phase2/issues/21-rebuild-sitl-plant-to-measured.md) 重搭 SITL 同构机<br>`ready-for-agent` | 现被控对象的推力满量程比真机实测**小 3.92 倍** | 基线不对 ⟹ A/B 两档的**全部读数**都带这个已知偏差 | **纯离线、AFK 可做**；它的前置（20 的两场飞完并归档）**2026-09-30 已满足** | **现在做** |
-| [**16**](../phase2/issues/16-ocp-yaw-weights-mirror-well.md) 偏航权重镜像井<br>`ready-for-human` | 权重已落地；验收第 3 项（A 档 SITL 复飞）**待飞** | 与 `25` 是同一族的两半 | — | **并入 [25](../phase2/issues/25-yaw-channel-authority.md)** |
-| [**24**](../phase2/issues/24-mocap-attitude-yawzeroed-vs-world-frame.md) `q` 与 `p`/`v` 不同系<br>`needs-triage` | `mocap` 在解锁后把姿态 `yaw_zeroed`，而位置/速度**没有**旋转 | 受影响的**只有真飞 B 档**，且 `yaw0 ≈ 0` 时看不出来 | 先量**已归档包**里的 `yaw0`；正面修法是现场规程（机头对齐动捕 `+x`） | 现场规程优先 + 坐标系写法兜底；**标签由操作者给** |
-| [**25**](../phase2/issues/25-yaw-channel-authority.md) 偏航是死通道<br>`needs-triage` | 0.40 rad（23°）的机头误差只换来求解器 **`−3.8190e-4 rad/s`**（τ ≈ 1026 s） | 任何**靠反馈回正机头**的场景都做不了 | 四条路的差别是**代价与落点**，属操作者裁定 | **路 3（接受现状）** + 把判据门槛降到**能看见这个量**（现有门槛比它高三个数量级） |
+| [**16**](../phase2/issues/16-ocp-yaw-weights-mirror-well.md) 偏航权重镜像井<br>`ready-for-human` | 权重已落地；验收第 3 项（A 档 SITL 复飞）**待飞** | 与 `25` 是同一族的两半 | — | **并入 [25](../phase2/issues/25-yaw-channel-authority.md)**；★ 2026-10-09 随 `25` 一起切 `done` |
+| [**24**](../phase2/issues/24-mocap-attitude-yawzeroed-vs-world-frame.md) `q` 与 `p`/`v` 不同系<br>`needs-triage` | `mocap` 在解锁后把姿态 `yaw_zeroed`，而位置/速度**没有**旋转 | 受影响的**只有真飞 B 档**，且 `yaw0 ≈ 0` 时看不出来 | 先量**已归档包**里的 `yaw0`；正面修法是现场规程（机头对齐动捕 `+x`） | **操作者 2026-10-09 裁定：`done`（议决完毕）** —— ★ 这是「**裁定收、不做了**」，**没有实测证据作锚**；兜法 = 现场规程优先 + 坐标系写法兜底 |
+| [**25**](../phase2/issues/25-yaw-channel-authority.md) 偏航是死通道<br>`needs-triage` | 0.40 rad（23°）的机头误差只换来求解器 **`−3.8190e-4 rad/s`**（τ ≈ 1026 s） | 任何**靠反馈回正机头**的场景都做不了 | 四条路的差别是**代价与落点**，属操作者裁定 | **操作者 2026-10-09 裁定：`done`（议决完毕）** —— ★ 同样**没有实测证据作锚**；**路 3（接受现状）**，偏航**仍然是死通道** |
 | [**26**](../phase2/issues/26-recording-six-scenes-and-the-rewrite-path.md) 录制菜单与六场景<br>`ready-for-human` | 现场主诉逐字：「一选场景就说目录已存在，什么都没录。」 | 它是 `bag/` 那批输入的来源，而 `bag/` 是 B 档的输入 | 代码侧已落地并入库（`2665d0a`）；**场景 4 已于 2026-10-08 真机录成**（`bag/4_traj2_square`） | **已收口**（2026-10-09 操作者裁定）；★ **场景 6 那条按裁定收、没有入库的包作锚**（全盘搜过：`bag/` 下不存在 `6_free*`）—— 结论与取证在 [`09`](issues/09-recording-sixth-scene-closeout.md) 的 Comments #2 |
 | [**27**](../phase2/issues/27-lemniscate-doubled-and-downstream-labels.md) 八字放大到 1 m<br>`ready-for-human` | 操作者指令逐字：「将轨迹3的8字飞行轨迹改为原本的2倍」 | 判据② 要飞的**就是这条 1.0 m 的** | 1.0 m 包已于 2026-10-08 录成（参考包络 **2.000 × 1.000 m**、1312 帧）；⚠️ **但 `T0` 现在接的还是 0.5 m 那份** | 收口 = 把 `T0` 与验证器的默认参考包改成新包 + 生成 `mocap-model-5.json`（回放节点吃的参考/噪声/时序**全部**来自那份 JSON） |
 
@@ -281,3 +286,57 @@ Phase 2 干了很久，产出摊得很开：27 张票、20 来份 `docs/`、几�
 （[`04`](issues/04-rebuild-sitl-plant-to-measured-baseline.md) 与
 [`07`](issues/07-oscillation-mechanism-outside-three-param-model.md) 就是两条互不相干的 AFK 线）。
 一票一文件之后，"哪几张能现在派出去"一眼可见 —— 这也是本阶段（缩减无用文档）本该达到的效果。
+
+---
+
+### #3 收口（2026-10-09，操作者裁定）—— `Status: ready-for-agent` → `done`
+
+**裁定原话**：「将 spec2 的 tickets 都收口并注明在 spec3 里已完成，spec3 也收口」。
+
+#### 一、本阶段自己的票：10 张全 `done`
+
+`01`–`10`（含跑到一半冒出来的 [`10` 判层缺陷](issues/10-tier-b-judge-window-datum-mismatch.md)）全部 `done`，
+顶层 `## 验收` 逐条勾上。**逐票的证据在各票自己票面**，本 spec 不重抄。
+
+#### 二、Phase 2 那 9 张：全部切 `done`，逐张注明靠谁完成
+
+| phase2 | 由谁完成 | 终态的**性质** |
+|---|---|---|
+| [10](../phase2/issues/10-param-measure-backfill.md) | phase3 [`08`](issues/08-battery-sustainable-thrust-from-archived-ulogs.md) | 做完（结论含"答不了" + 重开条件） |
+| [11](../phase2/issues/11-sitl-tier-b-seam3.md) | phase3 [`06`](issues/06-fly-t0-seam3-four-criteria.md) + [`10`](issues/10-tier-b-judge-window-datum-mismatch.md) | 做完（四判据均有结论） |
+| [16](../phase2/issues/16-ocp-yaw-weights-mirror-well.md) | 并入 [`25`](../phase2/issues/25-yaw-channel-authority.md) | **裁定收** |
+| [20](../phase2/issues/20-vertical-channel-mismatch-offset.md) | phase3 [`07`](issues/07-oscillation-mechanism-outside-three-param-model.md) | 做完一半 + 另一半记为已知风险 |
+| [21](../phase2/issues/21-rebuild-sitl-plant-to-measured.md) | phase3 [`04`](issues/04-rebuild-sitl-plant-to-measured-baseline.md)，`06` 回填 | 做完（一处降级为已知风险） |
+| [24](../phase2/issues/24-mocap-attitude-yawzeroed-vs-world-frame.md) | —— **没做过任何工作** | ★★ **裁定收、不做了** |
+| [25](../phase2/issues/25-yaw-channel-authority.md) | —— **没做过任何工作** | ★★ **裁定收、不做了** |
+| [26](../phase2/issues/26-recording-six-scenes-and-the-rewrite-path.md) | phase3 [`09`](issues/09-recording-sixth-scene-closeout.md) | 做完代码侧；场景 6 **按裁定收** |
+| [27](../phase2/issues/27-lemniscate-doubled-and-downstream-labels.md) | phase3 [`05`](issues/05-repoint-t0-to-lemniscate-1m-and-model5.md) | 做完 |
+
+★ **「`done`」在这张表里有两个意思，别混**（这正是本阶段反复要防的那种混淆）：
+
+- **做完了** —— `10`/`11`/`20`/`21`/`26`/`27`。它们的 `done` **有实测或复跑证据**；
+- **裁定收、不做了** —— `16`/`24`/`25`。它们的 `done` **没有实测证据作锚**，是操作者议决的结果。
+  三张票的**票首与 Comments 末节都写明了这一点**，并按纪律列出残留动作与重开条件。
+
+#### 三、本阶段收口条件（Testing Decisions 乙）逐条对
+
+| 条件 | 现状 |
+|---|---|
+| ① Further Notes ② 那张清单里**每一行**都有终态（`done` / `wontfix` / "已知风险 + 重开条件"） | ✅ **9 行全 `done`**；其中三行内嵌"已知风险 + 重开条件"（`10` 的 `f_max` 保守性、`20` 的 `D_eff` 来源、`21` 的 A 档 `thrust_from_motors`） |
+| ② 涉及代码/工具的留下**可复跑的判据** | ✅ `04`/`05` 的落地 + `06` 的 `TAGS="F0 F1 F2 F3 F4 T0" run_matrix.sh` + `10` 的重判路径，逐条在各自票面 |
+| ③ **不许把 `needs-triage` 自己 promote 成 `done`** | ✅ 遵守 —— `24`/`25` 的 `done` 是**操作者 2026-10-09 的裁定**，不是我 promote 的（我先问了，见 Comments #2 之后那条问答） |
+
+#### 四、同时补掉的三处**记账欠账**（都不是结论问题，是文档没跟上事实）
+
+1. **本 spec 自己**：`Status:` 一直是 `ready-for-agent`，10 张票全 `done` 却看不出来 ⟹ 本条已切 `done`；
+2. [`03`](issues/03-docs-index-status-and-obsolete-block-compression.md) 的**顶层 `## 验收` 五条未勾**
+   （Comments #4 的副本却是 `[x]`）⟹ 已逐条勾上 —— 这是「票面有两份验收清单」那个坑的又一例；
+3. 本文 **Further Notes ② 的对照表**里 `04`/`05` 两行还写着 `ready-for-agent`（半更新状态）⟹ 已改成 `done`。
+
+#### 五、留给 Phase 4 的（本阶段**不收口**、也**不挡**）
+
+- Phase 4 自己的 10 张票：全部未结（`ready-for-human` 8 / `ready-for-agent` 2 / `needs-info` 1）—— **那才是下一阶段**；
+- `24`/`25` 那两张**没有实测证据**的裁定，**真飞前值得再看一眼**（重开条件写在各自票面）；
+- [README.md](../../README.md) 的 **Phase 2** 那格还写着「seam 3 的判据未跑满；A/B 两档读数须重跑」——
+  自 `5ee6140` 后没再动过，**已过期**（B 档已重跑、判据有结论；A 档只重跑了标称冒烟、
+  且 `verify_tier_a_hover.py:791` 那列已知仍错 0.769 / 1.429 倍）。**本轮按范围没动它，点名在此。**

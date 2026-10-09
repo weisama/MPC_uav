@@ -69,15 +69,26 @@ $ git grep -n -I '☠️' -- docs/ | grep -vc '~~'     # (乙) 警示标签：12
 
 ## 验收
 
-- [ ] 抽检每一处 (甲) 类作废块：**只看节首**，能回答出"被谁推翻 / 搬到哪"（Solution 甲·3）
-- [ ] 全 `docs/` 里**不再有"被划掉的正文而无去向标记"**的节
-- [ ] `docs/` 里的状态自述与各票 `Status:` 行**一致**（不一致的按票面改文档）
-- [ ] 文档里不再指向 `phase3/`（实机那层已顺延为 `phase4/`，见 [01](01-directory-renumber-and-link-sweep.md)）
-- [ ] 按文件跑文档守卫全绿：
+> ☠️ **2026-10-09 补勾（本票落地时漏了这一步）**：本票在 `9380dd3` 已切 `Status: done`，但**这五条框一直没勾**
+> —— 证据当时写进了 Comments #4「落地记录」，那儿的副本是 `[x]`，正本却是 `[ ]`。
+> 这就是[「票面有两份验收清单」](../../../docs/agents/triage-labels.md)那个坑：**只信副本就会漏**。
+> 现按 Comments #4 的读数逐条勾上（**勾的是那条记录，不是重新跑了一遍**）。
+> ⚠️ 第 3 条的读数**有一条已知的后续漂移**：`docs/control/phase2-implementation.md` §S5 末尾
+> 「状态停在 `ready-for-human`」那句话，是**2026-10-09 收口 phase2 那 9 张票时新产生的**不一致 ——
+> 已在同一轮就地加 ☠️ 块订正（见该处）。
+
+- [x] 抽检每一处 (甲) 类作废块：**只看节首**，能回答出"被谁推翻 / 搬到哪"（Solution 甲·3）—— 见 Comments #4
+- [x] 全 `docs/` 里**不再有"被划掉的正文而无去向标记"**的节 —— 见 Comments #4
+- [x] `docs/` 里的状态自述与各票 `Status:` 行**一致**（不一致的按票面改文档）—— 落地时 5 处订正（Comments #4）；
+      ★ 2026-10-09 收口 phase2 那 9 张票后又漂移出 **1 处**，已就地订正
+- [x] 文档里不再指向 `phase3/`（实机那层已顺延为 `phase4/`，见 [01](01-directory-renumber-and-link-sweep.md)）
+      —— `grep -rn -E 'phase3/|Phase ?3' docs/` ⟹ **0**
+- [x] 按文件跑文档守卫全绿：
       `python3 -m pytest run/tests/test_operation_manual.py -q`
       ★ **别一次跑 `run/tests/` 整个目录** —— `test_z0_check_live.py` 的模块级 `importorskip`
       会让其余文件一条都不收集而**退出码仍是 0**（静默假绿），见
       [`phase2/issues/26`](../../phase2/issues/26-recording-six-scenes-and-the-rewrite-path.md) 的同名记录
+      —— 落地时实测 `test_operation_manual.py` **5** / `test_z0_menu.py` **66** / `test_rec.py` **80**
 
 ## Comments
 
