@@ -36,7 +36,7 @@ RELIABLE depth 10 —— 与 `mpc_node.QOS_TRAJ_REF`、与 Phase 1 的 `traj_nod
 内容**照抄包里那一串**（`type_mask` / `coordinate_frame` / `frame_id` 逐字带过去），
 只有 `position.z` 会叠 `--ref-z-offset-m`：
 
-    ☠️ **高度不在包里的参考里**（实测：包 4 的 `z ≡ 0`、包 3 恒为 0）⟹ 起飞高度必须由
+    ☠️ **高度不在包里的参考里**（实测：包 5 的 `z ≡ 0`、包 3 恒为 0）⟹ 起飞高度必须由
        回放侧叠上去。不能改用 DUT 的 `hold_offset_z` —— `reference_source=traj` 时
        `mpc_node` 会**拒收**非零 `hold_offset`（`mpc_node.py:1415`），而锚点是在
        **地面上**那一拍定的（`_update_anchor`），所以"参考 z=0"= 让它停在地面。
@@ -51,8 +51,8 @@ RELIABLE depth 10 —— 与 `mpc_node.QOS_TRAJ_REF`、与 Phase 1 的 `traj_nod
 
     python3 tools/px4-sitl/mocap_replay.py --model /tmp/mocap-model-3.json --out /tmp/replay.jsonl
     python3 tools/px4-sitl/mocap_replay.py --model … --extra-delay-ms 50     # 判据 3
-    # 判据② 的八字（包 4）：重发参考 + 叠 1 m 起飞高度 + 前 10 s 顶住首点等它爬上去
-    python3 tools/px4-sitl/mocap_replay.py --model /tmp/mocap-model-4.json \
+    # 判据② 的八字（包 5，`r = 1.0 m`）：重发参考 + 叠 1 m 起飞高度 + 前 10 s 顶住首点等它爬上去
+    python3 tools/px4-sitl/mocap_replay.py --model /tmp/mocap-model-5.json \
         --publish-reference --ref-z-offset-m 1.0 --ref-hold-s 10 --ref-out /tmp/ref.jsonl
 """
 
@@ -445,7 +445,7 @@ class MocapReplay(Node):
           `pre` 段本来就是**我们**加的（真实那场参考是随 TRACK 一起开始的，没有前摇），
           所以这里取"顶住"的字面意思：**站住不动**，`v = 0` —— 这也正是 `hold` 那一族的参考。
           ⚠️ 别把它推广到 `hold` 段：那一段包里的尾巴**本来就是 `p ≡ 0` 且 `v ≡ 0`**
-          （实测帧 305..1028，t = 6.10→20.56 s）⟹ 照抄就是对的，不需要加工。
+          （包 5 实测帧 610..1311，t = 12.20→26.22 s）⟹ 照抄就是对的，不需要加工。
         """
         pos, vel, yaw = reference_fields(self.ref_p[i], self.ref_v[i], self.ref_yaw[i],
                                          phase, self.ref_z_offset_m)

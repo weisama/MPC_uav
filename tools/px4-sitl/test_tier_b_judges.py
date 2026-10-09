@@ -30,6 +30,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import math
+import re
 import sys
 from pathlib import Path
 
@@ -310,14 +311,14 @@ def test_判据1振荡_平的就过():
 
 
 def lemniscate(t):
-    """造一条"会动的"参考（r=0.5 的八字量级）：先爬升到 1 m，再画。
+    """造一条"会动的"参考（**r = 1.0 m** 的八字量级）：先爬升到 1 m，再画。
 
     ★ 判据②·轨迹2 只要求"参考动过、且整段落在 OFFBOARD 窗口里"，不要求它真是八字
-      —— 形状那件事由 `bag/old/4_traj3_lemniscate`（2026-10-08 从前一层的 `bag/` 搬进 `old/`）
-      与 `mocap_model` 那边的读数保证，
+      —— 形状那件事由 `bag/5_traj3_lemniscate`（2026-10-08 录成的 1.0 m 那份，票 05 起
+      `T0` 的输入）与 `mocap_model` 那边的读数保证，
       这里造的是**判据层的输入**，不是参考本身。
     """
-    return (0.5 * math.sin(t), 0.25 * math.sin(2 * t), min(1.0, t))
+    return (1.0 * math.sin(t), 0.5 * math.sin(2 * t), min(1.0, t))
 
 
 def traj_obs(*, ref_fn=lemniscate, truth_fn=lemniscate, move=None, n_moving=None,
@@ -442,7 +443,7 @@ def test_模型里没有参考就拦住(tmp_path):
     p.write_text(json.dumps({"reference": {"n": 0, "why": "包里没有这个话题"}}),
                  encoding="utf-8")
     problem = b.traj_model_problem(p)
-    assert problem is not None and "恒为 0" in problem and "mocap-model-4.json" in problem
+    assert problem is not None and "恒为 0" in problem and "mocap-model-5.json" in problem
 
 
 def test_模型读不出来也拦住(tmp_path):
@@ -452,17 +453,77 @@ def test_模型读不出来也拦住(tmp_path):
     assert b.traj_model_problem(tmp_path / "没有这个文件.json") is not None
 
 
-def test_入库的两份模型各判各的():
-    """★ 直接判**归档里那两份真模型**：包 3 那份该被拦住、包 4 那份该放行。
+def test_入库的三份模型各判各的():
+    """★ 直接判**归档里那三份真模型**：包 3 那份该被拦住、包 4 / 包 5 该放行。
 
-    用真文件而不是人造 dict，是因为这两份是 `run_matrix.sh` 真正会传的路径 ——
-    人造 dict 测不出"包 4 的模型里其实没写进 `reference` 块"那类入库事故。
+    用真文件而不是人造 dict，是因为这几份是 `run_matrix.sh` 真正会传的路径 ——
+    人造 dict 测不出"包 5 的模型里其实没写进 `reference` 块"那类入库事故。
+
+    ★ 包 4 那份**留着不删**：它证明 `traj_model_problem()` 只认"参考非不非空"、
+      不认"是不是当前规格那条" —— 判据② 该跑哪条由**接线**（票 05）钉，不由这里钉。
+      ⚠️ 后果要记住：**拿 0.5 m 的包 4 冒充 1.0 m 的规格，这个纯函数拦不住**
+      （它参考非空、`span_s` 只是短一半）⟹ 挡它的是下面的 `test_T0接的是1_0m那份八字`。
     """
     ev = Path(b.__file__).resolve().parent / "evidence" / "tier-b"
-    m3, m4 = ev / "mocap-model-3.json", ev / "mocap-model-4.json"
-    assert m3.exists() and m4.exists(), f"归档模型缺了：{m3} / {m4}"
+    m3 = ev / "mocap-model-3.json"
+    m4 = ev / "mocap-model-4.json"
+    m5 = ev / "mocap-model-5.json"
+    for m in (m3, m4, m5):
+        assert m.exists(), f"归档模型缺了：{m}"
     assert b.traj_model_problem(m3) is not None, "包 3 的参考恒为 0，该被拦住"
-    assert b.traj_model_problem(m4) is None, "包 4 的模型该带上那条八字参考"
+    assert b.traj_model_problem(m4) is None, "包 4 的模型该带上它那条 0.5 m 八字参考"
+    assert b.traj_model_problem(m5) is None, "包 5 的模型该带上那条 1.0 m 八字参考"
+
+
+#: 仓库根 —— `run_matrix.sh` 里的 `--model` 是**相对它**写的（脚本先 `cd` 到这里）。
+REPO_ROOT = HERE.parents[1]
+
+
+def _t0_wiring():
+    """从 `run_matrix.sh` 的 `T0)` 那一场**现取接线**：`(模型路径, --hold-s)`。
+
+    ★★ 为什么不在这里逐字抄那两个数：抄了就跟脚本漂开 —— 它们**已经漂过一次**（票 05
+      落地前：脚本指着包 4 那份 0.5 m 的旧规格，而判据② 早该跑 1.0 m 那条）。
+      现取 ⟹ 改脚本（换成更长的参考、或把 `--hold-s` 改短）时，
+      下面的断言**先红**，而不是等一场 SITL 白烧掉才发现。
+    """
+    sh = HERE / "evidence" / "tier-b" / "run_matrix.sh"
+    text = sh.read_text(encoding="utf-8")
+    m = re.search(r"^\s*T0\)(.*?);;", text, re.S | re.M)          # 带续行，接成一条再解析
+    assert m, f"`run_matrix.sh` 里找不到 `T0)` 那一场：{sh}"
+    line = m.group(1).replace("\\\n", " ")
+    model = re.search(r"--model\s+(\S+)", line)
+    hold = re.search(r"--hold-s\s+([0-9.]+)", line)
+    assert model and hold, f"`T0)` 那一场里没同时给出 `--model` 与 `--hold-s`：{line!r}"
+    path = Path(model.group(1))
+    return (path if path.is_absolute() else REPO_ROOT / path), float(hold.group(1))
+
+
+def _model_reference(model_path):
+    """取出归档模型里那条参考。★ 缺 `reference` 块就**当场炸**（不是悄悄返回 `{}`）。"""
+    ref = json.loads(model_path.read_text(encoding="utf-8")).get("reference") or {}
+    assert ref.get("n"), f"{model_path} 里没有 `/traj/reference`（n={ref.get('n')}）"
+    return ref
+
+
+def test_T0接的是1_0m那份八字_不是0_5m那份():
+    """★★ `T0` 那一场判的是**当前规格那条轨迹** —— 1.0 m 八字。
+
+    ★ 为什么要有这一条：`traj_model_problem()` 只拦"参考恒为 0"，**拦不住**
+      "拿 0.5 m 的旧包冒充 1.0 m 的规格"（旧包参考非空、只是短一半）。而规格一旦漂回
+      旧包，报告读起来一切正常 —— 正是本仓库最怕的那类**静默失败**。
+      ⟹ 这里直接量**接线指向的那份模型**的参考包络：包 5 = 2.000 × 1.000 m（r = 1.0），
+      包 4 = 1.000 × 0.500 m（r = 0.5）—— 两者差整整一倍，**只比 x 半幅也分得开**。
+    """
+    model, _hold_s = _t0_wiring()
+    ref = _model_reference(model)
+    xs = [p[0] for p in ref["p"]]
+    ys = [p[1] for p in ref["p"]]
+    span_x, span_y = max(xs) - min(xs), max(ys) - min(ys)
+    assert span_x == pytest.approx(2.0, abs=1e-3), (
+        f"`T0` 接的参考包络 x = {span_x:.3f} m ⟹ 不是 1.0 m 那条八字（0.5 m 那份是 1.000 m）"
+        f"；接线来自 {model}")
+    assert span_y == pytest.approx(1.0, abs=1e-3), f"`T0` 接的参考包络 y = {span_y:.3f} m"
 
 
 def test_hold_s太短就拦住_下界从模型现算():
@@ -471,19 +532,24 @@ def test_hold_s太短就拦住_下界从模型现算():
     规则：`hold_s ≥ ref_hold_s + 参考全长 + 判据① 的稳态窗口`。三段是**串起来的**
     （`pre` 顶住首点 → 参考整条 → 留出稳态窗口），少一截的症状是判据① 的稳态窗口里
     混进八字或爬升段 —— 读出来像"悬停精度很差"，而控制器没问题。
+
+    ★★ 这里的数与接线**都不写死**：`--model` / `--hold-s` 从 `run_matrix.sh` 的 `T0)`
+      那一场现取，参考全长从**那个模型**里现量。改短脚本那一行 ⟹ 这条先红。
     """
-    ev = Path(b.__file__).resolve().parent / "evidence" / "tier-b"
-    m4 = ev / "mocap-model-4.json"
-    span = json.loads(m4.read_text(encoding="utf-8"))["reference"]["span_s"]
-    need = 30.0 + span + b.STEADY_S
-    assert b.traj_model_problem(m4, ref_hold_s=30.0, hold_s=need + 1.0) is None
-    # ★ `run_matrix.sh` 的 `T0)` 那一行**逐字**过一遍：改脚本时这一条会先红。
-    assert b.traj_model_problem(m4, ref_hold_s=30.0, hold_s=60.0) is None
-    short = b.traj_model_problem(m4, ref_hold_s=30.0, hold_s=need - 1.0)
+    model, hold_s = _t0_wiring()
+    span = _model_reference(model)["span_s"]
+    need = 30.0 + span + b.STEADY_S                # 30 = `--ref-hold-s` 的默认（脚本没传）
+    # ★ 脚本现在给的那个数**必须过**（这是"逐字过一遍"那条断言，值改成现取的了）
+    assert b.traj_model_problem(model, ref_hold_s=30.0, hold_s=hold_s) is None, (
+        f"`run_matrix.sh` 的 `T0)` 给的 `--hold-s {hold_s:g}` 撑不住 {model.name}"
+        f"（下界 {need:.2f} s：30 + {span:.2f} + {b.STEADY_S:g}）")
+    # 下界本身也要过得去（不是"刚好差一点也没事"）
+    assert b.traj_model_problem(model, ref_hold_s=30.0, hold_s=math.ceil(need)) is None
+    short = b.traj_model_problem(model, ref_hold_s=30.0, hold_s=need - 1.0)
     assert short is not None and "太短" in short and f"{need:.2f}" in short
     # ☠️ 那一句拍脑袋的旧下界（`ref_hold_s + 10`）**必须被这条判死**：
-    #    它算不出"参考全长"这一截，包 4 的参考有 20.56 s ⟹ 差着整整一条八字。
-    assert b.traj_model_problem(m4, ref_hold_s=30.0, hold_s=41.0) is not None
+    #    它算不出"参考全长"这一截 —— 1.0 m 那份参考有 26.22 s，差着两条八字。
+    assert b.traj_model_problem(model, ref_hold_s=30.0, hold_s=41.0) is not None
 
 
 # ────────────────────────────────────────────── 判据③（延迟）

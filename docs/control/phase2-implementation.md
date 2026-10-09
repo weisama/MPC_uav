@@ -813,6 +813,10 @@ ROS 侧：  ros2 interface show px4_msgs/msg/VehicleRatesSetpoint
    `/traj/reference`**（`bag/4_traj3_lemniscate` 是数据、不随参数改；那份 0.5 m 的包
    2026-10-08 已搬进 `bag/old/4_traj3_lemniscate/`）⟹ 放大后要拿 1.0 m 的证据，
    得**重录一次八字场**或让夹具按新参数重新生成参考。
+   ★ **2026-10-09 订正：那两条去向都已经落地** —— 1.0 m 的八字场 2026-10-08 录成
+   `bag/5_traj3_lemniscate`、回放模型 `mocap-model-5.json` 已入库，SITL 的 `T0` 那一场
+   （判据②·轨迹2）**已接上这两份**（[ticket 05](../../.scratch/phase3/issues/05-repoint-t0-to-lemniscate-1m-and-model5.md)）
+   ⟹ "重放的是 0.5 m 那条"**只对 2026-09-29 那一轮成立**，不再是当前接线。
 3. 人为注入 50 ms 延迟后**仍稳定**（可以变差，但不能发散）。
 4. 人为让 `solve()` 返回非零，**飞机保持安全悬停而不是崩**（验证 M5 兜底）。
 5. **实测最坏求解耗时** ← **这个数字直接决定 D6。**

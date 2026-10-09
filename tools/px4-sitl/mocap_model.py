@@ -55,8 +55,10 @@ STATE_TOPIC = "/control/state"
 #: 轨迹执行态的字符串（包 3 的迁移：`… →AUTO/TRACK→ MANUAL/LAND …`）
 TRACK_STATE = "AUTO/TRACK"
 #: 轨迹参考（`mavros_msgs/PositionTarget`）—— 判据② 的八字那条靠它当参考。
-#: ☠️ 包里它是**相对量、以原点为中心、`z ≡ 0`**（实测：包 4 包络 1.000 × 0.500 m、
-#: 1029 帧；包 3 恒为 0、3873 帧。读数与取证方式见 11 号票 Comments 2026-09-30）
+#: ☠️ 包里它是**相对量、以原点为中心、`z ≡ 0`**（实测：包 5 —— `T0` 用的那份 ——
+#: 包络 2.000 × 1.000 m、1312 帧；包 4 是 0.5 m 的旧规格，1.000 × 0.500 m、1029 帧；
+#: 包 3 恒为 0、3873 帧。包 3 / 包 4 的读数与取证方式见 11 号票 Comments 2026-09-30；
+#: 包 5 的是票 05 现 dump 的 ⟹ 以 `evidence/tier-b/mocap-model-5.json` 为准）
 #: ⟹ **高度不在里面**，回放侧要按 `--ref-z-offset-m` 叠一个起飞高度（理由同处）。
 TRAJ_TOPIC = "/traj/reference"
 

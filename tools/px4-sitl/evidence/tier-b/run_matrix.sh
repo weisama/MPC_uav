@@ -97,25 +97,31 @@ for tag in ${TAGS:-F0 F1 F2 F3 F4}; do
     #   （§11.2），`ki_z` 仍是 1.0。
     F0c) fly F0c --mismatch none ;;
     F1c) fly F1c --mismatch mass+30 ;;
-    # ── 判据② 的第二条轨迹：r = 0.5 m 八字（2026-10-08）──
+    # ── 判据② 的第二条轨迹：r = 1.0 m 八字（包 5，2026-10-08 录成；票 05 起 `T0` 接它）──
     # 这一场**不是** F 系列：`F*` 是"锚点 + 常量偏移"的定点悬停场，这一场让夹具逐点重发
-    # 包 4 里那条 `/traj/reference`（`--publish-reference`），DUT 在 `reference_source=traj`
+    # 包 5 里那条 `/traj/reference`（`--publish-reference`），DUT 在 `reference_source=traj`
     # 下追它 ⟹ 判据②·轨迹2 才有得判（判据②·轨迹1 由 F0c/F1c 那几场判）。
     # ☠️ 三个都是"写错了完全静默"的旋钮，逐条说明：
-    #   ① `--model` **必须**是包 4 那份：包 3 的参考**恒为 0**（3873 帧全在原点），
-    #      拿错了夹具发帧无异常、飞机照飞，报告里只剩一句"参考一帧没动"。验证器
-    #      `traj_model_problem()` 会在起世界之前拦住（纯函数，`test_tier_b_judges.py` 钉着）。
-    #   ② `--hold-s 60`：下界 = 顶住首点 30 + 参考全长 20.56（模型里量的）+ 判据① 稳态窗口 8
-    #      = 58.56 s。**一个都少不得**，少一截会让判据① 的稳态窗口混进八字/爬升段 ——
-    #      读出来像"悬停精度很差"，与控制器无关。59 是下界，给 60 留一拍。
+    #   ① `--model` **必须**是包 5 那份。拿**包 3**（参考恒为 0、3873 帧全在原点）⟹
+    #      夹具发帧无异常、飞机照飞，报告里只剩一句"参考一帧没动" —— 这一条**会被拦**，
+    #      验证器 `traj_model_problem()` 在起世界之前就退（纯函数，`test_tier_b_judges.py` 钉着）。
+    #      ☠️ 但拿**包 4**（0.5 m 的旧规格）**拦不住**：它参考非空、只是短一半（`span_s`
+    #      20.56 vs 26.22）⟹ 报告会像"八字跑完了"，判的却不是当前规格那条。挡它的是
+    #      `test_tier_b_judges.py::test_T0接的是1_0m那份八字`（离线，直接量参考包络）。
+    #   ② `--hold-s 66`：下界 = 顶住首点 30 + 参考全长 26.22（模型里量的）+ 判据① 稳态窗口 8
+    #      = 64.22 s。**一个都少不得**，少一截会让判据① 的稳态窗口混进八字/爬升段 ——
+    #      读出来像"悬停精度很差"，与控制器无关。65 是下界（`math.ceil`），给 66 留一拍。
+    #      ★ `--model` 与 `--hold-s` 这两个数**不逐字抄给测试**：
+    #      `test_hold_s太短就拦住_下界从模型现算` 直接从这一行现取、与模型里的 `span_s` 对账，
+    #      所以**改短这一行会先让测试红**。
     #   ③ `--hold-z 1.0`（默认）在 traj 档**不是** DUT 的 `hold_offset_z`，而是夹具的
     #      `--ref-z-offset-m`：包里的参考 z ≡ 0（那是一条贴地画的八字），高度得由夹具叠。
     #      DUT 那一档的 `hold_offset` 必须全 0（非零会被 `mpc_node` 拒跑）。
     # ⚠️ `--mismatch mass+30`：与 F1c 同一档错参数 ⟹ 读数可与 F1c 并排看
     #    （"同一架错参数的飞机，定点悬停 vs 追八字"）。要归因对照再加一场 `none`。
     T0) fly T0 --mismatch mass+30 --reference-source traj \
-             --model tools/px4-sitl/evidence/tier-b/mocap-model-4.json \
-             --hold-s 60 ;;
+             --model tools/px4-sitl/evidence/tier-b/mocap-model-5.json \
+             --hold-s 66 ;;
     *)  say "不认识的场次 $tag"; exit 2 ;;
   esac
 done

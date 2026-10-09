@@ -6,13 +6,13 @@
 | 判据 | 落地方式 |
 |---|---|
 | ① 起飞到 1 m 悬停、稳态位置误差 < 0.15 m、无持续振荡 | `判据①` + `判据①·振荡` |
-| ② 跑完 Phase 1 的轨迹（**悬停 / r=0.5 m 八字** 两条） | `判据②·轨迹1` + `判据②·轨迹2`（**定性判**，见下） |
+| ② 跑完 Phase 1 的轨迹（**悬停 / r=1.0 m 八字** 两条） | `判据②·轨迹1` + `判据②·轨迹2`（**定性判**，见下） |
 | ③ 注入 50 ms 动捕延迟后仍稳定（可变差、不可发散） | `判据③`（`--extra-delay-ms 50`） |
 | ④ 故意让求解器失败，飞机保持安全悬停而不是坠机 | `判据④`（`--inject-solve-fail-after-frames`） |
 
 ★★ **判据② 现在怎么判**（操作者裁定，2026-09-30；原话在 11 号票 Comments）：
 
-  1. **口径去掉「1 m 正方形」**，只留两条：悬停 / **r = 0.5 m 八字**。
+  1. **口径去掉「1 m 正方形」**，只留两条：悬停 / **r = 1.0 m 八字**。
      正方形那条从来没跑过，理由与"没有跟踪能力"一起作废 —— `bag/` 里本来也没有那份包。
   2. **判定口径 = 定性判：跑完 + 不撞地 + 不失控**；**跟踪误差只留档、不设界**。
      依据：spec（`docs/control/phase2-implementation.md`）对这一条本来就只有
@@ -388,7 +388,7 @@ class ReplayProc:
         if not rows:
             return {"n": 0, "why": f"{path} 是空的"}
         by_phase = collections.Counter(r["phase"] for r in rows)
-        #: "在动"的帧 = 水平位置非零。八字的移动段就是这么认出来的（包 4：帧 0..304）；
+        #: "在动"的帧 = 水平位置非零。八字的移动段就是这么认出来的（包 5：帧 0..609）；
         #: 用 `--ref-z-offset-m` 叠出来的 z 不算"动"（那是高度，不是轨迹）。
         move = [r for r in rows if abs(r["position"][0]) > 1e-6 or abs(r["position"][1]) > 1e-6]
         out = {"n": len(rows), "by_phase": dict(by_phase), "n_moving": len(move),
@@ -928,7 +928,7 @@ def _judge_traj(ck, obs, seg) -> dict:
 
     ★★ 口径的来历（操作者 2026-09-30 裁定，原话在 11 号票 Comments）：
       · **去掉「1 m 正方形」**：`bag/` 里没有那份包（四份场景逐条见 `bag/README.md`），
-        spec 那一行本来也只剩「悬停 / r=0.5 m 八字」两条；
+        spec 那一行本来也只剩「悬停 / r=1.0 m 八字」两条；
       · spec 原文（`docs/control/phase2-implementation.md`）对这一条只有
         「**不撞地、不失控**」，**没有数值界** ⟹ **不编阈值**。跟踪误差照样算、
         照样进 `obs.json`（`traj_err_metrics`），但它**不当判据**。
@@ -1004,29 +1004,29 @@ def _judge_traj(ck, obs, seg) -> dict:
                    f"不撞地 {h['air']}、不失控 {h['offboard_kept']}）；"
                    f"精度那条在 **★判据①**，不在这里重复。")
 
-    # ── 轨迹 2：r = 0.5 m 八字（由 `traj` 档的场次判；参考 = 夹具重发包里的 `/traj/reference`）
+    # ── 轨迹 2：r = 1.0 m 八字（由 `traj` 档的场次判；参考 = 夹具重发包里的 `/traj/reference`）
     tl = obs.get("reference_timeline") or {}
     if src != "traj":
-        ck("★判据②·轨迹2 r = 0.5 m 八字（定性：跑完 + 不撞地 + 不失控；跟踪误差只留档）",
+        ck("★判据②·轨迹2 r = 1.0 m 八字（定性：跑完 + 不撞地 + 不失控；跟踪误差只留档）",
            None,
            f"本场 `--reference-source {src}` ⟹ **这一条没做**（不是通过也不是不通过）。"
            f"★ 判它的场次是 `--reference-source traj` 那几场（夹具按 `bag/"
-           f"old/4_traj3_lemniscate` 里的 `/traj/reference` 逐点重发；高度由 `--ref-z-offset-m` "
+           f"5_traj3_lemniscate` 里的 `/traj/reference` 逐点重发；高度由 `--ref-z-offset-m` "
            f"叠在夹具侧）。", counts=False)
         out["lemniscate"] = {"ran": False, "why": "本场是 hold 档"}
     elif not tl.get("n"):
-        ck("★判据②·轨迹2 r = 0.5 m 八字（定性：跑完 + 不撞地 + 不失控；跟踪误差只留档）",
+        ck("★判据②·轨迹2 r = 1.0 m 八字（定性：跑完 + 不撞地 + 不失控；跟踪误差只留档）",
            None,
            f"本场是 traj 档，但**参考时间线读不到**（{tl.get('why') or '没有日志'}）"
            f"⟹ **这一条判不了** —— 「八字到底发出去没有、发到哪一刻」全靠这条日志，"
            f"没有它就只剩一句「应该发了」。★ 不当作通过也不当作不通过", counts=False)
         out["lemniscate"] = {"ran": False, "why": tl.get("why") or "没有日志"}
     elif not tl.get("n_moving"):
-        ck("★判据②·轨迹2 r = 0.5 m 八字（定性：跑完 + 不撞地 + 不失控；跟踪误差只留档）",
+        ck("★判据②·轨迹2 r = 1.0 m 八字（定性：跑完 + 不撞地 + 不失控；跟踪误差只留档）",
            None,
            f"参考时间线里**没有一帧在动**（共发 {tl.get('n')} 帧，全在原点）⟹ **这一条没做**。"
-           f"★ 这本身就是夹具的**征兆**：包里那条参考的移动段在 `bag/old/4_traj3_lemniscate` 里"
-           f"是前 305 帧\n（t ≤ 6.10 s），发成不动只有两种可能 —— 模型文件里 `reference` "
+           f"★ 这本身就是夹具的**征兆**：包里那条参考的移动段在 `bag/5_traj3_lemniscate` 里"
+           f"是前 610 帧\n（t ≤ 12.18 s），发成不动只有两种可能 —— 模型文件里 `reference` "
            f"块是空的，或者 `--publish-reference` 没接上。", counts=False)
         out["lemniscate"] = {"ran": False, "why": "参考全程不动"}
     else:
@@ -1052,12 +1052,12 @@ def _judge_traj(ck, obs, seg) -> dict:
                 f"参考移动段整段落在窗口内={fits}（★ 判的是**参考**那一段，不是窗口；"
                 f"读数窗口另从离地那一刻算，见下）；{_health_detail(h)}；{tilt}。")
         if not h["ran"]:
-            ck("★判据②·轨迹2 r = 0.5 m 八字（定性：跑完 + 不撞地 + 不失控；跟踪误差只留档）",
+            ck("★判据②·轨迹2 r = 1.0 m 八字（定性：跑完 + 不撞地 + 不失控；跟踪误差只留档）",
                None,
                f"{head}★ 移动段里数据不够 ⟹ **这一条判不了**（仪器没覆盖到窗口，"
                f"不是飞机飞得不好）", counts=False)
         else:
-            ck("★判据②·轨迹2 r = 0.5 m 八字（定性：跑完 + 不撞地 + 不失控；跟踪误差只留档）",
+            ck("★判据②·轨迹2 r = 1.0 m 八字（定性：跑完 + 不撞地 + 不失控；跟踪误差只留档）",
                bool(h["offboard_kept"] and h["air"] and fits is not False),
                f"{head}**跟踪误差（只留档，spec 没有数值界 ⟹ 不设判据）**："
                f"真值 − DUT 自己的 `x_ref0`，水平均值 "
@@ -1358,7 +1358,7 @@ def evaluate_b(obs) -> list:
        f"每帧带 `sat` 列={(obs.get('dut') or {}).get('sat_logged')}、"
        f"档位分布 {fb.get('dist')}")
 
-    # ⑨ 判据②：两条轨迹（悬停 / r=0.5 m 八字）—— 定性判，误差只留档
+    # ⑨ 判据②：两条轨迹（悬停 / r=1.0 m 八字）—— 定性判，误差只留档
     obs["traj"] = _judge_traj(ck, obs, seg)
     return c
 
@@ -1463,6 +1463,8 @@ def traj_model_problem(model_path, *, ref_hold_s=None, hold_s=None) -> str | Non
       `/traj/reference` 是**恒为 0** 的（3873 帧全在原点，见 `mocap_model.TRAJ_TOPIC` 的 ☠️）。
       拿错模型的症状**完全静默**：夹具发帧无异常、飞机照飞、报告说"参考一帧没动"——
       而那读起来像"夹具坏了"。与其让操作者空烧一个窗口才发现，不如在起世界之前拦住。
+      ⟹ `traj` 档要的是**包 5** 那份（`bag/5_traj3_lemniscate` 量出来的、`r = 1.0 m` 的八字；
+      包 4 那份是 0.5 m 的旧规格，票 05 起不再作 `T0` 的输入）。
     ★ 抽成**纯函数**是为了能离线单测：这一段原来在 `main()` 里，
       而 `main()` 的每条路都要起 `BWorld` —— 拿它做变异测试就得烧一个窗口。
 
@@ -1481,10 +1483,10 @@ def traj_model_problem(model_path, *, ref_hold_s=None, hold_s=None) -> str | Non
         return (f"模型 {model_path} 里没有 `/traj/reference`（n={ref.get('n')}、"
                 f"why={ref.get('why')!r}）⟹ 夹具发出去的是一条**恒为 0 的参考**，"
                 f"八字根本不会跑。\n"
-                f"  改用包 4 那份（已入库）：\n"
-                f"    --model tools/px4-sitl/evidence/tier-b/mocap-model-4.json\n"
+                f"  改用包 5 那份（已入库，`r = 1.0 m` 的八字）：\n"
+                f"    --model tools/px4-sitl/evidence/tier-b/mocap-model-5.json\n"
                 f"  重新生成：python3 tools/px4-sitl/mocap_model.py dump "
-                f"bag/old/4_traj3_lemniscate --json <路径>")
+                f"bag/5_traj3_lemniscate --json <路径>")
     span = ref.get("span_s")
     if ref_hold_s is not None and hold_s is not None and isinstance(span, (int, float)):
         need = float(ref_hold_s) + float(span) + STEADY_S
@@ -1577,10 +1579,12 @@ def main(argv=None) -> int:
         return report_b(obs, obs["checks"])
 
     if not Path(args.model).exists():
-        # ⚠️ 两条路径都带 `old/`：这两份包是 **2026-10-08 之前**录的，那天 `bag/` 一层
-        #    按"每个场景只留最新的一份"清过一遍 ⟹ 它们搬进了 `bag/old/`。
+        # ⚠️ 悬停那条**带 `old/`**：那份包是 **2026-10-08 之前**录的，那天 `bag/`
+        #    一层按"每个场景只留最新的一份"清过一遍 ⟹ 它搬进了 `bag/old/`。
         #    去掉 `old/` 会指到**同名的另一次飞行**（症状是"数变了"，不是"路径错了"）。
-        bag = ("bag/old/4_traj3_lemniscate" if args.reference_source == "traj"
+        #    ★ 八字那条**不带 `old/`**：`bag/5_traj3_lemniscate` 是 2026-10-08 新录的 1.0 m
+        #    那份，一直在 `bag/` 一层（票 05 起 `T0` 接的就是它）。
+        bag = ("bag/5_traj3_lemniscate" if args.reference_source == "traj"
                else "bag/old/3_traj1_hover --noise-bag bag/1_static")
         raise SystemExit(f"模型 {args.model} 不存在 —— 先跑：\n"
                          f"  python3 tools/px4-sitl/mocap_model.py dump {bag} "

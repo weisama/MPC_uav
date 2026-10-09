@@ -167,3 +167,22 @@ $ python3 -m pytest run/tests/test_rec.py -q
 那是**本票收口时的连带改动**，不是现在顺手改的。
 
 ⚠️ 本条**不改**本票的 `Status:` —— 标签是操作者保留的裁定，该表只记裁定结果。
+
+### #4 2026-10-09 —— 上面的「连带改动」已由 Phase 3 的 [`05`](../../phase3/issues/05-repoint-t0-to-lemniscate-1m-and-model5.md) 落地（**本票票面仍未动**）
+
+Comments #3 说的"`T0` 接上新包**之后**就不成立"——那个"之后"到了。05 号票做了：
+
+- 生成并入库 `tools/px4-sitl/evidence/tier-b/mocap-model-5.json`
+  （自 `bag/5_traj3_lemniscate`：参考包络 **2.000 × 1.000 m**、1312 帧、`span_s` 26.2236，
+  与 Comments #3 预写的读数逐项对上）；
+- `run_matrix.sh` 的 `T0)` 行：`--model` → 包 5、`--hold-s` **60 → 66**
+  （下界 = 30 + 26.22 + 8 = 64.22 s，`math.ceil` = 65 再留一拍 —— 旧那行的算式按包 4 写的，已重算）；
+- `verify_tier_b_seam3.py` 的 `--reference-source traj` 默认包（`bag/old/4_traj3_lemniscate`
+  → `bag/5_traj3_lemniscate`，⚠️ 新包**不带** `old/`）与其中 **10 处** `r = 0.5 m 八字` 标签；
+- `docs/control/tier-b-sitl-seam3.md` §3.4 / §6.1 / §6.2 / §6.4 的同类标签。
+
+★ **§「有意**不动**的历史记录」那张表一字未改**（`tools/px4-sitl/*` 与
+`docs/control/tier-b-sitl-seam3.md` 的 `r = 0.5 m 八字` 那一格保持原样）——
+按 tracker 纪律，票面是当时的记录。**读表时请以本 Comments #3/#4 为准。**
+
+★ 本票 `Status:` 一字未动（Comments #1：标签是操作者保留的裁定）。

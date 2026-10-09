@@ -12,6 +12,7 @@
 | `<tag>-console.log` | PX4 SITL 的控制台（`pxh>`），137–138 行（`mass+30` 那几场多一行质量提示） |
 | `<tag>-replay.json` | 回放夹具自己的收尾统计（发帧数、实测延迟、σ） |
 | `mocap-model-3.json` | **夹具的模型**（134 KiB）：来自真实 Phase 1 包，含逐轴 σ 与成簇帧间隔 ⟹ 有了它才能重放出"同样脾气"的动捕流 |
+| `mocap-model-4.json` / `mocap-model-5.json` | **八字那档（`--reference-source traj`）的模型**。包 4 = 参考包络 1.000 × 0.500 m（**0.5 m 的旧规格**，2026-10-08 前录的）；包 5 = 2.000 × 1.000 m（**1.0 m，当前规格**）—— 票 05 起 `run_matrix.sh` 的 `T0)` 接的是**包 5**。⚠️ 回放节点**不自己量包**：参考 / 噪声 / 时序全部来自这份 JSON ⟹ 拿错哪一份，装备都不报错、只是跑的参考不对 |
 | `run_matrix.sh` | 跑这九场的脚本（含**等空机**闸门与 `pgrep -x` 的教训） |
 | `u-ref-authority-*.json` | **ticket 20 的离线探针产物**（不是飞行）：`probe_u_ref_authority.py` 的输出，见下节。★ 其中 `-sameframes-20260930` 那份是**同批帧、新树**的复跑，用来量"中间那四个提交对这档的影响"（20 号票 §13.7） |
 | `controller-code-20260930-F0c-F1c.json` | `F0c`/`F1c` 两场的**代码身份**（`git HEAD` + 11 个文件 sha256 + 入口脚本 sha）—— 这两场的 `--json` 里没有 `controller_code` 块（缺席口径见下方第 4 条），故单记一份 |

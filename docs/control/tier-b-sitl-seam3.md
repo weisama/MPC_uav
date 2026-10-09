@@ -201,8 +201,11 @@ python3 tools/px4-sitl/mocap_model.py dump bag/old/3_traj1_hover --noise-bag bag
   本场真正跑的判据是**判据①「起飞到 1 m 悬停」**，票面点名目标是 **1 m**，
   而包 3 里那架飞机当时悬在**它自己的高度**上（而且包 3 的 `/traj/reference` **恒为 0**，
   见 §6 那张表）⟹ 这里只能用合成参考（锚点 + `hold_offset` = `(0, 0, 1.0)`）。
-- **八字那场（`T0`）：已经接了线** —— 夹具按 `--publish-reference` 把包 4 里那条
+- **八字那场（`T0`）：已经接了线** —— 夹具按 `--publish-reference` 把包 5 里那条
   `/traj/reference` **逐点重发**，DUT 在 `reference_source=traj` 下追它。这就是裁定①那半条。
+  > ★ **订正（2026-10-09，票 05）**：本节原写"包 4" —— 那是 **0.5 m** 的旧规格。
+  > 判据② 判的是**当前规格那条 1.0 m 八字**，票 05 把 `T0` 与验证器默认从包 4 换到
+  > **包 5**（`bag/5_traj3_lemniscate`，参考包络 2.000 × 1.000 m、1312 帧）。
 
 > ★★ **订正（2026-10-08）**：本节原来写的是"第①半**没有接线** ⟹ 这句**要保留**"，
 > 11 号票 Comments 里还专门注过"17 落地后仍然成立"。**那个判断错了**，理由是我把
@@ -324,11 +327,16 @@ A 档用节点默认参数**根本没离地** —— 真值 `z` 全程 `+0.0002 
 
 票面原话是"走完 Phase 1 的**三条**轨迹（悬停 / 1 m 正方形 / r = 0.5 m 八字）"。裁定后：
 
+> ★ **订正（2026-10-09，票 05）**：上面那句里的 **`r = 0.5 m` 是票面当时的尺寸**。
+> 操作者 2026-10-08 已把八字**放大到 1.0 m**（[phase2/27](../../.scratch/phase2/issues/27-lemniscate-doubled-and-downstream-labels.md)），
+> 1.0 m 的包（`bag/5_traj3_lemniscate`）同日录成 —— **判据② 判的是这一条**，
+> 故下表与 §6.2 的判据标签一律写 **1.0 m**。
+
 | 轨迹 | 现状 |
 |---|---|
 | 悬停 | **已判 ✅** —— 由 `F0c` / `F1c` 判（离线重判归档的 obs，读数见 §6.3） |
 | ~~1 m 正方形~~ | **去掉了**：`bag/` 里本来也没有那份包（四份场景见 [`bag/README.md`](../../bag/README.md)） |
-| r = 0.5 m 八字 | 判层、夹具、模型都已就绪；**那一场（`T0`）还没飞** —— 要空机窗口，起链/起录操作者亲手 |
+| r = 1.0 m 八字 | 判层、夹具、模型都已就绪（模型 = `mocap-model-5.json`，票 05 换的）；**那一场（`T0`）还没飞** —— 要空机窗口，起链/起录操作者亲手 |
 
 **判定口径 = 定性三条：跑完 + 不撞地 + 不失控**；**跟踪误差只留档、不设界**。
 依据：spec（[`phase2-implementation.md`](phase2-implementation.md)）对这一条本来就只有
@@ -337,7 +345,7 @@ A 档用节点默认参数**根本没离地** —— 真值 `z` 全程 `+0.0002 
 ### 6.2 判层怎么判：**两行，一场只判其中一条**
 
 - `★判据②·轨迹1 原地悬停` —— 由 `--reference-source hold` 的场次判（`F0`–`F4` / `F0b`–`F1c` 都是它）。
-- `★判据②·轨迹2 r = 0.5 m 八字` —— 只有 `--reference-source traj` 的场次才可能判（`T0`）。
+- `★判据②·轨迹2 r = 1.0 m 八字` —— 只有 `--reference-source traj` 的场次才可能判（`T0`）。
 - **另一条当场记「本场不做」**（`ok=None`、`counts=False`）：一场跑不出两条轨迹，
   两条都计数的话**每一场都会凭空多一条"不通过"**，而那是"这一场没跑它"。
   ⚠️ **汇总时别把「本场不做」读成「通过」** —— 要靠 §6.1 那张表认出两条各由哪几场覆盖。
@@ -387,10 +395,15 @@ A 档用节点默认参数**根本没离地** —— 真值 `z` 全程 `+0.0002 
 | 件 | 落在哪 |
 |---|---|
 | 夹具能重发参考 | [`mocap_replay.py`](../../tools/px4-sitl/mocap_replay.py) 的 `--publish-reference`（照抄包里的 `type_mask=2496` / `coordinate_frame=1` / `frame_id=traj_origin`） |
-| 参考序列从包里提出来 | [`mocap_model.py`](../../tools/px4-sitl/mocap_model.py) 的 `read_reference()`；模型 `evidence/tier-b/mocap-model-4.json` 已入库 |
+| 参考序列从包里提出来 | [`mocap_model.py`](../../tools/px4-sitl/mocap_model.py) 的 `read_reference()`；模型 `evidence/tier-b/mocap-model-5.json` 已入库（1.0 m 那条；0.5 m 的 `mocap-model-4.json` 仍在，票 05 起不再作 `T0` 的输入） |
 | 验证器接线 | `--reference-source traj` ⟹ DUT 的 `hold_offset` 全 0 + `reference_source:=traj`；高度由夹具的 `--ref-z-offset-m` 叠（包里的参考 `z ≡ 0`，见票面 §二） |
 | 起世界前的三道闸 | ① `hold_x/hold_y` 必须 0；② 高度必须非 0；③ **模型里必须真有一条参考** + `--hold-s` 的下界**从模型现算** |
 | 那一场 | [`run_matrix.sh`](../../tools/px4-sitl/evidence/tier-b/run_matrix.sh) 的 `T0)` |
+
+☠️ **第 ③ 道闸的边界**（票 05 发现）：`traj_model_problem()` 拦的是"**参考恒为 0**"（拿包 3），
+**拦不住**"拿包 4 那份 0.5 m 冒充当前规格"—— 旧包参考非空、只是短一半（`span_s` 20.56 vs 26.22），
+飞机照样飞、报告照样"跑完了"。挡它的是**离线**的
+`test_tier_b_judges.py::test_T0接的是1_0m那份八字`（直接量接线指向那份模型的参考包络 2.000 × 1.000 m）。
 
 **还差**：`T0` 那一场**没有飞**。在此之前，本节**不给八字那条任何结论** ——
 "夹具与判层都装好了"不等于"飞机追过一条八字"。飞之前 ☠️ 先
