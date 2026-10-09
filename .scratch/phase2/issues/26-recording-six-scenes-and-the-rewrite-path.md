@@ -86,6 +86,11 @@ Type: task
 守卫：`python3 -m pytest run/tests/test_rec.py run/tests/test_z0_menu.py
 run/tests/test_operation_manual.py -q` ⟹ **146 passed**（2026-10-08）。
 
+> ⓘ **这个数已过期（2026-10-09 实测）**：同一条**三文件**命令今天是 **151 passed**；
+> **两文件**（去掉 `test_operation_manual.py`）才是 **146 passed**。⟹ 上面那个 146 是**当时的**读数，
+> 别把它和 [phase3/09](../../phase3/issues/09-recording-sixth-scene-closeout.md) 里那条**两文件**命令的
+> 146 当成同一条 —— 两条命令不是同一条，今天分别给 **151 / 146**。见 Comments #2。
+
 ## 验收（★ 后两条**只能由操作者做**）
 
 - [x] 菜单 11 的标题、`ACTIONS`、`operation_manual.md` 三处编号一致（守卫用例钉住）
@@ -93,9 +98,16 @@ run/tests/test_operation_manual.py -q` ⟹ **146 passed**（2026-10-08）。
 - [x] 场景 6 的 `expect_s is None`、`expect == ()`、问都不问一句就落带时间戳的目录（`test_rec.py`）
 - [x] `4_traj3_lemniscate` 仍认得出场景号（别名 + 带时间戳两种形状，`test_rec.py`）
 - [x] 已有的四份包**一个字节都没动**（`git status` 里 `bag/` 下只有 `fcu/INDEX.md` 那条注释）
-- [ ] **真机上录一次场景 4（正方形）**：起链 → 起录 → 按开始键① ② → 到点收口 → `missing_expected` 空
-- [ ] **真机上录一次场景 6（任意录制）**：起录后按 Ctrl-C 停 ⟹ 落进带时间戳的新目录、
+- [x] **真机上录一次场景 4（正方形）**：起链 → 起录 → 按开始键① ② → 到点收口 → `missing_expected` 空
+      —— ✅ 2026-10-08 已录成（`bag/4_traj2_square`）。⚠️ **"到点收口"这四个字与实情不符**：
+      那次**不是倒计时到点收的**，是中途被 Ctrl-C 停的；但**实质成立** —— 解开包核过，
+      整条正方形跑完、落地并上锁（读数与命令**只写在**
+      [phase3/09 的 Comments #2](../../phase3/issues/09-recording-sixth-scene-closeout.md) 一处）
+- [x] **真机上录一次场景 6（任意录制）**：起录后按 Ctrl-C 停 ⟹ 落进带时间戳的新目录、
       `stop_signal` 写"人按的 Ctrl-C"
+      —— ☠️ **本条按操作者 2026-10-09 的裁定收口，没有入库的包作锚**：全盘搜过，
+      `bag/` 下不存在任何 `6_free*` 包；裁定原话「录制场景6实测过暂时没有毛病，收口」
+      ⟹ 见 [phase3/09](../../phase3/issues/09-recording-sixth-scene-closeout.md) 的 Comments #2
 
 ## Comments
 
@@ -135,3 +147,39 @@ run/tests/test_operation_manual.py -q` ⟹ **146 passed**（2026-10-08）。
 ⟹ 验收里"只能由操作者做"的两条，剩下的那条不由 agent 代跑（车侧动作操作者亲手敲）。
 
 ⚠️ 本条**不改**本票的 `Status:` —— 标签是操作者保留的裁定，该表只记裁定结果。
+
+---
+
+### #2 2026-10-09 —— 最后两条验收的回填（由 [phase3/09](../../phase3/issues/09-recording-sixth-scene-closeout.md) 代做）
+
+[phase3/09](../../phase3/issues/09-recording-sixth-scene-closeout.md) 的验收第 4 条要求：
+把本票**最后两条**勾上、结论写进 `## Comments`、**不改本票的 `Status:`**。已照办
+（本票 `Status:` 仍是 `ready-for-human`）。
+
+**第 6 条（场景 4）** —— 证据是**解开包核的**，不是转述：把
+`bag/4_traj2_square/4_traj2_square_0.db3.zstd` 解开（`zstd -d` 后 python `sqlite3` 解 CDR），
+读到 `/control/state` 走完了 `TAKEOFF → HOVER → WAIT_START → TRACK → LAND → STANDBY`、
+`/traj/progress` 到满值 1.0 ⟹ **整条正方形跑完了、落地并上锁**；`missing_expected: []`、
+`closed_cleanly: true`。
+
+★ **逐项读数（帧数、时间戳、命令）只写在
+[phase3/09 的 Comments #2](../../phase3/issues/09-recording-sixth-scene-closeout.md) 一处**，
+这里不复制 —— 同一份包的同一组数写在四个地方，将来只会互相打架。
+
+⚠️ **但验收项那句"到点收口"与实情不符**：
+
+1. 该包**不是倒计时到点收的**，是中途被 Ctrl-C 停的；
+2. 它的 `stop_signal` 带 `reconstructed` 标记 ⟹ 那句是 `rec_adopt` **反推**的，不是当场记的。
+
+★ **不改这句措辞**（本票的结论不是这次要动的东西）—— 但它是个**会骗人的说法**：
+"到点收口"在本仓是个**有确切含义的词**（倒计时到点自动收口，与 Ctrl-C 收口是两回事，
+见 [`run/rec.py`](../../../run/rec.py) 的场景表注释）。谁将来照字面复核，回来读这一节。
+
+**第 7 条（场景 6）** —— ☠️ **按裁定收口，没有包**：操作者 2026-10-09 原话
+「录制场景6实测过暂时没有毛病，收口」。全盘搜过（`metadata.yaml` / `*.db3*` / `*6_free*` 三种搜法），
+`bag/` 下**不存在**任何场景 6 的包 ⟹ 这一勾**不代表有实测证据入库**，只代表操作者裁定收口。
+
+**本票仍未收口的两处**（原样留着，不在本次范围内）：
+
+- 上面 2026-10-08 那条"静默假绿"（`pytest` 一次传多个文件会漏收集）—— **本票没修**；
+- 与 `11` 号票的两处引用出入（`tier-b-sitl-seam3.md:288` 等的"四份场景"措辞）。

@@ -188,7 +188,7 @@ Phase 2 干了很久，产出摊得很开：27 张票、20 来份 `docs/`、几�
 | [11](../phase2/issues/11-sitl-tier-b-seam3.md) 跑满 seam 3 | [**06**](issues/06-fly-t0-seam3-four-criteria.md) | `done`（2026-10-09 操作者切；⚠️ **`11` 本身仍未收口** —— ② 判不了，等 [`10`](issues/10-tier-b-judge-window-datum-mismatch.md) 修完重判） |
 | [20](../phase2/issues/20-vertical-channel-mismatch-offset.md) 振荡机理 | [**07**](issues/07-oscillation-mechanism-outside-three-param-model.md) | `done`（2026-10-09 操作者收口；机理 = **三参数模型的阻尼项没有输入**；⚠️ **它只解释了一半** —— 母票 `20` 仍是 `ready-for-human`） |
 | [10](../phase2/issues/10-param-measure-backfill.md) 电池可持续推力 | [**08**](issues/08-battery-sustainable-thrust-from-archived-ulogs.md) | `done`（2026-10-09 操作者收口；结论 = **归档答不了"电池能供出多少"（能力），只能给需求的下界** —— 逐场读数在票面，本格不抄；⚠️ **"`f_max` 保不保守"本票答不了**，须另做独立电流基准的台架量 —— 母票 `10` 仍是 `ready-for-human`） |
-| [26](../phase2/issues/26-recording-six-scenes-and-the-rewrite-path.md) 录制收口 | [**09**](issues/09-recording-sixth-scene-closeout.md) | `ready-for-human`（差一次真机录） |
+| [26](../phase2/issues/26-recording-six-scenes-and-the-rewrite-path.md) 录制收口 | [**09**](issues/09-recording-sixth-scene-closeout.md) | `done`（2026-10-09 操作者裁定收口；★ **按裁定收，没有入库的场景 6 包**） |
 | [16](../phase2/issues/16-ocp-yaw-weights-mirror-well.md) 偏航镜像井 | —— **并入 [25](../phase2/issues/25-yaw-channel-authority.md)**，不新开票 | —— |
 | [24](../phase2/issues/24-mocap-attitude-yawzeroed-vs-world-frame.md) / [25](../phase2/issues/25-yaw-channel-authority.md) | —— **不新开票** | 标签是 `needs-triage`，**终态由操作者给** |
 
@@ -201,7 +201,7 @@ Phase 2 干了很久，产出摊得很开：27 张票、20 来份 `docs/`、几�
 | [**16**](../phase2/issues/16-ocp-yaw-weights-mirror-well.md) 偏航权重镜像井<br>`ready-for-human` | 权重已落地；验收第 3 项（A 档 SITL 复飞）**待飞** | 与 `25` 是同一族的两半 | — | **并入 [25](../phase2/issues/25-yaw-channel-authority.md)** |
 | [**24**](../phase2/issues/24-mocap-attitude-yawzeroed-vs-world-frame.md) `q` 与 `p`/`v` 不同系<br>`needs-triage` | `mocap` 在解锁后把姿态 `yaw_zeroed`，而位置/速度**没有**旋转 | 受影响的**只有真飞 B 档**，且 `yaw0 ≈ 0` 时看不出来 | 先量**已归档包**里的 `yaw0`；正面修法是现场规程（机头对齐动捕 `+x`） | 现场规程优先 + 坐标系写法兜底；**标签由操作者给** |
 | [**25**](../phase2/issues/25-yaw-channel-authority.md) 偏航是死通道<br>`needs-triage` | 0.40 rad（23°）的机头误差只换来求解器 **`−3.8190e-4 rad/s`**（τ ≈ 1026 s） | 任何**靠反馈回正机头**的场景都做不了 | 四条路的差别是**代价与落点**，属操作者裁定 | **路 3（接受现状）** + 把判据门槛降到**能看见这个量**（现有门槛比它高三个数量级） |
-| [**26**](../phase2/issues/26-recording-six-scenes-and-the-rewrite-path.md) 录制菜单与六场景<br>`ready-for-human` | 现场主诉逐字：「一选场景就说目录已存在，什么都没录。」 | 它是 `bag/` 那批输入的来源，而 `bag/` 是 B 档的输入 | 代码侧已落地并入库（`2665d0a`）；**场景 4 已于 2026-10-08 真机录成**（`bag/4_traj2_square`） | 收口；★ **只剩场景 6 那一条要真机录**（`ls -d bag/6*` → 不存在），车侧动作由操作者亲手敲 |
+| [**26**](../phase2/issues/26-recording-six-scenes-and-the-rewrite-path.md) 录制菜单与六场景<br>`ready-for-human` | 现场主诉逐字：「一选场景就说目录已存在，什么都没录。」 | 它是 `bag/` 那批输入的来源，而 `bag/` 是 B 档的输入 | 代码侧已落地并入库（`2665d0a`）；**场景 4 已于 2026-10-08 真机录成**（`bag/4_traj2_square`） | **已收口**（2026-10-09 操作者裁定）；★ **场景 6 那条按裁定收、没有入库的包作锚**（全盘搜过：`bag/` 下不存在 `6_free*`）—— 结论与取证在 [`09`](issues/09-recording-sixth-scene-closeout.md) 的 Comments #2 |
 | [**27**](../phase2/issues/27-lemniscate-doubled-and-downstream-labels.md) 八字放大到 1 m<br>`ready-for-human` | 操作者指令逐字：「将轨迹3的8字飞行轨迹改为原本的2倍」 | 判据② 要飞的**就是这条 1.0 m 的** | 1.0 m 包已于 2026-10-08 录成（参考包络 **2.000 × 1.000 m**、1312 帧）；⚠️ **但 `T0` 现在接的还是 0.5 m 那份** | 收口 = 把 `T0` 与验证器的默认参考包改成新包 + 生成 `mocap-model-5.json`（回放节点吃的参考/噪声/时序**全部**来自那份 JSON） |
 
 ★ **本轮才发现的一处（记在 `27` 名下）**：`verify_tier_b_seam3.py` 的 `--reference-source traj` 默认包与
@@ -223,7 +223,7 @@ Phase 2 干了很久，产出摊得很开：27 张票、20 来份 `docs/`、几�
    ├── 05（T0 接到 1.0 m，AFK）─┴─▶ 06（T0 那一场）
    ├── 07（振荡机理）──────────▶ 只读，可与 04 / 05 并行
    ├── 08（电池可持续推力）────▶ 只读 `.ulg`，独立
-   ├── 09（录制收口）──────────▶ 独立；只差一次**真机录**（操作者亲手敲）
+   ├── 09（录制收口）──────────▶ 独立；✅ `done`（2026-10-09 裁定收，**无入库包**）
    └── 全部 ──────────────────▶ Phase 4 的前提
 ```
 
@@ -267,6 +267,9 @@ Phase 2 干了很久，产出摊得很开：27 张票、20 来份 `docs/`、几�
 1. `26` 那一格原写「真机那两条只有操作者能做」——**实际只剩一条**：场景 4 已于 2026-10-08T09:44Z
    录成（`bag/4_traj2_square`），**场景 6 没录**（`ls -d bag/6*` → 不存在）。
    ⟹ 已改成"只剩场景 6"。**写"两条"的依据是母票的验收项，没有回去数 `bag/` 里实际有几个目录。**
+   > ☠️ **2026-10-09 再进一步**：`09` 已按**操作者裁定**收口，而**场景 6 的包至今仍不存在**
+   > —— 即那句"只剩场景 6"最后**不是靠录出来结的，是靠裁定结的**。取证见
+   > [`09`](issues/09-recording-sixth-scene-closeout.md) 的 Comments #2。
 2. 由 1 引申：**"验收项还剩两条" ≠ "两件事都还没做"** —— 验收项是**写下来的时点**的状态，
    不是现在的状态。这正是本阶段要治的那个病（状态词比数更毒）。
 
