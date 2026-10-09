@@ -552,6 +552,67 @@ def test_hold_s太短就拦住_下界从模型现算():
     assert b.traj_model_problem(model, ref_hold_s=30.0, hold_s=41.0) is not None
 
 
+# ────────────────────────────────────────────── 末段推力那一列：折算常量从哪来
+
+
+def _motors_text(mean=0.5):
+    """造一份 `actuator_outputs_sim` 的控制台文本（四路同值 ⟹ 均值 = `mean`）。
+
+    四路同值是有意的：差异那部分是姿态环在分配力矩，"总推力"只看均值（`motor_mean`）。
+    """
+    return "actuator_outputs_sim\n    output: [" + ", ".join(f"{mean:.4f}" for _ in range(16)) + "]"
+
+
+def test_末段推力列按本场参数文件折算_不按入库机型文件():
+    """★★ `thrust_n_end` = 电机均值 × 4 × `SIH_T_MAX`，而 `SIH_T_MAX` **必须取本场的**。
+
+    ★ 为什么非要有这一列：`airframe_param()` 读的是**入库的静态机型文件**，看不见
+      `--mismatch` 那份 overlay（`z0-plant/params/*.param`）—— 21 清单第 266 条拿 13 场
+      逐场算过：`thrust±30` 那两档整整差 **0.769 / 1.429** 倍，而报告读起来一切正常
+      （这正是本仓库最怕的那类静默失败）。phase3 的 `04` 又把入库机型文件从
+      `11.8 N` 换成了 `46.3027 N`，所以"拿哪个来源"这件事**今天必须写死在代码里**。
+
+    ★ 这一条**挑得开对错**：`thrust+30` 那份 overlay 是 `15.0484`、入库机型文件是
+      `11.5757` —— 拿错来源差 0.769 倍，不是"差一点点"。
+    """
+    txt = _motors_text(0.5)
+    nominal = b.plant_t_max_motor("z0.param")
+    thrust30 = b.plant_t_max_motor("z0-thrust+30.param")
+    airframe = b.v.airframe_param("SIH_T_MAX")
+    assert nominal == pytest.approx(11.5757, abs=1e-4), f"标称 overlay 的 SIH_T_MAX = {nominal}"
+    assert thrust30 == pytest.approx(15.0484, abs=1e-4), f"thrust+30 overlay 的 SIH_T_MAX = {thrust30}"
+    # ☠️ 两个来源在**本场这一档**上必须真的不同，否则这条测试没有鉴别力
+    assert abs(thrust30 - airframe) > 1.0, (
+        f"thrust+30 overlay({thrust30}) 与入库机型文件({airframe}) 太近 ⟹ 这条断言挑不开对错")
+
+    col = b.thrust_end_column(txt, "z0-thrust+30.param")
+    assert col["thrust_t_max_n"] == pytest.approx(thrust30, abs=1e-4), (
+        "折算常量没跟着本场参数文件走 ⟹ 回落到入库机型文件了")
+    assert col["thrust_n_end"] == pytest.approx(0.5 * 4.0 * thrust30, abs=1e-4)
+    # 拿入库机型文件那个常量会算出另一个数（**分开**断言，才证明差的不是浮点尾数）
+    assert col["thrust_n_end"] != pytest.approx(0.5 * 4.0 * airframe, abs=1e-2)
+
+
+def test_标称overlay与入库机型文件同源():
+    """同一个常量在盘上有**两处**写法：机型文件的 `param set-default` 与标称 overlay
+    `z0.param` 的 `param set`。两处不一致 ⟹ 一场"标称"飞行其实飞的是另一架飞机。
+
+    ★ 这条是给"下次改机型只改了一处"准备的：`04` 重搭时 `--emit` 全量重生成的是
+      overlay 那一批，机型文件由 `install_z0_airframe.sh` 装 —— 两条路，各写各的。
+    """
+    airframe = b.v.airframe_param("SIH_T_MAX")
+    assert b.plant_t_max_motor("z0.param") == pytest.approx(airframe, abs=1e-4), (
+        f"标称 overlay 的 SIH_T_MAX 与入库机型文件对不上："
+        f"{b.plant_t_max_motor('z0.param')} vs {airframe} —— 标称那一场飞的不是机型文件那架飞机")
+
+
+def test_末段推力列读不出参数文件时给出None_不抛():
+    """读不出来要**返回 None**（判据层按"没读到"处理），不许抛、也不许悄悄用别处的常数。"""
+    col = b.thrust_end_column(_motors_text(0.5), "没有这个文件.param")
+    assert col["thrust_t_max_n"] is None and col["thrust_n_end"] is None
+    assert col["motors_mean_end"] == pytest.approx(0.5, abs=1e-9)
+
+
 # ────────────────────────────────────────────── 判据③（延迟）
 
 

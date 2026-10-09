@@ -144,3 +144,24 @@ python3 tools/px4-sitl/probe_u_ref_authority.py --frames /tmp/tier-b/F1b-dut.jso
 `mocap-model-3.json` 为准**（内容与当时同一份：`F*-replay.json` 的 `sigma_m` 与
 `base_delay_ms` 是夹具直接读模型算出来落盘的，逐位对得上），验证器与 `run_matrix.sh`
 的 `--model` 默认值已指向它。**判据① 那类"要按新口径重算就得整场重飞"的行，从此没有回头路。**
+
+## 另有一批：2026-10-09 重搭之后那六场（`20261009-rebuild/`）
+
+票 04 重搭了被控对象（`T_MAX_TOTAL` 11.8 → 46.3027 N）、票 05 把 `T0` 的参考接到
+`mocap-model-5.json`（1.0 m 八字）之后，[票 06](../../../../.scratch/phase3/issues/06-fly-t0-seam3-four-criteria.md)
+又跑了六场（`F0`–`F4` + `T0`）。**它们不并进上面那张表** —— 被控对象与参考都换过，
+与 `F0`–`F4`（2026-09-29）**不是同一台机器上的读数**，混进一张表就会被当成可比的。
+
+★ 好处是它们**带 `frames`/`truth` 入库**。本目录里带没带是**逐份**不同的：
+`F0`–`F4` 那五份（2026-09-29 10:10）**没带**（`frames` 是空列表）⟹ 那五场
+"要按新口径重算就得整场重飞"；票 20 的 `F0b`/`F1b`/`F0c`/`F1c` **带了**
+（2026-10-08 的离线重判正是靠这一点）。☠️ 判据别写成 `grep -c '"frames"'` ——
+**它区分不出来**（没带的那几份也出 `2`：`checks`/`dut` 的文字里也出现过这两个词）。
+能区分的是长度：
+
+```bash
+python3 -c "import json,sys;print([len(json.load(open(f)).get('frames') or []) for f in sys.argv[1:]])" \
+    F0-summary.json F0c-summary.json        # ⟹ [0, 1545]
+```
+逐场产物、时刻、工具链身份与三条必知事项见
+[`20261009-rebuild/README.md`](20261009-rebuild/README.md)。

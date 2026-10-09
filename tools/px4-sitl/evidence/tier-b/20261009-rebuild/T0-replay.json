@@ -1,0 +1,39 @@
+{
+ "frames": 12802,
+ "span_s": 74.678,
+ "delay_ms": 5.587,
+ "base_delay_ms": 5.587,
+ "extra_delay_ms": 0.0,
+ "no_signal_frames": 1060,
+ "sigma_m": [
+  0.0027906243855862775,
+  0.0024733534612582805,
+  0.00013197736236513315
+ ],
+ "truth": {
+  "n": 1404,
+  "span_s": 2.998,
+  "rate_hz": 467.95,
+  "newest_age_s": 0.0218
+ },
+ "reference": {
+  "published": 3770,
+  "by_phase": {
+   "pre": 1500,
+   "bag": 1312,
+   "hold": 958
+  },
+  "n_in_model": 1312,
+  "z_offset_m": 1.0,
+  "hold_s": 30.0,
+  "type_mask": 2496,
+  "coordinate_frame": 1
+ },
+ "dt_actual": {
+  "n": 12801,
+  "mean_ms": 5.834,
+  "p50_ms": 1.352,
+  "p99_ms": 73.95,
+  "max_ms": 1869.24
+ }
+}

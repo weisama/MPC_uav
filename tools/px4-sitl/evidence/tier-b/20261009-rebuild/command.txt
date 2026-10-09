@@ -1,0 +1,37 @@
+# 本批六场（F0–F4, T0）是怎么跑出来的
+
+票：`.scratch/phase3/issues/06-fly-t0-seam3-four-criteria.md`
+（操作者 2026-10-09 裁定「起跑：A 档冒烟 + B 档整批」）
+
+    TAGS="F0 F1 F2 F3 F4 T0" tools/px4-sitl/evidence/tier-b/run_matrix.sh
+
+☠️ `TAGS` **必须显式点名 `T0`** —— 脚本默认是 `F0 F1 F2 F3 F4`（`T0)` 那个 case 是
+`ce31297` 后加的、没进默认）⟹ 裸跑不会飞 `T0`，末尾汇总只打印一行 `T0: ⚠️ 没有 json`，
+而报告看着像"跑完了"。订正记录在 06 号票 Comments 与 `run_matrix.sh` 的注释里。
+
+## 时刻（`run_matrix.sh` 自己的日志，`/tmp/run_matrix.log`）
+
+| 场 | 起飞 | 退出码 | 用了 |
+|---|---|---|---|
+| F0 | 06:27:08 | 0 | 36 s |
+| F1 | 06:27:44 | 0 | 37 s |
+| F2 | 06:28:21 | **1** | 36 s |
+| F3 | 06:28:57 | **1** | 37 s |
+| F4 | 06:29:34 | 0 | 36 s |
+| T0 | 06:30:10 | 0 | 89 s |
+
+整批 06:27:07 → 06:31:39（4 分 32 秒）。起飞前脚本等到空机（清了 3 个 `fastrtps_port*` 残留）。
+
+★ **退出码 1 ≠ 没跑完**：F2/F3 各有一条判据 ❌（真结论，见 06 号票 Comments），
+不是仪器故障 —— 两场的 `armed_ever=True`、`dut_dead=None`、稳态最坏求解耗时 ≤ 5.932 ms。
+
+★ 本批**不是**在"重搭之前那套读数"的同一时间窗里跑的：被控对象已按票 04 重搭
+（`T_MAX_TOTAL` 11.8 → 46.3027 N）、`T0` 的参考已按票 05 接到 `mocap-model-5.json`
+（1.0 m 八字）⟹ 与 `../F0-summary.json`（2026-09-29）**不能逐位并排比**，
+要比先读 `../README.md` 第 4 条与 `harness-identity-2026-10-09.json`。
+
+## 落库口径
+
+`<tag>-summary.json` = `/tmp/tier-b/<tag>.json` **原样**（`sha256` 逐份核过，一个字节没改），
+含 `frames` / `truth` 逐帧数组 —— 判层是 obs 的纯函数，留着它们才谈得上离线重判
+（`rejudge-20261008-judge2.json` 那条路就是这么走的）。

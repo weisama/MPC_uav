@@ -913,15 +913,34 @@ def airframe_param(name):
     return float(m.group(1)) if m else None
 
 
-def thrust_from_motors(motors_text):
+#: `thrust_from_motors(t_max=…)` 的哨兵：**显式**声明"这一场的折算常量就取入库机型文件那份"。
+#: ★ 为什么不用 `None` 兼作这个意思：`None` 在调用方那边还天然有另一种意思 ——
+#:   "本场那份参数文件**没读到**"。两种意思合并的症状，正是本函数要治的那种静默回落
+#:   （`test_tier_b_judges.py::test_末段推力列读不出参数文件时给出None_不抛` 钉着）。
+USE_AIRFRAME_T_MAX = object()
+
+
+def thrust_from_motors(motors_text, t_max=USE_AIRFRAME_T_MAX):
     """四个电机指令 ⟹ 总推力（N）。
 
     ★ 权威是 `sih.cpp:303`：`_T_B = (0, 0, −T_MAX·(u0+u1+u2+u3))`，
     其中 `u[i] = actuators_out.output[i]`（`sih.cpp:290`）——
     所以"总推力 = 四个电机指令之和 × 单电机最大推力"，均值×4 就是那条式子。
+
+    ★★ `t_max` = **本场真正生效**的单电机最大推力（N）。不传（`USE_AIRFRAME_T_MAX`）⟹
+      取入库机型文件里那一份 —— 那个退回**只在本场没有覆盖 `SIH_T_MAX` 时成立**：B 档的
+      `--mismatch` 会用 `z0-plant/params/*.param` 把 `SIH_T_MAX` 覆盖掉（`thrust±30`
+      两档就是），而 `airframe_param()` 读的是**入库的静态机型文件**、看不见覆盖。
+      21 清单第 266 条拿 13 场逐场算过：那两档的比值恒为 **0.769 / 1.429**，
+      而报告读起来一切正常 —— 错的常量不会自己吭声。
+
+      ☠️ 拿不准就传：调用方给的值应当来自**本场加载的那份参数文件**
+      （B 档：`verify_tier_b_seam3.plant_t_max_motor()`；它的 `thrust_end_column()`
+      把"折算常量"与"总推力"一起算、一起留档，就是为了让这一列**自证**用了哪个常量）。
     """
     mean = motor_mean(motors_text)
-    t_max = airframe_param("SIH_T_MAX")
+    if t_max is USE_AIRFRAME_T_MAX:
+        t_max = airframe_param("SIH_T_MAX")
     return None if mean is None or t_max is None else mean * 4.0 * t_max
 
 

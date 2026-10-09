@@ -1,0 +1,88 @@
+{
+ "这是什么": "本批六场（F0–F4, T0）落库时，跑它们的**这一套工具链**的身份 —— 照 phase2/21 清单第 202 条「归档要记 harness 自身的身份，不能只记 DUT 与 overlay」。",
+ "★ 谁补的、哪一次（第 209 条：事后补写必须留痕）": "2026-10-09 06:5x，`/implement` 会话在**跑完之后**补写的（这批场的 obs 里**没有**这块）。哈希取自**跑完之后、未再改动**的工作树（见下 `工作树状态`）⟹ 与飞行当时逐字节相同；但『相同』是**推**的：判层与 harness 在跑后没被改过（本会话只读过它们）。\n\n☠️ **同一会话内的订正（2026-10-09，同样是 `/implement`）**：(1) `判层与夹具` 里那条被控对象真源原来是 `tools/px4-sitl/plant_spec.py: null` —— **路径写错了**（漏了 `z0-plant/`），已改成真身并补上 sha256；(2) 复核时逐份对过：本文件里**每一个 sha256 都与工作树现状一致**（含 `verify_tier_b_seam3.py` —— 它的 mtime 被一次变异测试『改坏→还原』推到了 06:41:37，但**内容逐字节相同**，所以 sha 未变、飞行当时的身份仍然成立）。",
+ "git": {
+  "head": "2c3a0831afd28e382c89058c50ae83249db96c67",
+  "src_nmpc_dirty": "（空 ⟹ 控制器代码 == HEAD 内容）"
+ },
+ "import 解析到哪": "/home/chen/ros_ws/src/nmpc/nmpc/__init__.py",
+ "控制器（DUT 实际 import 的）": {
+  "src/nmpc/nmpc/__init__.py": "6c01eeaa0af4d713ed5abe97bdd6faab13d707df33b42b106a1c220f711bec7d",
+  "src/nmpc/nmpc/commands.py": "3aafee4a9d0426b76d0d0e9be5cb1285c187ce1a43e20eb9b59a26d64d92ba12",
+  "src/nmpc/nmpc/model.py": "65f5565a1490489369ffd465fc079fdbb499b7d898df289204fb2c677d534f61",
+  "src/nmpc/nmpc/mpc_node.py": "463df55ea60139fd86bc363135126c529796734abc842819acf831dc7a7995d7",
+  "src/nmpc/nmpc/node_core.py": "076c57185e83bde345bbf443714d70d7b7b5204fa2e50d8fd22be29b856eba36",
+  "src/nmpc/nmpc/ocp.py": "74fbdfac4c1c542a3d927b179c0b6d762418074618a751ca464d4e162a92075f",
+  "src/nmpc/nmpc/offboard_smoke.py": "a342a2d1bda394070e2629a6ef759ef0ab7c1e7f4e433ab634621d382e5b34f4",
+  "src/nmpc/nmpc/params.py": "f46fb47efb9c1becfe814bc7d8558d814c3e50a47dfe5c9ec63c85f15c34b81f",
+  "src/nmpc/nmpc/preflight_check.py": "5f969520f5a4b1ee00cfea8b071ce1cacd3ea647895f2ec178f2710726a0416b",
+  "src/nmpc/nmpc/sign_map.py": "362a9391974241d59596870aac8b2b09a234faee662af4dc0b8bb6f81bfc71c7",
+  "src/nmpc/nmpc/timing.py": "335f7ccde0eab8827e3af2225a1d55ae0046defd91c3210eca5f8c0120b6f625"
+ },
+ "DUT 入口脚本（`ros2 run` 按 install/ 找）": {
+  "install/nmpc/lib/nmpc/mpc_node.py": {
+   "sha256": "463df55ea60139fd86bc363135126c529796734abc842819acf831dc7a7995d7",
+   "mtime": "2026-09-30 03:51:32"
+  },
+  "注": "与 `src/nmpc/nmpc/mpc_node.py` 逐字节同源（mtime 也同）⟹ 没有『改了 mpc_node.py 没 build』那个坑"
+ },
+ "harness（本批的驱动器）": {
+  "tools/px4-sitl/evidence/tier-b/run_matrix.sh": {
+   "sha256": "757ea118e222d5021ecbb3f134b9dd7976146ca037fd50dc35e81331882902df",
+   "mtime": "2026-10-09 06:19:15"
+  },
+  "工作树状态": "有人已改动、未提交：注释订正（TAGS 默认不含 T0 那条）+ `chmod +x`（git 记的是 100644）"
+ },
+ "判层与夹具": {
+  "tools/px4-sitl/verify_tier_b_seam3.py": {
+   "sha256": "8c36962de22b7ec5a99d79c1b5d5bfc4c6e313decd19a2baeecc39e1320bf882",
+   "mtime": "2026-10-09 06:16:57"
+  },
+  "tools/px4-sitl/verify_offboard_smoke.py": {
+   "sha256": "022b8fd3961e390474c1f802f0ee517165174072ece5c4f968b7d555616921ec",
+   "mtime": "2026-10-09 06:16:38"
+  },
+  "tools/px4-sitl/verify_tier_a_hover.py": {
+   "sha256": "976c98c589b79b153d21eb1a62f23749809805d6d6c5cd09b0d30a96b4284146",
+   "mtime": "2026-10-08 11:16:42"
+  },
+  "tools/px4-sitl/mocap_replay.py": {
+   "sha256": "004f2799777b2d58e5c93d4261af1f8d9bc8a8c06c8e1da2fcbae99fe95b4e40",
+   "mtime": "2026-10-09 03:38:16"
+  },
+  "tools/px4-sitl/mocap_model.py": {
+   "sha256": "bef82cdd63148e459ffb8df3aa318f76572b56f093649a62b972c0b0f1f5e50d",
+   "mtime": "2026-10-09 03:38:15"
+  },
+  "tools/px4-sitl/z0-plant/plant_spec.py": {
+   "sha256": "a673b85cb310773ab9f1141e7a9fd59912c67006e18219ec5141de9d8407ddf3",
+   "mtime": "2026-10-09 02:56:20",
+   "注": "★ 被控对象的**真源**：21 份 overlay 与机型文件全由它 `--emit` 生成，票 04 改的 `T_MAX_TOTAL`(11.8→46.3027) 就在这一份里。☠️ 本键原写成 `tools/px4-sitl/plant_spec.py`（**漏了一段 `z0-plant/`**）⟹ 取不到、记成 `null`；2026-10-09 同一会话订正（见首字段的订正留痕）。mtime 早于本批起飞 ⟹ 是飞行当时的版本。"
+  }
+ },
+ "被控对象（机型 + 本场 overlay）": {
+  "装机机型（PX4 build 目录里那份）": {
+   "sha256": "488f97de86dae6f871e0c01b5d3f3fcb2053431ae910c75821e7e7bbca165dda",
+   "mtime": "2026-09-29 08:43:42"
+  },
+  "z0-plant/airframes/10046_sihsim_z0": {
+   "sha256": "49a4ecb0b2425571ddb9dd6f6a6451b28ef8062b80e98c6ce8e30db098500d80",
+   "mtime": "2026-10-09 02:47:35"
+  },
+  "z0.param（F0/F4）": {
+   "sha256": "94e64ec84734b1242b8b8ef165185e31e4c6b2aeba5cc97714ec5bf8b215cfef",
+   "mtime": "2026-10-09 02:47:35"
+  },
+  "z0-mass+30.param（F1/F2/F3/T0）": {
+   "sha256": "7c321b3ffa2834fff902c951894bb9ca49e31bbe4b796636355e1145df059f0c",
+   "mtime": "2026-10-09 02:47:35"
+  }
+ },
+ "参考包": {
+  "evidence/tier-b/mocap-model-5.json": {
+   "sha256": "8493bf72474b4e2b97cf82b24e58499ff11a3d2b48d574912c7f0751834dd1bb",
+   "mtime": "2026-10-09 03:19:21"
+  }
+ },
+ "本批产物": "同目录 `*-summary.json`（= `/tmp/tier-b/<tag>.json` 原样，含 `frames`/`truth` 逐帧）、`*-console.log`、`*-replay.json`、`T0-replay-frames-reference.jsonl`"
+}

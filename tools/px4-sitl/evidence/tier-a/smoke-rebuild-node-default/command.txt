@@ -1,0 +1,3 @@
+cmd: python3 tools/px4-sitl/verify_tier_a_hover.py --hold-s 20 --outdir tools/px4-sitl/evidence/tier-a/smoke-rebuild-node-default --json tools/px4-sitl/evidence/tier-a/smoke-rebuild-node-default/obs-rebuild-nominal-1.json --debug-dump tools/px4-sitl/evidence/tier-a/smoke-rebuild-node-default/run-rebuild-nominal-1.log
+起跑 2026-10-09 06:25:24
+落 2026-10-09 06:26:22

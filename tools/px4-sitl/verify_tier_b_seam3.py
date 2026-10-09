@@ -468,6 +468,45 @@ def plant_hover_thrust(param_file: str):
             "hover_thrust": t_hover / tmax_total, "t_hover_n": t_hover}
 
 
+def plant_t_max_motor(param_file: str):
+    """从**本场被控对象自己的参数文件**里读单电机最大推力 `SIH_T_MAX`（N）；读不出返回 `None`。
+
+    ★ 与 `plant_hover_thrust()` 同一条纪律（从被控对象的参数文件读、不在代码里抄常数），
+      但**不复用它**：那个函数要求 `SIH_MASS` 与 `SIH_T_MAX` **两个都在**才给值，
+      而这一列只关心推力那一个 —— 绑在一起会让"只少一个"变成"整列读不出"。
+
+    ☠️ 为什么不退回入库机型文件（`v.airframe_param`）：那份**看不见本场的 overlay**。
+      `--mismatch thrust±30` 两档正是靠 overlay 改 `SIH_T_MAX` 的，折算常量错 0.769 / 1.429 倍
+      而报告一切正常（21 清单第 266 条，13 场逐场算过）。
+    """
+    try:
+        text = (HERE / "z0-plant" / "params" / param_file).read_text(encoding="utf-8")
+    except OSError:
+        return None
+    for line in text.splitlines():
+        p = line.split()
+        if len(p) >= 4 and p[0] == "param" and p[1] == "set" and p[2] == "SIH_T_MAX":
+            return float(p[3])
+    return None
+
+
+def thrust_end_column(motors_text, plant_param: str) -> dict:
+    """末段那一列：`(电机均值, 折算常量, 总推力 N)` —— **三件一起算、一起留档**。
+
+    ★ 为什么把"折算常量"也返回、也进归档：这一列的可复算性全押在"用了哪个 `SIH_T_MAX`"上，
+      而盘上有**两个**候选（本场 overlay vs 入库机型文件），拿错哪个都**不报错**。
+      把常量本身写进 `obs` ⟹ 读报告的人不必反推；也正好对上 21 清单第 202 条
+      「归档要能自证身份」。
+
+    ★ 读不出参数文件 ⟹ 三列都给 `None`（判据层按"没读到"处理），**不用别处的常数顶上**：
+      顶上去症状就是"这一列的数是编的，但看着像量的"。
+    """
+    t_max = plant_t_max_motor(plant_param)
+    return {"motors_mean_end": v.motor_mean(motors_text),
+            "thrust_t_max_n": t_max,
+            "thrust_n_end": v.thrust_from_motors(motors_text, t_max=t_max)}
+
+
 def node_default_hover_thrust() -> float:
     """`nmpc/params.py` 里的 `HOVER_THRUST`（节点默认口径）。
 
@@ -630,8 +669,9 @@ def run_flight_b(px, rec, tap, dut, replay, cfg, agent) -> dict:
                          "arming_state": v.field(st, "arming_state"),
                          "pre_flight_checks_pass": v.bool_field(st, "pre_flight_checks_pass")}
     mo = v.sample_topic(px, "actuator_outputs_sim", timeout=ta.SAMPLE_TIMEOUT_S, rec=rec)
-    obs["motors_mean_end"] = v.motor_mean(mo)
-    obs["thrust_n_end"] = v.thrust_from_motors(mo)
+    # ★ 折算常量取**本场**那份参数文件（`cfg.plant_param`），不取入库机型文件 ——
+    #   两者在 `--mismatch thrust±30` 下差 0.769 / 1.429 倍，而拿错哪个都不报错。
+    obs.update(thrust_end_column(mo, cfg.plant_param))
     return obs
 
 

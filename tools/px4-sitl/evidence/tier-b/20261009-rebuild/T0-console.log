@@ -1,0 +1,140 @@
+
+______  __   __    ___ 
+| ___ \ \ \ / /   /   |
+| |_/ /  \ V /   / /| |
+|  __/   /   \  / /_| |
+| |     / /^\ \ \___  |
+\_|     \/   \/     |_/
+
+px4 starting.
+
+INFO  [px4] startup script: /bin/sh etc/init.d-posix/rcS 0
+INFO  [init] found model autostart file as SYS_AUTOSTART=10046
+INFO  [param] selected parameter default file parameters.bson
+INFO  [param] selected parameter backup file parameters_backup.bson
+  SYS_AUTOCONFIG: curr: 0 -> new: 1
+  SYS_AUTOSTART: curr: 0 -> new: 10046
+  CAL_ACC0_ID: curr: 0 -> new: 1310988
+  CAL_GYRO0_ID: curr: 0 -> new: 1310988
+  CAL_ACC1_ID: curr: 0 -> new: 1310996
+  CAL_GYRO1_ID: curr: 0 -> new: 1310996
+  CAL_ACC2_ID: curr: 0 -> new: 1311004
+  CAL_GYRO2_ID: curr: 0 -> new: 1311004
+  CAL_MAG0_ID: curr: 0 -> new: 197388
+  CAL_MAG0_PRIO: curr: -1 -> new: 50
+  CAL_MAG1_ID: curr: 0 -> new: 197644
+  CAL_MAG1_PRIO: curr: -1 -> new: 50
+* SENS_BOARD_X_OFF: curr: 0.0000 -> new: 0.0000
+* SENS_DPRES_OFF: curr: 0.0000 -> new: 0.0010
+* SIH_MASS: curr: 0.7500 -> new: 0.9750
+* SIH_T_MAX: curr: 2.9500 -> new: 11.5757
+* SIH_Q_MAX: curr: 0.1475 -> new: 0.5788
+* MC_YAWRATE_MAX: curr: 200.0000 -> new: 360.0000
+INFO  [dataman] data manager file './dataman' size is 7866640 bytes
+INFO  [init] SIH simulator
+INFO  [simulator_sih] Simulation loop with 250 Hz (4000 us sim time interval)
+INFO  [simulator_sih] Simulation with 1.0x speedup. Loop with (4000 us wall time interval)
+INFO  [lockstep_scheduler] setting initial absolute time to 4000 us
+INFO  [commander] LED: open /dev/led0 failed (22)
+INFO  [uxrce_dds_client] synchronized with time offset 1791527413030710us
+INFO  [uxrce_dds_client] successfully created rt/fmu/out/failsafe_flags data writer, topic id: 80
+INFO  [uxrce_dds_client] successfully created rt/fmu/out/position_setpoint_triplet data writer, topic id: 149
+INFO  [uxrce_dds_client] successfully created rt/fmu/out/sensor_combined data writer, topic id: 168
+INFO  [uxrce_dds_client] successfully created rt/fmu/out/timesync_status data writer, topic id: 191
+INFO  [uxrce_dds_client] successfully created rt/fmu/out/vehicle_attitude_groundtruth data writer, topic id: 
+INFO  [uxrce_dds_client] successfully created rt/fmu/out/vehicle_control_mode data writer, topic id: 212
+INFO  [mavlink] mode: Normal, data rate: 4000000 B/s on udp port 18570 remote port 14550
+INFO  [uxrce_dds_client] successfully created rt/fmu/out/vehicle_gps_position data writer, topic id: 215
+INFO  [uxrce_dds_client] successfully created rt/fmu/out/vehicle_local_position_groundtruth data writer, topi
+INFO  [uxrce_dds_client] successfully created rt/fmu/out/vehicle_status data writer, topic id: 229
+INFO  [tone_alarm] home set
+INFO  [uxrce_dds_client] successfully created rt/fmu/out/vehicle_local_position data writer, topic id: 219
+INFO  [uxrce_dds_client] successfully created rt/fmu/out/vehicle_odometry data writer, topic id: 224
+INFO  [mavlink] mode: Onboard, data rate: 4000000 B/s on udp port 14580 remote port 14540
+INFO  [mavlink] mode: Onboard, data rate: 4000 B/s on udp port 14280 remote port 14030
+INFO  [mavlink] mode: Gimbal, data rate: 400000 B/s on udp port 13030 remote port 13280
+INFO  [mavlink] mode: Custom, data rate: 400000 B/s on udp port 19450 remote port 19410
+INFO  [logger] logger started (mode=all)
+INFO  [logger] Start file log (type: full)
+INFO  [logger] [logger] ./log/2026-10-09/06_30_13.ulg	
+INFO  [logger] Opened full log file: ./log/2026-10-09/06_30_13.ulg
+INFO  [mavlink] MAVLink only on localhost (set param MAV_{i}_BROADCAST = 1 to enable network)
+INFO  [mavlink] MAVLink only on localhost (set param MAV_{i}_BROADCAST = 1 to enable network)
+INFO  [mavlink] MAVLink only on localhost (set param MAV_{i}_BROADCAST = 1 to enable network)
+INFO  [px4] Startup script returned successfully
+pxh> param show COM_OF_LOSS_T
+Symbols: x = used, + = saved, * = unsaved
+x   COM_OF_LOSS_T [281,483] : 1.0000
+
+ 882/1632 parameters used.
+pxh> INFO  [tone_alarm] notify negative
+INFO  [tone_alarm] notify negative
+INFO  [uxrce_dds_client] successfully created rt/fmu/out/vehicle_attitude data writer, topic id: 206
+INFO  [uxrce_dds_client] successfully created rt/fmu/out/vehicle_global_position data writer, topic id: 213
+INFO  [tone_alarm] notify negative
+INFO  [commander] Ready for takeoff!
+INFO  [commander] Armed by external command	
+INFO  [tone_alarm] arming warning
+INFO  [tone_alarm] notify negative
+INFO  [tone_alarm] notify negative
+INFO  [tone_alarm] notify negative
+INFO  [tone_alarm] notify negative
+INFO  [tone_alarm] notify negative
+INFO  [tone_alarm] notify negative
+INFO  [commander] Takeoff detected	
+WARN  [failsafe] Failsafe activated	
+INFO  [tone_alarm] battery warning (fast)
+ERROR [flight_mode_manager] Matching flight task was not able to run, Nav state: 2, Task: 1
+pxh> listener vehicle_status -n 1
+
+TOPIC: vehicle_status
+ vehicle_status
+    timestamp: 81520000 (0.076000 seconds ago)
+    armed_time: 7720000
+    takeoff_time: 14212000
+    nav_state_timestamp: 81520000
+    failure_detector_status: 0
+    arming_state: 2
+    latest_arming_reason: 4
+    latest_disarming_reason: 0
+    nav_state_user_intention: 14
+    nav_state: 2
+    hil_state: 0
+    vehicle_type: 1
+    failsafe: True
+    failsafe_and_user_took_over: False
+    gcs_connection_lost: True
+    gcs_connection_lost_counter: 0
+    high_latency_data_link_lost: False
+    is_vtol: False
+    is_vtol_tailsitter: False
+    in_transition_mode: False
+    in_transition_to_fw: False
+    system_type: 2
+    system_id: 1
+    component_id: 1
+    safety_button_available: True
+    safety_off: True
+    power_input_valid: True
+    usb_connected: False
+    open_drone_id_system_present: False
+    open_drone_id_system_healthy: False
+    parachute_system_present: False
+    parachute_system_healthy: False
+    avoidance_system_required: False
+    avoidance_system_valid: False
+    rc_calibration_in_progress: False
+    calibration_enabled: False
+    pre_flight_checks_pass: False
+
+pxh> listener actuator_outputs_sim -n 1
+
+TOPIC: actuator_outputs_sim
+ actuator_outputs_sim
+    timestamp: 82788000 (0.000000 seconds ago)
+    noutputs: 16
+    output: [0.18100, 0.21100, 0.24000, 0.18600, 0.00000, 0.00000, 0.00000, 0.00000, 0.00000, 0.00000, 0.00000, 0.00000, 0.00000, 0.00000, 0.00000, 0.00000]
+
+pxh> 
+PX4 Exiting...
+pxh> Exiting NOW.

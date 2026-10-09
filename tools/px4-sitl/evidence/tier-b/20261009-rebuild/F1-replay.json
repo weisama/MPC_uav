@@ -1,0 +1,30 @@
+{
+ "frames": 3859,
+ "span_s": 24.202,
+ "delay_ms": 5.34,
+ "base_delay_ms": 5.34,
+ "extra_delay_ms": 0.0,
+ "no_signal_frames": 313,
+ "sigma_m": [
+  0.00016441757085779269,
+  0.00029011402674673407,
+  0.00010498718073221897
+ ],
+ "truth": {
+  "n": 1396,
+  "span_s": 2.999,
+  "rate_hz": 465.16,
+  "newest_age_s": 0.074
+ },
+ "reference": {
+  "published": 0,
+  "off": true
+ },
+ "dt_actual": {
+  "n": 3858,
+  "mean_ms": 6.273,
+  "p50_ms": 1.126,
+  "p99_ms": 72.006,
+  "max_ms": 1549.987
+ }
+}
