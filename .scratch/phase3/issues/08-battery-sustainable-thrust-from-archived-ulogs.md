@@ -1,6 +1,6 @@
 # 08: 从已归档的飞控日志读出"电池能持续供出多少推力/功率"
 
-Status: ready-for-agent
+Status: done
 Type: task
 **对着 Phase 2 的：[`10`](../../phase2/issues/10-param-measure-backfill.md)**（`ready-for-human`，四条裁定已落地，只剩这一条）
 **阻塞：** 无
@@ -53,12 +53,16 @@ bag/5_traj3_lemniscate/fcu/log_4_未知日期.ulg        10.8 MB
 
 ## 验收
 
-- [ ] 结论落在本票 Comments（数字 + **口径** + **哪份日志** + 复跑命令）
-- [ ] 复跑命令能在**不碰飞控**的前提下重现读数（只用本地 `.ulg`）
-- [ ] ★ 产物**落仓库不落 `/tmp`**（根盘 ext4 + tmpfiles 一条 `D /tmp`；过不了重启）
-- [ ] 读数回填进 phase2/10 的 `## Comments`；**不改它的 `Status:`**
-- [ ] ★ 若这次的读数**推翻了** `f_max = 11.8 N` 的保守性判断，**另开票**，
+- [x] 结论落在本票 Comments（数字 + **口径** + **哪份日志** + 复跑命令）
+- [x] 复跑命令能在**不碰飞控**的前提下重现读数（只用本地 `.ulg`）
+- [x] ★ 产物**落仓库不落 `/tmp`**（根盘 ext4 + tmpfiles 一条 `D /tmp`；过不了重启）
+- [x] 读数回填进 phase2/10 的 `## Comments`；**不改它的 `Status:`**
+- [x] ★ 若这次的读数**推翻了** `f_max = 11.8 N` 的保守性判断，**另开票**，
       别在本票里顺手改 OCP 的上界
+
+> 逐条的**取证**（哪个读数、哪条命令）在 Comments #2 那份带注解的 `#### 验收` 里；
+> 这里只勾"做了没有"。★ 第 5 条是**条件式**的：本次给出的是「归档不足以判定」而非推翻
+> ⟹ **没有触发"另开票"**，但这不代表那条台架量不用做 —— 见 Comments #4 的点名表。
 
 ## 边界
 
@@ -75,6 +79,10 @@ bag/5_traj3_lemniscate/fcu/log_4_未知日期.ulg        10.8 MB
 AFK agent 能自己判。★ 母票 `10` 是 `ready-for-human`（因为原先写的是"只有人能产"），
 本票把那条**降级**成日志读取之后，人这一侧的门槛就没了 —— 所以标签**故意不一样**，
 这个差别本身要留在票面上。
+
+> ☠️ **这个标签已过期（2026-10-09 当天稍后）**：操作者裁定「收口」⟹ 票首已切成
+> `Status: done`，见下面 Comments #4。上面那段"为什么它当时是 `ready-for-agent`"的
+> 推理原样保留 —— 它是"当时为什么这么标"的记录，不是现在还算数的状态。
 
 ---
 
@@ -218,6 +226,10 @@ python3 tools/battery-thrust/evidence/summarise.py      # 汇总表；末行核�
 **Status 保持 `ready-for-agent`** —— 「收口」是操作者的裁定（本仓 Phase 3 前几张票都是
 "落地"与"收口"两次提交），本票不自行 promote。
 
+> ☠️ **这一句已过期**（写于落地当时）：操作者 2026-10-09 当天稍后裁定「收口」，
+> 票首已切成 `Status: done` —— 见 Comments #4。上面"为什么落地时不自行 promote"的理由
+> 原样保留，它说的就是下面 #4 那一笔**为什么由操作者发起**。
+
 ---
 
 ### #3 复核：两轴各出意见，**改掉 1 处口径错 + 4 处缺陷**（★ 其中一条复核意见本身报错了）
@@ -230,8 +242,11 @@ python3 tools/battery-thrust/evidence/summarise.py      # 汇总表；末行核�
    已改成：① 先讲清**日志只能给需求、给不了能力**，结论行给出**放电末端 4.46–5.51 A**，
    并把"全段最大"降为附注。**工具现在自己会标**（`current.sustained.at_flight_start`，
    报告正文与 `--quiet` 摘要行都打 `★起`，`summarise.py` 表里也有一列）。
-2. **`_in_flight_mask = flag_armed ∧ landed` 漏了否定**（#2 自己写的，与本票第 100 行、
-   与 `in_flight_mask` 的实现都矛盾）⟹ 改回 `flag_armed ∧ ¬landed`。
+2. **`_in_flight_mask = flag_armed ∧ landed` 漏了否定**（#2 自己写的，与本票 Comments #2
+   里那句 `_in_flight_mask` = `flag_armed ∧ ¬landed`、与 `in_flight_mask` 的实现都矛盾）
+   ⟹ 改回 `flag_armed ∧ ¬landed`。
+   （☠️ 收口时订正：此处原写「本票第 100 行」，那是个**本来就已经漂了**的行号 ——
+   它指的是上面 Comments #2 里那句，改成**按内容指**，不再按行号。）
 3. **"41 项自检"是旧数**（实为 44）⟹ 改成从数据现算的数，并同步 README §6。
 4. **`throughput_verdict` 收了 6 个从未读过的参数**（`sustained_a / mass / r_int / v_ref /
    `i_ref / n`）⟹ 删掉。`sustained_a` 尤其误导：调用方把"可持续电流"堂堂正正传进来，
@@ -257,3 +272,33 @@ python3 tools/battery-thrust/evidence/summarise.py      # 汇总表；末行核�
 `evidence/*.json` 现算复现**；`f_max` 的出处订正（`ocp.py:277` 的 `ubu`，票面的 `247`/`ub[0]`
 确已漂）也对；`bag/` 与 `MANIFEST.md` 未被改动；`phase2/10` 的 `## Comments` 是**追加**、
 其 `Status:` 未变。
+
+---
+
+### #4 收口（操作者 2026-10-09 裁定「收口」）—— `Status: ready-for-agent` → `done`
+
+裁定原话一个字：**「收口」**。⟹ 票首 `Status:` 已切成 `done`。
+落地的 commit 是 **`fb7e49e`**（含 `tools/battery-thrust/` 全套、本票 Comments #2/#3、
+[`phase2/10`](../../phase2/issues/10-param-measure-backfill.md) 的回填）。
+
+**本票没补做任何验收项** —— Comments #2 的 `#### 验收` 那 5 条在落地时就已全勾，收口只切标签。
+收口前**本会话复跑过一遍**（不是读 commit message）：`pytest tools/battery-thrust/` →
+**44 passed**；票面点名的那条复跑命令跑出 **8.54 A / 占额定 57% / 两常数之比 3.924×**；
+`evidence/summarise.py` 末行打印**指纹核对全对**（清单登记的 5 份逐字节一致）。
+
+**照 [`docs/agents/triage-labels.md`](../../../docs/agents/triage-labels.md) 对 `done` 的定义逐条对**：
+「验收项**全部勾上**」✅；「结论已落进文档」✅（三条结论 + "取不到的量"正面清单在 Comments #2/#3，
+逐场读数同时回填进 `phase2/10`）；「**不是"没人管了"** —— 未决事项必须另开 ticket 并点名」⟹ 见下。
+
+**点名：本票不收口、也不挡着的那些事**
+
+| 事 | 归谁 |
+|---|---|
+| **「`f_max = 11.8 N` 到底保不保守」** —— 本票给出的是「**归档不足以判定**」，不是结论（Comments #2 问题 ② 末） | **没推翻它，故按验收第 5 条不另开票**。要真判只能做那条"只有人能做"的台架量（**独立电流基准**：钳形表 / 拉力台 / 库仑计数放电）。**要不要开这张票、开在 Phase 3 还是 Phase 4，由操作者定** |
+| [`phase2/10`](../../phase2/issues/10-param-measure-backfill.md)（母票）收不收口 | **操作者** —— 它 `Status: ready-for-human`、**本票一个字没动**（票面边界明写"不改它的 `Status:`"；回填是**追加**在它 Comments 末） |
+| `docs/reference/hardware.md` §6.3 结尾那条"侧面佐证"（`BAT_AVRG_CURRENT = 15.0` **恰好等于** VTC6 实测持续能力 ⟹ "说明这个值被认真设过"） | **操作者** —— 本票一手核出**这条推理不成立**（`15.0` 就是 PX4 默认值，`boards/` 与 `ROMFS/` 里没有一处覆盖它），但**不顺手改别人的领地**（顺带发现已写在 Comments #2 末，未动那个文件） |
+| `BAT1_A_PER_V = 17.0` 这个**未经日志验证**的电流标度 | **重开条件**：本票所有以安培为单位的数（含 4.46–5.51 A、7.03–8.54 A、47–57%）都挂在它上面（Comments #2 问题 ③ 第 1 条）。拿到独立电流基准后须**重算**，届时票面这三条结论要一并复核 |
+
+★ **本票自己的边界照旧**：全程只读 —— 没飞、没碰飞控、**没发任何 MAVLink、没起链**、没占机器窗口；
+`bag/*/fcu/*.ulg` 与 `bag/MANIFEST.md` **一字节未动**（指纹核对即其证据），
+`docs/reference/hardware.md` 自 `b68032f` 起未被本票碰过。
