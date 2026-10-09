@@ -1,0 +1,7 @@
+文件      : /home/chen/ros_ws/bag/1_static/fcu/log_0_2026-9-29-15-22-20.ulg
+大小/摘要 : 9.36 MB  sha256=10712c0f51e534a6…
+内嵌参数  : BAT1_A_PER_V=17.0 BAT1_V_DIV=10.020000457763672 BAT1_N_CELLS=6.0 BAT1_CAPACITY=-1.0 BAT_AVRG_CURRENT=15.0
+
+❌ 在飞窗口为空 —— `flag_armed ∧ ¬landed` 在这份日志里从未同时成立（这条本身是个**正常结论**：这份日志没有飞行段）
+
+（JSON 已写入 tools/battery-thrust/evidence/10712c0f__1_static.json）

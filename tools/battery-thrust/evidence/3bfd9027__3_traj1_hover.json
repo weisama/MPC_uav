@@ -1,0 +1,266 @@
+{
+  "analysed_at": "2026-10-09T08:46:06+00:00",
+  "battery_params": {
+    "BAT1_A_PER_V": 17.0,
+    "BAT1_CAPACITY": -1.0,
+    "BAT1_I_CHANNEL": -1.0,
+    "BAT1_N_CELLS": 6.0,
+    "BAT1_R_INTERNAL": 0.004999999888241291,
+    "BAT1_SOURCE": 0.0,
+    "BAT1_V_CHANNEL": -1.0,
+    "BAT1_V_CHARGED": 4.199999809265137,
+    "BAT1_V_DIV": 10.020000457763672,
+    "BAT1_V_EMPTY": 3.200000047683716,
+    "BAT_AVRG_CURRENT": 15.0,
+    "BAT_V_OFFS_CURR": 0.0,
+    "MC_BAT_SCALE_EN": 0.0,
+    "MPC_THR_HOVER": 0.5
+  },
+  "bytes": 12220645,
+  "channel_verdicts": {
+    "current_average_a": {
+      "verdict": "not-a-measurement",
+      "why": "它是电流的慢滤波（初值 `BAT_AVRG_CURRENT`），滞后与初值都不受控 ⟹ 任何一行都用它当「电池在供多少」都是把滤波器当仪器"
+    },
+    "scale": {
+      "verdict": "not-a-measurement",
+      "why": "`scale = v_charged / bat_v`（`Battery::computeScale`），是**推力补偿系数**，不是电流标定（实测 1.047–1.115，被夹在 [1.0, 1.3]）。电流的标定在 `BAT1_A_PER_V`；`scale` 为 0 是**不可能**的，拿它判「电流有没有标定」会判错"
+    },
+    "voltage_cell_v": {
+      "verdict": "absent",
+      "why": "字段在，但**整份日志全为 0** —— 模拟电源模块不填单节电压（PX4 只有 batt_smbus / smart_battery / tattu_can / cyphal 这些会填）。`cell_count = BAT1_N_CELLS` 是**参数值**，别读成「这块电池真有 6 节在读」"
+    }
+  },
+  "charge": {
+    "discharged_mah_delta": 91.19062423706055,
+    "discharged_mah_end": 111.20375061035156,
+    "discharged_mah_start": 20.013126373291016,
+    "rating_mah": null,
+    "remaining_end": 0.6721693873405457,
+    "remaining_start": 0.8108085989952087
+  },
+  "current": {
+    "average_field_min_max_a": [
+      4.952889919281006,
+      15.0
+    ],
+    "exact_zero_samples": 6,
+    "filtered_mean_a": 3.5142996829710027,
+    "mean_a": 3.5358546520474117,
+    "noise_1sigma_a": 1.026190904427634,
+    "sustained": {
+      "at_flight_start": false,
+      "at_s": 254.960637,
+      "min_n": 3,
+      "n_windows": 469,
+      "raw_max": 6.449239730834961,
+      "raw_max_at_s": 243.36054399999998,
+      "value": 5.121556282043457,
+      "window_s": 1.0
+    },
+    "sustained_first_half": {
+      "label": "在飞前半（电量较高）",
+      "mean_a": 3.672836904597079,
+      "n": 234,
+      "sustained_a": {
+        "at_s": 254.960637,
+        "min_n": 3,
+        "n_windows": 234,
+        "raw_max": 6.449239730834961,
+        "raw_max_at_s": 243.36054399999998,
+        "value": 5.121556282043457,
+        "window_s": 1.0
+      },
+      "voltage_v_median": 22.833532333374023,
+      "voltage_v_min": 22.66173553466797,
+      "window_s": [
+        236.360546,
+        283.16054499999996
+      ]
+    },
+    "sustained_last_half": {
+      "label": "在飞后半（放电末端）",
+      "mean_a": 3.3994553027000833,
+      "n": 235,
+      "sustained_a": {
+        "at_s": 321.560724,
+        "min_n": 3,
+        "n_windows": 235,
+        "raw_max": 5.9758620262146,
+        "raw_max_at_s": 305.760567,
+        "value": 4.8707427978515625,
+        "window_s": 1.0
+      },
+      "voltage_v_median": 22.591602325439453,
+      "voltage_v_min": 22.43317413330078,
+      "window_s": [
+        283.16054499999996,
+        329.96054399999997
+      ]
+    }
+  },
+  "exit_code": 0,
+  "extrapolation": {
+    "current_a": 7.4337046050286375,
+    "current_first_iteration_a": 7.30683344169689,
+    "estimated": true,
+    "note": "`P ∝ T^1.50` 是**经验外推**（hardware.md §6.2 同一条），不是测量；电压下沉用 `esr_and_signature` 回归出来的 R 修正一次。",
+    "p_ref_w": 81.5656202409241,
+    "power_w": 165.75141533906398,
+    "prop_exponent": 1.5,
+    "r_int_ohm": 0.104321753939765,
+    "t_ref_n": 7.3549875,
+    "t_target_n": 11.8,
+    "thrust_ratio": 1.6043535084186071,
+    "voltage_after_sag_v": 22.284047580721708
+  },
+  "file": "/home/chen/ros_ws/bag/3_traj1_hover/fcu/log_0_未知日期.ulg",
+  "flight_window": {
+    "n": 469,
+    "span_s": 93.59999799999997,
+    "t0": 236.360546,
+    "t1": 329.96054399999997
+  },
+  "hover_anchor": {
+    "current_a": 3.5956640276643963,
+    "n": 441,
+    "notes": [
+      "电流取的是窗口**均值**（单点不可用，见 esr_and_signature 的 verdict）",
+      "该窗口内电流的样本级 1σ 抖动 = 1.023 A"
+    ],
+    "power_w": 81.5656202409241,
+    "thrust_n": 7.3549875,
+    "voltage_v": 22.684438705444336,
+    "window_s": [
+      237.96104499999998,
+      325.96056899999996
+    ]
+  },
+  "missing": [
+    "单节电压 `voltage_cell_v[*]`：字段在、**整份日志全为 0** —— 模拟电源模块不填它（PX4 只有 smart battery 类驱动会填），`cell_count = 6.0` 只是 `BAT1_N_CELLS` 这个**参数**",
+    "电池容量 `BAT1_CAPACITY = -1` ⟹ **容量未知**：`remaining` 走的是**电压法**（`Battery::estimateStateOfCharge` 的 else 分支），不是安时积分；`discharged_mah` 虽有数，但它继承 `current_a` 的标度误差",
+    "电流零点 `BAT_V_OFFS_CURR = 0` ⟹ **未标定**：未解锁段实测仍有 ~0.35 A 读数（可能是飞控/机载设备真实静态电流，也可能是没扣掉的直流偏置）——**两者这次分不开**，所以任何窗口均值都带一个量级 ±0.35 A 的系统不确定度",
+    "电流标度 `BAT1_A_PER_V = 17.0`（以及 `BAT1_V_DIV = 10.020000457763672`）：**日志内无法独立验证**它对不对（没有拉力台、没有库仑计、没有第二条电流通路）。⟹ 下面所有以安培为单位的数，以及由它导出的功率/比例，都建立在「这个标度大致正确」这一条**未经本次验证的前提**上",
+    "**15 A 这个额定值本身**：它是电芯的**持续放电额定**（热/寿命约束），而日志能证伪的只是**电压崩塌**那一条。两者不是同一件事 —— 本工具只能给「占额定的比例」，不能给「电池还能多供多少」"
+  ],
+  "sha256": "3bfd90273cdc824c77bf93b4db065c654d89726290223e7bceb9ad507e851cda",
+  "signature": {
+    "corr_binned": -0.13270410041221395,
+    "corr_threshold_3sigma": 0.13852712896188304,
+    "expected_signature_v": 0.08004289054535546,
+    "fit_is_identifying": false,
+    "n_bins": 469,
+    "n_samples": 469,
+    "noise_current_1sigma_a": 1.026190904427634,
+    "noise_voltage_1sigma_v": 0.023804016339072087,
+    "policy": "一律用窗口均值；单点永不作为判据（两种解释下单点都是错的统计量）",
+    "r_int_ohm": 0.104321753939765,
+    "r_min_ohm_ref": 0.078,
+    "residual_sd_v": 0.10856428742404428,
+    "signature_ratio": 3.3625792137427024,
+    "verdict": "not-visible-in-voltage"
+  },
+  "topics_present": [
+    "action_request",
+    "actuator_armed",
+    "actuator_motors",
+    "actuator_outputs",
+    "battery_status",
+    "control_allocator_status",
+    "cpuload",
+    "estimator_attitude",
+    "estimator_attitude",
+    "estimator_baro_bias",
+    "estimator_baro_bias",
+    "estimator_event_flags",
+    "estimator_event_flags",
+    "estimator_innovation_test_ratios",
+    "estimator_innovation_test_ratios",
+    "estimator_innovation_variances",
+    "estimator_innovation_variances",
+    "estimator_innovations",
+    "estimator_innovations",
+    "estimator_local_position",
+    "estimator_local_position",
+    "estimator_selector_status",
+    "estimator_sensor_bias",
+    "estimator_sensor_bias",
+    "estimator_states",
+    "estimator_states",
+    "estimator_status",
+    "estimator_status",
+    "estimator_status_flags",
+    "estimator_status_flags",
+    "event",
+    "failsafe_flags",
+    "failure_detector_status",
+    "home_position",
+    "hover_thrust_estimate",
+    "input_rc",
+    "landing_gear",
+    "manual_control_setpoint",
+    "manual_control_switches",
+    "mission_result",
+    "offboard_control_mode",
+    "parameter_update",
+    "position_setpoint_triplet",
+    "rate_ctrl_status",
+    "rtl_time_estimate",
+    "sensor_accel",
+    "sensor_accel",
+    "sensor_baro",
+    "sensor_combined",
+    "sensor_gyro",
+    "sensor_gyro",
+    "sensor_gyro_fft",
+    "sensor_selection",
+    "sensors_status_imu",
+    "system_power",
+    "takeoff_status",
+    "telemetry_status",
+    "telemetry_status",
+    "trajectory_setpoint",
+    "transponder_report",
+    "vehicle_acceleration",
+    "vehicle_air_data",
+    "vehicle_angular_velocity",
+    "vehicle_attitude",
+    "vehicle_attitude_setpoint",
+    "vehicle_command",
+    "vehicle_command_ack",
+    "vehicle_constraints",
+    "vehicle_control_mode",
+    "vehicle_imu",
+    "vehicle_imu",
+    "vehicle_imu_status",
+    "vehicle_imu_status",
+    "vehicle_land_detected",
+    "vehicle_local_position",
+    "vehicle_local_position_setpoint",
+    "vehicle_rates_setpoint",
+    "vehicle_status",
+    "vehicle_thrust_setpoint",
+    "vehicle_torque_setpoint",
+    "vehicle_visual_odometry"
+  ],
+  "verdict": {
+    "current_at_f_max_a": 7.4337046050286375,
+    "f_max_n": 11.8,
+    "fraction_of_rating": 0.4955803070019092,
+    "premise": "`BAT1_A_PER_V` 的标度大致正确（日志内无法独立验证 —— 见报告 missing 一节）",
+    "rating_a": 15.0,
+    "t_max_n": 46.3027,
+    "t_max_note": "t_max 是**归一化**常数（按电机/桨，实测满量程），与 f_max **不是一个量**：本工具的换算一律只用 f_max。两者之比 = 3.924 倍 —— 混用会把上限抬这么多倍",
+    "verdict": "conservative"
+  },
+  "voltage": {
+    "cell_count": 6.0,
+    "cell_voltage_all_zero": true,
+    "cell_voltage_max_abs": 0.0,
+    "filtered_median_v": 22.701414108276367,
+    "max_v": 23.558313369750977,
+    "median_v": 22.686458587646484,
+    "min_v": 22.43317413330078,
+    "noise_1sigma_v": 0.023804016339072087
+  }
+}
