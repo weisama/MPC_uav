@@ -54,7 +54,8 @@ from .model import NX, NU, normalize_quat, quat_angle, quat_mul, yaw_quat
 from .params import Z0Params
 
 __all__ = [
-    "TAU_DEFAULT_S", "WARMUP_CYCLES", "FALLBACK_HOLD_FRAMES", "JUMP_DT_FLOOR_S",
+    "TAU_DEFAULT_S", "TAU_MIN_S", "TAU_MAX_S",
+    "WARMUP_CYCLES", "FALLBACK_HOLD_FRAMES", "JUMP_DT_FLOOR_S",
     "ARMING_STATE_ARMED", "NAV_STATE_OFFBOARD",
     "STATE_SOURCE_MOCAP", "STATE_SOURCE_PX4", "STATE_SOURCES", "SAT_TOL_REL",
     "REFERENCE_SOURCE_HOLD", "REFERENCE_SOURCE_TRAJ", "REFERENCE_SOURCES",
@@ -71,11 +72,32 @@ __all__ = [
 #: 写死 **50 ms**（= 一个 20 Hz 的闭环延迟量级，也正好是 OCP 内部步长 `tf/N = 1.0/50`）。
 #: ★ 它的含义是"这一拍算出来的 `u` 真正作用到机体上时，状态已经往前走了 τ"，
 #: 所以喂给求解器的初值是 `x + v·τ`。**只外推位置**（速度/姿态的导数没有可靠的测量来源）。
-#: ⚠️ **上飞机之前要确认这一档**：[`phase2-implementation.md`](../../../docs/control/phase2-implementation.md)
+#: ⚠️ **这一档已在首飞配置里冻结**：[`phase2-implementation.md`](../../../docs/control/phase2-implementation.md)
 #: §4 的 **D9** 写的是"**实飞起始值仍取 `0`**（过补偿比不补偿更危险）"，τ ≈ 50 ms 只是量级
-#: 与起点参照（ticket 03 实测）—— 那条状态是 **🔶 仍开放**、裁定人是操作者。
-#: `-p tau_s:=0` 就是 D9 那一档，改一个参数即可，**代码不用动**。
+#: 与起点参照（ticket 03 实测）⟹ 首飞跑 `-p tau_s:=0`，加档归
+#: [`phase4/10`](../../../.scratch/phase4/issues/10-ladder-closed-loop-and-free-flight.md)
+#: （冻结清单：[`first-flight-config.md`](../../../docs/control/first-flight-config.md)）。
+#: ℹ️ **2026-10-09 状态更新**（原句照实留档）：本行原本接着写"那条状态是 **🔶 仍开放**、
+#: 裁定人是操作者"。冻结落地后它**不再开放** —— 裁定结果见冻结清单 §N2；本行那个"🔶"按此处作废。
+#: ☠️ **2026-10-09 更正**：本行原写"`-p tau_s:=0` 就是 D9 那一档，改一个参数即可，**代码不用动**"
+#:   —— 前半句对，**后半句是错的**。这一侧（`extrapolate_state`）确实不用动（τ=0 时
+#:   `x + v·0` 退化成恒等），但**节点自己的参数校验**当时把 `tau_s` 与 `rate_hz` 一起按
+#:   "正的有限数"拦掉了 ⟹ `-p tau_s:=0` **启动即退**（第一手：`启动失败：参数 tau_s 要是
+#:   正的有限数，收到 0.0`、`returncode=2`、一帧都不发；症状与"参数名写错/话题没通"分不开）。
+#:   已在冻结首飞配置时放开（合法区间 `[TAU_MIN_S, TAU_MAX_S)`，负 τ 仍拒；判据在
+#:   `mpc_node._validate` 与 `preflight_check.check_params`，两处引用**下面这一对常量**）。
+#:   ★ 教训：**"改一个参数就行"这句话本身要跑过一次才算数**。
 TAU_DEFAULT_S = 0.05
+
+#: `tau_s` 的**合法区间** `[TAU_MIN_S, TAU_MAX_S)` —— ★ **一处定义、两处引用**
+#: （`mpc_node._validate` 与 `preflight_check.check_params`，两边都是这两条常量本身，
+#: 不再是各写一遍的字面量）。这么写是有代价换来的：本票第一版在两个文件里各写了一遍
+#: `0.2`、差了一个端点（一个 `<=` 一个 `<`）⟹ `τ = 0.2` 会"**自检红、节点绿**"，
+#: 而在台架上这两者的区别**只是先看到哪一个**。
+#: 下界含 `0`：τ = 0 = **不补偿**，是首飞冻结值（[`first-flight-config.md`](../../../docs/control/first-flight-config.md) §N2）。
+#: 上界**开**：到一拍（0.2 s）就不该再叫"执行延迟补偿"了；负 τ 仍拒（那是**反向外推**）。
+TAU_MIN_S = 0.0
+TAU_MAX_S = 0.2
 
 #: 上电后先解多少次再发第一帧。★ 这不是保守，是**第一手结论**：
 #: `SQP_RTI` 每周期只做**一次**迭代 ⟹ 全新实例的第 0 次 `solve()` 给出的**不是**最优解，

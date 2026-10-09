@@ -38,7 +38,7 @@ from typing import Callable, Dict, FrozenSet, List, Optional, Sequence
 if __package__ in (None, ""):  # pragma: no cover - 只在直接执行时走
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from nmpc.node_core import StopConfig  # noqa: E402
+from nmpc.node_core import TAU_MAX_S, TAU_MIN_S, StopConfig  # noqa: E402
 from nmpc.params import G, Z0Params  # noqa: E402
 from nmpc.sign_map import px4_rates_setpoint  # noqa: E402
 
@@ -135,9 +135,16 @@ def check_params(p, z0: Optional[Z0Params] = None) -> List[Check]:
     out.append(Check(g, "定时器频率", ok,
                      f"rate = {p.rate_hz} Hz / 心跳 = {p.heartbeat_hz} Hz / viz = {p.viz_hz} Hz"))
 
-    ok = 0.0 < p.tau_s < 0.2
+    # ★★ 下界是 **0**（含），不是"正的"（ticket `phase4/05`，2026-10-09）：
+    #   τ = 0 = **不补偿**，是**首飞冻结值**（ticket `phase4/03`：过补偿比不补偿更危险）。
+    #   ⚠️ 两个方向都留着负控：负数 = **反向外推**（拿"还没走到"的状态喂控制器），
+    #   `≥ TAU_MAX_S` = 比一拍还大，那不再是执行延迟的量级。
+    #   端点用的是 `node_core` 里的常量 ⟹ 与 `mpc_node._validate` **同一份**，
+    #   不会再出现"两处各写一遍 `0.2`、差一个端点"那种漂移（本票第一版踩过）。
+    ok = TAU_MIN_S <= p.tau_s < TAU_MAX_S
     out.append(Check(g, "外推 τ 在合理区间", ok,
-                     f"tau_s = {p.tau_s} s（票面 50 ms；τ 大过一拍就会明显过冲）"))
+                     f"tau_s = {p.tau_s} s（首飞冻结值 0 = 不补偿；z0 实测 ≈0.05 s；"
+                     f"负数反向外推，τ 大过一拍就会明显过冲）"))
 
     ok = p.warmup_cycles >= 1
     out.append(Check(g, "热身拍数 ≥1", ok,

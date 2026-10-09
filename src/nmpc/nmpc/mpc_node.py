@@ -212,6 +212,7 @@ from px4_msgs.msg import (OffboardControlMode, VehicleAttitude,  # noqa: E402
 from nmpc import NU, sign_map  # noqa: E402
 from nmpc.node_core import (FALLBACK_HOLD_FRAMES, REFERENCE_SOURCE_TRAJ,  # noqa: E402
                             REFERENCE_SOURCES, STATE_SOURCE_PX4, STATE_SOURCES,
+                            TAU_MAX_S, TAU_MIN_S,
                             ControlConfig, FallbackLadder, NodeCore, StopConfig,
                             frame_is_finite, hold_feedforward, saturated_bounds,
                             solution_usable)
@@ -287,7 +288,10 @@ class NodeParams:
     #: ★ 实测值（满电口径，2026-09-29 ticket 10 回填）—— 与 `params.HOVER_THRUST` **必须同值**，
     #: 漂了不报错：节点按下面 `_PARAMS` 表飞、测试按这里断言 ⟹ 测试全绿而飞机是错的。
     hover_thrust: float = 0.1589
-    #: 状态外推 τ [s]（票面 50 ms）
+    #: 状态外推 τ [s]。**默认 0.05**（= z0 上实测的 ≈50 ms，`mocap-setup.md` §6.3），
+    #: 而**首飞按冻结值取 `0`**（= 不补偿）—— 加档的时机归 ticket `phase4/10`。
+    #: ★ 合法区间是 `[TAU_MIN_S, TAU_MAX_S)` = `[0, 0.2)`（**0 合法**，见 `_validate` 里那段 ★★；
+    #: 负 τ 仍然拒）。这两个端点是 `node_core` 里的常量，与 `preflight_check` 同一份。
     tau_s: float = 0.05
     #: ★★ **垂直通道外层前馈偏置的积分增益** [N/(m·s)]（ticket 20）：`ΔF ← ΔF + ki_z·e_z·Δt`，
     #: 最终加在**发出去的那条指令**上（`u_cmd[0] = clip(u[0] + ΔF, 0, f_max)`，见 `_normal_frame`）。
@@ -1373,7 +1377,7 @@ def _validate(p: NodeParams) -> None:
     与 `offboard_smoke.validate_args` 同一条纪律：`rate_hz=0` 会在 `1.0 / 0` 那行抛，
     而那时**节点已经起来了**（DDS 里也已经有话题了）⟹ 台架会把它读成"节点没发数据"。
     """
-    for name in ("rate_hz", "heartbeat_hz", "viz_hz", "mass", "hover_thrust", "tau_s",
+    for name in ("rate_hz", "heartbeat_hz", "viz_hz", "mass", "hover_thrust",
                  "mocap_timeout_s", "px4_timeout_s", "traj_stream_gap_s", "status_timeout_s",
                  # 输入合理性那三条（ticket 07）：非有限会让判据**静默失效**
                  # （`nan > x` 恒假 ⟹ 跳变判据永远不触发，而"永远不触发"看起来像"没有跳变"）。
@@ -1385,8 +1389,23 @@ def _validate(p: NodeParams) -> None:
         raise SystemExit(
             f"heartbeat_hz({p.heartbeat_hz}) 不能大于 rate_hz({p.rate_hz})："
             "心跳是从求解节拍上抽帧发的（见 `_heartbeat_every`），比它快没有意义。")
-    if p.tau_s > 0.2:
-        raise SystemExit(f"tau_s={p.tau_s} 太大（这是执行延迟的量级，默认 0.05 s）")
+    # ★★ `tau_s` **单独判**：它的下界是 **0**，不是"正的"（ticket `phase4/05`，2026-10-09）。
+    #   τ = 0 = **不补偿**，是**首飞冻结值**（ticket `phase4/03`：过补偿比不补偿更危险
+    #   ⟹ 实飞起始值取 0），所以它**不是**"无意义的参数"。
+    #   ☠️ 2026-10-09 之前它被上面那个"正的有限数"的循环一起拦掉 ⟹ **冻结值在飞机上起不来**
+    #   （第一手症状：`启动失败：参数 tau_s 要是正的有限数，收到 0.0`、`returncode=2`、
+    #   一帧都不发 —— 与"参数名写错/话题没通"在现场分不开）。
+    #   区间用的是 `node_core` 里那一对常量 `[TAU_MIN_S, TAU_MAX_S)`，与 `preflight_check`
+    #   的「外推 τ 在合理区间」**同源**（不再是两处各写一遍的字面量）。
+    #   ⚠️ 这两处**必须同口径** —— 本票第一版这里写的是 `<= 0.2`，与自检差了一个端点，
+    #     于是 `τ = 0.2` 会"自检红、节点绿"，而在台架上这两者的区别只是**先看到哪一个**。
+    #     ★ 顺带记一笔：改之前这两处**本来**就在这一端点上不一致（旧代码是 `> 0.2` 才拒、
+    #     自检是 `< 0.2`）⟹ `τ = 0.2` 当时就已经"自检红、节点绿"，只是没人拿这个值得罪过。
+    #   负 τ 仍然拒 —— 那是**反向外推**（拿"还没走到"的状态喂控制器），比不补偿更危险。
+    if not (math.isfinite(p.tau_s) and TAU_MIN_S <= p.tau_s < TAU_MAX_S):
+        raise SystemExit(
+            f"参数 tau_s 要在 [{TAU_MIN_S}, {TAU_MAX_S}) s（0 = 不补偿，是首飞的冻结值；"
+            f"负数是反向外推，≥ {TAU_MAX_S} 不是执行延迟的量级），收到 {p.tau_s!r}")
     for name in ("warmup_cycles", "log_every", "fallback_hold_frames",
                  "inject_solve_fail_after_frames"):
         if int(getattr(p, name)) < 0:

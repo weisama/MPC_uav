@@ -82,6 +82,11 @@ def test_文档与独立推导本身也要对得上():
     ("hover_thrust", 1.2, "悬停有上余量"),
     ("heartbeat_hz", 1.0, "心跳 ≥2 Hz"),
     ("tau_s", 0.5, "外推 τ 在合理区间"),
+    #: ★ 负 τ 与"太大"是**两个**方向，都要拦：反向外推 = 拿"还没走到"的状态喂控制器。
+    ("tau_s", -0.01, "外推 τ 在合理区间"),
+    #: ★ 端点 `0.2` 也喂进去：它与 `mpc_node._validate` 是**同一个区间**，
+    #: 差一个端点就会"自检红、节点绿"（本票 2026-10-09 踩过一次），所以要钉住。
+    ("tau_s", 0.2, "外推 τ 在合理区间"),
     ("warmup_cycles", 0, "热身拍数 ≥1"),
     ("status_timeout_s", 0.2, "状态时限 ≥ 上游一个周期"),
     ("stop_on_armed_drop", False, "两条安全停机都开着"),
@@ -92,6 +97,19 @@ def test_坏参数会被点名(field, value, expect):
     p = dataclasses.replace(NodeParams(), **{field: value})
     assert expect in _failing(check_params(p)), \
         f"{field}={value} 应该让「{expect}」红，实际红的是 {_failing(check_params(p))}"
+
+
+def test_tau_取_0_是首飞冻结值_自检要放行():
+    """★ 正控：`τ = 0`（**不补偿**）是首飞的**冻结值**（ticket `phase4/05`，D9 那一档）。
+
+    ★★ 它不是"漏填的默认值"，而是"**过补偿比不补偿更危险**"那条纪律的落点
+      （ticket `phase4/03` 的量测结论：实飞起始值取 0）。
+      ⟹ 装桨前那道自检**必须**让这一档通过 —— 否则合法配置会被自己的闸门拦下，
+        而"拦下了"在台架上的表现与"参数写错了"一模一样。
+      ⚠️ 上界那条（`0.5` 会红）不能因为这次放开而松掉：两个方向都要有负控。
+    """
+    p = dataclasses.replace(NodeParams(), tau_s=0.0)
+    assert _failing(check_params(p)) == [], _failing(check_params(p))
 
 
 def test_归一化常数被硬编码会被抓到():
