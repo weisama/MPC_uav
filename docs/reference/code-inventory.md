@@ -251,7 +251,7 @@ ros_ws/  = weisama/MPC_uav   （private）
 ├── docs/     资料（已有，本文档所在）
 └── src/      ROS2 代码 —— ★ **六个包都已落地**（本节的"待建/新写"是当初的取舍结论，不是现状）
     ├── vrpn_listener/   ← vendored：定制版原样放进，★ 写明"勿替换为公开版"
-    ├── mocap/           ← 重写：相对位姿（解锁边沿锁原点 + 仅 yaw 归零）
+    ├── mocap/           ← 重写：相对位姿（★ 刚体原点→IMU 外参平移 + 解锁边沿锁原点 + 仅 yaw 归零）
     ├── traj/            ← 新写：悬停 / 正方形 / 八字
     ├── bench/           ← 新写（当初没列入）：台架夹具，**测试基础设施、不是飞行代码**
     ├── control/         ← 新写：FSM + offboard setpoint（Phase 1）→ MPC（Phase 2）

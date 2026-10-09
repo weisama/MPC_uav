@@ -6,9 +6,17 @@
 //   原点锁错、yaw 归零错，还是 mavros 的边界转换不如预期。所以把「减原点 + 仅归零 yaw +
 //   两阶段原点切换」做成 (位姿, 原点) → 位姿 的纯函数，直接单测，成本≈0。
 //
+// 本文件里的变换（按施加顺序）：
+//   ⓪ `rigid_body_to_imu` —— 把位姿从**动捕刚体原点**平移到**飞控 IMU 中心**（外参，2026-10-09 加）
+//   ① `relative_position` —— 每轴独立地减掉锁定原点
+//   ② `yaw_zeroed` —— 只归零 yaw，roll/pitch 保持绝对
+//   ③ `TwoStageOrigin` —— 「启动原点 → 起飞前静止帧原点」的切换（①+② 的调度）
+//
 // ★ 本文件**不做任何坐标系转换**：输入输出都是**动捕原生 ENU / 机体 FLU**。
 //   ENU→NED 与 FLU→FRD 全由 mavros 在它自己的边界上完成（已读 mavros 源码确认，§3.5）。
 //   本节点是全栈唯一一个「不做坐标转换」的节点 —— 不要在这里加转换。
+//   ⚠️ ⓪ 也**不是**坐标转换：它把**同一个刚体上的两个点**做了平移（偏移写在机体系 FLU、
+//      用该帧姿态旋到 ENU），输入输出仍是动捕原生 ENU/FLU。
 
 #ifndef MOCAP__MOCAP_REL_POSE_HPP_
 #define MOCAP__MOCAP_REL_POSE_HPP_
@@ -105,6 +113,52 @@ inline double yaw_of(const Quat & q_in)
 inline double norm(const Vec3 & v)
 {
   return std::sqrt(v.x * v.x + v.y * v.y + v.z * v.z);
+}
+
+inline Vec3 cross(const Vec3 & a, const Vec3 & b)
+{
+  return Vec3{a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x};
+}
+
+/// 用四元数把矢量从机体系旋到世界系：`v_world = R(q)·v_body`。
+/// 公式 `v' = v + w·s + u×s`（`u` = q 的矢量部、`s = 2(u×v)`），等价于 `q ⊗ v ⊗ q*`。
+inline Vec3 rotate(const Quat & q_in, const Vec3 & v)
+{
+  const Quat q = normalize(q_in);
+  const Vec3 u{q.x, q.y, q.z};
+  const Vec3 t = cross(u, v);
+  const Vec3 s{2.0 * t.x, 2.0 * t.y, 2.0 * t.z};
+  const Vec3 us = cross(u, s);
+  return Vec3{v.x + q.w * s.x + us.x, v.y + q.w * s.y + us.y, v.z + q.w * s.z + us.z};
+}
+
+// ——————————————————————————————————————————————————————————————
+// ⓪ 刚体原点 → IMU 中心（动捕外参）：把输入位姿平移到飞控 IMU 所在的那个点
+// ——————————————————————————————————————————————————————————————
+
+/// 把「动捕刚体原点」的位姿平移到「飞控 IMU 中心」。
+///
+/// `r_imu_in_body`：IMU 相对**刚体原点**的位置，写在**机体系 FLU**（x 前 / y 左 / z 上，单位 m）。
+///   z0：`(0, 0, −0.080)` —— IMU 在刚体原点**下方**，所以 z 分量是**负**的。
+///   （出处与"每场次要复测"的警告见 `config/mocap.yaml` 与 `README.md`。）
+///
+/// ★ 位置加的是 `R(该帧姿态)·r_imu_in_body`，**姿态本身不变**（平移不改变朝向）。
+///   为什么必须带上姿态：这个偏移是**固连在机体上**的矢量 —— 飞机一倾斜，IMU 就不再位于
+///   刚体原点的正下方。若图省事写成"位置固定减 0.080"，10° 倾角下会留下
+///   `80·sin10° ≈ 14 mm` 的**水平**位置误差，而且**完全静默**（静止/水平飞行看不出来）。
+///
+/// ⚠️ 这不是"坐标系转换"：输入输出都是动捕原生 ENU，只是把**同一个刚体上的两个点**做了平移
+///   （ENU↔NED / FLU↔FRD 仍然完全由 mavros 负责，见文件头）。
+///
+/// ★ 与本函数成对的一条纪律：**本节点做了这件事 ⟹ 飞控上 `EKF2_EV_POS_X/Y/Z` 必须保持
+///   `0/0/0`**。两边各做一次 = 偏移**双计**（错一倍），而且两边都"看起来对"。
+inline Pose rigid_body_to_imu(const Pose & pose, const Vec3 & r_imu_in_body)
+{
+  const Vec3 d = rotate(pose.q, r_imu_in_body);
+  Pose out;
+  out.p = Vec3{pose.p.x + d.x, pose.p.y + d.y, pose.p.z + d.z};
+  out.q = pose.q;
+  return out;
 }
 
 // ——————————————————————————————————————————————————————————————

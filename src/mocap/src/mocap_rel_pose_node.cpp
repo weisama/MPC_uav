@@ -9,12 +9,25 @@
 //   `vrpn_listener` 的 twist 与本节点转发给 MPC 的 pose **同一个 frame**（都是 `"world"`）
 //   ⟹ 同 frame 直接转发就是**零变换**，与「输入侧不做坐标转换」那条约定一致。
 //
-// ★ 三条不许碰的约定（改任何一条都会毁掉 EKF2 融合，见 docs/control/phase1-implementation.md）：
+// ★ 四条不许碰的约定（改任何一条都会毁掉 EKF2 融合，见 docs/control/phase1-implementation.md）：
 //   1. **stamp 原样转发** —— 不二次打戳（`vrpn_listener` 的 `stamp = now()` 是刻意设计）。
 //      理由有二：时间戳不前进的消息会被 mavros 静默丢弃（§3.5）；动捕主机与本机有 ~4 s 时钟差，
 //      换成 VRPN 的 msg_time 会直接毁掉融合。
 //   2. **不做坐标转换** —— 位置 ENU、姿态 FLU 原样交给 mavros 转。
+//      （下面的外参平移**不算**转换：同一个刚体上两点的平移，输入输出仍是 ENU/FLU。）
 //   3. **姿态只归零 yaw** —— roll/pitch 保持绝对（理由见 mocap_rel_pose.hpp 的 yaw_zeroed）。
+//   4. **外参成对** —— 本节点做了刚体原点→IMU 的平移 ⟹ 飞控 `EKF2_EV_POS_X/Y/Z` 保持 `0/0/0`（见下）。
+//
+// ★ 动捕外参（2026-10-09 加）：本节点在**读原始数据这一层**把位姿从「动捕刚体原点」平移到
+//   「飞控 IMU 中心」（参数 `body_to_imu_x/y/z`，机体系 FLU），**用该帧姿态旋转**施加。
+//   ① 施加点在 `on_pose` 的**最前面**（`to_pod` 之后、`selector_->observe` 之前）⟹ 两阶段原点
+//      也采样在 IMU 点上，输出的相对位姿里**不含**这个常值偏移；
+//   ② ★ 成对纪律：**本节点做了平移 ⟹ 飞控上 `EKF2_EV_POS_X/Y/Z` 必须保持 `0/0/0`**，
+//      两边都做 = **双计**（错一倍），而且两边都"看起来对"；
+//   ③ ⚠️ 没做平移的那一半：`/mocap/velocity_enu` 仍是**刚体原点**的速度（原样转发）。
+//      两者的差是 `ω × d_机体系`，其中竖直偏移只与 roll/pitch 角速率耦合（≈ 0.08·ω_xy）。
+//      影响面有限：EKF2 **不融合** EV 速度（`EKF2_EV_CTRL = 11`，bit2 关），只有 Phase 2 的
+//      MPC 速度输入会带上它；且动捕 twist 的 angular 实测恒为 0 ⟹ 想补偿也补不了。见 README。
 //
 // ★ 运行纪律：**从本节点启动到解锁之间，不要把飞机搬来搬去、不要转它。**
 //   （两阶段原点切换的跳变量 = 这段时间里飞机被移动的量。朝向不重要，静止才重要。）
@@ -85,6 +98,15 @@ public:
       "velocity_enu_topic", "/mocap/velocity_enu");
     state_topic_ = declare_parameter<std::string>("state_topic", "/mavros/state");
 
+    // —— 动捕外参：刚体原点 → IMU 中心（机体系 FLU：x 前 / y 左 / z 上，m）——
+    // ★ IMU 在刚体原点**下方** ⟹ z 分量为**负**（默认 −0.080 = 80 mm，2026-10-09 操作者给定）。
+    // ⚠️ 这个量**每场次/每装法都要复核**：2026-09-21 与 2026-09-29 两次静止读数差 20.2 mm。
+    // ⚠️ 与本参数成对：本节点施加了平移 ⟹ 飞控 `EKF2_EV_POS_X/Y/Z` 必须保持 0/0/0（双计 = 错一倍）。
+    r_imu_in_body_ = mocap::Vec3{
+      declare_parameter<double>("body_to_imu_x", 0.0),
+      declare_parameter<double>("body_to_imu_y", 0.0),
+      declare_parameter<double>("body_to_imu_z", -0.080)};
+
     // —— 两阶段原点的采样帧数（动捕 ~200 Hz ⟹ 30 帧 ≈ 0.15 s，60 帧 ≈ 0.3 s）——
     boot_samples_ = declare_parameter<int>("boot_samples", 30);
     const int arm_samples = declare_parameter<int>("arm_samples", 60);
@@ -119,6 +141,20 @@ public:
       input_topic_.c_str(), twist_topic_.c_str(), body_name_.c_str(), state_topic_.c_str(),
       vision_pose_topic_.c_str(), pose_enu_topic_.c_str(), velocity_enu_topic_.c_str(),
       boot_samples_, arm_samples, jump_warn_m_);
+
+    // ★ 外参必须**每次启动都打在日志里** —— 它是静默的（填 0 / 填错 / 符号反，静止与水平飞行都看不出来），
+    //   现场唯一能核对的就是这一行。同时把「飞控那边必须保持 0」这条成对纪律一起打出来。
+    const bool extrinsic_active = mocap::norm(r_imu_in_body_) > 1e-9;
+    RCLCPP_INFO(
+      get_logger(),
+      "  动捕外参（刚体原点 → IMU 中心，机体系 FLU）= (%.4f, %.4f, %.4f) m —— %s\n"
+      "    · 施加方式：p_IMU = p_刚体 + R(该帧姿态)·外参（倾斜时 IMU 不在刚体原点正下方，"
+      "别改成固定减 z）\n"
+      "    · ⚠️ 每场次/每装法都要复核（两次静止读数曾差 20.2 mm）："
+      "ros2 param get /mocap_rel_pose body_to_imu_z\n"
+      "    · ★ 成对纪律：本节点做了平移 ⟹ 飞控 `EKF2_EV_POS_X/Y/Z` 必须保持 0/0/0（两边都做 = 双计）",
+      r_imu_in_body_.x, r_imu_in_body_.y, r_imu_in_body_.z,
+      extrinsic_active ? "已施加" : "⚠️ 全 0 ⟹ 相当于没做外参（此时飞控侧才需要填 EKF2_EV_POS_*）");
 
     // 动捕数据看门狗（每 no_data_warn_s/5 查一次，≥0.2 s ⟹ 检出滞后远小于阈值本身）：
     //   · 启动后一直没数据 → ERROR，并把 graph 里实际存在的 /vrpn/*/pose 列出来供"现场核对"
@@ -211,13 +247,17 @@ private:
         (now() - last_pose_time_).seconds());
     }
     last_pose_time_ = now();
-    const mocap::Pose in = to_pod(msg->pose);
+    const mocap::Pose raw = to_pod(msg->pose);
+    // ★ 外参在这一步施加：**在原点采样之前**，⟹ 两阶段原点与后续每一帧都在同一个点上，输出里不含常值偏移。
+    const mocap::Pose in = mocap::rigid_body_to_imu(raw, r_imu_in_body_);
     selector_->observe(in, armed_state());
 
     if (pose_count_ == 1) {
       RCLCPP_INFO(
-        get_logger(), "收到第一帧 %s：位置 (%.4f, %.4f, %.4f)，frame_id = \"%s\"",
-        input_topic_.c_str(), in.p.x, in.p.y, in.p.z, msg->header.frame_id.c_str());
+        get_logger(),
+        "收到第一帧 %s：刚体原点 (%.4f, %.4f, %.4f) → IMU 点 (%.4f, %.4f, %.4f)，frame_id = \"%s\"",
+        input_topic_.c_str(), raw.p.x, raw.p.y, raw.p.z, in.p.x, in.p.y, in.p.z,
+        msg->header.frame_id.c_str());
     }
 
     if (!selector_->ready()) {
@@ -321,6 +361,7 @@ private:
   }
 
   std::string body_name_;
+  mocap::Vec3 r_imu_in_body_{};   ///< 刚体原点 → IMU 中心（机体系 FLU，m）
   std::string input_topic_;
   std::string twist_topic_;
   std::string vision_pose_topic_;

@@ -1,4 +1,4 @@
-// seam 2 —— 相对位姿三个纯函数的单测。★ 零 ROS 依赖（本文件不 include 任何 ROS 头）。
+// seam 2 —— 相对位姿四个纯函数的单测。★ 零 ROS 依赖（本文件不 include 任何 ROS 头）。
 //
 // 为什么值得有这组测试：位姿处理错误**在话题层面没有诊断分辨率** —— 飞机往反方向飞时，
 // 话题上分不出是原点锁错、yaw 归零错，还是 mavros 的边界转换不如预期。
@@ -106,6 +106,135 @@ Quat quat_zyx(double roll, double pitch, double yaw)
 
 /// 机体系 z 轴（推力方向）在世界系中的表示。
 Vec3 body_z_in_world(const Quat & q) {return Vec3{rot(q).m[0][2], rot(q).m[1][2], rot(q).m[2][2]};}
+
+// ———————————————————————————————————————————————————————————————
+// ⓪ 刚体原点 → IMU 中心（动捕外参）
+//    ★ 这一节挡的是一类**静默**错误：外参填 0 / 符号反 / 写成"固定减 z"，在静止与水平飞行里
+//      完全看不出来（EKF2 的原点初始化会把常值部分吸收掉），只有倾斜飞行时才变成位置误差。
+// ———————————————————————————————————————————————————————————————
+
+namespace
+{
+
+/// z0 的外参：IMU 在刚体原点**下方** 80 mm（机体系 FLU：x 前 / y 左 / z **上** ⟹ z 为负）。
+/// 出处：2026-10-09 操作者给定；推导与"每场次要复测"见 .scratch/phase4/issues/01-…。
+constexpr double kImuBelow = 0.080;
+const Vec3 kRImuInBody{0.0, 0.0, -kImuBelow};
+
+}  // namespace
+
+TEST(Rotate, 与独立实现的旋转矩阵逐元素一致)
+{
+  // `mocap::rotate` 是新加的底层算子（四元数转矢量）。写反序 / 共轭——这类错会静默地
+  // 把偏移转到镜像方向，所以这里拿测试侧**独立的** `rot()` 矩阵逐元素对。
+  const Vec3 vs[] = {
+    Vec3{1.0, 0.0, 0.0}, Vec3{0.0, 1.0, 0.0}, Vec3{0.0, 0.0, 1.0},
+    Vec3{0.3, -0.7, 0.25}, Vec3{0.0, 0.0, -kImuBelow}};
+  const Quat qs[] = {
+    quat_zyx(0.0, 0.0, 0.0), quat_zyx(35 * kDeg, 20 * kDeg, -110 * kDeg),
+    quat_zyx(-25 * kDeg, -40 * kDeg, 120 * kDeg), quat_zyx(0.0, 90 * kDeg, 0.0)};
+  for (const Quat & q : qs) {
+    for (const Vec3 & v : vs) {
+      const Mat3 R = rot(q);
+      const Vec3 got = mocap::rotate(q, v);
+      const double want[3] = {
+        R.m[0][0] * v.x + R.m[0][1] * v.y + R.m[0][2] * v.z,
+        R.m[1][0] * v.x + R.m[1][1] * v.y + R.m[1][2] * v.z,
+        R.m[2][0] * v.x + R.m[2][1] * v.y + R.m[2][2] * v.z};
+      EXPECT_NEAR(got.x, want[0], 1e-12);
+      EXPECT_NEAR(got.y, want[1], 1e-12);
+      EXPECT_NEAR(got.z, want[2], 1e-12);
+    }
+  }
+}
+
+TEST(RigidBodyToImu, 外参全零时逐位恒等_保住改动前的行为)
+{
+  // 逃生口：把三个参数都填 0 ⟹ 输出必须**逐位**等于输入（否则"关掉外参"这句话不成立）。
+  const mocap::Pose in{Vec3{-1.28261, -0.13292, 0.10850}, quat_zyx(3 * kDeg, 4 * kDeg, 5 * kDeg)};
+  const mocap::Pose out = mocap::rigid_body_to_imu(in, Vec3{0.0, 0.0, 0.0});
+  EXPECT_DOUBLE_EQ(out.p.x, in.p.x);
+  EXPECT_DOUBLE_EQ(out.p.y, in.p.y);
+  EXPECT_DOUBLE_EQ(out.p.z, in.p.z);
+  EXPECT_DOUBLE_EQ(out.q.x, in.q.x);
+  EXPECT_DOUBLE_EQ(out.q.w, in.q.w);
+}
+
+TEST(RigidBodyToImu, 水平时只动z且朝下)
+{
+  // 用 bag/1_static 那场的实测静止读数（刚体原点 = 地面上方 108.5 mm）当输入。
+  const Vec3 p{-1.28261, -0.13292, 0.10850};
+  const Quat q = quat_zyx(0.0, 0.0, 0.0);   // 平放（实测 roll/pitch < 1°）
+  const mocap::Pose out = mocap::rigid_body_to_imu(mocap::Pose{p, q}, kRImuInBody);
+
+  EXPECT_DOUBLE_EQ(out.p.x, p.x);
+  EXPECT_DOUBLE_EQ(out.p.y, p.y);
+  EXPECT_LT(out.p.z - p.z, 0.0) << "★ IMU 在刚体原点**下方** ⟹ 差值是负的（符号反了就在这里红）";
+  EXPECT_NEAR(out.p.z - p.z, -0.080, 1e-12);
+  EXPECT_NEAR(out.p.z, 0.02850, 1e-12);
+  // 姿态**逐位**不变（平移不改变朝向）
+  EXPECT_DOUBLE_EQ(out.q.x, q.x);
+  EXPECT_DOUBLE_EQ(out.q.y, q.y);
+  EXPECT_DOUBLE_EQ(out.q.z, q.z);
+  EXPECT_DOUBLE_EQ(out.q.w, q.w);
+}
+
+TEST(RigidBodyToImu, 倾斜时按姿态旋转_而不是固定减_z)
+{
+  const Vec3 p{0.4, -0.2, 0.5};
+  const Quat qs[] = {
+    quat_zyx(35 * kDeg, 20 * kDeg, 0.0),
+    quat_zyx(-25 * kDeg, -40 * kDeg, 120 * kDeg)};
+
+  for (const Quat & q : qs) {
+    const mocap::Pose out = mocap::rigid_body_to_imu(mocap::Pose{p, q}, kRImuInBody);
+    const Mat3 R = rot(q);
+    // 期望 = R·(0,0,−0.080)，用测试侧独立矩阵算（第 3 列 = 机体 z 轴在世界系中的表示）
+    const double want[3] = {R.m[0][2] * -kImuBelow, R.m[1][2] * -kImuBelow, R.m[2][2] * -kImuBelow};
+    EXPECT_NEAR(out.p.x - p.x, want[0], 1e-12);
+    EXPECT_NEAR(out.p.y - p.y, want[1], 1e-12);
+    EXPECT_NEAR(out.p.z - p.z, want[2], 1e-12);
+
+    // ★ 鉴别力：上面三条只有在"带姿态"时才可能同时成立；这条额外钉住**这个测试能区分两种实现**——
+    //   若实现退化成"固定减 z"（水平分量恒为 0），下面这条立刻红。
+    EXPECT_GT(std::hypot(out.p.x - p.x, out.p.y - p.y), 0.02)
+      << "倾斜 ≥ 25° 时水平补偿应有 80·sinθ ≈ 34 mm；为 0 说明实现退化成固定减 z";
+    EXPECT_GT(std::fabs((out.p.z - p.z) + kImuBelow), 1e-3)
+      << "竖直分量也不再是 −0.080（固定减 z 会给出恰好 −0.080 ⟹ 这条就是它的判据）";
+  }
+}
+
+TEST(RigidBodyToImu, 与两阶段原点串起来_输出是IMU点的相对位移)
+{
+  // 把「外参 → 原点采样 → 相对位姿」按节点里的真实顺序串起来跑一遍：
+  // 解锁时平放并锁原点，之后飞机抬起并倾斜 ⟹ 输出的水平分量应当等于**IMU 点的**位移，
+  // 而不是刚体原点的位移（两者只差 R(q1)·r − R(q0)·r）。
+  const Vec3 p0{-1.2826, -0.1329, 0.1085};
+  const Quat q0 = quat_zyx(0.0, 0.0, 0.0);
+  const Vec3 p1{p0.x + 0.10, p0.y - 0.05, p0.z + 0.30};
+  const Quat q1 = quat_zyx(20 * kDeg, 15 * kDeg, 0.0);
+
+  mocap::TwoStageOrigin sel(3, 3);
+  for (int i = 0; i < 3; ++i) {
+    sel.observe(mocap::rigid_body_to_imu(mocap::Pose{p0, q0}, kRImuInBody),
+      mocap::ArmedState::Disarmed);
+  }
+  ASSERT_TRUE(sel.ready());
+  for (int i = 0; i < 3; ++i) {
+    sel.observe(mocap::rigid_body_to_imu(mocap::Pose{p0, q0}, kRImuInBody),
+      mocap::ArmedState::Armed);
+  }
+  ASSERT_TRUE(sel.switched());
+
+  const mocap::Pose out = sel.apply(mocap::rigid_body_to_imu(mocap::Pose{p1, q1}, kRImuInBody));
+  const Mat3 R1 = rot(q1);
+  EXPECT_NEAR(out.p.x, (p1.x - p0.x) + R1.m[0][2] * -kImuBelow, 1e-12);
+  EXPECT_NEAR(out.p.y, (p1.y - p0.y) + R1.m[1][2] * -kImuBelow, 1e-12);
+  EXPECT_NEAR(out.p.z, (p1.z - p0.z) + (R1.m[2][2] - 1.0) * -kImuBelow, 1e-12);
+  // 不施加外参时，倾斜带来的这部分（≈ 26 mm 水平）会**完全没有** —— 这条就是它的鉴别力。
+  const mocap::Pose naive = sel.apply(mocap::Pose{p1, q1});
+  EXPECT_GT(std::hypot(out.p.x - naive.p.x, out.p.y - naive.p.y), 0.02);
+}
 
 // ———————————————————————————————————————————————————————————————
 // ① 原点减法：逐轴独立，且与姿态处理无关
