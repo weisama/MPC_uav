@@ -185,7 +185,7 @@ Phase 2 干了很久，产出摊得很开：27 张票、20 来份 `docs/`、几�
 |---|---|---|
 | [21](../phase2/issues/21-rebuild-sitl-plant-to-measured.md) 重搭同构机 | [**04**](issues/04-rebuild-sitl-plant-to-measured-baseline.md) | `ready-for-agent`（纯离线） |
 | [27](../phase2/issues/27-lemniscate-doubled-and-downstream-labels.md) 八字放大 | [**05**](issues/05-repoint-t0-to-lemniscate-1m-and-model5.md) | `ready-for-agent`（纯离线接线） |
-| [11](../phase2/issues/11-sitl-tier-b-seam3.md) 跑满 seam 3 | [**06**](issues/06-fly-t0-seam3-four-criteria.md) | `ready-for-human`（占窗口 + 收口裁定） |
+| [11](../phase2/issues/11-sitl-tier-b-seam3.md) 跑满 seam 3 | [**06**](issues/06-fly-t0-seam3-four-criteria.md) | `done`（2026-10-09 操作者切；⚠️ **`11` 本身仍未收口** —— ② 判不了，等 [`10`](issues/10-tier-b-judge-window-datum-mismatch.md) 修完重判） |
 | [20](../phase2/issues/20-vertical-channel-mismatch-offset.md) 振荡机理 | [**07**](issues/07-oscillation-mechanism-outside-three-param-model.md) | `ready-for-agent`（只读） |
 | [10](../phase2/issues/10-param-measure-backfill.md) 电池可持续推力 | [**08**](issues/08-battery-sustainable-thrust-from-archived-ulogs.md) | `ready-for-agent`（读 `.ulg`） |
 | [26](../phase2/issues/26-recording-six-scenes-and-the-rewrite-path.md) 录制收口 | [**09**](issues/09-recording-sixth-scene-closeout.md) | `ready-for-human`（差一次真机录） |

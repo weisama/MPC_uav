@@ -1,6 +1,6 @@
 # 06: 跑满 seam 3 —— 飞一场 `T0`，判据②③④ 落地，并订正票面两处过期理由 ★
 
-Status: ready-for-human
+Status: done
 Type: task
 **对着 Phase 2 的：[`11`](../../phase2/issues/11-sitl-tier-b-seam3.md)**（`ready-for-human`，Phase 2 的最高验收关卡）
 **阻塞于：** [04](04-rebuild-sitl-plant-to-measured-baseline.md)（换基线）、[05](05-repoint-t0-to-lemniscate-1m-and-model5.md)（接到 1.0 m 包）
@@ -70,6 +70,9 @@ TAGS="F0 F1 F2 F3 F4 T0" tools/px4-sitl/evidence/tier-b/run_matrix.sh
 ## Comments
 
 ### #1 为什么它 `ready-for-human`（而不是 `ready-for-agent`）
+
+> ☠️ **本条写的是 2026-10-08 当时的理由；标签已于 2026-10-09 切成 `Status: done`**（见 §八末尾）。
+> 保留原文 —— 它是"当时为什么这么标"的记录，不是当前状态；当前状态看票首那行。
 
 三件事叠起来：
 
@@ -302,3 +305,10 @@ TAGS="F0 F1 F2 F3 F4 T0" tools/px4-sitl/evidence/tier-b/run_matrix.sh
   就说明不是一次偶发 —— 再开票追。
 - 第 6 条重开条件：任何人要跑 `--mismatch thrust±30` 的**扫描或 A 档**之前，必须先落那一处修复
   （否则报告里的「总推力 N」是错的、且**不报错**）。
+
+★ **本票已由操作者 2026-10-09 切成 `Status: done`** —— **这是标签，不是"下游也结了"**：
+
+- [phase2/11](../../phase2/issues/11-sitl-tier-b-seam3.md) **仍是 `ready-for-human`、暂不收口**
+  （② 判不了 ⟹ 等 [phase3/10](10-tier-b-judge-window-datum-mismatch.md) 修完重判）。本票的**活**做完了，
+  它作为"Phase 2 收口闸门"的**裁定**还没落 —— 两件事，别读成一件事。
+- [phase3/10](10-tier-b-judge-window-datum-mismatch.md) 仍是 `needs-triage`（终态由操作者给）。
