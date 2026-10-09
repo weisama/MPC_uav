@@ -319,9 +319,14 @@ TAGS="F0 F1 F2 F3 F4 T0" tools/px4-sitl/evidence/tier-b/run_matrix.sh
 - [phase2/11](../../phase2/issues/11-sitl-tier-b-seam3.md) **仍是 `ready-for-human`、暂不收口**
   （② 判不了 ⟹ 等 [phase3/10](10-tier-b-judge-window-datum-mismatch.md) 修完重判）。本票的**活**做完了，
   它作为"Phase 2 收口闸门"的**裁定**还没落 —— 两件事，别读成一件事。
+  > ☠️ **括号里那个等待条件（2026-10-09 当天稍后）已满足**：[10 号票](10-tier-b-judge-window-datum-mismatch.md)
+  > 修完判层、用归档 obs 离线重判出了 ② 的**真结论**（见上面 Comments #3）；
+  > 已记进 [phase2/11 的 `## Comments`](../../phase2/issues/11-sitl-tier-b-seam3.md) 最新一条。
+  > **它的 `Status:` 与勾仍未动** —— 收不收口是操作者的裁定。
 - [phase3/10](10-tier-b-judge-window-datum-mismatch.md) 仍是 `needs-triage`（终态由操作者给）。
   > ☠️ **这句已过期（2026-10-09 当天稍后）**：`e89666d` 已按操作者裁定「本阶段自行处理」
-  > 把它切成 `ready-for-agent`，且**当天就修完并重判**（真结论见上面 Comments #3）。
+  > 把它切成 `ready-for-agent`，且**当天就修完并重判**（真结论见上面 Comments #3），
+  > 随后又按操作者「收口」的裁定切成 **`done`**。
 
 ### #3 判层修好后重判：**哪一行读数变了**（[phase3/10](10-tier-b-judge-window-datum-mismatch.md) 落地，2026-10-09）
 
