@@ -548,8 +548,8 @@ python3 tools/px4-sitl/mismatch_sweep.py --variants z0-mass+30 --repeats 1 \
 | `test_mismatch_sweep.py` 三条断言同批改 | ✅ 按**新基线重算**（不是反抄原式） |
 | `--hover-thrust auto` 仍等于**标称**（不许改成"按本场推"） | ✅ `_resolve_hover_thrust("auto")` 仍只调**无参** `plant_hover_thrust()`（`expected_params("z0")`，无 per-scenario 入参）；两个同名函数**签名没动** |
 | `test_tier_b_judges.py` 的 `model_ht=0.6235` 夹具逐条判 | ✅ 8 处逐个判：**全是"DUT/模型口径"的记录**，不是夹具自洽常数 ⟹ 全部跟到 `0.1589` |
-| 跑一次冒烟证"不传覆盖也能悬停" | ❌ **未做** —— 要占飞行窗口；操作者裁定留 Phase 3 的 [`06`](../../phase3/issues/06-fly-t0-seam3-four-criteria.md) |
-| 归档记 harness 身份 / 重跑留痕 | ⏸ **不适用**（本轮没跑扫描）；`06` 重跑时照办 |
+| 跑一次冒烟证"不传覆盖也能悬停" | ☠️ 当时记 ❌ 未做（留 `06`）⟹ **06 已做**，见下节「2026-10-09（晚）」 |
+| 归档记 harness 身份 / 重跑留痕 | ☠️ 当时记 ⏸ 不适用（本轮没跑扫描）⟹ **06 已做**，见下节「2026-10-09（晚）」 |
 | 《失效清单》逐份记「基线已换」 | ✅ 6 份清单条目全处理，**另超出 5 份**（理由与逐份点名见 [`04`](../../phase3/issues/04-rebuild-sitl-plant-to-measured-baseline.md) 的 Comments） |
 | 不改 `src/nmpc/nmpc/params.py`（「11 补、10 不动」） | ✅ **一个字节没动** |
 | 新数字一律"从手上这批 run 现算" | ✅ `sitl-z0-plant.md` §6.2 **整表重跑覆盖**，逐格从 `/tmp/z0_all_rebuild.{log,json}` 现算 |
@@ -562,3 +562,20 @@ python3 tools/px4-sitl/mismatch_sweep.py --variants z0-mass+30 --repeats 1 \
 ⚠️ 与重搭无关、但重跑前必须知道的那条**复现性缺口**（见本票末节）：[12](12-mismatch-sweep.md)
 那轮扫描飞的 `install/` 快照**不是某一棵提交的树**、其中 `params.py` 的字节**已在仓库里永久丢失**
 ⟹ **旧基线本身不可完整重跑**；新表的数字只能来自**新跑的那批**，逐格现算。
+
+### 2026-10-09（晚）—— `06` 收口后回填：本票"留 06"的两行已结
+
+`06` 已由操作者切成 `done`。上面那张对账表里当时写"未做 / 不适用"的两行，现在都有实跑证据：
+
+- **跑一次冒烟证"不传覆盖也能悬停"** ⟹ ✅ 06 飞了，归档
+  [`evidence/tier-a/smoke-rebuild-node-default/`](../../../tools/px4-sitl/evidence/tier-a/smoke-rebuild-node-default/)：
+  悬停高度真值 **1.023 m**、推力标定 **7.281 N** vs `m·g = 7.355 N`（差 1.0 %）。
+  （同场另有 2 处 ❌ —— 真值帧漂移 0.731 m、⑩ 偏航反号；06 按操作者裁定**记为已知风险**，不归本票。）
+- **归档记 harness 身份 / 重跑留痕** ⟹ ✅ `harness-identity-2026-10-09.json`。
+
+★ 本票末尾那句"**须在 `06` 里重飞**" ⟹ 06 **已重飞六场**（`F0 F1 F2 F3 F4 T0`，归档
+[`evidence/tier-b/20261009-rebuild/`](../../../tools/px4-sitl/evidence/tier-b/20261009-rebuild/README.md)）：
+**判据①双过、③通过**；**②判不了**（判层两处缺陷，已另开 [`phase3/10`](../../phase3/issues/10-tier-b-judge-window-datum-mismatch.md)）；**④分层**（B 档标称 ✅、失配 ❌）。
+逐条结论与"判不了 ≠ 不通过"的记录在 06 的 Comments。
+
+⚠️ 本行**只补记事实**：本票的 `Status:` 仍是 `ready-for-agent`，未动 —— 归操作者裁定。
