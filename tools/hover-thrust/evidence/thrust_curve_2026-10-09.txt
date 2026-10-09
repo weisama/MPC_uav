@@ -1,0 +1,129 @@
+# THR_MDL_FAC 反解 —— 原始输出（2026-10-09）
+
+工具：[`tools/hover-thrust/thrust_curve_check.py`](../thrust_curve_check.py)（只读本地 ulog，不碰飞控）。
+支持它的是 [phase4/02](../../../.scratch/phase4/issues/02-hover-thrust-backfill.md) 的验收项 4
+（「与 `THR_MDL_FAC = 0.45` 的关系一并复核」）。复跑命令见文末。
+
+## 1) 自检（不需要日志、不需要飞控）
+
+```
+$ python3 tools/hover-thrust/thrust_curve_check.py --self-test
+  ✅ 正反解互为逆（fac ∈ {0,0.1,0.45,0.7,1}，x ∈ [0,1]）：最大偏差 3.33e-16
+  ✅ fac=0 时反解退化成恒等
+  ✅ fac=0.1 时正解严格单调
+  ✅ fac=0.45 时正解严格单调
+  ✅ fac=1.0 时正解严格单调
+  ✅ 合成数据（fac_true=0.0）扫出 fac_hat=0.0：r² = 0.999999
+  ✅ 合成数据（fac_true=0.25）扫出 fac_hat=0.25：r² = 0.999999
+  ✅ 合成数据（fac_true=0.45）扫出 fac_hat=0.45：r² = 0.999999
+  ✅ 合成数据（fac_true=0.8）扫出 fac_hat=0.8：r² = 0.999999
+  ✅ fac=0.45 的合成数据上，fac=0 与 fac=1 的 r² 确实更低且**差距够大**：r²(0.45) = 0.999999；r²(0) = 0.994483（差 5.52e-03）、r²(1) = 0.989109（差 1.09e-02）；底线 1e-03
+  ✅ r² 对 output 的仿射变换不变（⟹ DShot 编码不影响结论）：0.700437317784 vs 0.700437317784
+
+✓ 自检全部通过。
+```
+
+## 2) 变异检查：断言真的会红
+
+★ 一条自检若**弄不红**就等于没有鉴别力。所以每处断言都主动弄坏一次，看它是否真的报错 ——
+下面三条各自只改一行（改在临时副本上，不动仓库里的文件）。
+
+**变异 A**：`curve_inverse` 取错根：`return -t1 + disc ** 0.5` → `return -t1 - disc ** 0.5` —— 退出码 **1**（应当 1）
+
+```
+  ❌ 正反解互为逆（fac ∈ {0,0.1,0.45,0.7,1}，x ∈ [0,1]）：最大偏差 1.10e+01
+✗ 自检 1 项不过：正反解互为逆（fac ∈ {0,0.1,0.45,0.7,1}，x ∈ [0,1]）
+```
+
+**变异 B**：把自检里合成数据的电机信号范围缩回 `x ∈ [0.28, 0.36]`（鉴别力应当消失） —— 退出码 **1**（应当 1）
+
+```
+  ❌ 合成数据（fac_true=0.25）扫出 fac_hat=0.245：r² = 0.999957
+  ❌ 合成数据（fac_true=0.45）扫出 fac_hat=0.445：r² = 0.999957
+  ❌ 合成数据（fac_true=0.8）扫出 fac_hat=0.795：r² = 0.999957
+  ❌ fac=0.45 的合成数据上，fac=0 与 fac=1 的 r² 确实更低且**差距够大**：r²(0.45) = 0.999957；r²(0) = 0.999836（差 1.21e-04）、r²(1) = 0.999883（差 7.36e-05）；底线 1e-03
+✗ 自检 4 项不过：合成数据（fac_true=0.25）扫出 fac_hat=0.245、合成数据（fac_true=0.45）扫出 fac_hat=0.445、合成数据（fac_true=0.8）扫出 fac_hat=0.795、fac=0.45 的合成数据上，fac=0 与 fac=1 的 r² 确实更低且**差距够大**
+```
+
+**变异 C**：`curve_forward` 里 `(1.0 - fac)` 写成 `(1.0 + fac)` —— 退出码 **1**（应当 1）
+
+```
+  ❌ 正反解互为逆（fac ∈ {0,0.1,0.45,0.7,1}，x ∈ [0,1]）：最大偏差 7.32e-01
+  ❌ 合成数据（fac_true=0.25）扫出 fac_hat=0.125：r² = 0.999999
+  ❌ 合成数据（fac_true=0.45）扫出 fac_hat=0.155：r² = 0.999999
+  ❌ 合成数据（fac_true=0.8）扫出 fac_hat=0.17：r² = 0.999999
+  ❌ fac=0.45 的合成数据上，fac=0 与 fac=1 的 r² 确实更低且**差距够大**：r²(0.45) = 0.995510；r²(0) = 0.998777（差 -3.27e-03）、r²(1) = 0.981799（差 1.37e-02）；底线 1e-03
+✗ 自检 5 项不过：正反解互为逆（fac ∈ {0,0.1,0.45,0.7,1}，x ∈ [0,1]）、合成数据（fac_true=0.25）扫出 fac_hat=0.125、合成数据（fac_true=0.45）扫出 fac_hat=0.155、合成数据（fac_true=0.8）扫出 fac_hat=0.17、fac=0.45 的合成数据上，fac=0 与 fac=1 的 r² 确实更低且**差距够大**
+```
+
+## 3) 真机日志：悬停段（`3_traj1_hover`）
+
+```
+$ python3 tools/hover-thrust/thrust_curve_check.py bag/old/3_traj1_hover/fcu/log_2_2026-9-29-15-29-26.ulg
+日志：bag/old/3_traj1_hover/fcu/log_2_2026-9-29-15-29-26.ulg
+窗口：119.779 – 196.279 s（766 样本）
+output→control：{'out0': 'ctrl[2]', 'out1': 'ctrl[1]', 'out2': 'ctrl[0]', 'out3': 'ctrl[3]'} （脚本推出来的）
+  ★ 请对照 `PWM_MAIN_FUNC1..4`（z0 = 103, 102, 101, 104 ⟹ 电机序 3-2-1-4）复核
+
+THR_MDL_FAC 反解：扫 fac∈[0,1]（201 点）的 argmax = **0.455**（平均 r² = 0.999823）
+  参考值（z0.params）  = 0.45
+  对照 fac=0.0  平均 r² = 0.995218
+  对照 fac=1.0  平均 r² = 0.987114
+
+逐通道仿射（fac = argmax）：
+  out0 =   1890.0·inv(ctrl[2]) +   106.0   r² = 0.999784
+  out1 =   1887.4·inv(ctrl[1]) +   106.9   r² = 0.999721
+  out2 =   1888.5·inv(ctrl[0]) +   106.5   r² = 0.999898
+  out3 =   1882.9·inv(ctrl[3]) +   108.3   r² = 0.999888
+  ★ 斜率/截距是 **DShot 编码**（scale/offset），与 fac 无关；换一条日志它们可以变，fac 的形状结论不该跟着变
+
+悬停点读数：control 中位数 = ['0.247390', '0.190011', '0.232713', '0.210063']  均值 = 0.217675
+            output 中位数 = ['737.0', '639.0', '770.0', '686.0']
+            按 fac=0.45 反解出的电机信号（在 control 均值上）= 0.314729
+```
+
+## 4) 真机日志：`4_traj3_lemniscate`
+
+```
+$ python3 tools/hover-thrust/thrust_curve_check.py bag/old/4_traj3_lemniscate/fcu/log_3_2026-9-29-15-32-40.ulg
+日志：bag/old/4_traj3_lemniscate/fcu/log_3_2026-9-29-15-32-40.ulg
+窗口：109.074 – 128.475 s（195 样本）
+output→control：{'out0': 'ctrl[2]', 'out1': 'ctrl[1]', 'out2': 'ctrl[0]', 'out3': 'ctrl[3]'} （脚本推出来的）
+  ★ 请对照 `PWM_MAIN_FUNC1..4`（z0 = 103, 102, 101, 104 ⟹ 电机序 3-2-1-4）复核
+
+THR_MDL_FAC 反解：扫 fac∈[0,1]（201 点）的 argmax = **0.45**（平均 r² = 0.999940）
+  参考值（z0.params）  = 0.45
+  对照 fac=0.0  平均 r² = 0.995464
+  对照 fac=1.0  平均 r² = 0.983590
+
+逐通道仿射（fac = argmax）：
+  out0 =   1891.3·inv(ctrl[2]) +   108.1   r² = 0.999941
+  out1 =   1889.5·inv(ctrl[1]) +   108.5   r² = 0.999923
+  out2 =   1891.5·inv(ctrl[0]) +   108.0   r² = 0.999968
+  out3 =   1891.0·inv(ctrl[3]) +   108.2   r² = 0.999928
+  ★ 斜率/截距是 **DShot 编码**（scale/offset），与 fac 无关；换一条日志它们可以变，fac 的形状结论不该跟着变
+
+悬停点读数：control 中位数 = ['0.248213', '0.190723', '0.232167', '0.207640']  均值 = 0.207300
+            output 中位数 = ['736.0', '641.0', '772.0', '680.0']
+            按 fac=0.45 反解出的电机信号（在 control 均值上）= 0.302193
+```
+
+## 5) 复跑
+
+```bash
+python3 tools/hover-thrust/thrust_curve_check.py --self-test
+pytest tools/hover-thrust/test_thrust_curve_check.py -q     # 同一条自检的 pytest 入口
+python3 tools/hover-thrust/thrust_curve_check.py \
+    bag/old/3_traj1_hover/fcu/log_2_2026-9-29-15-29-26.ulg
+python3 tools/hover-thrust/thrust_curve_check.py \
+    bag/old/4_traj3_lemniscate/fcu/log_3_2026-9-29-15-32-40.ulg
+```
+
+★ **2026-10-09 复核后重跑过**：`self_check()` 的返回从"退出码 0/1"改成"不过的项名列表"
+（为的是让 pytest 收得到它，见 [`test_thrust_curve_check.py`](../test_thrust_curve_check.py)）。
+改完**三条变异都重新弄了一次**，退出码仍是 **1 / 1 / 1**、红的项数仍是 **1 / 4 / 5**
+（与上面 §2 记的逐项一致）⟹ 重构没有削弱鉴别力。
+
+⚠️ **两条日志都在 git 里** ⟹ 上面每一条都能逐字复跑。
+（`bag/3_traj1_hover/fcu/log_0_未知日期.ulg` 是**另一条**、更晚的日志，给出 `hover_thrust = 0.18471`；
+本目录引用的悬停日志在 `bag/old/` 下 —— 见 phase4/02 的 Comments。）

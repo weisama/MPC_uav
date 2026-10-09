@@ -609,6 +609,127 @@ Mooch 15 A），同一张表的结论**完全不同**：
    **数值碰巧对，理由错了**；现在它由 `f_max` 明确表达。
    **要不要把倾角约束真的加进 OCP 是另一张票的事**：本张只把量纲关系写清楚，**不趁机加约束**（那会改模型）。
 
+#### 3.3.5 ★ 核对记录：PX4 `MPC_THR_HOVER` 与模型 `hover_thrust`（改动 `phase4/02-C1`）
+
+> 本节是 [phase4/02](../../.scratch/phase4/issues/02-hover-thrust-backfill.md) 的交付物。票面要四件事：
+> **两个值各是什么**、**从哪个实测数字来**、**为什么必须相等**，外加两条复核（与 `THR_MDL_FAC` 的关系、
+> 与理论 `42.9 %` 的差异）。下面逐条答。⚠️ **飞控侧那一处还没写** —— 它要在 QGC 里做、是**人的动作**，
+> 票面就是因此定为 `ready-for-human`（落地状态见 ⑦）。
+
+**① 两个值各是什么（必须是同一个物理量）**
+
+| 位置 | 名字 | 在哪 | 现值 | 应取 |
+|---|---|---|---|---|
+| 飞控 | `MPC_THR_HOVER` | `z0.params:628` | **`0.5`** ← PX4 默认值，看不出被改过 | **`0.1589`** |
+| 模型 | `hover_thrust` | `params.py:62`（`HOVER_THRUST`） | **`0.1589`** | 不变 |
+
+两者都是「**悬停需要的那份推力，占满量程的比例**」，都工作在**归一化推力域**（= `thrust_body` 那个域）。
+第一手链条见 §3.3.1：`PositionControl.cpp:210` 的
+`collective_thrust = _acc_sp(2)·(_hover_thrust/g) − _hover_thrust` ⟹ 悬停时 `thrust_body[2] = −MPC_THR_HOVER`；
+而模型侧 `hover_thrust ≡ T_hover/T_max` 里的 `T_max` 正是 `sign_map.px4_rates_setpoint(..., t_max_n)`
+那个归一化常数。**PX4 对 `thrust_body` 不做任何重标定**（§3.3.1）⟹ 这两个数只有相等，前馈才与模型自洽。
+
+**② 从哪个实测数字来**
+
+| 步 | 数 | 出处 |
+|---|---|---|
+| 两段悬停日志的工具读数 | **`0.22199`**（@ 20.479 V）/ **`0.22088`**（@ 20.526 V） | `bag/old/3_traj1_hover/fcu/log_2_2026-9-29-15-29-26.ulg`（窗口 122.338–192.758 s）、`bag/old/4_traj3_lemniscate/fcu/log_3_2026-9-29-15-32-40.ulg`；工具 [`tools/hover-thrust`](../../tools/hover-thrust/README.md) |
+| 按实测律 `thrust ∝ V^1.608` 归一到**满电 25.2 V**（O8 口径） | `0.15896` / `0.15882`（互差 0.09 %） | 同上；两段共 4056 样本合并拟合，R² 0.79 |
+| **取 `0.1589`** | 0.15889 的取整 | ⟹ 模型侧已回填（§5 的 P1）；**飞控侧待写** |
+
+★ 窗口内电压中位数本次复算为 **20.4786 V**（§3.3.3 与 ticket 10 记 20.474 V，差 0.02 %，同一窗口的两种取样口径）。
+口径可当场复算：`0.221992 × (20.479 / 25.2)^1.608 = 0.1590`。
+
+**③ 为什么必须相等 —— 以及这条等式在模型侧怎么被钉住**
+
+模型侧**不存第二个常数**：`t_max` 是 `t_hover/hover_thrust` 这条 property（`params.py:116-127`）
+⟹ `7.3575 / 0.1589 = 46.3027 N`。归一化常数与悬停推力**出自同一条等式**，不可能各自独立取值（§3.3.2）。
+`preflight_check` 当场把它合成一个数（2026-10-09 复跑，**24/24 全绿**）：
+
+```
+✅ 悬停归一化 = −hover_thrust：−F/T_max = -0.158900，−hover_thrust = -0.158900
+✅ F 上限夹在悬停与满量程之间：t_hover = 7.3575 N ≤ f_max = 11.800 N < t_max = 46.303 N
+```
+
+☠️ **只改一处的后果，量级在 z0 上已经量到过**：`MPC_USE_HTE = 1` 时位置控制器用的是 HTE，
+而现值 `0.5` 把 HTE 的窗口压成 `[0.300, 0.700]` ⟹ 实测估计值**整段贴在下限 0.300**、`valid` 占 97.3 %，
+即那几场飞行里位置控制器**一直按 0.300 前馈**，而真实需要 ≈0.222 —— **36 % 的差由竖直积分器在补**
+（[ticket 10](../../.scratch/phase2/issues/10-param-measure-backfill.md) 的第三条交叉验证）。
+模型侧那一边同样是静默的：`thrust_body` 语法完全合法，只有从飞行日志里才分辨得出是哪一环错了。
+
+**④ `THR_MDL_FAC = 0.45` 复核（票面第 4 项）**
+
+先答**关系**：`THR_MDL_FAC` 在**更下游**（`FunctionMotors.hpp:77-101` 决定「归一化推力 ↔ 电机信号」的
+**形状**），**不在 `thrust_body` 这个域里** ⟹ 改 `MPC_THR_HOVER` **不需要**动它（§3.3.1 第 2 条）。
+但它决定「悬停**推力**」与「悬停**油门**」怎么互换，所以复核推力模型时**不能跳过**（⑤ 就要用）。
+
+再答**这个值可不可信**。2026-10-09 新增一把只读的尺子
+[`tools/hover-thrust/thrust_curve_check.py`](../../tools/hover-thrust/thrust_curve_check.py)：
+把 `fac` 当**自由参数**扫 `[0, 1]`（201 点），看飞行数据把 r² 的**峰**顶在哪里 ——
+判据只吃曲线**形状**（输出域那把 DShot 仿射是自由的 ⟹ 不需要任何绝对标定，自检里有一条钉着这点）：
+
+| 日志 | `fac` 的 argmax | 平均 r² | 对照 `fac=0`（无曲线） | 对照 `fac=1`（`T ∝ 油门²`） |
+|---|---|---|---|---|
+| `bag/old/3_traj1_hover/…log_2…ulg` | **0.455** | 0.999823 | 0.995218 | 0.987114 |
+| `bag/old/4_traj3_lemniscate/…log_3…ulg` | **0.450** | 0.999940 | 0.995464 | 0.983590 |
+
+⟹ **`z0.params:947` 的 `0.449999988` 被飞行数据支持**（网格步长 0.005，故分辨到 ±0.005）。
+★ 顺带**独立复现**了 D7 的电机序：脚本**不硬编码**对应关系，两条日志都自己推出
+`out0←ctrl[2]、out1←ctrl[1]、out2←ctrl[0]、out3←ctrl[3]`（且是个双射），与
+`PWM_MAIN_FUNC1..4 = 103, 102, 101, 104` 相符。
+⚠️ **顺带更正一条算式**：ticket 10 写「DShot 值 ≈ 640/1999 = 0.318」—— 数没写错
+（电机信号的均值确实是 0.3187），但**算错了**：日志里那把仿射是 `output ≈ 1889·x + 107`（**有零偏**），
+正确写法是 `(641 − 107)/1889 = 0.283`。**这种错下次复算会得出不同的数。**
+原始输出与复跑命令：[`tools/hover-thrust/evidence/thrust_curve_2026-10-09.txt`](../../tools/hover-thrust/evidence/thrust_curve_2026-10-09.txt)。
+
+**⑤ 与理论推算 `√(187.5/1020) ≈ 42.9 %` 的差异 —— 记录，不取平均（票面第 5 项）**
+
+★ **这两个数根本不在同一个域里**，所以"差得多"要先拆开：
+
+- 42.9 % 在 [`hardware.md`](../reference/hardware.md) **§6.3①** 里写在**「悬停油门」**名下，
+  由 `√0.1838` 得来 ⟹ 隐含 `T ∝ 油门²`，即 `fac = 1`。而 ④ 已经把 `fac = 1` 否掉了
+  （r² 0.9871 / 0.9836）⟹ **42.9 % 是电机信号域的数，从来就不是 `MPC_THR_HOVER` 的候选值。**
+  ⚠️ `params-changes.md` §C1 原先把它当作本参数的"理论值"，那是**域写错**（该行 2026-10-09 已改）。
+- **同域对照**（把理论放回**归一化推力域**，并折到实测那一段的电压）：
+
+| 量 | 值 | 怎么来 |
+|---|---|---|
+| 理论推力比（台架点 24 V） | `187.5/1020 =` **0.1838** | `hardware.md` §6.3①（每电机悬停 187.5 g ÷ 满量程 1020 g） |
+| 同一个理论折到 20.479 V | `187.5/(1020 × 0.7748) =` **0.2373** | `(20.479/24)^1.608 = 0.7748`，用实测律 `V^1.608` |
+| **实测**（同一段日志、同一电压） | **0.22199** | ② 的工具读数 |
+| ⟹ 差 | **理论高 6.9 %**（`0.2373/0.22199 = 1.069`） | —— |
+| 折到满电口径 | 理论 `0.1700` vs 模型 **`0.1589`** | 同样是 ~7 % |
+
+**结论**：同域差 **6.9 %**（理论偏高），与 `hardware.md` §6.4 自己声明的三条精度限制同量级
+（台架用的是**另一支桨** GFD90-3、实测点在 24 V、`P ∝ T^1.5` 是经验式）。
+**`hover_thrust` 取实测 `0.1589`，不与理论平均**；这条 6.9 % 保留为已知偏差、记在案。
+
+**⑥ 改这一处的连带效应（都要记账，别只记主效应）**
+
+`MPC_THR_HOVER` 在 PX4 里不只喂位置控制器。**这不影响离板 / 模型预测控制那条通路**
+（我们发 `body_rate`，位置控制器不参与，§3.3.4 第 1 条），但会影响**手动模式**与**降落检测**：
+
+| # | 连带 | 现值（`0.5`） | 改成 `0.1589` 后 |
+|---|---|---|---|
+| a | **HTE 的窗口**（`MulticopterHoverThrustEstimator.cpp:90-93` 造窗 + `zero_order_hover_thrust_ekf.cpp:124` 做夹钳） | `[0.300, 0.700]`；实测估计值**整段贴在下限**、`valid` 97.3 % | `[0.000, 0.3589]` ⟹ **不再夹住**，可收敛到真实值（那几场里 ≈0.222）。⚠️ 下界被钳到 `0`（因为 `0.1589 < HTE_THR_RANGE = 0.2`），无害但不再是 ±0.2 的对称窗 |
+| b | **手动油门的杆曲线**（`MPC_THR_CURVE = 0`，`z0.params:627`） | PX4 文档：居中杆 = `MPC_THR_HOVER`（`mc_att_control_main.cpp:99-109`）。现值 0.5 ⟹ 居中杆给 **50 % 推力**（≈ 2.25× 悬停） | 居中杆仍是悬停位，但**推力**从 0.5 掉到 0.1589 ⟹ 手动模式的**悬停点回到杆居中**（这正是本参数的本意，也改善"手动 ↔ 位置模式切换"的衔接）；代价是**上半程杆吃掉 `0.1589→1.0` 共 84 % 的推力范围** —— PX4 文档警告的正是这条（"if hover thrust is set to 20 %, 80 % of the upper thrust range is squeezed into the upper half"）。★ **建议保留 `MPC_THR_CURVE = 0`**（`= 1` 会让悬停落在 **8.6 %** 杆位，更难飞），但这是**手感变化**，见 §9 的 **O10** |
+| c | **降落检测的两个阈值**（`MulticopterLandDetector.cpp:101-108`、`:216-219`、`:262`） | `thr_pct_hover = 0.6`、`hoverThrottle` = HTE 的 0.300 ⟹ `sys_low_throttle = 0.12 + 0.18×0.6 =` **0.228**；而稳态悬停推力是 **0.222** ⟹ **稳态悬停就落进"低油门"**（`ground_contact` 跟着为真。完整 `landed` 还要求"几乎无水平/垂直运动"，所以**不一定**误判，但余量很薄） | ⚠️ **`hoverThrottle` 与 `thr_pct_hover` 是同一支在切换**（`:101-108` 只在 `hte.valid` 时才把 `hoverThrottle` 换成 HTE；`:217` 的系数 `valid ? 0.6 : 0.3`）⟹ 有**三个**值：HTE **无效** `0.12+0.039×0.3 =` **0.132**；HTE **有效但未收敛**（估计值 ≈ 参数）`0.12+0.039×0.6 =` **0.143**；HTE **有效且收敛到真实 0.222** `0.181` ⟹ 三种情形稳态悬停**都不再**触发。"maybe-landed"那条从 `0.138` 降到 `0.130` / `0.124` |
+| d | **`MPC_THR_MIN` 的余量** | `0.5` 距下限 `0.12`（`z0.params:630`）很远 | `0.1589` 只比它高 **32 %** ⟹ 低压 / 重载时更容易够到下限夹钳。⚠️ **只是提示，不建议改 `MPC_THR_MIN`** |
+
+**⑦ 落地状态（诚实交代）**
+
+- ✅ **模型侧已回填**（P1，2026-09-29；`params.py:62`）。
+- ⬜ **飞控侧还没写** —— 在 **QGC** 的 Parameters 里（或 mavros 的 `param set`，§I.1 第 1–2 条就是这么写的）
+  把 `MPC_THR_HOVER` 由 `0.5` 改成 `0.1589`，
+  然后 **re-dump 对账**（§I.1 那套写参数的纪律同样适用）。这是**人的动作**，也是本票定为
+  `ready-for-human` 的原因。
+  ★ 值域检查：PX4 该参数自报 `@min 0.1 / @max 0.8`，启动时还会被夹进
+  `[MPC_THR_MIN, MPC_THR_MAX] = [0.12, 1.0]`（`MulticopterPositionControl.cpp:238-241`）——
+  **`0.1589` 两边都在域内** ✓。
+- ⚠️ **两条待验**（不影响写参数，但别当成已验证）：① HTE 由位置控制器的输入驱动，
+  而我们自己的离板飞行里位置控制器不参与（§3.3.4）—— **离板时 HTE 是否有效没实测过**，
+  若无效，降落检测回落用参数本身 `0.1589`、系数取 0.3 ⟹ ⑥c 的 **`0.132`** 那一支；② ⑥b 那条手感变化**没在实机上飞过**。
+
 ### 3.4 控制流总览
 
 ```
@@ -902,6 +1023,7 @@ ROS 侧：  ros2 interface show px4_msgs/msg/VehicleRatesSetpoint
 | P4 | **`k_ω`** | 角速率阶跃 + IMU 拟合 | S7 | 步骤 1 完全不需要 |
 | P5 | **动捕实测延迟 τ** | ✅ **已在 z0 上实测 ≈ 50 ms**（2026-09-28，飞控 ulog × 交叉相关） | D9 | 出处与方法：[`../reference/mocap-setup.md`](../reference/mocap-setup.md) **§6.3**。⚠️ 旧机那个"50 ms"只有一句结论、无方法，**对 z0 只是参照** |
 | P6 | 遥控器**开始键**（ch9）的实读行程 | `/mavros/rc/in` 看 `channels[8]` | S8 | **不影响飞行，但影响安全**。★ **2026-09-21：通道分配已定 = ch9**（[ticket 02](../../.scratch/phase1/issues/02-rc-channel-decision.md)）—— 本行只剩"把 ch9 的实读行程读出来"，用来校准 `start_threshold`。⚠️ **前置**：先在 EdgeTX 里给 CH9 配一个开关，否则读出来永远是常数 |
+| P7 | **`MPC_THR_HOVER`**（**飞控侧**，P1 是同一个量的另一处） | ⚠️ **不用测** —— 它**就是 P1**（`0.1589`）；要做的只是把它**写进飞控**。两个值各是什么、从哪来、为什么必须相等：**§3.3.5**（改动 `phase4/02-C1`） | 起飞前（手动/位置模式的悬停前馈；也定 HTE 的窗口与降落检测阈值） | ⬜ **待写**（QGC，**人的动作** —— 票面因此定为 `ready-for-human`）。★ 与 P1 **必须同值**：只改一处 = 静默的推力增益错误 |
 
 > ★ **Q19（2026-09-20）→ ✅ 2026-09-21 resolved**（ticket [02](../../.scratch/phase1/issues/02-rc-channel-decision.md)）：
 > **开始 = ch9 上升沿；急停 = ch8 高值（硬件杀车，不新增软急停通道）；解锁 = 程序解锁（触发 = ch9 第 1 次上升沿）。**
@@ -948,6 +1070,11 @@ ROS 侧：  ros2 interface show px4_msgs/msg/VehicleRatesSetpoint
 `F` 上限改由 `Z0Params.f_max = 11.8 N` 承担，归一化侧只留 `t_max`；`preflight_check` **24/24 全绿**
 （那条守卫改成看 `f_max`，并新增"`f_max` 夹在悬停与满量程之间"）。见 §3.3.3。
 其余待测项都有可用初值。
+
+★ **P7 是 P1 的"另一处"**（2026-10-09 加，[phase4/02](../../.scratch/phase4/issues/02-hover-thrust-backfill.md)）：
+模型侧的 `hover_thrust` 已回填，但**飞控侧的 `MPC_THR_HOVER` 还是 PX4 默认的 `0.5`** ——
+它要在 QGC 里改，是**人的动作**。两个值是同一个物理量，**只改一处 = 静默的推力增益错误**；
+核对记录（含 `THR_MDL_FAC` 复核、与理论 42.9 % 的差异、以及三条连带效应）全在 **§3.3.5**。
 
 ---
 
@@ -1116,6 +1243,7 @@ S1 环境 ──> S2 acados ──> S3 离线 OCP ──> S4 节点 ──> S5 S
 | **O7** | **长时段"不信任"期间该发什么** | 票面（ticket 07）对时间戳倒退 / 位姿跳变的要求是**只关闸门、一帧不发** —— 已照做。但由 §2.5 的第一手，**不发 = 飞控无限期锁存最后一帧**（可能是几秒前的、带满角速率的命令）；"一直沉默"与"主动切安全悬停"哪个更安全**本票没有拍板**（票面没要求，就没自作主张改）。⚠️ 触发条件苛刻（动捕要连续坏 ≥ 闸门重开的时间）但**真实存在**：遮挡、上游重放、VRPN 时钟回拨都会造成 | SITL/实测定；结论进 ticket 11 |
 | ~~O8~~ | ~~**P1/P2 的电池口径**（满电 vs 低压）~~ | ✅ **2026-09-29 操作者裁定：满电口径** —— 已按此**回填**（`hover_thrust = 0.1589`、`T_max = 46.3 N`，三处同值）。⚠️ **诚实交代**：四段真机日志**全是低电段**（起飞 SOC 46–60 %），满电值是**外推** —— 由 20.474 / 20.526 V 上的 `0.221992` / `0.220884` 按实测律 `thrust ∝ V^1.608` 归一到 25.2 V（得 `0.15896` / `0.15882`，互差 0.09 %）。★ 若要把外推换成直接读数，**在满电包上再悬停 ~30 s** 即可。★ 裁定只解决"选哪个口径"；M4/D5 的解耦问题**同日另行裁定**（`F` 上限改成独立的 `f_max`，见 §3.3.3）。**保留原「建议」的理由**（为什么是满电）：把模型锚在"每次飞行都从这儿开始"的那个状态；误差随电量下降朝"**模型高估能力**"漂，而这一侧**有可观测信号**（`sat` 饱和标志 + 位置环会自己补），反方向没有 | ✅ **已裁定（2026-09-29）** |
 | **O9** | **OCP 代价里的 `q_diag[6]`（姿态四元数 `qw` 的权重）与 `r_diag[3]`（`R_yaw`）** —— ticket 04 的交付物 | ticket 09 在闭环里量化了它的一个**结构性后果**：`qw = 0` ⟹ 代价**分不出**参考机头 ψ 与它的镜像 `2π − ψ`（两者相差 `w = 2cos(ψ/2)`，实测代价**都恰好 = 0.000000**，同文 [`offline-ocp.md`](offline-ocp.md) §2）。于是偏航通道在参考附近**既不收敛也不漏**（0.40 rad 偏差 ⟹ −1.9e-5 rad/s；0.15 rad ⟹ −7e-6 rad/s —— 实测**死通道**），而单次 RTI 迭代下还带一点**依赖热启动**的抖动（roll 0.08 ⟹ −0.018378 rad/s）。**已开 ticket 16 并裁定落地**：`q_diag` 四元数段 **`(0.0, 0.1, 0.1, 0.1) → (0.1, 2.0, 2.0, 2.0)`**（镜像代价 `0.000000 → 9.528`，只由 `qw` 决定），**`r_diag` 不动**（☠️ 票内一度把 `R_yaw` 也降到 50，当天用逐拍对齐 DUT 的离线重放查出它会让 10 m 不可行步进下的 RTI 迭代**收敛极慢**（每 ~100 拍才衰减 10×，发指令的窗口里就是逐拍乱跳），撤回）；"偏航是死通道"**没有被这一项解决**（纯 0.4 rad 机头误差的稳态 `ω_z` 只从 `2e-5` 抬到 `3.9e-4 rad/s`，仍 ~1000 s）；闭环复飞待 ticket 16 验收项 3 | ✅ 已定（2026-09-29，ticket 16） |
+| **O10** | **`MPC_THR_HOVER` 写下去之后，手动模式的手感变了** —— `phase4/02-C1` 的连带效应（§3.3.5 ⑥b） | 不算问题，但**要知道**：`MPC_THR_CURVE = 0` 的语义是"居中杆 = `MPC_THR_HOVER`"，所以把 0.5 改成 0.1589 ⟹ **居中杆给出的推力从 0.5 掉到 0.1589**（手动悬停点回到杆居中，这是本意、也改善手动↔位置模式的衔接），但上半程杆要吃掉 84 % 的推力范围。**建议保留 `MPC_THR_CURVE = 0`**（改成 1 会让悬停落在 8.6 % 杆位）。⚠️ **不影响离板/模型预测控制通路**（位置控制器不在通路上）。★ 本条**没有实测过**：手感变化要在**上电后手动悬停**时确认一眼 | 写参数的人（上电时顺手看） |
 
 ---
 
@@ -1143,6 +1271,11 @@ S1 环境 ──> S2 acados ──> S3 离线 OCP ──> S4 节点 ──> S5 S
 | v1.14.3 的 airframe 共 56 个条目（SIH 3 / gz 6 / gazebo-classic 35 / jsbsim+flightgear 9 / jmavsim 1 / none 1 + `CMakeLists.txt`） | `ls ROMFS/px4fmu_common/init.d-posix/airframes/`，按后缀 `grep -c` |
 | gz-sim 在 v1.14.3 **只支持 Garden** | `src/modules/simulation/gz_bridge/CMakeLists.txt:38-39`：`#ignition-transport11 # IGN (Fortress and earlier) no longer supported` + `gz-transport12` |
 | submodule 是 **17** 个（不是 23） | `grep -c '^\[submodule' ~/refs/px4-v1.14.3-build/.gitmodules` |
+| **`MPC_THR_HOVER` 与模型 `hover_thrust` 在同一个域里**（⟹ 两处必须同值，`phase4/02-C1`） | `PositionControl.cpp:210`（`collective_thrust = _acc_sp(2)·(_hover_thrust/g) − _hover_thrust` ⟹ 悬停时 `thrust_body[2] = −MPC_THR_HOVER`）+ 上面的「推力轴按均值归一化」条 + `MulticopterRateControl.cpp:182`（原样透传）。核对记录见 **§3.3.5** |
+| **HTE 的窗口 = `MPC_THR_HOVER ± HTE_THR_RANGE`**，且 EKF 会把它夹住 | PX4 `v1.14.3` `src/modules/mc_hover_thrust_estimator/MulticopterHoverThrustEstimator.cpp:90-93`：`setMinHoverThrust(constrain(MPC_THR_HOVER − HTE_THR_RANGE, 0, 0.8))`、`setMaxHoverThrust(constrain(..., 0.2, 0.9))`；夹钳在 `zero_order_hover_thrust_ekf.cpp:124`：`_hover_thr = constrain(_hover_thr + K·innov, _hover_thr_min, _hover_thr_max)`。z0 实测估计值**整段贴在下限 0.300**、`valid` 97.3 %（ticket 10 的第三条交叉验证） |
+| **降落检测的两个阈值由 `MPC_THR_MIN` 与 `MPC_THR_HOVER`（HTE 有效时用 HTE）合成** | 同 `v1.14.3` `src/modules/land_detector/MulticopterLandDetector.cpp:79`（`minThrottle ← MPC_THR_MIN`）、`:81`（`hoverThrottle ← MPC_THR_HOVER`）、`:101-110`（HTE 有效时覆盖）、`:216-219`（`sys_low_throttle = minThrottle + (hoverThrottle − minThrottle)·(0.6 或 0.3)`）、`:262`（maybe-landed 用 `×0.1`） |
+| **手动模式的杆曲线语义 = "居中杆 ↔ `MPC_THR_HOVER`"** | 同 `v1.14.3` `src/modules/mc_att_control/mc_att_control_main.cpp:99-109`（`throttle_curve()`：`case 1` 走 `interpolate`，默认走 `interpolateN({MPC_MANTHR_MIN, MPC_THR_HOVER, MPC_THR_MAX})`）+ `mc_pos_control_params.c:96-107` 的参数文档（含 "if hover thrust is set to 20 %, 80 % of the upper thrust range is squeezed into the upper half"） |
+| **`THR_MDL_FAC = 0.45` 被飞行数据支持**（argmax r²，非取默认值） | `tools/hover-thrust/thrust_curve_check.py` 在两条真机上跑出 argmax `0.455` / `0.450`（对照 `fac=0` 得 0.9952/0.9955、`fac=1` 得 0.9871/0.9836）；原始输出 [`tools/hover-thrust/evidence/thrust_curve_2026-10-09.txt`](../../tools/hover-thrust/evidence/thrust_curve_2026-10-09.txt) |
 | 真身 `4a0e65f2` ↔ 上游 `v1.14.3` 的 `msg/`：185 个文件 blob **全同**、**无集合差异** | `git -C ~/refs/px4-z0 ls-tree -r 4a0e65f2 -- msg/` vs `git -C ~/refs/px4-v1.14.3 ls-tree -r HEAD -- msg/`，按文件名 join 比 blob |
 | `Tools/check-message-compatibility.py` **不在 PX4-Autopilot 里** | 逐棵树 `ls`/`find`：v1.14.3 / v1.15.0 / v1.16.0 / fork `5ba2e91f` / `px4_msgs` 全无；`Tools/` 下只有三个 `*msg*` 脚本，仓库根无 `scripts/` |
 | 消息比对的官方算法在 `auterion/px4-ros2-interface-lib`，且直接跑会给假 FAILED | `scripts/check-message-compatibility.py`；其类型清单来自同仓 `message_compatibility_check.hpp`，该仓**无 `release/1.14` 分支** ⟹ 报 20 个 v1.14 根本不存在的类型为「缺失」，但报错里**没有** `Some files differ` |
