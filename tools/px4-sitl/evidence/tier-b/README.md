@@ -17,6 +17,7 @@
 | `u-ref-authority-*.json` | **ticket 20 的离线探针产物**（不是飞行）：`probe_u_ref_authority.py` 的输出，见下节。★ 其中 `-sameframes-20260930` 那份是**同批帧、新树**的复跑，用来量"中间那四个提交对这档的影响"（20 号票 §13.7） |
 | `controller-code-20260930-F0c-F1c.json` | `F0c`/`F1c` 两场的**代码身份**（`git HEAD` + 11 个文件 sha256 + 入口脚本 sha）—— 这两场的 `--json` 里没有 `controller_code` 块（缺席口径见下方第 4 条），故单记一份 |
 | `rejudge-20261008-judge2.json` | **判据② 换成真判之后**，拿归档 obs **离线重判** `F0c`/`F1c` 的全文（不启 SITL、不启夹具，域 73）。☠️ 落盘的 `-summary.json` 里那条判据② 是**旧判层的硬编码 `False`** ⟹ 本文件是它的**唯一**订正处（机制与计数见下方第 2 条） |
+| `oscillation-mechanism-20261009.json` | **票 `phase3/07` 的读数**（不是飞行）：垂直通道「模型说它不该振、它却振了」的取证 —— 逐场扫喂进求解器的 `frames[].x0[3:6]`（**十场 20545 帧全部恰好为 0**）、末段振铃拟成衰减正弦解出的 `(f, σ)`、反推的等效阻尼、延时扫描、`df` 列分档回归、逐帧姿态（`x0[6:10]`）。**生成器**：[`tools/px4-sitl/analyze_vertical_oscillation.py`](../../analyze_vertical_oscillation.py)（纯 numpy，**不需要 acados/ROS**，读本目录的 `-summary.json` 与 `df-column-20260930.json`，**不改**任何已有归档）。★ 它**先对 `checks[]` 自证**才往下读，**两列都接闸**：末 8 s 峰峰值容差 5e-4 m、穿均值频率容差 5.1e-3 Hz（归档只印到 0.01 Hz ⟹ 可还原的精度就这么多）；任一场对不上、或一场都没读到（空壳目录会让对照物为空）就**拒绝出结论**（退出码 2）—— 裁决与全部结论在票 `phase3/07` 与 20 号票的 Comments，**本目录不重抄读数** |
 | `df-column-20260930.json` | `F0b`/`F1b`/`F0c`/`F1c` 四场的**逐帧 `[tick, df, u[0], thrust_body_z]`** + 发布点闭合式残差 —— 20 号票 §13.4 的**唯一**可复核底料（`df`/`u_ref0` 两列不在 `-summary.json` 里，逐帧 jsonl 又没入库）。**生成器**：[`tools/px4-sitl/export_df_column.py`](../../export_df_column.py)（读 `/tmp/tier-b/<tag>-dut.jsonl` ⟹ 必须与飞行同一次开机内跑）。☠️ **这两场的输入已经没了**：2026-09-30 06:38 那次开机把 `/tmp` 清了 ⟹ 生成器**再跑不起来**，本文件是那四列（`df`／`u[0]`／`thrust_body_z`／`u_ref0`）**唯一**的存本（这正是"当场落仓库"那条纪律的一次现场兑现） |
 
 `<tag>` = `F0`(标称) / `F1`(mass+30，判据①) / `F2`(mass+30 + 50 ms，判据③) /
@@ -165,3 +166,28 @@ python3 -c "import json,sys;print([len(json.load(open(f)).get('frames') or []) f
 ```
 逐场产物、时刻、工具链身份与三条必知事项见
 [`20261009-rebuild/README.md`](20261009-rebuild/README.md)。
+
+## 附：ticket 07 的振荡机理读数（`oscillation-mechanism-20261009.json`）
+
+[票 07](../../../../.scratch/phase3/issues/07-oscillation-mechanism-outside-three-param-model.md)
+要查清"三参数模型说 `ζ ≈ 0.72`、飞行却有 0.24 m 持续振荡"这件事。**全部结论在票 07 与
+[20 号票](../../../../.scratch/phase2/issues/20-vertical-channel-mismatch-offset.md)的 Comments**，
+本文件只是产物。它**只读归档**：不改任何 `-summary.json`、不启 SITL、不读 `/tmp`（`df-column`
+那份已经入库，它是唯一需要的外部输入）。
+
+```bash
+python3 tools/px4-sitl/analyze_vertical_oscillation.py \
+  --json tools/px4-sitl/evidence/tier-b/oscillation-mechanism-20261009.json
+```
+
+★ 它为什么**可以**被信（三条，缺一条这文件就不该存在）：
+
+1. **自证，且两列都接闸**：它把判层当时写进 `checks[]` 的末 8 s 高度峰峰值与穿均值频率
+   **复算一遍**并对齐 —— 峰峰值容差 5e-4 m（10 场实差 ≤5e-5）、穿均值频率容差 5.1e-3 Hz
+   （归档只印到 0.01 Hz，实差 ≤5e-3，可还原的精度就这么多）。☠️ **频率那一列原本只印不判**
+   —— 那等于在绿勾旁边摆一列没接闸的读数，已改成两列都判。对不上、或**一场都没读到**
+   （空壳目录会让对照物为空集）就拒绝往下读。
+2. **口径逐字对齐**：稳态窗按**真值流自己的第 0 列**切末 8 s（判层的 `segments(hover_s=8)`），
+   不是墙钟 —— 所以判层 2026-10-09 那处"记录器钟喂给墙钟函数"的缺陷**不在这条路上**。
+3. **变异验过**：把真值列号从 `r[3]`（z）改成 `r[2]`（y），自证那一节 10 场**全变红**；
+   把 `x0[3:6]`（速度）改成 `x0[6:9]`（姿态四元数），接线审计**全场变红**。
