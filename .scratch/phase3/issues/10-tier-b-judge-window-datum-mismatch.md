@@ -1,6 +1,6 @@
 # 10: 判层把「记录器钟」的窗口喂给按「绝对墙钟」取数的读数 —— 判据② 在任何带 `offboard_enter_t` 的场次上都判不了 ★
 
-Status: needs-triage
+Status: ready-for-agent
 Type: task
 **对着 Phase 2 的：[`11`](../../phase2/issues/11-sitl-tier-b-seam3.md)**（seam 3 的四判据，本票挡的就是它里面 ② 那一条）
 **发现于：** [06](06-fly-t0-seam3-four-criteria.md) 跑完那批六场之后 —— 判据② **一条都没判成**，六场全一样
@@ -116,3 +116,12 @@ move = [r for r in rows if abs(r["position"][0]) > 1e-6 or abs(r["position"][1])
 而且六场读数一模一样地都停在"仪器没覆盖到窗口" ⟹ 不是飞机的事。
 根因定位与离线预演见正文；**修法归谁**（本阶段自行处理 / 排到别处 / 与 `T0` 一起复核）
 是操作者的裁定。
+
+### #2 归谁：操作者 2026-10-09 裁定「本阶段自行处理」
+
+票面 `### #1` 末句列的三个去向，操作者选了**第一条**：本阶段自行处理（⟹ `Status` 从
+`needs-triage` 改成 `ready-for-agent`，交 AFK agent 修）。
+
+- 前提都已就位：定位到行号、两处缺陷都能**只靠离线重判归档 obs** 复现（不重飞）
+- 它挡着 [phase2/11](../../phase2/issues/11-sitl-tier-b-seam3.md) 的收口（判据② 判不出来 ⟹ Phase 2 的闸门收不了）
+- 落地后要把 ② 的真结论登记回 [06](06-fly-t0-seam3-four-criteria.md) 的 Comments
