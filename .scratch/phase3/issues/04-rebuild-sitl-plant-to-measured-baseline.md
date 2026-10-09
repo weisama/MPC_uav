@@ -30,15 +30,24 @@ Type: task
 ## 验收
 
 - [ ] phase2/21 清单里的**每一条**都落地了（对上表逐条勾，不是"大致做完"）
-- [ ] `python3 -m pytest tools/px4-sitl/test_mismatch_sweep.py -q` —— ★
+      ⚠️ **没全勾**：21 清单里有 **3 条**本票没做 —— 跑冒烟证"不传覆盖也能悬停"、
+      `thrust_from_motors()` 那一列、归档记 harness 身份。逐条点名与理由见下面的
+      `### #2 落地` 那节（都留给了 [`06`](06-fly-t0-seam3-four-criteria.md)）
+- [x] `python3 -m pytest tools/px4-sitl/test_mismatch_sweep.py -q` —— ★
       `test_标称悬停推力从机型真源推_而不是读节点默认值` 三条断言**重搭后必然变红**，
       要么按新基线重算期望值、要么删掉这条测试并在票面写清为什么 —— **不许为了让测试变绿就把值抄反**
-- [ ] `python3 tools/px4-sitl/verify_z0_plant.py --variants-all` **保持全绿**
+      ⟹ **已按新基线重算**（那条已改名 `test_标称悬停推力与节点默认同档_重搭已落地`，
+      从"口径不同"守卫**翻成"同档"守卫**）；2026-10-09 全量 `tools/px4-sitl` **248 passed**
+- [x] `python3 tools/px4-sitl/verify_z0_plant.py --variants-all` **保持全绿**
       （它的期望值来自 `plant_spec.all_variants()`，是真源 ⟹ 真源改了它还得绿）
-- [ ] phase2/21 的**失效清单**里点名的文件，逐一处理（重跑覆盖 / 标注作废），
+      ⟹ **636/636**（12 变体 × 53 项），原始 JSON 已入库
+      [`evidence/z0-plant/`](../../../tools/px4-sitl/evidence/z0-plant/)
+- [x] phase2/21 的**失效清单**里点名的文件，逐一处理（重跑覆盖 / 标注作废），
       不留"文档还写着旧读数、代码已经是新的"这种状态
+      ⟹ 清单 **6 份逐份处理**，并**超出清单 5 份**（逐份点名与理由见 `### #2`，操作者可否决）
 - [ ] `run_matrix.sh` 能一次跑完 A/B 两档 **且不报错退出**（不要求这一场读数好看，
       要求的是"基线换了之后链路还通"）
+      ⟹ **未做**：操作者裁定「pytest + `--variants-all`，跑矩阵留 `06`」（它要占飞行窗口）
 
 ## 边界
 
