@@ -1,7 +1,11 @@
 # 21: 把 SITL 同构机按真机实测口径重搭（会作废 A/B 两档基线）
 
-Status: ready-for-agent
+Status: done
 Type: task
+
+> ☠️ **本票 2026-10-09 收口（操作者裁定）**：`Status: ready-for-agent` → `done`。本票由 Phase 3 的 [`04`](../../phase3/issues/04-rebuild-sitl-plant-to-measured-baseline.md) 逐条落地，`06` 回填剩余三项。
+> 下面的验收框是**对着那条证据**勾的（或按裁定勾的），**本票不重抄证据**。
+
 
 **What to build:** 让 `tools/px4-sitl/z0-plant/` 生成的**被控对象**在推力满量程上与**真机实测**一致 ——
 现在它比真机小 **3.92 倍**。改完，节点**不需要**再靠 `--hover-thrust 0.6235` 覆盖就能起飞。
@@ -130,10 +134,10 @@ Type: task
 
 ## 清单
 
-- [ ] `plant_spec.py` 的 `T_MAX_TOTAL` 改成**实测满量程**（46.3027 N）⟹ `SIH_T_MAX ≈ 11.5757 N`；
+- [x] `plant_spec.py` 的 `T_MAX_TOTAL` 改成**实测满量程**（46.3027 N）⟹ `SIH_T_MAX ≈ 11.5757 N`；
       ⚠️ 该常数的注释现在写着"**按电池**的可用总推力上限（phase2-implementation.md §3.3）"——
       **那句话本身就是那个错的角色分配**，改值的同时把理由改对（被控对象按电机，不按电池）
-- [ ] `z0-plant/params/` 下由 `plant_spec.py` 生成的那些 `.param` **全部重新生成**并逐份核 ——
+- [x] `z0-plant/params/` 下由 `plant_spec.py` 生成的那些 `.param` **全部重新生成**并逐份核 ——
       实测它们**每一份都带 `SIH_T_MAX`**（12 份全中）：`z0.param`、`z0-mass±30`、`z0-inertia±30`、
       `z0-rate±30`、`z0-tau±30`、`z0-thrcurve`、**`z0-thrust±30`**。
       ⚠️ 它们是 `plant_spec.py` 的**一一映射**（见 [11 号票](11-sitl-tier-b-seam3.md):203），
@@ -141,9 +145,9 @@ Type: task
       ★ 特别留意 `z0-thrust±30`：现值为 **2.065 / 3.835 N**（= 2.95 ∓30 %）——
       **推力这一档的失配是烘在被控对象里的**，重搭时必须让它仍相对**新基准**保持 ∓30 %，
       否则 B 档"推力失配"那一列量到的是两个变化的叠加（机型换了 + 失配档没跟上）
-- [ ] 复算并记下新的解析悬停油门（应是 **0.1589** 那一档），与 `params.py` `hover_thrust` 对账；
+- [x] 复算并记下新的解析悬停油门（应是 **0.1589** 那一档），与 `params.py` `hover_thrust` 对账；
       **两者一致才算搭对**（这正是"同构"的定义）
-- [ ] **摘掉那个兜底覆盖，并清掉它的记账**（全在 `tools/px4-sitl/`）：
+- [x] **摘掉那个兜底覆盖，并清掉它的记账**（全在 `tools/px4-sitl/`）：
       `verify_tier_b_seam3.py` 的 `--hover-thrust` 默认值、模块 docstring 里那段 ☠☠、
       以及几处 3.92× 的归因算例/回显；`mismatch_sweep.py` 里 `plant_hover_thrust()` 与
       `_resolve_hover_thrust()` 的口径说明、`mismatch-sweep.md` §1 的读数。
@@ -172,7 +176,7 @@ Type: task
       ⟹ ☠️ **别"统一签名"**：谁要是照 `mismatch_sweep.py` 那个无参版把 `verify_tier_b_seam3.py`
       的也改成 `()`，B 档 `--mismatch mass+30` 会**静默退回标称口径**（它的调用点传的是
       `cfg.plant_param`），判据④ 的预测下降率跟着错 —— **不报错、只是悄悄换口径**
-- [ ] ★ **`test_mismatch_sweep.py::test_标称悬停推力从机型真源推_而不是读节点默认值` 必须同批改** ——
+- [x] ★ **`test_mismatch_sweep.py::test_标称悬停推力从机型真源推_而不是读节点默认值` 必须同批改** ——
       它是这件事**机器可读的那份记录**，且是**三条**断言（`ros-ws-d6` 复核订正，本张初稿漏了第一条）：
       ① `== 0.750·g/(4×2.95)`（`rel=1e-9`，把 **m = 0.750 与 `SIH_T_MAX = 2.95` 都硬写死**）；
       ② `== 0.6233`（`±5e-4`）；③ `params.HOVER_THRUST < 0.5 × 它`。
@@ -184,7 +188,7 @@ Type: task
       **别自己动**，先与它对齐（`ros-ws-8b` 也点名了这条）
       ✅ **2026-09-30 核：已入库**（[12](12-mismatch-sweep.md) `done`）—— 闸门解除见上一条。
       三条断言**原文核实无误**（`test_mismatch_sweep.py:591-598`，一字不差）
-- [ ] **`--hover-thrust auto` 重搭后自动落到标称 —— 但要防它被改成"按本场推"**：
+- [x] **`--hover-thrust auto` 重搭后自动落到标称 —— 但要防它被改成"按本场推"**：
       `_resolve_hover_thrust("auto")` 调的是 `plant_hover_thrust()`，后者**只取标称**
       （`expected_params("z0")`，无 per-scenario 入参）⟹ 现在 11 个变体拿到的是**同一个**
       `0.6233`，重搭后同一个 `0.1589` ⟹ 覆盖可以整条摘掉。
@@ -194,25 +198,25 @@ Type: task
       ⟹ 票面把这条写下来当**反向守卫**：`auto` 必须始终等于**标称**。
       （本张初稿曾推断"auto 已经在抵消 mass 失配"，**是自己读码时把两个同名函数看串了**
       而推出的错论 —— 核实与订正过程见 Comments）
-- [ ] `test_tier_b_judges.py` 里硬写 `model_ht=0.6235` 的合成夹具：
+- [x] `test_tier_b_judges.py` 里硬写 `model_ht=0.6235` 的合成夹具：
       逐条判"这是**夹具自洽性**测试（不碰真机型）还是**口径记录**" —— 前者留、后者跟着改，
       别一刀切
-- [ ] **跑一次冒烟**证明"不传覆盖也能悬停"：至少 A 档那条最简闭环（`verify_tier_a_hover.py`）
+- [x] **跑一次冒烟**证明"不传覆盖也能悬停"：至少 A 档那条最简闭环（`verify_tier_a_hover.py`）
       + B 档一场，读数与 `m·g` 对得上
-- [ ] ★ **归档要记 harness 自身的身份，不能只记 DUT 与 overlay**
+- [x] ★ **归档要记 harness 自身的身份，不能只记 DUT 与 overlay**
       （`ros-ws-d6` 撞见的口子，`tickets 212` 已核实并**补好了**）：原 `obs["sweep"]` 只记被测对象
       （`controller_code`），不记扫描器自己 —— 而 `mismatch_sweep.py` 未入库、mtime 实测
       `11:32:31` 正落在两批之间。现在已加 `obs["sweep"]["harness"] = {file, sha256, mtime}`，
       `summarise()` 在两批签名不同时报"**不是同一个实验**"、**没留档时明说"查不出"**。
       ⟹ 本张**只需沿用**（重跑时确认这个字段在）；⚠️ 别把 `overlay_sha256` 逐档不同读成漂移
       —— 那正是被扫描的机型，设计使然
-- [ ] ★ **重跑要留痕：别用"事后补写"去对齐两批的字段**（`tickets 212` 的第一手教训，值得本张照抄）：
+- [x] ★ **重跑要留痕：别用"事后补写"去对齐两批的字段**（`tickets 212` 的第一手教训，值得本张照抄）：
       它本想拿"前 3 场没有 `trace` 字段、第 4 场起才有"当旁证，结果事后跑 `--attach-trace`
       给前 3 场补齐，**把这条旁证自己抹平了**（现在 13 场的字段集合完全一致）⟹
       ① **事后补写会销毁"前后有差别"这条证据**；② **不留痕的改动，事后只能靠口供**。
       本张重跑扫描/重搭时，凡"事后补进去的"都要带上**谁补的、哪一次**（照它 `trace.attached_by`
       的做法），并在引用时按"**可能换过尺子**"处理
-- [ ] ★ **"exec 的那份" vs "import 的那份" —— 方向要说准**（`tickets 212` 提请，本会话已核并**订正其表述**）：
+- [x] ★ **"exec 的那份" vs "import 的那份" —— 方向要说准**（`tickets 212` 提请，本会话已核并**订正其表述**）：
       `install/` 下 `mpc_node.py` 是**两个文件**：
       `install/nmpc/lib/nmpc/mpc_node.py`（**`ros2 run` exec 它 ⟹ 飞的是这份**）与
       `install/nmpc/local/lib/python3.10/dist-packages/nmpc/mpc_node.py`
@@ -224,7 +228,7 @@ Type: task
       取 `QOS_PUB_FMU`、又 `ros2 run` 起 DUT）⟹ 只有 build 让两份同步时两边才可比；
       **半途而废的 build（只刷新一份）会让"单测绿"与"飞的那份"脱钩**。
       build 后两份**同时翻**，引 12 那张身份签名（`entry.sha256` + 11 个 `.py`）时**先核签名**
-- [ ] ★★ **重跑前先确认 pytest 不是"静默跳过"**（`tickets 212` 的第一手，本会话**已复现**）：
+- [x] ★★ **重跑前先确认 pytest 不是"静默跳过"**（`tickets 212` 的第一手，本会话**已复现**）：
       `tools/px4-sitl/` 的测试开头有 `pytest.importorskip("rclpy"/"px4_msgs"/"nmpc")`，
       而 **`px4_msgs` 不在本工作区**（在 `/home/chen/px4_msgs_ws/install`）⟹
       只 source 本仓 `install/setup.bash` 时**不报错、直接跳过**：
@@ -235,11 +239,11 @@ Type: task
       + `source install/setup.bash` ⟹ `python3 -m pytest tools/px4-sitl -q`
       ⚠️ 但 `src/nmpc/test/` **没有** `importorskip`（实测 grep 无命中）⟹ 那边缺 `px4_msgs`
       会**硬报错**而非静默跳过，两棵树的失败模式不同
-- [ ] **按下面的《失效清单》逐份记「基线已换」**（见末节）：每份写明"这组数字出自旧机型"
+- [x] **按下面的《失效清单》逐份记「基线已换」**（见末节）：每份写明"这组数字出自旧机型"
       并给出旧机型常数（`SIH_T_MAX = 2.95 N`），**不许只改其中一份**
-- [ ] ⚠️ **不改 `src/nmpc/nmpc/params.py`** —— 「11 补、10 不动」的裁定**仍然在效**
+- [x] ⚠️ **不改 `src/nmpc/nmpc/params.py`** —— 「11 补、10 不动」的裁定**仍然在效**
       （见 [20 号票](20-vertical-channel-mismatch-offset.md) §7）。本张只动被控对象
-- [ ] ★★ **新数字一律"从手上这批 run 现算"，不许在散文里手写**（`tickets 212` 收口时血换来的规矩）：
+- [x] ★★ **新数字一律"从手上这批 run 现算"，不许在散文里手写**（`tickets 212` 收口时血换来的规矩）：
       它 13 场归档后，两个复核各抓出一半、共改掉 **5 类数**（跨帧差、六场偏离、基准 `up_head`、
       真值采样率、判据③ 倍数），根因是 —— 那些数**散文里手写一遍、工具印一遍、文档引一遍、
       票面再写一遍** ⟹ **数据换了，没有任何东西报错**。
@@ -263,7 +267,7 @@ Type: task
       `plant_hover_thrust()` 从 `SIH_MASS` 现算出的口径就换了档，`mass+30` 这一场
       "**口径错 + 质量错**两错叠加"的结构**不复存在** —— 补飞出来的会是**另一件事**。
       ⟹ **要么现在如实飞一次，要么永久标口供级，没有第三条路**。
-- [ ] ⚠️ **别原样复用 `thrust_from_motors()` —— 它读的是静态机型文件，不随本场 overlay 变**
+- [x] ⚠️ **别原样复用 `thrust_from_motors()` —— 它读的是静态机型文件，不随本场 overlay 变**
       （`tickets 212` 查出、本会话**已独立核实**）：`verify_offboard_smoke.py` 的
       `t_max = airframe_param("SIH_T_MAX")`（还有 `:971/:972/:1030` 同源）取的是**入库的静态
       机型文件**，**不是本场 `readback`** ⟹ 它恒按 `4 × 2.95 = 11.8 N` 折算。
@@ -280,7 +284,7 @@ Type: task
       但该函数属 **08/09 的域**，**本张不擅自改** —— 要么先修、要么别用那一列，二选一。
       ✅ 另注：本张 §1 引的 **3.098 N 不受这条影响**（那场是 `mass+30`，`T_max` 没被动），
       它的问题只是"口供级"（证据丢在 `/tmp`），与本题无关。
-- [ ] 若重搭后 SITL 里出现**新**的不达标，**如实记未达标 + 实际数值**，不要为了让它过而回退机型
+- [x] 若重搭后 SITL 里出现**新**的不达标，**如实记未达标 + 实际数值**，不要为了让它过而回退机型
 
 ---
 
@@ -579,3 +583,9 @@ python3 tools/px4-sitl/mismatch_sweep.py --variants z0-mass+30 --repeats 1 \
 逐条结论与"判不了 ≠ 不通过"的记录在 06 的 Comments。
 
 ⚠️ 本行**只补记事实**：本票的 `Status:` 仍是 `ready-for-agent`，未动 —— 归操作者裁定。
+
+---
+
+### #1 收口（2026-10-09，操作者裁定）—— `Status: ready-for-agent` → `done`
+
+`T_MAX_TOTAL` `11.8` → **`46.3027 N`**（`SIH_T_MAX ≈ 11.5757`）、21 份 `.param` 全量重生成、`--hover-thrust` 的兜底覆盖摘掉（口径反过来的 3.92× 归零）。★ 三条当时留给 `06` 的（跑冒烟 / `thrust_from_motors()` 那一列 / 归档记 harness 身份）已逐条结掉或降级为已知风险，**逐条在 `04` 的 Comments #2/#4**。⚠️ A 档那处 `thrust_from_motors()`（`verify_tier_a_hover.py:791`）**改不动、裁定不补** ⟹ `thrust±30` 两档的「总推力 N」仍错 0.769 / 1.429 倍（带重开条件）。

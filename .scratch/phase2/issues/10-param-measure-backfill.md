@@ -1,7 +1,11 @@
 # 10: 参数实测定稿并回填
 
-Status: ready-for-human
+Status: done
 Type: task
+
+> ☠️ **本票 2026-10-09 收口（操作者裁定）**：`Status: ready-for-human` → `done`。本票由 Phase 3 的 [`08`](../../phase3/issues/08-battery-sustainable-thrust-from-archived-ulogs.md) 收口。
+> 下面的验收框是**对着那条证据**勾的（或按裁定勾的），**本票不重抄证据**。
+
 
 > ☞ **四条裁定已拿到并落地**（2026-09-29 第五轮）：
 > ① **解耦** `T_max` —— `F` 上限独立成 `Z0Params.f_max` = **11.8 N**（归一化只留 `t_max` = 46.3 N）；
@@ -952,3 +956,9 @@ E  assert 'rclpy' not in {... 'Cython' …}
 
 ⚠️ 本条**不改**本票的 `Status:`（仍 `ready-for-human`）—— 与上一条同理。
 清单里 `hover_thrust` 那条依旧是已回填状态，本张只动"电池可持续"这一条。
+
+---
+
+### #1 收口（2026-10-09，操作者裁定）—— `Status: ready-for-human` → `done`
+
+验收项（「只有人能产」的台架/悬停测量）**降级成从已归档飞控日志读**，由 `08` 逐条落地；★ 结论是「**归档答不了「电池能供出多少」（能力）**，只能给需求的下界」⟹ 「`f_max = 11.8 N` 保不保守」**本阶段答不了**，已按「已知风险 + 重开条件」落纸（要独立电流基准的台架量）。
