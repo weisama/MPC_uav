@@ -50,6 +50,9 @@ export LD_LIBRARY_PATH=$ACADOS_SOURCE_DIR/lib:$LD_LIBRARY_PATH
 python3 -m pytest src/nmpc/test/test_mpc_node.py        # 多数用例各起一次 DUT（启动 ~8 s，见 §8）
 ```
 
+★ **2026-10-10 起**，上面这条命令跑的是**实机冻结档**（DUT 带 `-p tau_s:=0.0`），
+不再是"节点默认档" —— 见 **§11**（ticket [`phase4/07`](../../.scratch/phase4/issues/07-seam1-rerun-real-params.md)）。
+
 ---
 
 ## 2. 接口面
@@ -318,3 +321,106 @@ ros2 run nmpc preflight_check.py -p mass:=0.82 -p hover_thrust:=0.55   # 与节�
 本页自己的界限**一条没变**（它仍是"离线 + 假 PX4"的证据）。另，**节点侧有一处已改**：
 本票当时喂 `u_ref = 上一帧解`（走 M6 §3.2 的缺省），在闭环里是正反馈，ticket 09 改喂
 **参考自己的解析前馈** —— 同一票 Comments #3。
+
+---
+
+## 11. Phase 4：按**首飞冻结档**重跑（ticket [`phase4/07`](../../.scratch/phase4/issues/07-seam1-rerun-real-params.md)）
+
+> 本节是 **seam 1 的第三次应用**（形态 A：喂脚本化输入 + 断言发出话题 + 假 peer）。第一次是
+> Phase 1（[`phase1/spec.md`](../../.scratch/phase1/spec.md) 的 Testing Decisions 把它定为基准），
+> 第二次是**本页 §1** 那一批。**没有新增任何 seam 形态** —— 同一条缝隙、同一组用例，
+> 只把 DUT 的**起参数**换成实机冻结档。
+
+### 11.1 冻结档长什么样（= `test_mpc_node.py` 的 `FROZEN_PARAMS`）
+
+出处 [`first-flight-config.md`](first-flight-config.md) **§2**（`N1`–`N5`，逐条带理由与等级）。
+冻结的**形式**是「**除 `N2` 外全部取默认值**」（§2 原话）⟹ 首飞命令行里只有**一个** `-p`：
+
+| 票面点名要"实机参数"的四个量 | 冻结值 | 落在哪 |
+|---|---|---|
+| 频率 | `rate_hz 100` / `heartbeat_hz 50` / `viz_hz 10` | **节点默认**（`mpc_node.py` 的 `_PARAMS` 表） |
+| 悬停油门 | `0.1589` | **模型默认**（`src/nmpc/nmpc/params.py` 的 `Z0Params`，2026-09-29 实测回填） |
+| 推力归一化常数 | `t_max = 46.3027 N`（= `m·g / hover_thrust` **导出**） | 同上 |
+| τ | **`0.0`**（不补偿） | ★ **与节点默认 `0.05` 不同** ⟹ 命令行那**唯一**一个 `-p tau_s:=0.0` |
+
+⟹ **这次"换实机参数"在台架上只动一个旋钮**。前三个量**不写出来 ≠ 没管** —— 它们是
+"已经等于默认值"，而"默认值有没有漂"由
+`test_preflight_check.py::test_参数表与_NodeParams_的默认值不许漂移` 守着（那是另一个 seam 的事，
+本节只登记）。
+
+**代码落点**（`src/nmpc/test/test_mpc_node.py`，三处）：
+
+| # | 改动 | 为什么 |
+|---|---|---|
+| ① | 新增模块常量 `FROZEN_PARAMS = {"tau_s": 0.0}` | 冻结档的**唯一**定义处 ⟹ 换机 / 换档只改这一行 |
+| ② | `_scenario()` 起 DUT 时合并 `{**FROZEN_PARAMS, **params}` | 本文件从此就是「**实机档**的 seam 1」；用例显式写的键**优先** |
+| ③ | 两条"推力低于悬停"的探针**显式钉** `tau_s=0.05` | 见下 §11.4 那条**静默**——**不钉也全绿**，但会不再测外推 |
+
+### 11.2 跑法（可整段复制；未来换机照做）
+
+```bash
+source /opt/ros/humble/setup.bash
+source ~/px4_msgs_ws/install/setup.bash
+source install/setup.bash
+export ACADOS_SOURCE_DIR=$HOME/acados
+export LD_LIBRARY_PATH=$ACADOS_SOURCE_DIR/lib:$LD_LIBRARY_PATH
+python3 -m pytest src/nmpc/test/test_mpc_node.py -q      # 2026-10-10 实测 ≈7m40s（本机 Orin NX）
+```
+
+★ **跑之前先看一眼 `pgrep -af mpc_node`**（本文件开头 ★★ 那条：别人的 DUT 会发在**同一对固定
+话题**上，症状是数字不对而不是报错）。**不要**用 `pytest -n`。
+★ **换机 = 改 `FROZEN_PARAMS` 那一行 + 重跑这条命令**。（本票的口径是"节点默认即实机值"，
+所以对一台参数不同的新机，真正要改的是它自己那份 `first-flight-config` 的 `N*` 表 + 这里的常量。）
+
+### 11.3 结论（2026-10-10，本机 Orin NX）
+
+**`45 passed, 0 failed`（整文件，7m38s）** —— 冻结档下**一条都没红**。
+
+票面点名的八项断言范围**逐项对得上**（这是"与 Phase 2 的 seam 1 一致"的判据）：
+
+| 票面点名的验收项 | 落在哪条用例 | 冻结档 |
+|---|---|---|
+| 符号映射表 | `test_目标在正前方时_pitch_为负_且顶约束表现为打满`（+ `test_sign_map.py`，seam 2） | ✅ |
+| 推力归一化 | `test_位置保持时推力归一化等于悬停油门_角速率近零` | ✅ |
+| NaN **整帧丢弃** | seam 1：`test_求解失败时先保持上一帧_再切安全悬停_且一帧都不带非有限值`（全帧扫描）；seam 2：`test_node_core.py::test_整帧校验认得非有限值` | ✅ |
+| 求解失败兜底 | 同上（`-p inject_solve_fail_after_frames` 注入） | ✅ |
+| 心跳频率 | `test_实做频率_心跳_50_Hz_setpoint_100_Hz` | ✅ |
+| QoS 可通 | `test_接口与_QoS_与票面一致` | ✅ |
+| 时间戳单位 | `test_时间戳是墙钟微秒` | ✅ |
+| 未解锁 / 未在 OFFBOARD 时**不发布** | `test_闸门关闭时只发心跳_一帧_setpoint_都没有`（正控 `test_解锁切_OFFBOARD_之后立刻开始发`） | ✅ |
+
+★ **条数不是契约**（同 §7 那条）：`grep -c '^def test_'` 会随判据增删而变，**判"过没过"看退出码**。
+★ **对照**：改动**前**（同一台机器、同一晚、τ=0.05 那套）跑出 `43 passed, 1 failed` ——
+红的是 `test_SIGINT_之后打出收尾摘要而不是_traceback`，根因是订阅回调里抛
+`RuntimeError: Unable to convert call argument to Python object`（DDS 反序列化），**单跑必过 ⟹ 偶发**；
+冻结档这一跑它**过了**。⟹ 那一条**不是** τ 引起的，也**不是**本票引入的（基线跑用的是改动前的文件）。
+
+### 11.4 ★★ 一处**静默**被本票挡下来了（唯一的实质性发现）
+
+`test_A_档_垂直速度的外推_表现是推力低于悬停` 与 `test_B_档_速度从_velocity_enu_进外推_表现是推力低于悬停`
+两条用例，**原来靠的是"节点默认 τ=0.05"**（它们没写 `tau_s`）。冻结档把默认改成 `0.0` 之后：
+
+- 它们**照样绿** —— 因为 `v ≠ 0` 时"OCP 要把 v 刹到 0"那一项**与 τ 无关**，单独就够撑过
+  阈值（`MIN_DELTA_THRUST_N = 0.590 N`）；
+- 但它们**不再测外推那条通路**了：τ=0 时 `x + v·τ` 是恒等变换，**把外推整段删掉也照样绿**。
+
+⟹ 处置 = **显式钉 `tau_s=0.05`**（探机制就该把机制的前提写出来）。★ 已实测确认：把这两条的
+`tau_s` 临时改成 `0.0`，**两条都过**（2 passed）—— 也就是这个问题**不会自己报红**，
+正是本仓最恨的那一类。（登记：`test_B_档` 那条的 **τ 已经由 `test_冻结档的_tau_…` 与
+`test_A_档_有速度之后_tau_…配对差分` 两条显式探针覆盖**，所以这里钉值不损失覆盖面。）
+
+**同一晚还补了一条正控**：`test_冻结档的_tau_真的是_0_而不是节点默认的_0_05` ——
+把冻结档（**不写** `tau_s`）与**显式 `tau_s=0.05`** 做配对差分，要求两者的差落在"外推该有的方向"上。
+**变异记录**（"新断言要主动弄坏一次"）：把 `FROZEN_PARAMS` 改成 `{"tau_s": 0.05}` ⟹
+两次跑程**逐位相同**、差 `[0,0,0]`、`k = +0.0000` ⟹ **该用例变红** ✓；改回 `0.0` ⟹ 绿。
+（少了这条，`FROZEN_PARAMS` 被改回 `0.05` 会**全绿** —— 那就正是票面要挡的"搬到真机后参数搬错"。）
+
+### 11.5 本节**没证明**什么
+
+- **没有**证明"冻结档比别的档更好" —— 它只证明"这一套起得来、且话题面行为与 Phase 2 那套**同构**"。
+- **没有**证明 `thrust_body` 的符号在**真 PX4** 上会被怎么解释（§10 那条界限**一条没变**；
+  它靠 SITL 闭环 / seam 3）。
+- **没有**碰任何控制律、任何飞控参数、任何 `-p` 之外的东西；**没有**改 `params.py` / `mpc_node.py` /
+  `node_core.py`（本票改的**只有** `src/nmpc/test/test_mpc_node.py` 这一个测试文件）。
+- **没有**在真机上跑过（那是阶梯 1–4 的事，归 [`phase4/09`](../../.scratch/phase4/issues/09-ladder-ground-and-tether20.md)
+  / [`phase4/10`](../../.scratch/phase4/issues/10-ladder-closed-loop-and-free-flight.md)）。

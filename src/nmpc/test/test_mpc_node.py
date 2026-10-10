@@ -89,16 +89,37 @@ def _dut_env() -> dict:
             "LD_LIBRARY_PATH": f"{root / 'lib'}:{os.environ.get('LD_LIBRARY_PATH', '')}"}
 
 
+#: **首飞冻结的实机参数集**（ticket [`phase4/07`](../../../.scratch/phase4/issues/07-seam1-rerun-real-params.md)
+#: 的"第三次应用"）。出处：[`first-flight-config.md`](../../../docs/control/first-flight-config.md)
+#: **§2**（`N1`–`N5`，逐条带理由与等级）。
+#:
+#: ★ 冻结的**形式**是「**除 `N2` 外全部取默认值**」—— 所以首飞命令行里只有**一个** `-p`
+#:   （§2 原话），这里也就只有**一个**键。其余三个量（频率 / 悬停油门 / 推力归一化常数）
+#:   不是"没写"，是**已经等于节点与模型的默认值**：
+#:     · 频率 `N1` = `rate_hz 100` / `heartbeat_hz 50` / `viz_hz 10` ⟹ `NodeParams` 的默认；
+#:     · 悬停油门 `0.1589` 与导出量 `t_max = 46.3027 N` ⟹ `Z0Params` 的默认（2026-09-29 实测回填）。
+#:
+#: ⚠️ **唯一的偏离是 `tau_s`**：节点默认 `0.05`（= z0 实测 ≈50 ms），首飞冻结 **`0.0`**（不补偿，
+#:   [`phase2-implementation.md`](../../../docs/control/phase2-implementation.md) D9："过补偿比不补偿更危险"）。
+#:   ⟹ **换机 / 换档就改这一行**，别在用例里散着写；`test_冻结档的_tau_真的是_0_而不是节点默认的_0_05`
+#:   与 `test_preflight_check.py` 的那条守着它，改了会红。
+FROZEN_PARAMS: dict = {"tau_s": 0.0}
+
+
 def _scenario(start_dut: "bool | None" = None, **params) -> Scenario:
-    """一个 Phase 2 的场景：假 PX4 + 脚本化动捕 + 真的 DUT 子进程。
+    """一个场景：假 PX4 + 脚本化动捕 + 真的 DUT 子进程。
+
+    ★★ **DUT 一律按首飞冻结档起**（`FROZEN_PARAMS`，见上）—— 这是 ticket `phase4/07` 的落点：
+      本文件从 Phase 4 起就是「**实机档**的 seam 1」，而不再是"Phase 2 的默认档"。
+      用例显式写的键**优先**（`{**FROZEN_PARAMS, **params}`）⟹ 探某个参数的用例照样能钉自己的值。
 
     ★ `start_dut` 是**台架的**开关（`Scenario.__init__`），不是 DUT 的 ROS 参数 —— 必须在这里
       摘出来转发。混进 `params` 的话 DUT 会以"未知参数"启动失败，而 `mpc_node` 的参数白名单
       恰好会把这件事**变成一条清楚的报错**（rclpy 自己不会因为多一个参数报错，所以它选择主动拒）。
       ⚠️ 第一手（2026-09-30）：写成 `**params` 一把抓时，`start_dut=False` 就是这样暴露的。
     """
-    return Scenario(dut=DUT, px4=True, mocap=True, params=params, start_dut=start_dut,
-                    dut_env=_dut_env())
+    return Scenario(dut=DUT, px4=True, mocap=True, params={**FROZEN_PARAMS, **params},
+                    start_dut=start_dut, dut_env=_dut_env())
 
 
 def _wait_dut_up(sc: Scenario, timeout_s: float = STARTUP_S) -> None:
@@ -1122,7 +1143,9 @@ def test_A_档_有速度之后_tau_第一次在话题上可观测_配对差分()
     d = w_big - w_tiny
     w_need = _need_rate_toward((0.0, -1.0, 0.0))     # ENU：NED 北 +1 m/s ⟹ ENU 东 +1 ⟹ 该朝南
     k = float(d @ w_need) / float(w_need @ w_need)
-    print(f"\nτ=0.05 ⟹ ω={np.round(w_big, 4)}；τ=1e-6 ⟹ ω={np.round(w_tiny, 4)}；"
+    # ⚠️ 负控那一路标签**跟着实际值走**：2026-10-09 起跑的是 `0.0`（冻结值），不再是 `1e-6` 那个近似
+    #   —— 标签留旧会让失败诊断把人往"测的还是旧近似"上带（`/code-review` 2026-10-10 指出，本票顺手改）。
+    print(f"\nτ=0.05 ⟹ ω={np.round(w_big, 4)}；τ=0.0 ⟹ ω={np.round(w_tiny, 4)}；"
           f"差 {np.round(d, 4)}（k={k:+.4f}，期望方向 {np.round(w_need, 4)}）")
 
     assert k > 0.004, \
@@ -1130,6 +1153,44 @@ def test_A_档_有速度之后_tau_第一次在话题上可观测_配对差分()
         f"期望方向 {np.round(w_need, 4)}（k={k:+.5f}）—— 外推项没进指令？"
     assert float(np.linalg.norm(d - k * w_need)) < 0.3 * float(np.linalg.norm(d)), \
         f"两种 τ 的差不在一个方向上：差 {np.round(d, 4)}、k·w_need = {np.round(k * w_need, 4)}"
+
+
+def test_冻结档的_tau_真的是_0_而不是节点默认的_0_05():
+    """★ ticket [`phase4/07`](../../../.scratch/phase4/issues/07-seam1-rerun-real-params.md)：
+    本文件现在按**实机冻结档**起 DUT（`FROZEN_PARAMS`）—— 这条钉住**那个默认档真的生效了**：
+    `_scenario()` **不写** `tau_s` 时，τ 必须是 **`0.0`**（首飞冻结值），不是节点默认的 `0.05`。
+
+    ★ 为什么要单开一条：`test_A_档_有速度之后_tau_第一次在话题上可观测_配对差分` 与那两条
+      "推力低于悬停"的用例**都是显式**给 `tau_s` 的 ⟹ 它们证明的是"这个旋钮两端都动得起来"，
+      **不**证明"本文件的默认落在哪一端"。少了这条，把 `FROZEN_PARAMS` 从 `0.0` 改回 `0.05`
+      会**全绿** —— 而那正是"搬到真机后参数搬错"，本票要挡的就是它。
+
+    判据 = **配对差分**（做法与下面那条 A 档用例逐字相同，连阈值来源都一样）：
+      冻结档（**不写** `tau_s`，走 `FROZEN_PARAMS`） 对 **显式 `tau_s = 0.05`**（= 节点默认值，
+      也就是"搬错"时会变成的那个值）。同一注入速度下两者必须差在"外推该有的方向"上
+      （灵敏度实测 ≈ 0.46 (rad/s) / s 的 τ，推导见下一条用例）。
+    ★ 阈值**不写死读数**（沿用下一条的 `k > 0.004`），免得把实测的 `0.0232` 抄死。
+    """
+    def run(**params) -> np.ndarray:
+        with _scenario(state_source="px4", hold_offset_z=0.0, **params) as sc:
+            _wait_dut_up(sc)
+            _arm_and_offboard(sc)
+            sc.px4.set_velocity_ned(1.0, 0.0, 0.0)
+            sc.wait_for(lambda: len(sc.px4.published_frames("rates")) >= 15, timeout_s=10.0,
+                        message="注入速度后没攒到 15 帧 setpoint")
+            return _cmd_to_flu(sc.px4.published_frames("rates")[-1].msg)
+
+    w_default, w_frozen = run(tau_s=0.05), run()      # 顺序同下一条：先 0.05，后冻结档
+    d = w_default - w_frozen
+    w_need = _need_rate_toward((0.0, -1.0, 0.0))      # ENU：NED 北 +1 m/s ⟹ 该朝南
+    k = float(d @ w_need) / float(w_need @ w_need)
+    print(f"\nτ=0.05 ⟹ ω={np.round(w_default, 4)}；冻结档 {FROZEN_PARAMS} ⟹ "
+          f"ω={np.round(w_frozen, 4)}；差 {np.round(d, 4)}（k={k:+.4f}）")
+
+    assert k > 0.004, \
+        f"冻结档与 τ=0.05 差不出外推该有的量：差 {np.round(d, 4)}、期望方向 " \
+        f"{np.round(w_need, 4)}（k={k:+.5f}）—— `FROZEN_PARAMS` 里还是首飞冻结的 " \
+        f"`tau_s = 0.0` 吗（[first-flight-config.md] §2 的 N2）？"
 
 
 def test_A_档_垂直速度的外推_表现是推力低于悬停():
@@ -1157,7 +1218,11 @@ def test_A_档_垂直速度的外推_表现是推力低于悬停():
     z0 = Z0Params()
     hover = -z0.t_hover / z0.t_max
     min_delta = MIN_DELTA_THRUST_N / z0.t_max
-    with _scenario(state_source="px4") as sc:
+    # ★★ **显式钉 τ**（不跟 `FROZEN_PARAMS` 的冻结档 0.0）：本用例探的是**外推那一条通路**
+    #   （`x + v·τ`），而 τ = 0 时它是**恒等变换** ⟹ 读数里剩下的只有"OCP 要把 v 刹到 0"那一项
+    #   （与 τ 无关，见 `test_A_档_有速度之后_tau_第一次在话题上可观测_配对差分` 的机理段）。
+    #   不钉的话它会**照样绿**、却不再测外推 —— 那是本仓最恨的静默失效。
+    with _scenario(state_source="px4", tau_s=0.05) as sc:
         _wait_dut_up(sc)
         _arm_and_offboard(sc)
         sc.px4.set_velocity_ned(0.0, 0.0, -1.0)
@@ -1192,7 +1257,9 @@ def test_B_档_速度从_velocity_enu_进外推_表现为推力低于悬停():
     z0 = Z0Params()
     hover = -z0.t_hover / z0.t_max
     min_delta = MIN_DELTA_THRUST_N / z0.t_max
-    with _scenario() as sc:                       # 默认 = mocap 档（夹具 target='mocap'）
+    # ★★ **显式钉 τ = 0.05**：理由与上一条 A 档用例逐字相同（探的是外推通路，τ = 0 会让它恒等）。
+    #   状态源仍是默认的 mocap 档（夹具 `target='mocap'`）。
+    with _scenario(tau_s=0.05) as sc:
         _wait_dut_up(sc)
         # 接口面先钉一下：DUT 真的订上了**速度那条话题**（QoS 不兼容就不报错、只是永不匹配）
         assert sc.mocap_source.matched_velocity_subscribers() >= 1, \
