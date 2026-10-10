@@ -240,10 +240,15 @@ twist 的类型，它会红，提醒来补这条端到端测试。
 ## 7. 装桨之前的**静态自检**
 
 ```bash
-ros2 run nmpc preflight_check.py                     # 快档：20 项，< 1 s
-ros2 run nmpc preflight_check.py --solve             # 再加求解器那一档：23 项，实测 8.4 s
+ros2 run nmpc preflight_check.py                     # 快档：24 项，< 1 s
+ros2 run nmpc preflight_check.py --solve             # 再加求解器那一档：27 项，实测 ≈9 s
 ros2 run nmpc preflight_check.py -p mass:=0.82 -p hover_thrust:=0.55   # 与节点同一套 -p 写法
 ```
+
+★ **项数只当参考、别当契约**（2026-10-10 现跑更正：原写"20 项 / 23 项"）：Phase 2 之后自检加过检查，
+两个数都会随判据增删而变 —— 判"能不能装桨"看**退出码**（`0` = 全过），不看项数。
+⚠️ 现场那条流程还要带 `-p tau_s:=0.0`（不带则按节点默认 `0.05` 判），见
+[`first-flight-config.md`](first-flight-config.md) §5③ —— 上面三行是**用法示例**，不是现场命令。
 
 它回答的是**"我现在这一套参数能不能装上桨"**（测试回答的是"实现有没有被改坏"）
 ⟹ ① 按**运行参数**跑；② 结论打成清单；③ 任何一条不过就**退出码 1**（能直接串进起飞流程）。

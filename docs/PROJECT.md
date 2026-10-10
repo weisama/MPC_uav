@@ -516,6 +516,6 @@ PX4 官方 Offboard 文档明确标注了每种 setpoint 所需的**状态估计
 | [`reference/code-inventory.md`](reference/code-inventory.md) | ★★ **逐文件盘点（✅/🔶/❌ + 理由）+ 落到哪个包**（代码取舍的权威来源） |
 | [`control/phase1-implementation.md`](control/phase1-implementation.md) | ★★ **Phase 1 实施清单**（包与文件、话题接口、坐标系、FSM、轨迹与判据、参数核对、验证顺序、避坑清单、4 件物理操作）——**写 Phase 1 代码前先读它** |
 | [`control/bench-runbook.md`](control/bench-runbook.md) | ★★ **拆桨台架清单**（Phase 1 里**必须由人做**的那一薄层：前置参数、逐项步骤、判据、记录表、这些框各关哪张票）——**做台架时照它走**（ticket 08/09 都已落地；§7 的顺序表里涉及台架的那两步仍以本清单为准） |
-| [`assets/z0.params`](assets/z0.params) | **z0 的飞控参数文件**（928 行 / 914 条参数） |
+| [`assets/z0.params`](assets/z0.params) | **z0 的飞控参数文件**（⚠️ 行数/条数随现场重导出与说明头变化 —— **要数就现算**，别抄；出处与换档记录在该文件自带的说明头里） |
 | [`assets/papers/`](assets/papers/) | 6 篇参考文献 PDF + [中文索引](assets/papers/README.md)（命名规则、研究内容、用处） |
 | [`LOCAL-NOTES.md`](LOCAL-NOTES.md) | ⚠️ **含本机凭据（系统密码等）。作者 2026-09-18 决定随 `docs/` 入库**（private 仓库）。见该文件头部的风险须知 |

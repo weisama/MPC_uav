@@ -259,13 +259,15 @@ ros2 run nmpc mpc_node.py --ros-args -p tau_s:=0.0 # 与自检同一套 -p 写�
 
 ★ 本页**不修**别的票的文档（登记制）：发现的不一致写在这里 + 写进 ticket
 [`05`](../../.scratch/phase4/issues/05-first-flight-config-freeze.md) 的 Comments，由操作者裁定归属。
+✅ **2026-10-10**：操作者就下面这批**逐条裁定**（"都动，阈值不动" / "收进去"），前三条**已改**，
+归属与证据记在 ticket 05 的 Comments #9。
 
 | 位置 | 现状 | 冲突的事实 |
 |---|---|---|
 | [`params-changes.md`](../reference/params-changes.md) **§C1** | 写"只改一处 = **静默的推力增益错误**" | ☠️ **已就地更正（2026-10-09，本票）**：在 (C) 级这条路上飞控的 `MPC_THR_HOVER` **不缩放**我们发出的推力（`mc_rate_control/` 全库无命中）。危害是**真的**，但落在 HTE 的可行盒 / Position 模式回落 / 着陆判据上 —— 四条消费者的第一手证据在本页 §F6 明细 |
-| `docs/control/mpc-node-seam1.md:243-245` | 写"快档：**20 项** / `--solve`：**23 项**" | 现在快档是 **24 项**（第一手：`ros2 run nmpc preflight_check.py -p tau_s:=0.0` ⟹ "✓ 24 项全部通过"）。Phase 2 之后自检加过检查，这几行没跟着改 |
-| `src/nmpc/nmpc/preflight_check.py:240` | `MPC_XY_VEL_MAX = 12.0`（注释声称是"z0 飞控**现状**里的最大水平速度"） | 飞控**现状是 `2.0`**（F7；`z0.params:649` 现读 `2.0`，2026-09-23 写入）。⟹ 那条"位移上限须 > 飞控上限"的判据拿 `12` 比，而真值是 `2`（差 6×）。⚠️ **本票不改**：`phase2/issues/07` 的处置 ③ 明确保留过这个硬编码，改它是**推翻一个已复核的决定**，且方向是"更宽松"，不产生无故停发。同族还有 `src/nmpc/nmpc/node_core.py:213` / `src/nmpc/test/test_node_core.py:524` / `docs/control/mpc-node-fallback.md:149` / `docs/control/phase2-implementation.md:340` / `.scratch/phase2/issues/07:62` |
-| `docs/control/phase2-implementation.md` / `README.md` / `operation_manual.md` | 未登记本页 | 本页是 ticket 05 的产出，**尚未**从上面这些页回链。**是否加进 README 的目录树**由操作者定（那棵树是**有意收录的子集**，缺的 doc 不止本页一个） |
+| `docs/control/mpc-node-seam1.md:243-245` | 原写"快档：**20 项** / `--solve`：**23 项**" | ✅ **2026-10-10 已改**：现跑为 **快档 `24` 项 / `--solve` `27` 项**（`--solve` 实测墙钟 **≈9.0 s**；第一手 `ros2 run nmpc preflight_check.py [-p tau_s:=0.0]`）。★ 登记的只有快档那半，`--solve` 那半同样旧，一并改了；并加了一句"项数随判据增删而变、别当契约 —— 判'能不能装桨'看**退出码**" |
+| `src/nmpc/nmpc/preflight_check.py:240` | `MPC_XY_VEL_MAX = 12.0`（原注释声称是"z0 飞控**现状**里的最大水平速度"） | 飞控**现状是 `2.0`**（F7；`z0.params:649` 现读 `2.0`，2026-09-23 写入）。⟹ 那条"位移上限须 > 飞控上限"的判据拿 `12` 比，而真值是 `2`（差 6×）。✅ **2026-10-10 已改注释、值未动**（`phase2/issues/07` 处置 ③ 保留过这个硬编码，改它 = 推翻已复核决定，且方向"更宽松"不产生无故停发）。⚠️ 纯注释，**要 build 才进 `install/`**。同族**未动**（属别的票）：`src/nmpc/nmpc/node_core.py:227` / `src/nmpc/test/test_node_core.py:524` / `docs/control/mpc-node-fallback.md:149` / `docs/control/phase2-implementation.md:340` / `.scratch/phase2/issues/07:62`；★ 其中 `test_node_core.py:524` 也写着"（z0 飞控现状）" |
+| `docs/control/phase2-implementation.md` / `README.md` / `operation_manual.md` | 未登记本页 | 本页是 ticket 05 的产出。**是否加进 README 的目录树**：✅ **2026-10-10 裁定「收进去」，已加**（那棵树仍是**有意收录的子集**，别当全集）。⚠️ `operation_manual.md` 仍未回链本页 —— **未裁定**，留着 |
 
 ---
 

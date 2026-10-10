@@ -83,7 +83,8 @@
 │   │   ├── phase1-implementation.md  ★★ Phase 1 实施清单
 │   │   ├── bench-runbook.md          ★★ 拆桨台架清单（Phase 1 必须由人做的那一薄层）
 │   │   ├── phase2-implementation.md  ★★ Phase 2 实施清单（Phase 4 spec 引用它）
-│   │   └── mpc-roadmap.md            Phase 2 资料汇总（含 D1–D10）
+│   │   ├── mpc-roadmap.md            Phase 2 资料汇总（含 D1–D10）
+│   │   └── first-flight-config.md    ★★ **首飞配置冻结**（Phase 4/05）：飞控/节点参数逐条 + §5「起飞前人的动作」+ §6 已知会过期的数
 │   ├── reference/
 │   │   ├── code-inventory.md         ★★ 代码盘点与取舍
 │   │   ├── open-source-survey.md     开源项目调查（第一手 clone 核实）
@@ -95,7 +96,7 @@
 │   │   ├── refs-manifest.md          ★★ 参考仓库清单 + 钉住的 commit + §2.5 z0 固件版本判定
 │   │   └── hardware.md               硬件规格
 │   └── assets/
-│       ├── z0.params                 z0 飞控参数（928 行；★ 已与飞控真身逐条对账，见 issues/15）
+│       ├── z0.params                 z0 飞控参数（⚠️ **行数/条数随现场重导出与说明头变 —— 要数就现算，别抄**；★ 已与飞控真身逐条对账，见 issues/15）
 │       └── papers/                   6 篇参考文献 + 中文索引
 ├── run/                              ★ **人工启动层**：`z0.py` 交互菜单（起链 + 每步核对 +
 │                                          录制，含两条「一键」——全部程序 `up` / `up.sh`（起完把终端
