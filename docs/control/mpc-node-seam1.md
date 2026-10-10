@@ -424,3 +424,91 @@ python3 -m pytest src/nmpc/test/test_mpc_node.py -q      # 2026-10-10 实测 ≈
   `node_core.py`（本票改的**只有** `src/nmpc/test/test_mpc_node.py` 这一个测试文件）。
 - **没有**在真机上跑过（那是阶梯 1–4 的事，归 [`phase4/09`](../../.scratch/phase4/issues/09-ladder-ground-and-tether20.md)
   / [`phase4/10`](../../.scratch/phase4/issues/10-ladder-closed-loop-and-free-flight.md)）。
+
+---
+
+## 12. 真机链：成员、谁做什么、**三个未决**（2026-10-10 补）
+
+> **这一节为什么存在**：`run/z0.py` 起的全是 **Phase 1** 那条链（mavros → vrpn → mocap → traj + control），
+> **(C) 级的 `mpc_node` 没有入口**（`grep -rn 'nmpc\|mpc_node' run/` ⟹ 0 命中；`src/nmpc/` 下也没有 launch 文件）。
+> 于是 `phase4/08` 的「求解失败注入」「回退 (A) 级」两条演练、以及阶梯 1–4，都缺一份"怎么把它摆到台上"的说明。
+> **本节只写第一手能证的那部分**；三条查出来的空缺**点名留白**（它们是**查询结果**，不是我的裁定）。
+>
+> **判据不在这里** —— 判据在 [`../reference/px4-interface.md`](../reference/px4-interface.md) **§8「实飞前检查清单」**
+> （(C) 方案的 **12** 条勾选框：动捕 → Position 模式悬停 → `UXRCE_DDS_CFG` → 心跳 → 推力 `[-1,1]` 范围 → 角速率符号…）。
+> 本节补的是它没写的那一半：**谁起什么、按什么次序、以及哪些前置今天还不成立**。
+
+### 12.1 链的成员（与 Phase 1 的链**不是同一条**）
+
+| 进程 | 起法 | 它在这条链里干什么 |
+|---|---|---|
+| `MicroXRCEAgent` | `/usr/local/bin/MicroXRCEAgent …`（SITL 用 `udp4 -p 8888`，见 `tools/px4-sitl/run_sitl.sh:108`；端口默认 8888 在 `:24`） | `/fmu/*` 的桥。**节点与 PX4 之间唯一的下行通路**，缺它则帧发不出去 |
+| `vrpn_listener` | `ros2 launch vrpn_listener sync_entity_state.launch` | `/vrpn/<刚体>/pose` |
+| `mocap` | `ros2 launch mocap mocap.launch.py` | 同**一个**节点（`MocapRelPoseNode`）发 **三条**：`/mocap/pose_enu` 与 `/mocap/velocity_enu`（→ 给**节点**当测量，`mocap_rel_pose_node.cpp:132-134`）、`/mavros/vision_pose/pose`（→ 给 **EKF2**，`:130-131`）。★ 它还**订阅** `/mavros/state`（`:126`）—— 解锁上升沿切原点要用它 |
+| `mavros` | `ros2 launch mavros px4.launch fcu_url:=/dev/ttyTHS1:921600` | 节点**自己不**需要它；但 **EKF2 需要**（视觉位姿那条），且 `mocap` 的解锁边沿要靠它 |
+| `mpc_node.py` | `ros2 run nmpc mpc_node.py --ros-args -p tau_s:=0.0`（首飞冻结档，见 §11.1） | `/fmu/in/vehicle_rates_setpoint` + `/fmu/in/offboard_control_mode`（心跳） |
+| （前置闸门） | `ros2 run nmpc preflight_check.py -p tau_s:=0.0` | **必须 `exit 0` 才装桨**（`first-flight-config.md` §5 ③） |
+
+★ 节点的**完整**话题面（第一手，`mpc_node.py:476-506`）。**两处订阅是有条件的**，都得看参数档：
+
+- **订阅**：`/mocap/pose_enu` + `/mocap/velocity_enu`（默认档 `state_source:=mocap`）；
+  **`/fmu/out/vehicle_status`（无条件，与两个档位都无关）**；
+  `/traj/reference` **只在 `reference_source:=traj` 时**才订 —— 而**默认是 `hold`**（`mpc_node.py:328`）
+  ⟹ **首飞冻结档（只给 `-p tau_s:=0.0`）下这条不订**。
+  （`state_source:=px4` 时把测量换成 `/fmu/out/vehicle_local_position` + `/fmu/out/vehicle_attitude`。）
+- **发布**：`/fmu/in/vehicle_rates_setpoint`、`/fmu/in/offboard_control_mode`、`/mpc/predicted_path`、`/mpc/reference`。
+
+### 12.2 ★★ 节点**不**做两件事（第一手，别指望它）
+
+1. **不解锁、不切模式**。`mpc_node.py` 的 publisher 只有上面那 4 条，**没有 `VehicleCommand`**
+   （`grep -n 'VehicleCommand' src/nmpc/nmpc/mpc_node.py` ⟹ 0 命中；对照 `src/nmpc/nmpc/offboard_smoke.py:112` 有）。
+   ⟹ 它只发**心跳**，等**别人**把 PX4 弄到「已解锁 + OFFBOARD」；在那之前一帧都不发
+   （`node_core.py:213-214`：`warmup_cycles` 的定义就是「收到 armed + OFFBOARD **之后**先解这么多次，**不发**」）。
+2. **不认"任务"**。没有 Phase 1 那种状态机 —— "这一趟飞行"从哪开始、到哪结束，它不知道
+   （`node_core.py:204-206`：「本节点**不是**任务状态机，它不认识"这一趟"是什么；"任务放弃"归 `control`（Phase 1）那一侧」）。
+
+### 12.3 三个未决（每条都是查出来的空缺，**归属要人裁定**）
+
+**① ⛔ uXRCE-DDS 链路在 z0 上不存在 —— 今天整条 (C) 级下行是断的。**
+
+- 第一手：`UXRCE_DDS_CFG = 0`（禁用），**今天**的导出 `bag/z0-params-2026-10-10.params:913` 与
+  `docs/assets/z0.params:949` 两次都读 `0`；且**没有任何串口分给它**
+  （[`params-changes.md`](../reference/params-changes.md) §E1：`MAV_0_CONFIG = 101` TELEM1、
+  `MAV_1_CONFIG = 102` Onboard **被 mavros 占着**、`MAV_2_CONFIG = 0`）。
+- 后果：`mpc_node` 发出去的 `vehicle_rates_setpoint` **到不了 PX4**；连它订阅的 `/fmu/out/vehicle_status`
+  也没有 ⟹ 闸门永远不开。
+- ⟹ **`phase4/08` 的「求解失败注入」在真机上今天做不了**（它要的正是这条链）；「回退 (A) 级」里
+  "Phase-1 链还在"那一半可以验，(C) 级那一半不行。
+- ⚠️ §E1 当年把它标成"★ Phase 2 阻塞"，但**全仓 `.scratch/` 里没有任何一张票认领它**（`grep -rn UXRCE_DDS_CFG .scratch/` ⟹ 只有 `phase1/15` 的一张对账表提到）。**归属待定。**
+
+**② ⛔ "谁解锁、谁切 OFFBOARD" 没有归属。**
+
+- 由 §12.2，节点不干这件事；而 SITL 里干这件事的是一个**测试夹具**里的节点
+  （`tools/px4-sitl/verify_tier_a_hover.py:279` 的 `ArmAgent`：先 `ARM_DISARM`、`armed` 之后 `DO_SET_MODE`）。
+- 真机上两条候选：**(a)** QGC 手动解锁 + 手动切 OFFBOARD；**(b)** 写一个小的 arm 助手（把 `ArmAgent` 搬出来）。
+- ★ **但"搬出来"的活已经有人干过大半**：`src/nmpc/nmpc/offboard_smoke.py`（ticket 05 的冒烟节点，见其文件头）
+  **本身就是**一条「先发心跳 ≥1 s → 解锁 → 切 OFFBOARD」的完整实现（`:289` / `:294`，
+  publisher 在 `:112`），且它与 `ArmAgent` 的机制**逐字同源**（`ArmAgent` 的 docstring 自己这么写的）。
+  ⟹ ② 不是"从零写"，而是"**挑哪一份、放在链的哪个位置、由谁起**"——这个仍然没人裁定。
+- ⚠️ **注意与 Phase 1 的冲突**：Phase 1 的 `control` 把"QGC 手动解锁"判成**外部解锁 ⟹ 停发**
+  （`bench-runbook.md` 的「已删：台架专用缝 `own_arming`」）。那是 `control` 自己的语义，**与 (C) 级链无关** ——
+  但两条链共用同一架飞机，**别把两套纪律混着记**。
+- **归属待定**（阶梯 1 要"只给 ±小角速率、目视电机转速差"，那一步同样需要先解锁 + OFFBOARD）。
+
+**③ 两条链互斥 —— 一次只跑一条。**
+
+| | 下行话题 | 谁在发 |
+|---|---|---|
+| (A)/(B) 级（Phase 1） | `/mavros/setpoint_raw/local` | `control`（+ `traj` 给参考） |
+| (C) 级（Phase 4） | `/fmu/in/vehicle_rates_setpoint` | `mpc_node` |
+
+话题不同，但**两条都喂 PX4 的 OFFBOARD** ⟹ 同时跑 = 两个驾驶员。
+**「回退 (A) 级」的**切换动作**就落在这里**：停 `mpc_node` → 起 Phase-1 链（`run/z0.py up`）→
+盯 `/control/state` 回来。⚠️ **这一步本身没有成文流程**（`phase4/08` 要的"切换动作演练到位"就是它）。
+
+### 12.4 本节**没证明**什么
+
+- **没有**起过、没有跑过真机：上面的命令是**从仓库里现读出来的**（launch 文件、节点源码、`run/README.md`），
+  不是实测过的次序。**首次起链时要按 §8 的清单逐条对，而不是照抄本节**。
+- §12.3 的三条是**查询结果**（"仓库里没有"），**不是**"这件事做不到"的证明 ——
+  ① 只要给一个串口 + 把 `UXRCE_DDS_CFG` 指过去就成立；② 只要有人裁定做法就成立。
