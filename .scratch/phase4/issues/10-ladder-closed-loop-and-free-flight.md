@@ -19,7 +19,7 @@ Type: task
 ## 阶梯 4 —— 自由飞
 
 - [ ] 按 Phase 1 的**同一套三条轨迹**（1 m 悬停 / 1 m 正方形 / 1 m 八字 —— ★ 2026-10-08 八字由 0.5 m 放大到 1.0 m）验证 —— 使 MPC（模型预测控制）与 (A) 级有一个**同口径的对比**
-      ⚠️ 两边必须飞**同一条参考**：已入库的 (A) 级八字包是 0.5 m 的，放大后要 (A) 级也补录一条 1.0 m（见 [phase2 ticket 27](../../phase2/issues/27-lemniscate-doubled-and-downstream-labels.md)）
+      ⚠️ 两边必须飞**同一条参考**：09-29 那份 (A) 级八字包是 0.5 m 的，而 **1.0 m 的那条已于 2026-10-08 录成**（`bag/5_traj3_lemniscate`，参考包络 2.000 × 1.000 m）⟹ 直接用它当 (A) 级基线，**不必再补录**（见 [phase2 ticket 27](../../phase2/issues/27-lemniscate-doubled-and-downstream-labels.md)）
 - [ ] 三条轨迹都能完成，**不撞地、不失控**
 - [ ] 稳态位置误差与 Phase 1 的 (A) 级**同口径对比**并留档（数值 + 条件），不是"看起来差不多"
 - [ ] 阈值用 [06](06-ladder-acceptance-criteria.md) 定稿的量化值
