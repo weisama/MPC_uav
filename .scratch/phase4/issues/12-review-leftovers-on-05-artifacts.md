@@ -17,11 +17,16 @@ Type: task
 剩下 5 条**逐条回代码核过**，记在下面。★ 每条都带**核实方式**，不是转述审查意见
 （仓库纪律：「复核意见也当假设验」）。
 
-- [ ] **#1** `tools/fcu-params/params_from_serial.py:120` —— 用**未去重**的 `got` 当完成条件
-- [ ] **#2** `tools/hover-thrust/thrust_curve_check.py:107` —— `affine_r2` 的 `ValueError` 一路冒泡成 traceback
-- [ ] **#3** `docs/control/first-flight-config.md:269` —— 行号引用 `preflight_check.py:240` 已失效（实为 `:252`）
-- [ ] **#4** `docs/control/first-flight-config.md:202` —— K2 行把本票**新增**的 `-0.01` 写成「既有的」
-- [ ] **#5** `tools/fcu-params/test_params_from_serial.py:23` —— 注释标「2026-09-29」，但那份基准 2026-10-10 已被替换
+- [x] **#1** `tools/fcu-params/params_from_serial.py:120` —— 用**未去重**的 `got` 当完成条件
+- [x] **#2** `tools/hover-thrust/thrust_curve_check.py:107` —— `affine_r2` 的 `ValueError` 一路冒泡成 traceback
+- [x] **#3** `docs/control/first-flight-config.md:269` —— 行号引用 `preflight_check.py:240` 已失效（实为 `:252`）
+- [x] **#4** `docs/control/first-flight-config.md:202` —— K2 行把本票**新增**的 `-0.01` 写成「既有的」
+- [x] **#5** `tools/fcu-params/test_params_from_serial.py:23` —— 注释标「2026-09-29」，但那份基准 2026-10-10 已被替换
+
+★ 上面各条的**行号是发现时（2026-10-10 施工前）的定位**，不是改完之后的 —— 尤其 #1：
+那条 `break` 条件现在是 `params_from_serial.py:127` 的 `indices_complete(seen_idx, count)`
+（原 `:120` 的 `if count and got >= count`）。
+★ 追溯请按**文件 + 函数/改动**，别按这里的行号 —— 本票 #3 修的正是这一类悬空引用。
 
 ---
 
@@ -133,12 +138,108 @@ Z0_EXPORT = Path(__file__).resolve().parents[2] / "docs/assets/z0.params"
 
 ## 本票**没做**的
 
+> ☠️ **2026-10-10 作废本节第 3 条**（下面逐项点名）—— 本节写于**登记时**，本票当日已施工：
+> · 第 1 条（不碰 05 那张 `done` 票）—— **仍成立**；
+> · 第 2 条（不碰 07 的产物）—— **仍成立**；
+> · 第 3 条「**没有**动上面 5 个文件里的任何一个字节」—— ☠️ **不再成立**：5 条缺陷已在本次全部落地，
+>   改了 7 个文件。以文末 Comments 为准。**留着原句是为了不抹掉登记时的状态**。
+
 - **没有**改 [05](05-first-flight-config-freeze.md) 的票面去加"未决事项"回链 ——
   `triage-labels.md` 要求 `done` 票点名未决项，但那要动**已收口票**，留给操作者定。
 - **没有**碰 07 的任何产物（07 自己的第 6 条已当场改完）。
-- **没有**动上面 5 个文件里的任何一个字节。
+- ~~**没有**动上面 5 个文件里的任何一个字节。~~ ☠️ 见上（2026-10-10 施工后已不成立）。
 
 ---
 
 **为什么是 `ready-for-agent`**：5 条全是纯软件（注释/文档/工具健壮性），台上可跑、不需通电。
 `Status` 由 07 收口时**提议**，操作者可随时改判 —— 「归谁」是操作者保留的裁定。
+
+---
+
+## Comments
+
+### 2026-10-10 —— 5 条全部落地（`/implement`，本机 Orin NX）
+
+**改了 7 个文件**：5 处缺陷里 #3/#4 同一份文档，另有 2 个测试文件 + `params_core.py`（#1 的纯函数落点）。
+
+| # | 落点 | 改法 |
+|---|---|---|
+| 1 | `tools/fcu-params/params_from_serial.py` ＋ `params_core.py` | 完成条件换成新纯函数 `indices_complete(seen_idx, count)`（按**去重后索引**判满，与 `Collected.complete` 同一把尺）；`got` 只留作进度打印 |
+| 2 | `tools/hover-thrust/thrust_curve_check.py` | `analyse_ulog` 里在**拟合之前**加一道与既有一道对称的闸门：`control` 通道严格恒定 ⟹ 报**带通道号**的 `SystemExit`（见下节） |
+| 3 | `docs/control/first-flight-config.md:269`（**含同族 `:104`**） | 悬空行号重指：`:240` ⟹ `:252`、`:236-240` ⟹ `:236-252`（行号是 05 把那段注释加长后漂的，值本身没动） |
+| 4 | `docs/control/first-flight-config.md:202` | 「既有的 `-0.01`」⟹ 写明**两条都是本票新增**（`4a4d6be` 的 hunk 里两行都是 `+`；那一档此前**只有 `0.5`**） |
+| 5 | `tools/fcu-params/test_params_from_serial.py:23` | 不再写死日期，改指该文件**自己的说明头**（路径一直没变、文件换过两档 ⟹ 写死日期正是上一版出错的机制） |
+
+### #2 的票面描述有一处**与实测不符** —— 已按实测实现
+
+票面原文：「窗口里恰好有一路电机 `output`（**或** `control`）是常量 ⟹ … 直接冒泡成 traceback」。
+回代码核出**前半句不成立**：`analyse_ulog:325-327` 那道「四路输出都在动」的闸门**先**就把它拦了
+（`max-min > 1.0` 判活），报的是干净的 `SystemExit`。用合成数据跑真调用实测两种形状：
+
+| 形状 | 实测 |
+|---|---|
+| `control` 与 `output` **都**恒定（真日志里"某电机没参与"的自然形态） | 已被 `:325-327` 拦成 `SystemExit("✗ 只有 3 路输出在动…")` |
+| `control` 恒定、`output` 抖 >1 count（要合成才造得出） | ✅ 票面这条成立：`ValueError: xs 是常数…` 从 `:107` 冒泡成栈 |
+
+⟹ 修法按第二种来，且**必须放在拟合之前** —— 接住异常不行：常量 `control` 会让每个输出的 4 个候选
+**各抛一遍**，报出来的"哪一路"取决于先扫到谁。新闸门判据取**严格恒定**（`max == min`），
+比"会抛那个异常"**略宽**：`sxx` 是按均值算的，全等的一组数在浮点下 `sum/n` 未必逐位回到原值
+（实测 `[0.1]*3` ⟹ `sxx ≈ 5.8e-34 ≠ 0.0`，此时不抛）。两种情形结论相同，一并拦掉。
+
+★ **#2 的归属**：开工前 02 还是 `ready-for-human`（未收口），票面要求先问一句 ——
+**2026-10-10 操作者裁定「本票就改」**，02 的票面保持不动。
+
+### 变异测试（纪律：新断言要主动弄坏一次）
+
+| 把生产代码改回原样 | 该变红的断言 | 实测 |
+|---|---|---|
+| `if indices_complete(seen_idx, count)` ⟹ `if count and got >= count` | `test_params_from_serial.py::test_pull_params_不被重传骗到而提前收手` | ✅ 红 |
+| 删掉 `still = [… max == min …]` 那道闸门 | `test_thrust_curve_check.py::test_一路control没激励时_报干净的SystemExit而不是栈` | ✅ 红（冒出来的正是 `:107` 那条 `ValueError`） |
+| **删掉整句 `break`** | 同上（靠 `recv_match_calls == 4` 那一半） | ✅ 红（那次跑了 5.4 s，正是空转到超时的指纹） |
+| 尺子改成数个数：`not _missing(...)` ⟹ `len(seen) >= expected` | `test_params_core.py::test_读满判据_数个数会漏掉_个数够但覆盖不齐` | ✅ 红 |
+
+★ #1 的测试**分两层**：`test_params_core.py` 钉那把**尺子**，`test_params_from_serial.py`
+钉**它被用上了**（脚本化假链路，不开串口、不要串口权限）—— 只钉尺子的那层，挡不住"尺子对而没接上"这类回归。
+★ 后两条是**复核轮补的**（第 ④ 条意见说前一版分不出"读完就 break"与"根本没有 break"）—— 见下。
+
+### 全量测试（`/implement` 的最后一关）
+
+| 面 | 命令 | 读数 |
+|---|---|---|
+| `tools/` 六个**收得到**的子目录（点名） | `pytest tools/battery-thrust tools/fcu-params tools/hover-thrust tools/ladder-baseline tools/sign-map tools/tau-analysis -q` | **161 passed** |
+| `src/nmpc/test` | `source install/setup.bash` + `ACADOS_SOURCE_DIR=$HOME/acados` 后跑 `pytest test -q` | **221 passed**（8m42s） |
+| `run/tests/` 逐文件 | `pytest run/tests/test_<名>.py -q` | 5 ＋ 80 ＋ 66 passed、1 skipped（`test_z0_check_live`） |
+
+⚠️ **两条环境坑，与本次改动无关**，但下次跑全量会撞上（**2026-10-10 实测**）：
+
+1. **`pytest tools`（目录形式）一条都收不到** —— 不是"全绿"：ROS 的 `launch_testing` 插件在从 `tools/`
+   递归时把收集吞了（同一棵树下**逐子目录点名**收到 161 条）。`-p no:launch_testing` 也不行 ——
+   它会打断 `launch_testing_ros_pytest_entrypoint`。
+2. `src/nmpc/test` 不 source 工作区时 `ModuleNotFoundError: No module named 'px4_msgs'`
+   （要 `source install/setup.bash`；`ACADOS_SOURCE_DIR` 另算，见仓库纪律）。
+
+### 复核轮（`/code-review`，`high`）—— 报 6 条：**采纳 4 条、驳回 2 条**
+
+报告收 6 条，逐条回代码核实（纪律：复核意见也当假设验；★ 我自己关于代码的断言同理）：
+
+| 意见 | 核实 | 处置 |
+|---|---|---|
+| ① `indices_complete` 与 `collect_params` 各写一遍同一条规则 ⟹ docstring 说的"同尺"没有构造上的保证 | 属实（两处都是 `set(range(expected)) - seen`） | ✅ 抽出 `params_core._missing()`，**两处都调它**（同 `K3` 的先例：一处定义才是真的同一把尺） |
+| ② `expected` 为负时 `indices_complete` 返回 `True`（`range(-1)` 是空集 ⟹ 差分空） | 属实：实测 `indices_complete(set(), -1) is True` | ✅ 加 `expected < 0 ⟹ False` |
+| ③ docstring 声称与 `Collected.complete` 同尺，但 `expected == 0` 时两边结论**相反** | 属实：实测那边 `True`、这边 `False` | ✅ **改文档不改代码** —— 循环这侧判 `True` 会在**第一条**消息上就 `break`，所以分歧是**要**的；已在 docstring 里点名，不再说"同尺" |
+| ④ 新测试分不出"读完就 `break`"与"根本没有 `break`" | 属实：删掉 `break` 后循环只是空转到超时，而收齐的参数照样齐 ⟹ 旧断言全绿 | ✅ 假连接加 `recv_match_calls` 计数并断言 `== 4`；已用"删掉 `break`"变异验红 |
+| ⑤ `pytest tools`（目录形式）收不到用例 | 属实，但**与本次改动无关**（ROS `launch_testing` 插件） | ⛔ 不属本票，只在上面"全量测试"节登记读数 |
+| ⑥ `indices_complete` 每次重建 `set(range(expected))` ⟹ 全读 O(params²) | 属实（z0 ≈911 条 ⟹ 全程约 83 万次集合插入），**但**常数极小、N 有界：串口那一趟是秒级，多出来的是毫秒级 | ⛔ **不改** —— 为它加缓存会把"一处定义"这条更值钱的纪律弄脏；登记在此，不装作没看见 |
+
+★ 复核同时确认了几件正面的事（不必再验）：两处新行号 `preflight_check.py:252` / `:236-252` **指得准**、
+`z0.params:649` 仍是 `2.0`、`-0.01` 与 `0.2` 确实**都是** `4a4d6be` 新加的。
+
+### 本票**没做**的
+
+- **没有**动 [02](02-hover-thrust-backfill.md) 的票面（#2 改在**本票**里；要不要往 02 加一条回链归操作者）。
+- **没有**动 [05](05-first-flight-config-freeze.md) 那张 `done` 票去补"未决事项"回链（票面自己说留给操作者）。
+- **没有**碰 07 的任何产物。
+- **没有**把上面那两条环境坑写进任何 README —— 那是别处的账，只在这里登记读数。
+- **没有**把 `Collected.complete` 在 `expected == 0` 上的 `True` 对齐过来（复核 ③ 顺带发现）——
+  它只落在"飞控自报 0 条"这种非法自报值的**报告**那一侧，且是既有行为；改它会动 `params_core`
+  的公开属性，超出本票 5 条的边界。**已在该分歧处（`indices_complete` 的 docstring）点名**。

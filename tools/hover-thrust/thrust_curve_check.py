@@ -326,6 +326,22 @@ def analyse_ulog(u, path: str, fac_ref: float = FAC_REFERENCE,
     if len(active) != N_MOTORS:
         raise SystemExit(f"✗ 只有 {len(active)} 路输出在动（应为 {N_MOTORS}）⟹ 认不出电机输出")
 
+    # 变动的**控制**通道数 —— 上面那道闸门只看 `output`，这里补上它管不着的那一半。
+    # ★ 为什么必须**在拟合之前**判：常量 `control` ⟹ `curve_inverse` 出来的是常值 ⟹
+    #   `affine_r2` 的 `sxx == 0.0` 抛 `ValueError("xs 是常数 …")`。那句话本身是清楚的，
+    #   但它是从 `mean_r2` → `best_fac` / `infer_mapping` 里冒出来的一串**栈** ——
+    #   与本文件其它失败路径（缺话题、缺字段、样本太少）清一色 `SystemExit` 的体例不一致。
+    # ★ 而且**不能**改成接住那个异常：常量 `control` 会让每个输出的候选**全部**抛一遍，
+    #   "哪一路"取决于先扫到谁 —— 只有在这里判才指得准。
+    # ⚠️ 判据是**严格恒定**（`max == min`），比"抛出那个异常"略宽：`sxx` 是按均值算的，
+    #   全等的一组数在浮点下 `sum/n` 未必逐位回到原值，于是偶尔 `sxx > 0` 而不抛。
+    #   两种情形结论一样（这一段没有激励）⟹ 在这里一并拦掉。
+    still = [i for i in range(N_MOTORS) if max(ct_w[i]) == min(ct_w[i])]
+    if still:
+        raise SystemExit(
+            f"✗ {'、'.join(f'control[{i}]' for i in still)} 在这段窗口里是常量（没有激励）"
+            "⟹ 认不出这一路的曲线（这一段它没参与控制？）")
+
     if mapping is None:
         by_out = {j: [(ct_w[i], ot_w[j]) for i in range(N_MOTORS)] for j in range(N_MOTORS)}
         mapping = infer_mapping(by_out, fac_ref)

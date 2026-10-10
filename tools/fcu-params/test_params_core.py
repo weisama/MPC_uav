@@ -18,7 +18,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from params_core import (  # noqa: E402
     MAV_PARAM_TYPE_INT32, MAV_PARAM_TYPE_REAL32, MAV_PARAM_TYPE_UINT32,
     ExportParseError, Param, collect_params, decode_export, decode_param_value, diff,
-    parse_qgc_export, same_value,
+    indices_complete, parse_qgc_export, same_value,
 )
 
 
@@ -254,6 +254,71 @@ def test_汇总_没有param_count就不敢判完整():
     c = collect_params([_msg("A", _bit(1), MAV_PARAM_TYPE_INT32, 0, None)])
     assert c.expected is None
     assert not c.complete
+
+
+def test_读满判据_按去重后的索引算_重传不算进度():
+    """★★ 这条钉的是 `pull_params` 那个 `break` 条件 —— 串口那半边唯一能离线钉的一处。
+
+    它和 `Collected.complete` **必须是同一把尺**（按 `param_index` 覆盖判），
+    因为两者是同一件事的两个时刻：前者决定"还收不收"，后者决定"报不报没收全"。
+    尺子不一致时，`break` 会在"某条真参数还在路上"时提前发生 ⟹
+    紧接着的那句"⚠️ 没收全 … 缺的 param_index 是 […]"就成了**假警报**
+    （看着像飞控删了参数）。
+    """
+    # 应收 12 条：0–10 到了、11 还在路上，其中第 5 条**重传过一次** ⟹ 消息数已经 12。
+    seen = set(range(11))
+    msg_count = len(seen) + 1
+    assert msg_count >= 12, "重传让消息数先攒满 —— 这正是旧判据被骗的方式"
+    assert not indices_complete(seen, 12), "重传不是进度：还差 index 11"
+    assert indices_complete(seen | {11}, 12)
+
+
+def test_读满判据_没自报条数就不敢说满了():
+    """`count` 缺席（`None`）或不为正时**不许**判满 —— 没依据就别说"可以收手了"。
+
+    ⚠️ 这一档 `Collected.complete` **不一样**（`expected == 0` 时它判 complete）——
+       两者不共用那条 `expected` 门槛，只共用 `[0, expected)` 的覆盖规则。
+       循环这侧必须更保守：自报 0 条时判满 = 在**第一条**消息上就 `break`。
+    """
+    assert not indices_complete(set(), None)
+    assert not indices_complete(set(), 0)
+    assert not indices_complete(set(range(5)), None)
+    assert not indices_complete(set(), -1), "负数是非法的自报值，不能兜底成 True"
+
+
+def test_读满判据_多收了几条也不卡住():
+    """索引覆盖到 `[0, expected)` 就够了；多出来的（若有）不该让循环一直等到超时。"""
+    assert indices_complete({0, 1, 2, 99}, 3)
+
+
+def test_读满判据_数个数会漏掉_个数够但覆盖不齐():
+    """★ 判据必须是**覆盖**，不是**个数** —— 这一例两者给相反的答案：
+    收到了 3 个索引、个数与 `expected` 相等，但 `[0, 3)` 里缺 `0`（多了个越界的 `3`）。
+    数个数会说"满了"、覆盖会说"没满"，而缺的那条真参数在链路里。
+    """
+    assert not indices_complete({1, 2, 3}, 3)
+
+
+def test_读满判据_与事后报告同源_在自报条数为正时逐例一致():
+    """★★ 「同一把尺」这句话得**可核**：同一批消息喂给两边，结论必须一样。
+
+    `expected` 为正时，`indices_complete` 与 `Collected.complete` 必须逐例相等 ——
+    前者决定"还收不收"，后者决定"报不报没收全"；两者分歧就是那种"断在没断完的地方"的毛病。
+    """
+    cases = [
+        [_msg("A", _bit(1), MAV_PARAM_TYPE_INT32, 0, 3),
+         _msg("B", _bit(2), MAV_PARAM_TYPE_INT32, 1, 3),
+         _msg("C", _bit(3), MAV_PARAM_TYPE_INT32, 2, 3)],
+        [_msg("A", _bit(1), MAV_PARAM_TYPE_INT32, 0, 3),
+         _msg("B", _bit(2), MAV_PARAM_TYPE_INT32, 1, 3)],              # 缺 index 2
+        [_msg("A", _bit(1), MAV_PARAM_TYPE_INT32, 0, 2),
+         _msg("B", _bit(2), MAV_PARAM_TYPE_INT32, 0, 2),              # 重传
+         _msg("C", _bit(3), MAV_PARAM_TYPE_INT32, 1, 2)],
+    ]
+    for msgs in cases:
+        c = collect_params(msgs)
+        seen = {m[3] for m in msgs if m[3] >= 0}
+        assert indices_complete(seen, c.expected) == c.complete, f"两边对 {c} 的判断不一致"
 
 
 def test_对账_枚举型参数按原样字符串比():

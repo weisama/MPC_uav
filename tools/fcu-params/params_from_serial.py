@@ -47,7 +47,7 @@ from params_core import (  # noqa: E402  （同目录，先插路径再 import�
     MAV_PARAM_TYPE_INT32 as INT32, MAV_PARAM_TYPE_REAL32 as REAL32,
     MAV_PARAM_TYPE_UINT32 as UINT32,
     ExportParseError, Param, collect_params, decode_export, decode_param_value, diff,
-    parse_qgc_export, same_value,
+    indices_complete, parse_qgc_export, same_value,
 )
 
 #: 本仓库定案的那条链路。命令行可以覆盖，但默认值就是它。
@@ -78,6 +78,11 @@ def pull_params(port: str, baud: int, timeout_s: float,
        —— 它不是参数、QGC 导出里也没有。混进来就会在"飞控多出"那一栏冒充一条新增参数。
     ③ **完整性按 `param_index` 数，不按名字数**。名字会重（重了就说明**重传过**），
        按 `len(dict)` 数两者都看不出来；按索引数才能同时报出"缺哪几个索引"与"哪几条重了"。
+       ★ 这一条**同样管循环里那个 `break`**（`indices_complete`）：拿**消息条数**当完成条件
+       会被重传骗到 —— 消息数先攒满、真参数还没到 ⟹ 提前 `break`，于是下面那句
+       "⚠️ 没收全"成了假警报。判据在 `params_core` 的 `_missing` 里**只写一遍**，
+       `indices_complete` 与 `Collected.complete` 都走它（`expected == 0` 那一档**故意不同**，
+       理由见 `indices_complete` 的注解）。
     """
     from pymavlink import mavutil  # 延迟 import：`--self-test` 不需要 pymavlink（也就不用串口权限）
 
@@ -98,7 +103,8 @@ def pull_params(port: str, baud: int, timeout_s: float,
         conn.mav.param_request_list_send(conn.target_system, conn.target_component)
 
         raw = []          # `(名字, 线上值, param_type, param_index, param_count)` —— 拆包，交给纯函数
-        got = 0
+        got = 0           # **消息**条数（含重传）—— 只用于进度打印，**不**当完成条件
+        seen_idx = set()  # 去重后的 `param_index` —— 完成条件只看它（见 `indices_complete`）
         t0 = time.time()
         while time.time() - t0 < timeout_s:
             msg = conn.recv_match(type="PARAM_VALUE", blocking=True, timeout=1.0)
@@ -115,9 +121,10 @@ def pull_params(port: str, baud: int, timeout_s: float,
             raw.append((pid, msg.param_value, int(msg.param_type), idx, count))
             if idx >= 0:
                 got += 1
+                seen_idx.add(idx)
             if not quiet and got and got % 50 == 0:
                 print(f"\r  收到 {got}/{count} 条…", end="", flush=True)
-            if count and got >= count:
+            if indices_complete(seen_idx, count):
                 break
         c = collect_params(raw)
         if not quiet:

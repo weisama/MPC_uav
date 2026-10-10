@@ -101,7 +101,7 @@
 在悬停（`acc_sp = 0`）时就是 `thrust_body[2] = −hover_thrust`。错的只是"改一处的后果落在哪"。）
 
 ⚠️ **没有任何自动化判据看得见它**：`preflight_check.py` 跑在 Jetson 上，**读不到飞控参数**，只读节点这一侧
-（`src/nmpc/nmpc/preflight_check.py:236-240` 那种"飞控参数的硬编码副本"是仓库已有的另一种写法，
+（`src/nmpc/nmpc/preflight_check.py:236-252` 那种"飞控参数的硬编码副本"是仓库已有的另一种写法，
 但那里抄的是**速度上限**）。⟹ F6 只能靠**写入 + 读回 + dump 对账**（§5 ①）。
 
 ---
@@ -199,7 +199,7 @@
 | # | 文件 | 改动 | 判据（会变红的那条断言） |
 |---|---|---|---|
 | **K1** | `src/nmpc/nmpc/mpc_node.py`（`_validate`） | `tau_s` 从"正的有限数"那个循环里**拿出来单独判**，区间改用 `node_core` 的常量 `[TAU_MIN_S, TAU_MAX_S)` | `test_mpc_node.py::test_tau_取_0_起得来_而负的与过大的仍然当场拒` —— **三半**：`0` 放行（冻结值）/ 负 τ 仍拒（反向外推）/ 端点 `0.2` 仍拒 |
-| **K2** | `src/nmpc/nmpc/preflight_check.py`（`check_params`） | 「外推 τ 在合理区间」的下界 `0.0 < tau_s` ⟹ **`TAU_MIN_S <= tau_s`**（**这一处只放宽下界，上界本来就是开的**） | `test_preflight_check.py::test_tau_取_0_是首飞冻结值_自检要放行`（正控）＋ 参数化负控新增 `tau_s = 0.2` 与既有的 `-0.01` |
+| **K2** | `src/nmpc/nmpc/preflight_check.py`（`check_params`） | 「外推 τ 在合理区间」的下界 `0.0 < tau_s` ⟹ **`TAU_MIN_S <= tau_s`**（**这一处只放宽下界，上界本来就是开的**） | `test_preflight_check.py::test_tau_取_0_是首飞冻结值_自检要放行`（正控）＋ 参数化负控**新增两条**：`tau_s = 0.2`（端点）与 `tau_s = -0.01`（反向）—— 那一档此前**只有 `0.5` 一条**（两条都是本票加的，见 `4a4d6be`） |
 | **K3** | `src/nmpc/nmpc/node_core.py` | 新增常量 **`TAU_MIN_S = 0.0` / `TAU_MAX_S = 0.2`**，`K1`/`K2` 都改为引用它们 | 复核意见：两处各写一遍字面量就是这次端点漂移的**成因**；一处定义后区间在构造上只有一份（端点 `0.2` 仍由测试里的字面量钉住） |
 
 **为什么两处是一件事**：`K1` 管"节点起不起来"，`K2` 管"装桨前那道闸门放不放行"。
@@ -266,7 +266,7 @@ ros2 run nmpc mpc_node.py --ros-args -p tau_s:=0.0 # 与自检同一套 -p 写�
 |---|---|---|
 | [`params-changes.md`](../reference/params-changes.md) **§C1** | 写"只改一处 = **静默的推力增益错误**" | ☠️ **已就地更正（2026-10-09，本票）**：在 (C) 级这条路上飞控的 `MPC_THR_HOVER` **不缩放**我们发出的推力（`mc_rate_control/` 全库无命中）。危害是**真的**，但落在 HTE 的可行盒 / Position 模式回落 / 着陆判据上 —— 四条消费者的第一手证据在本页 §F6 明细 |
 | `docs/control/mpc-node-seam1.md:243-245` | 原写"快档：**20 项** / `--solve`：**23 项**" | ✅ **2026-10-10 已改**：现跑为 **快档 `24` 项 / `--solve` `27` 项**（`--solve` 实测墙钟 **≈9.0 s**；第一手 `ros2 run nmpc preflight_check.py [-p tau_s:=0.0]`）。★ 登记的只有快档那半，`--solve` 那半同样旧，一并改了；并加了一句"项数随判据增删而变、别当契约 —— 判'能不能装桨'看**退出码**" |
-| `src/nmpc/nmpc/preflight_check.py:240` | `MPC_XY_VEL_MAX = 12.0`（原注释声称是"z0 飞控**现状**里的最大水平速度"） | 飞控**现状是 `2.0`**（F7；`z0.params:649` 现读 `2.0`，2026-09-23 写入）。⟹ 那条"位移上限须 > 飞控上限"的判据拿 `12` 比，而真值是 `2`（差 6×）。✅ **2026-10-10 已改注释、值未动**（`phase2/issues/07` 处置 ③ 保留过这个硬编码，改它 = 推翻已复核决定，且方向"更宽松"不产生无故停发）。⚠️ 纯注释，**要 build 才进 `install/`**。同族**未动**（属别的票）：`src/nmpc/nmpc/node_core.py:227` / `src/nmpc/test/test_node_core.py:524` / `docs/control/mpc-node-fallback.md:149` / `docs/control/phase2-implementation.md:340` / `.scratch/phase2/issues/07:62`；★ 其中 `test_node_core.py:524` 也写着"（z0 飞控现状）" |
+| `src/nmpc/nmpc/preflight_check.py:252` | `MPC_XY_VEL_MAX = 12.0`（原注释声称是"z0 飞控**现状**里的最大水平速度"） | 飞控**现状是 `2.0`**（F7；`z0.params:649` 现读 `2.0`，2026-09-23 写入）。⟹ 那条"位移上限须 > 飞控上限"的判据拿 `12` 比，而真值是 `2`（差 6×）。✅ **2026-10-10 已改注释、值未动**（`phase2/issues/07` 处置 ③ 保留过这个硬编码，改它 = 推翻已复核决定，且方向"更宽松"不产生无故停发）。⚠️ 纯注释，**要 build 才进 `install/`**。同族**未动**（属别的票）：`src/nmpc/nmpc/node_core.py:227` / `src/nmpc/test/test_node_core.py:524` / `docs/control/mpc-node-fallback.md:149` / `docs/control/phase2-implementation.md:340` / `.scratch/phase2/issues/07:62`；★ 其中 `test_node_core.py:524` 也写着"（z0 飞控现状）" |
 | `docs/control/phase2-implementation.md` / `README.md` / `operation_manual.md` | 未登记本页 | 本页是 ticket 05 的产出。**是否加进 README 的目录树**：✅ **2026-10-10 裁定「收进去」，已加**（那棵树仍是**有意收录的子集**，别当全集）。⚠️ `operation_manual.md` 仍未回链本页 —— **未裁定**，留着 |
 
 ---

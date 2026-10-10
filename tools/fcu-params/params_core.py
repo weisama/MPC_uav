@@ -18,7 +18,7 @@ __all__ = [
     "MAV_PARAM_TYPE_INT16", "MAV_PARAM_TYPE_UINT32", "MAV_PARAM_TYPE_INT32",
     "MAV_PARAM_TYPE_UINT64", "MAV_PARAM_TYPE_INT64", "MAV_PARAM_TYPE_REAL32",
     "MAV_PARAM_TYPE_REAL64", "INT_PARAM_TYPES", "UNSIGNED_PARAM_TYPES",
-    "decode_param_value", "Collected", "collect_params",
+    "decode_param_value", "Collected", "collect_params", "indices_complete",
 ]
 
 #: 数值相等的**相对**容差。两边的来源不同、打印位数也不同：
@@ -224,9 +224,42 @@ def collect_params(msgs) -> Collected:
             dupes.append(name)
         params[name] = Param(name=name, text=text, value=value, ptype=ptype)
         indices.add(int(index))
-    missing = sorted(set(range(expected)) - indices) if expected else []
+    missing = sorted(_missing(indices, expected))
     return Collected(params=params, pseudo=pseudo, duplicates=sorted(set(dupes)),
                      expected=expected, missing_indices=missing)
+
+
+def _missing(seen_indices, expected: Optional[int]) -> set:
+    """`[0, expected)` 里**没收到**的索引（集合）。`expected` 缺席或不为正 ⟹ 空集。
+
+    ★ 这是**唯一**一处定义"收全了没有"的地方 —— `collect_params`（事后报告）与
+      `indices_complete`（在线 `break`）都调它。两处各写一遍就是漂移的成因
+      （本仓踩过一次：`node_core` 的 `TAU_MIN_S`/`TAU_MAX_S` 那对端点）。
+    """
+    if not expected or expected < 0:
+        return set()
+    return set(range(expected)) - seen_indices
+
+
+def indices_complete(seen_indices: set, expected: Optional[int]) -> bool:
+    """**可以收手了吗** —— 给串口那半边的**在线**判据（`pull_params` 每收一条问一次）。
+
+    判据与 `Collected.complete` **同源**：都走 `_missing` 那一条 `[0, expected)` 覆盖规则。
+    ⚠️ 但两者在 `expected == 0` 上**故意不一致**，别照"同一把尺"去读：
+      · `Collected.complete` 说 `True`（它只问 `expected is not None`）；
+      · 这里说 `False` —— 飞控自报"0 条"是个没依据的值，此刻**收手**会让这次读取
+        在第一条消息上就 `break`，把"还没开始"当成"读完了"。
+    宁可让循环等到超时（随后照常报"没收全"），也不在此处下这个结论。
+    （`Collected.complete` 那一侧的行为是既有的，本函数不去对齐它。）
+
+    ⚠️ 判据**不能**用"收到了多少条消息"。同一条 `PARAM_VALUE` 被重传一次，消息数 +1、
+      真参数一条没多（`Collected.duplicates` 单记一栏就是为此）⟹ 数消息数会在
+      "某条真参数还在路上"时提前判满，把一次正常的重传变成一条**假警报**：
+      "⚠️ 没收全 … 缺的 param_index 是 […]"，读起来像"飞控把这个参数删了"。
+    """
+    if not expected or expected < 0:
+        return False
+    return not _missing(seen_indices, expected)
 
 
 def same_value(a: Optional[float], b: Optional[float]) -> bool:
