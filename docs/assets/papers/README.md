@@ -35,7 +35,7 @@
 
 **★ 对本项目最关键的一句**：两者**加上内环 INDI + 气动阻力模型**之后，**跟踪误差降低 78 % 以上**。
 
-**用在哪**：这是本项目 `(C) → (C)+INDI` 演进路线的**直接依据**。它同时说明了两件事：(1) 外环用 MPC 是合理的；(2) **内环用 INDI 能把整体误差再降一大截**。
+**用在哪**：这是本项目 `(C) → (C)+INDI` 演进路线的**直接依据**。它同时说明了两件事：(1) 外环用 MPC（模型预测控制）是合理的；(2) **内环用 INDI 能把整体误差再降一大截**。
 
 ---
 
@@ -48,11 +48,11 @@
 | 作者 | Philipp Foehn 等（ETH Zürich / UZH-RPG） |
 | 出处 | Science Robotics, Vol. 7, Issue 67, 2022 |
 
-**主要研究内容**：一套**软硬件协同设计**的开源敏捷四旋翼平台。硬件上给出完整的机体设计与选型；软件上提供统一接口，**同时支持模型控制器（MPC、几何控制、PID、INDI）和神经网络控制器**，以便在同一平台上公平对比不同方法。实测可达 **5 g 加速度 / 70 km/h** 的轨迹跟踪。
+**主要研究内容**：一套**软硬件协同设计**的开源敏捷四旋翼平台。硬件上给出完整的机体设计与选型；软件上提供统一接口，**同时支持模型控制器（模型预测控制、几何控制、PID、INDI）和神经网络控制器**，以便在同一平台上公平对比不同方法。实测可达 **5 g 加速度 / 70 km/h** 的轨迹跟踪。
 
 **★ 对本项目最关键的两点**：
-1. 它的 **MPC 输出就是 CTBR（Collective Thrust + Body Rate）** —— 本项目 `(C)` 方案的最有力佐证。
-2. 它的 **controllers 列表里 MPC、几何控制、PID、INDI 并列**，INDI 在其架构里担任**内环**。
+1. 它的 **模型预测控制输出就是 CTBR（Collective Thrust + Body Rate）** —— 本项目 `(C)` 方案的最有力佐证。
+2. 它的 **controllers 列表里模型预测控制、几何控制、PID、INDI 并列**，INDI 在其架构里担任**内环**。
 
 **用在哪**：`(C)` 方案的**理论来源**。⚠️ 注意它的公开仓库**不含任何源码**（只有 README + 文档），Bridge 层也不走 PX4 —— **只能借它的分层思想，不能抄代码**。
 
@@ -67,9 +67,9 @@
 | 作者 | G. Torrente, E. Kaufmann, P. Foehn, D. Scaramuzza |
 | 出处 | IEEE Robotics and Automation Letters (RA-L), 2021 |
 
-**主要研究内容**：用**高斯过程（Gaussian Process）学习气动效应**，把学到的气动模型**嵌入 MPC** 里。核心动机是：标准 MPC 用的刚体模型在高速下会因气动效应而失准。实测在 **14 m/s、加速度超 4 g** 的飞行中，**高速跟踪误差最多降低 70 %**。关键词里明确列了 Model Predictive Control / Gaussian Processes / Autonomous Agile Flight。
+**主要研究内容**：用**高斯过程（Gaussian Process）学习气动效应**，把学到的气动模型**嵌入模型预测控制** 里。核心动机是：标准模型预测控制用的刚体模型在高速下会因气动效应而失准。实测在 **14 m/s、加速度超 4 g** 的飞行中，**高速跟踪误差最多降低 70 %**。关键词里明确列了 Model Predictive Control / Gaussian Processes / Autonomous Agile Flight。
 
-**用在哪**：本项目**第二阶段**的参考 —— 当基础 MPC 跑通、要追求更高速度时，用数据驱动方法补气动项。
+**用在哪**：本项目**第二阶段**的参考 —— 当基础模型预测控制跑通、要追求更高速度时，用数据驱动方法补气动项。
 
 ---
 
@@ -84,7 +84,7 @@
 | 作者 | Boris Houska, Hans Joachim Ferreau, Moritz Diehl（K.U. Leuven） |
 | 出处 | Optimal Control Applications and Methods (OCAM), 32:298–312, 2011 |
 
-**主要研究内容**：介绍 **ACADO Toolkit** 这个 C++ 软件环境与算法集合，覆盖**直接最优控制**（含 MPC）以及**状态与参数估计**。重点讲了它的软件设计（面向对象、可扩展、可耦合已有优化包）和**符号表达式处理能力**，并用两个教程例子演示如何搭建最优控制问题与参数估计问题。
+**主要研究内容**：介绍 **ACADO Toolkit** 这个 C++ 软件环境与算法集合，覆盖**直接最优控制**（含模型预测控制）以及**状态与参数估计**。重点讲了它的软件设计（面向对象、可扩展、可耦合已有优化包）和**符号表达式处理能力**，并用两个教程例子演示如何搭建最优控制问题与参数估计问题。
 
 **用在哪**：**acados 的前身**。读完能理解 acados 的设计取舍从哪来（为什么是 C 代码生成、为什么强调符号建模与 `acados_template`）。
 
@@ -99,9 +99,9 @@
 | 作者 | Boris Houska 等 |
 | 出处 | Automatica, 47 (2011) 2279–2285 |
 
-**主要研究内容**：提出**自动生成的实时迭代（Real-Time Iteration, RTI）算法**。RTI 的核心思想是：把每个采样周期内的 SQP 迭代**拆成两部分**——耗时的部分（准备）在两次采样之间完成，采样时刻只做**一次廉价的反馈迭代**。这样即使非线性 MPC，单周期的计算也能压到**微秒级**。
+**主要研究内容**：提出**自动生成的实时迭代（Real-Time Iteration, RTI）算法**。RTI 的核心思想是：把每个采样周期内的 SQP 迭代**拆成两部分**——耗时的部分（准备）在两次采样之间完成，采样时刻只做**一次廉价的反馈迭代**。这样即使非线性模型预测控制，单周期的计算也能压到**微秒级**。
 
-**★ 用在哪**：**acados 里 `SQP_RTI` 求解器的理论出处**。本项目的 MPC 要在 Jetson 上跑 100 Hz（每周期 10 ms 预算），**读这篇就能理解为什么这件事可行**，以及 `SQP_RTI` 为什么适合硬实时场景。
+**★ 用在哪**：**acados 里 `SQP_RTI` 求解器的理论出处**。本项目的模型预测控制要在 Jetson 上跑 100 Hz（每周期 10 ms 预算），**读这篇就能理解为什么这件事可行**，以及 `SQP_RTI` 为什么适合硬实时场景。
 
 ---
 
@@ -129,10 +129,10 @@
 | 文件 | 年份 | 出处 | 一句话 |
 |---|---|---|---|
 | `Houska2011_OCAM_ACADOToolkit.pdf` | 2011 | OCAM | acados 的前身，C++ 最优控制框架 |
-| `Houska2011_Automatica_RTI.pdf` | 2011 | Automatica | `SQP_RTI` 的理论出处，微秒级非线性 MPC |
-| `Torrente2021_RAL_DataDrivenMPC.pdf` | 2021 | RA-L | 高斯过程学气动 + MPC，提速降误差 70 % |
+| `Houska2011_Automatica_RTI.pdf` | 2011 | Automatica | `SQP_RTI` 的理论出处，微秒级非线性模型预测控制 |
+| `Torrente2021_RAL_DataDrivenMPC.pdf` | 2021 | RA-L | 高斯过程学气动 + 模型预测控制，提速降误差 70 % |
 | `Sun2022_TRO_NMPC_vs_DFBC.pdf` | 2022 | T-RO | NMPC vs 微分平坦，**加 INDI 后误差降 78 %** |
-| `Foehn2022_SciRob_agilicious.pdf` | 2022 | Science Robotics | 敏捷平台，**MPC 输出 CTBR**，含 INDI 内环 |
+| `Foehn2022_SciRob_agilicious.pdf` | 2022 | Science Robotics | 敏捷平台，**模型预测控制输出 CTBR**，含 INDI 内环 |
 | `Liu2024_IROS_OmniNxt.pdf` | 2024 | IROS | 同款硬件（Nxt-FC + Orin NX），全向视觉平台 |
 
 **按主题分**：`Sun2022` / `Foehn2022` / `Torrente2021` 是**控制方法**；`Houska2011` × 2 是**工具链**；`Liu2024` 是**硬件平台**。

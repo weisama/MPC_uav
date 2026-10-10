@@ -51,7 +51,7 @@ Type: task
 | # | 取法 | 代价 / 风险 |
 |---|---|---|
 | **A** | `mocap` 节点**多订阅一条** `/vrpn/<刚体>/twist`，原样 republish 成 `/mocap/velocity_enu`（`TwistStamped`，frame 不变 = `"world"`） | ✅ **同一 frame ⟹ 零变换**（与 M7 的"输入侧零转换"一致）；改动 ~10 行；与 pose 同步（`vrpn_listener` 的 synchronizer 已经把 pose/twist 对齐过）⚠️ 需确认"同步"是否也覆盖到新话题的时刻 |
-| **B** | MPC（模型预测控制）节点直接订阅 `/vrpn/<刚体>/twist` | ❌ 让 Phase 2 越过 `mocap` 节点直达 VRPN 层（`mocap` 包存在的意义就是隔离它）；且刚体名要进 MPC 的参数 |
+| **B** | MPC（模型预测控制）节点直接订阅 `/vrpn/<刚体>/twist` | ❌ 让 Phase 2 越过 `mocap` 节点直达 VRPN 层（`mocap` 包存在的意义就是隔离它）；且刚体名要进 MPC（模型预测控制）的参数 |
 | **C** | 在节点里对 `p` 做数值差分 | ❌ 差分放大噪声（`mocap-setup.md` §「`twist` 的 angular 全 0、linear 有噪声级读数」说明动捕侧读数本身就带噪）；且与"动捕已经算好了"重复劳动 |
 | **D** | 用 PX4 的 `/fmu/out/vehicle_local_position`（EKF2 融合速度） | ❌ 那是 **NED**，要在输入侧做坐标变换 —— 正是 M7 花力气删掉的东西；且把 Phase 2 的状态源又绑回飞控 |
 
@@ -106,7 +106,7 @@ Type: task
 | [`test_node_core.py`](../../../src/nmpc/test/test_node_core.py) | `_Velocity` 替身 `:81`；两条新用例 `:459,481` |
 | [`test_mpc_node.py`](../../../src/nmpc/test/test_mpc_node.py) | B 档黑盒 `:1126`；QoS 用例补断言 `:209`；"这条测试为什么不存在"注记更新 `:1713-1723` |
 | [`phase2-implementation.md`](../../../docs/control/phase2-implementation.md) | §4 接口表/清单加一行 `:745-751` |
-| [`mocap-setup.md`](../../../docs/reference/mocap-setup.md) | §1 表 `:30-31`；§6 警告澄清 + 路由表加"Phase 2 的 MPC"行 `:375-391` |
+| [`mocap-setup.md`](../../../docs/reference/mocap-setup.md) | §1 表 `:30-31`；§6 警告澄清 + 路由表加"Phase 2 的 MPC"行 `:375-391`（★ 2026-10-10 清扫后该行标题是 `Phase 2 的 MPC（模型预测控制）`） |
 | [`mpc-node-seam1.md`](../../../docs/control/mpc-node-seam1.md) | §5 "τ 在 seam 1 上无法黑盒验证"结论作废（推导保留）`新增更新块 :187-197` |
 
 **④ 验收（本轮实跑的原始输出）**：

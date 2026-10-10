@@ -18,6 +18,9 @@
 
 **书写约定**：本项目中提到模型预测控制时，一律写全称或加限定："MPC（模型预测控制）"；引用 PX4 参数时一律写完整参数名并加反引号。**禁止**单独使用裸词 `MPC` 指代二者之一。
 
+**★ 2026-10-10 做过一次全仓清扫**（范围跨票，理由：这条约定立了三个多月，存量一直没清）。把所有**指代本项目控制器**的裸用 `MPC` 改成 `MPC（模型预测控制）`（每份文件首处）或全称 `模型预测控制`（其余）。**刻意没动**四类 —— ① 讲这个词本身的**指称**（本节、`docs/control/mismatch-sweep.md`、各 spec 的"禁止裸词"条款）；② **论文标题**与归档文件 [`docs/assets/MPC_uav-README.md`](docs/assets/MPC_uav-README.md)；③ **上游引文**（如 `open-source-survey.md` 引 `px4-mpc` 的原话）；④ 标识符 `MPC_uav` / `MPC_CODEGEN_DIR` 与 PX4 的 `MPC_*` 参数。
+复扫命令：`grep -rnP '(?<![A-Za-z_/\-])MPC(?![A-Za-z_（\-\d])' --include='*.md' --include='*.yaml' --include='*.cpp' .` —— 剩余命中**全部属于上面四类**（逐条理由与例外清单见清扫的那次提交说明）。★ **受影响的旧票已就地加注**（`phase3/02`、`phase3/04`、`phase2/03`、`phase2/15`、`phase2/19`、`phase3/03`）：它们引的是**清扫前的原文**。
+
 ---
 
 ## 一、构型与机体几何
@@ -29,9 +32,9 @@
 | **轴距 (wheelbase)** | **对角两个电机中心之间的距离**。本项目为 **152 mm**。注意：不叫"轮距"，也不是相邻电机间距。 |
 | **臂长 (arm length)** | 机体中心到单个电机中心的距离 = 轴距 / 2。本项目为 **76 mm**。PX4 里体现为 `CA_ROTORx_PX/PY` 的组合模长。 |
 | **机体系 (body frame)** | PX4 约定：**x 轴向前、y 轴向右、z 轴向下**（FRD, Forward-Right-Down）。 |
-| **机体系（MPC（模型预测控制）内部）** | **FLU**：x 朝前、**y 朝左**、**z 朝上（沿推力方向）** —— 与项目依据的两篇论文一致。★ 它与上面那个 PX4 的 FRD 是**同一台飞机的两套标注**（x 相同，y 与 z 取反），两者之间的映射表**全项目只有一处权威**：[`docs/control/sign-map.md`](docs/control/sign-map.md)。 |
+| **机体系（模型预测控制内部）** | **FLU**：x 朝前、**y 朝左**、**z 朝上（沿推力方向）** —— 与项目依据的两篇论文一致。★ 它与上面那个 PX4 的 FRD 是**同一台飞机的两套标注**（x 相同，y 与 z 取反），两者之间的映射表**全项目只有一处权威**：[`docs/control/sign-map.md`](docs/control/sign-map.md)。 |
 | **世界系 (world / NED)** | PX4 约定：**北-东-地**（NED）。动捕与 ROS 常用 **ENU**（东-北-天），两者相差一次坐标变换。 |
-| **props-in / props-out** | 螺旋桨旋转方向布置的两种约定。**决定 MPC 模型里力矩 τ 的符号**，必须在文档里写死。 |
+| **props-in / props-out** | 螺旋桨旋转方向布置的两种约定。**决定 MPC（模型预测控制）模型里力矩 τ 的符号**，必须在文档里写死。 |
 | **电机序 (motor order)** | 物理输出口编号 ↔ PX4 逻辑电机编号的映射。本项目飞控为 **`3-2-1-4`**（见 `docs/reference/params-analysis.md`）。 |
 | **控制分配 (control allocation)** | 把期望的总推力与三轴力矩分配到各电机的过程。PX4 中由 `control_allocator` 模块与 `CA_*` 参数定义。 |
 | **涵道机 (ducted / cinewhoop)** | 桨叶被环形涵道包围的构型。本项目属此类。**建模上按普通四轴处理**，涵道影响吸收进辨识出的推力/阻力系数。 |
@@ -55,12 +58,12 @@
 | 术语 | 定义 |
 |---|---|
 | **Offboard 模式** | PX4 的一种飞行模式，控制指令由机载电脑（而非遥控器）给出。 |
-| **外环 / 内环** | 外环处理位置与姿态，带宽低；内环处理角速率，带宽高。本项目 **MPC 在外环（100 Hz），PX4 角速率环在内环（1 kHz）**。 |
+| **外环 / 内环** | 外环处理位置与姿态，带宽低；内环处理角速率，带宽高。本项目 **模型预测控制在外环（100 Hz），PX4 角速率环在内环（1 kHz）**。 |
 | **CTBR** | **Collective Thrust + Body Rate**。控制器输出"总推力 + 机体三轴角速率期望值"的形式。**是 `agilicious` 与 `px4-mpc` 共同采用的下发口径**，也是本项目 `(C)` 方案的形式。 |
-| **`(C)` 方案** | 本项目对"MPC 输出形态"的编号，指 **MPC → `VehicleRatesSetpoint`（ω + 推力）→ PX4 角速率环**。编号 `(A)(B)(C)(D)` 的定义见 `docs/control/mpc-roadmap.md`。 |
+| **`(C)` 方案** | 本项目对"模型预测控制输出形态"的编号，指 **模型预测控制 → `VehicleRatesSetpoint`（ω + 推力）→ PX4 角速率环**。编号 `(A)(B)(C)(D)` 的定义见 `docs/control/mpc-roadmap.md`。 |
 | **INDI** | **Incremental Nonlinear Dynamic Inversion**，增量式非线性动态逆。**不依赖精确模型**的内环控制方法（用当前角加速度与操纵效能矩阵做增量更新），可替代 PID 做角速率跟踪。 |
 | **几何控制 (geometric control)** | 在 SO(3) 流形上直接设计姿态控制的非线性方法。是 `agilicious` 的控制器之一。 |
-| **NMPC** | 非线性模型预测控制（区别于线性 MPC）。 |
+| **NMPC** | 非线性模型预测控制（区别于线性模型预测控制）。 |
 | **MPCC** | **Model Predictive Contouring Control**，模型预测轮廓控制 —— 优化"沿参考路径的进度"而非"点到点误差"，是竞速飞行的主流方法。 |
 | **微分平坦 (differential flatness)** | 四旋翼的一类性质：全部状态与输入可由四个平坦输出（位置 xyz + 偏航）及其导数代数地表示。常用于生成前馈轨迹。 |
 | **DFBC** | Differential-Flatness-Based Control，基于微分平坦的控制。`Sun2022_TRO_NMPC_vs_DFBC` 论文中作为 NMPC 的对照组。 |
@@ -84,11 +87,11 @@
 
 | 术语 | 定义 |
 |---|---|
-| **acados** | 基于 CasADi 的嵌入式最优控制求解器，**C 实现**，自动生成求解器代码。本项目 MPC 的求解器由它生成。 |
+| **acados** | 基于 CasADi 的嵌入式最优控制求解器，**C 实现**，自动生成求解器代码。本项目模型预测控制的求解器由它生成。 |
 | **CasADi** | 符号建模与自动微分框架（Python/C++）。用于定义 OCP。 |
 | **HPIPM** | acados 默认的 QP 求解器（内点法），利用 OCP 的带状结构。 |
 | **BLASFEO** | acados 使用的高性能线性代数库，**按 CPU 微架构编译**（Jetson 上需指定 ARM 目标）。 |
-| **SQP_RTI** | **Real-Time Iteration** —— 每周期只做一次 SQP 迭代（分 preparation / feedback 两相），延迟极低，适合硬实时 MPC。本项目的选择。 |
+| **SQP_RTI** | **Real-Time Iteration** —— 每周期只做一次 SQP 迭代（分 preparation / feedback 两相），延迟极低，适合硬实时模型预测控制。本项目的选择。 |
 | **OCP** | Optimal Control Problem，最优控制问题。 |
 | **Tera / `t_renderer`** | acados 代码生成用的模板引擎二进制。☠️ 旧话「安装缺失时报 `EOFError`」**在 v0.6.0 上不成立**（那是 v0.5.x 及以前交互式 `input()` 提问、非交互读到 EOF 的内建异常）。★ **但「必须装」这件事不变**：**真身是三种落点，其中「在、但渲染不出东西」完全静默** —— 静默两层后才炸成 `.so: cannot open shared object file`。详见 [`docs/control/acados-orin-build.md`](docs/control/acados-orin-build.md) §4 |
 

@@ -1,4 +1,4 @@
-# Phase 2 实施清单 —— MPC 接管 PID（`(C)` 级）
+# Phase 2 实施清单 —— MPC（模型预测控制）接管 PID（`(C)` 级）
 
 > **本文件是 Phase 2 的施工图**，与 [`phase1-implementation.md`](phase1-implementation.md)（Phase 1 实施清单）平行。
 >
@@ -16,9 +16,9 @@
 
 ## 0. 先读这一段：Phase 2 的三个"一句话"
 
-1. **Phase 2 = MPC 输出「角速率 + 推力」，PX4 只跑角速率环 + 混控。** 消息是 `/fmu/in/vehicle_rates_setpoint`（uXRCE-DDS），**不是** mavros。这是 `(C)` 级。
+1. **Phase 2 = 模型预测控制输出「角速率 + 推力」，PX4 只跑角速率环 + 混控。** 消息是 `/fmu/in/vehicle_rates_setpoint`（uXRCE-DDS），**不是** mavros。这是 `(C)` 级。
 2. **代码骨架取 [`DISCOWER/px4-mpc`](https://github.com/DISCOWER/px4-mpc)**（BSD 3-Clause，可自由改）。但它是为 x500 写的，有 **6 处必须改**（§2.5），其中 2 处改错会直接摔机。
-3. **Phase 2 引入 4 个新东西**：acados 求解器、uXRCE-DDS 中间件、MPC 节点、`px4_msgs` 版本绑定。**它们在 SITL 里全部跑通之前，实机一行都不许上。**
+3. **Phase 2 引入 4 个新东西**：acados 求解器、uXRCE-DDS 中间件、模型预测控制节点、`px4_msgs` 版本绑定。**它们在 SITL 里全部跑通之前，实机一行都不许上。**
 
 ---
 
@@ -28,11 +28,11 @@
 |---|---|---|---|
 | G1 | 控制层级 | **`(C)` 角速率 + 推力** | roadmap §2 四条论据 |
 | G2 | 中间件 | **混合**：mavros2 收动捕 / uXRCE-DDS 发指令 | 用户 Q7：「Phase 1 全走 mavros2，uXRCE-DDS 推迟到 Phase 2」 |
-| G3 | MPC 状态输入 | **动捕直出**（不经 EKF2） | 用户 Q9 + roadmap D8；延迟更低 |
+| G3 | 模型预测控制状态输入 | **动捕直出**（不经 EKF2） | 用户 Q9 + roadmap D8；延迟更低 |
 | G4 | 求解器 | **acados** + `SQP_RTI` + `PARTIAL_CONDENSING_HPIPM` | roadmap §4.5，与 px4-mpc 一致 |
 | G5 | 代码骨架 | **`DISCOWER/px4-mpc`**（复制改造，不引依赖） | 第一手读过三个核心文件，见 §2 |
 | G6 | 固件版本 | ★ **版本基准 = z0 固件真身 `Minderring/PX4-Autopilot` @ `4a0e65f2`**（**v1.14.3 系**的 MicoAir 厂商构建，飞控自报 `1.14.3`）。⟹ **`px4_msgs` = `release/1.14` @ `ffb6e80e`**（与真身共有的 184 个 `msg/` blob 全同，✅ 用户签字）；**SITL 被控对象 = 上游 v1.14.3（tag `1dacb4c`）**。☠️ **原写「版本基准统一到 fork `5ba2e91f`（Q31=a）」与「固件是「v1.15 世代」」—— 两句都反了，`5ba2e91f` 与 z0 无关**。见 [`refs-manifest.md`](../reference/refs-manifest.md) §2.5(d) 与 §2.6 执行版。⚠️ **「不刷固件」这条决定本身不变** | 用户 Q12 + [`refs-manifest.md`](../reference/refs-manifest.md) §2.5(d) / §2.6 |
-| G7 | 上线顺序 | **先 SITL 验证 MPC，再实机** | 用户 Q8(b) |
+| G7 | 上线顺序 | **先 SITL 验证模型预测控制，再实机** | 用户 Q8(b) |
 | G8 | INDI | **第一版不做**，作为步骤 2 | roadmap D3 |
 | G9 | 参考轨迹 | **第一阶段手写**（悬停 / 正方形 / 八字），与 Phase 1 同一套 | 用户 Q15 |
 | G10 | 动捕原点 | **未起飞时静止帧为原点**，yaw 只归零偏航 | 用户 Q16 / Q21(b) |
@@ -75,7 +75,7 @@
 > 决定性检查：`git log -S "VehicleAttitudeSetpoint" origin/dev-attitude_setpoints` **为空**；
 > `git grep -i attitudesetpoint` **无匹配**。该分支发的仍是 `VehicleRatesSetpoint`
 > + `offboard_msg.attitude = False / body_rate = True` —— 与 master **同级（C）**。
-> 分支名的 "attitude setpoint" 指的是**航天器那条路径让 MPC 在代价里跟踪一个姿态四元数_参考值_**
+> 分支名的 "attitude setpoint" 指的是**航天器那条路径让模型预测控制在代价里跟踪一个姿态四元数_参考值_**
 > （`mpc_spacecraft.py:179` 的 `self.setpoint_attitude` / `:316-339` 的 `error_attitude`），
 > 是**状态**，不是输出消息。→ 本文件原先"它比 master 更贴近 (B) 级"的推测**作废**。
 >
@@ -158,7 +158,7 @@ force = cs.vertcat(0.0, 0.0, F)      # 推力沿机体 +z ⇒ 机体 z 朝上 = 
 
 节点 `mpc_quadrotor.py` 里的三个转换：
 
-**(a) 状态进：PX4 NED → MPC 内部 ENU**
+**(a) 状态进：PX4 NED → 模型预测控制内部 ENU**
 
 ```python
 # 位置
@@ -172,7 +172,7 @@ q_enu = 1/np.sqrt(2) * np.array([msg.q[0]+msg.q[3],   # w
                                  msg.q[0]-msg.q[3]])  # z
 ```
 
-**(b) 指令出：MPC 内部 FLU → PX4 FRD**
+**(b) 指令出：模型预测控制内部 FLU → PX4 FRD**
 
 ```python
 thrust_rates = self.mpc.solve(...)
@@ -247,7 +247,7 @@ _thrust_setpoint = Vector3f(vehicle_rates_setpoint.thrust_body);   // ← 没有
 
 **三个角速率有 NaN 回退（退回实测角速率），推力没有。** 一个 NaN 推力会直达混控器。
 
-**修正：MPC 节点发布前必须 `np.isfinite()` 全量校验，任何一项不过就整帧丢弃并走坑 2 的兜底。**
+**修正：模型预测控制节点发布前必须 `np.isfinite()` 全量校验，任何一项不过就整帧丢弃并走坑 2 的兜底。**
 
 #### 坑 4 ★ `R` 罚的是**绝对**角速率，不是增量
 
@@ -327,7 +327,7 @@ ubu = np.array([+Fmax,     wmax,       wmax,      +0.5*wmax])
 > ★ 这一条是 ticket 06 的复核抓出来的：本文件原写"求解失败 + 非有限值 ⟹ 不发"，
 > 而代码里**退化求解照样发** —— 07 照着错的描述接手，会以为"已经不发"了。
 
-> 📌 **M7 顺带干掉了一整类 bug**：既然动捕原生就是 ENU/FLU，MPC 内部也用 ENU/FLU，那么 §2.3(a) 那段手写四元数转换（`1/√2·[w+z, x+y, x−y, w−z]`，**整个文件里最容易写错的一行**）**可以直接删掉**。详见 §3.2。
+> 📌 **M7 顺带干掉了一整类 bug**：既然动捕原生就是 ENU/FLU，模型预测控制内部也用 ENU/FLU，那么 §2.3(a) 那段手写四元数转换（`1/√2·[w+z, x+y, x−y, w−z]`，**整个文件里最容易写错的一行**）**可以直接删掉**。详见 §3.2。
 
 > ✅ **落地状态（2026-09-28，ticket 07 —— M5 的兜底路径）** —— 设计、第一手依据与配方全在
 > **[`mpc-node-fallback.md`](mpc-node-fallback.md)**；这里只记 **M5 的编号与落地位置**（票面判据 7 要的就是这一行）：
@@ -353,7 +353,7 @@ ubu = np.array([+Fmax,     wmax,       wmax,      +0.5*wmax])
 | OCP 装配骨架（`AcadosOcp` → `NONLINEAR_LS` → `SQP_RTI` → ERK 4/3） | `controllers/multirotor_rate_mpc.py` | 与 roadmap §4.5 完全一致 |
 | `OffboardControlMode` 心跳（`body_rate=True`，其余 False，50 Hz） | `mpc_quadrotor.py` | 照抄 |
 | QoS 设置：pub `BEST_EFFORT + TRANSIENT_LOCAL + depth 1`，sub `BEST_EFFORT + VOLATILE + depth 1` | `mpc_quadrotor.py` | ⚠️ **用默认 RELIABLE QoS 会静默收不到 PX4 话题** —— 见 §6.4 |
-| 预测轨迹 `Path` + 参考点 `Marker` 发布 | `mpc_quadrotor.py` | RViz 里肉眼验证 MPC 是否发疯，实飞前极有用 |
+| 预测轨迹 `Path` + 参考点 `Marker` 发布 | `mpc_quadrotor.py` | RViz 里肉眼验证模型预测控制是否发疯，实飞前极有用 |
 
 ---
 
@@ -368,8 +368,8 @@ ubu = np.array([+Fmax,     wmax,       wmax,      +0.5*wmax])
 | **D3** | INDI 是否第一版就做 | ✅ **已定** | **否**，作为步骤 2（G8） |
 | **D4** | 中间件 | ✅ **已定** | **混合**：uXRCE-DDS 发指令 + mavros2 收动捕（G2） |
 | **D5** | `T_max` 取值 | ✅ **2026-09-29 解耦后已定**：原裁定「**按电池**（11.8 N）」**保留**，但只作用于 **`F` 上限这一个角色**（`Z0Params.f_max`）；**归一化**那侧改由 P1 的实测值导出（`m·g/hover_thrust` = 46.3 N，满电口径）。★ 两者共用一个常数的时代结束（那时回填会把 `F` 上限抬到 46.3 N）。⚠️ 电池"瓶颈"的实质是**可持续电流**（15 A），不是推力归一化 —— 见 §3.3.3 与 §3.3.4 的两层表 |
-| **D6** | MPC 频率 | ✅ **已定：100 Hz** | ✅ **2026-09-28 实测**（ticket 04，[`offline-ocp.md`](offline-ocp.md) §5、`python3 -m nmpc.timing --runs 1000 --cpu 4`）：**纯求解 max 3.58 ms**（三轮 3.447 / 3.584 / 3.447，取最大）、整周期 median 3.9 / p99 4.7 ms ⟹ 保 100 Hz（余量 2.8×）。⚠️ **判定只覆盖"求解器"那一列**：整周期墙钟出现过 **1/1000 次的 52–56 ms 抢占**（同拍求解只用 3.4 ms），**它越过了本行"最坏 >20 ms"那条线** —— 保留 100 Hz 是"差值是被调度出去而非求解开销"的**有理由的例外，不是满足了判据**。要真闭环在 100 Hz 上，节点侧得绑核/定优先级（归 ticket 06/07）。原验收线（≤10 ms 保 100 Hz；10–20 ms 降 50 Hz；>20 ms 停下优化）**继续作为复测判据**。★ **闭环复测（2026-09-28，ticket 09，z0 同构 SITL 真 PX4）**：空机稳态最坏 **3.995 ms** ⟹ **100 Hz 复现**（冷启动 15.956 ms 落在 `warmup` 闸门里，有专门判据盯着）；⚠️ **同一份二进制、机上多跑几个进程**时稳态最坏就变成 **11.297 ms**（⟹ 50 Hz 档）⟹ 这条判据**带"机上别跑别的东西"这个前提**，Phase 4 定实机频率必须把 Jetson 上还跑着什么算进去。另：逐拍间隔最坏的 82–93 ms 与上面那条"1/1000 次 52–56 ms 抢占"**同源**（同拍求解只用 3–4 ms）。数字与判据见 [`tier-a-sitl-hover.md`](tier-a-sitl-hover.md) §5 |
-| **D7** | MPC 内部世界系 | ✅ **已定** | **ENU/FLU**（世界 z 朝上 + 机体 x 前 / z 沿推力）—— **用户选定「参考论文里的坐标系」，两篇论文一致**，见 §3.2 |
+| **D6** | 模型预测控制频率 | ✅ **已定：100 Hz** | ✅ **2026-09-28 实测**（ticket 04，[`offline-ocp.md`](offline-ocp.md) §5、`python3 -m nmpc.timing --runs 1000 --cpu 4`）：**纯求解 max 3.58 ms**（三轮 3.447 / 3.584 / 3.447，取最大）、整周期 median 3.9 / p99 4.7 ms ⟹ 保 100 Hz（余量 2.8×）。⚠️ **判定只覆盖"求解器"那一列**：整周期墙钟出现过 **1/1000 次的 52–56 ms 抢占**（同拍求解只用 3.4 ms），**它越过了本行"最坏 >20 ms"那条线** —— 保留 100 Hz 是"差值是被调度出去而非求解开销"的**有理由的例外，不是满足了判据**。要真闭环在 100 Hz 上，节点侧得绑核/定优先级（归 ticket 06/07）。原验收线（≤10 ms 保 100 Hz；10–20 ms 降 50 Hz；>20 ms 停下优化）**继续作为复测判据**。★ **闭环复测（2026-09-28，ticket 09，z0 同构 SITL 真 PX4）**：空机稳态最坏 **3.995 ms** ⟹ **100 Hz 复现**（冷启动 15.956 ms 落在 `warmup` 闸门里，有专门判据盯着）；⚠️ **同一份二进制、机上多跑几个进程**时稳态最坏就变成 **11.297 ms**（⟹ 50 Hz 档）⟹ 这条判据**带"机上别跑别的东西"这个前提**，Phase 4 定实机频率必须把 Jetson 上还跑着什么算进去。另：逐拍间隔最坏的 82–93 ms 与上面那条"1/1000 次 52–56 ms 抢占"**同源**（同拍求解只用 3–4 ms）。数字与判据见 [`tier-a-sitl-hover.md`](tier-a-sitl-hover.md) §5 |
+| **D7** | 模型预测控制内部世界系 | ✅ **已定** | **ENU/FLU**（世界 z 朝上 + 机体 x 前 / z 沿推力）—— **用户选定「参考论文里的坐标系」，两篇论文一致**，见 §3.2 |
 | **D8** | 状态源 | ✅ **已定** | **动捕直出**（G3） |
 | **D9** | 延迟补偿 | 🔶 **仍开放** | 建议**第二版再做**。步骤 1 先用「状态外推 `x + v·τ`」这一行代码顶住，够用且零风险。★ **τ 已在 z0 上实测 ≈ 50 ms**（[`../reference/mocap-setup.md`](../reference/mocap-setup.md) **§6.3**，ticket 03）；**实飞起始值仍取 `0`**（过补偿比不补偿更危险），实测值用于确定量级与作为 ticket 10 扫 τ 的起点参照 |
 | **D10** | 参考轨迹来源 | ✅ **已定** | **手写**（G9）；`ego-planner` 不在本项目范围 |
@@ -388,7 +388,7 @@ ubu = np.array([+Fmax,     wmax,       wmax,      +0.5*wmax])
 
 **两张表读出来的约定**：
 
-| | 论文 | PX4 | z0 的 MPC 内部 |
+| | 论文 | PX4 | z0 的模型预测控制内部 |
 |---|---|---|---|
 | **世界系** | 惯性系 **z 朝上**（逆重力） | NED，z 朝**下** | **ENU**（z 朝上） |
 | **机体系** | x 朝前、**z 沿推力方向** | FRD，z 朝**下** | **FLU**（x 前 / z 上 = 推力） |
@@ -735,9 +735,9 @@ Mooch 15 A），同一张表的结论**完全不同**：
 ```
  Nokov 动捕 ──VRPN──> vrpn_listener ──> mocap 节点 ──┬──> /mavros/vision_pose/pose ──> PX4 EKF2 (Phase 1)
   10.1.1.198:3883                                    │      （ENU，mavros 转 NED）
-                                                     └──> /mocap/pose_enu ──> MPC 节点   ← Phase 2 新增
-                                                                                  │
-                        ┌─────────────────────────────────────────────────────────┘
+                                                     └──> /mocap/pose_enu ──> 模型预测控制节点   ← Phase 2 新增
+                                                                                     │
+                        ┌────────────────────────────────────────────────────────────┘
                         ▼
                    acados OCP (ENU/FLU, 10 状态)
                         │  u = [F, ωx, ωy, ωz]
@@ -855,7 +855,7 @@ ROS 侧：  ros2 interface show px4_msgs/msg/VehicleRatesSetpoint
 > [`sign-map.md`](sign-map.md) §3/§4 —— 而且**有可执行复核**（`tools/sign-map/`）。
 > 那里给的是一组**推导出来**的数，照抄之前先读推导。
 
-### S4 —— MPC 节点骨架
+### S4 —— 模型预测控制节点骨架
 
 按 §2.6 复制 `px4-mpc`，按 §2.5 的 M1–M9 改造。**必须同时具备**：
 
@@ -919,10 +919,10 @@ ROS 侧：  ros2 interface show px4_msgs/msg/VehicleRatesSetpoint
 
 | 输入源 | 用途 |
 |---|---|
-| `/fmu/out/vehicle_local_position` + `vehicle_attitude` | **先跑通 A 档**：验证 MPC→PX4 这条链、符号、推力标定 |
+| `/fmu/out/vehicle_local_position` + `vehicle_attitude` | **先跑通 A 档**：验证模型预测控制→PX4 这条链、符号、推力标定 |
 | 模拟的 `/mocap/pose_enu`（可以用 SITL 真值 + 人为延迟/噪声伪造） | **再跑通 B 档**：验证动捕输入这条链 |
 
-> **★ 为什么分 A/B 两档：** 如果一上来就用伪造的动捕，符号错了你分不清是「MPC 模型错」还是「ENU/NED 转换错」。先 A 后 B，**每次只有一个新变量**（这是本项目的指导思想，README 里也写了）。
+> **★ 为什么分 A/B 两档：** 如果一上来就用伪造的动捕，符号错了你分不清是「模型预测控制的模型错了」还是「ENU/NED 转换错了」。先 A 后 B，**每次只有一个新变量**（这是本项目的指导思想，README 里也写了）。
 
 **S5 验收判据**（缺一不可）：
 
@@ -995,7 +995,7 @@ ROS 侧：  ros2 interface show px4_msgs/msg/VehicleRatesSetpoint
 3. **重新调 `Q`/`R`** —— 加状态后原权重不再适用。
 4. SITL 重跑 → 实机阶梯重跑。
 
-> 📌 **这一步是本项目的论文价值点之一**：同一套 MPC，"内环建模 vs 不建模"的对比实验。
+> 📌 **这一步是本项目的论文价值点之一**：同一套模型预测控制，"内环建模 vs 不建模"的对比实验。
 
 ### S8 —— 安全与回退（**必须和 S4 同时做，不是最后做**）
 
@@ -1083,7 +1083,7 @@ ROS 侧：  ros2 interface show px4_msgs/msg/VehicleRatesSetpoint
 ### 6.1 ★★ `px4_msgs` 版本不匹配 → **静默失败**
 
 v1.15 及以前，`px4_msgs` 与固件不匹配时：话题存在、能发布、**无报错**，但 PX4 不理会。
-**排查时你会怀疑 MPC、怀疑符号、怀疑一切，唯独不会怀疑消息定义。**
+**排查时你会怀疑模型预测控制、怀疑符号、怀疑一切，唯独不会怀疑消息定义。**
 
 > ### ☠️ Q24 那次验收**判反了** —— 2026-09-21 定案：`release/1.14` **兼容，已签字采用**
 >
@@ -1236,7 +1236,7 @@ S1 环境 ──> S2 acados ──> S3 离线 OCP ──> S4 节点 ──> S5 S
 |---|---|---|---|
 | ~~O1~~ | ~~D7：内部坐标系~~ | ✅ **已关闭** —— **ENU/FLU**，用户选定「参考论文里的坐标系」，`Sun2022` + `Foehn2022` 一致（§3.2） | 已定 |
 | ~~O2~~ | ~~`MPC_TILTMAX_AIR` 45°→30°~~ | ☠️ **2026-09-28 操作者推翻**：**两边都回 45**。✅ **正文已按裁定重写**（§3.3.4）。⚠️ **2026-09-29 P1 回填 + 解耦后，这组数字按哪一层算要重新说清**：原写"天花板 51.3°、45° 用掉 88.4 %"是按 `m·g/0.6235 = 11.80 N` 算的 —— 那**恰好就是电池层的 `f_max`**（11.8 N，T/W 1.60），所以**那组数字本身站得住**（88.4 % 是 `F` 预算的占用率，精确值见 §3.3.4）。而实测 `hover_thrust = 0.1589` 给出的是**另一层**：归一化满量程 46.30 N ⟹ 45° 只占 **22.5 %**、天花板 **80.9°**。★ 两层别混（§3.3.3）：**约束 `F` 的是电池层 88.4 %**，归一化层那 22.5 % 不代表有余量。★ 裁定本身**保留**（45° 仍成立）；§3.3.4 已重写。⚠️ 顺带查清：`MPC_TILTMAX_AIR` **不在本项目通路上**（我们发 `body_rate`，`flag_multicopter_position_control_enabled = false`），且**模型侧目前没有倾角约束** | 已定（理由已换） |
-| ~~O3~~ | ~~D6：MPC 频率~~ | ✅ **已关闭** —— **100 Hz**（P3 实测：纯求解 max 3.58 ms；见 D6 行与 [`offline-ocp.md`](offline-ocp.md) §5）。⚠️ 附带条件：节点侧要处理墙钟尾延迟（1/1000 次 52–56 ms 抢占）。★ **闭环复测（2026-09-28，ticket 09）**：空机稳态最坏 **3.995 ms** ⟹ 100 Hz 复现；⚠️ 新增前置条件"**机上别跑别的东西**"（同二进制多跑了几个进程就变 11.297 ms ⟹ 50 Hz），见 [`tier-a-sitl-hover.md`](tier-a-sitl-hover.md) §5 | 已定 |
+| ~~O3~~ | ~~D6：模型预测控制频率~~ | ✅ **已关闭** —— **100 Hz**（P3 实测：纯求解 max 3.58 ms；见 D6 行与 [`offline-ocp.md`](offline-ocp.md) §5）。⚠️ 附带条件：节点侧要处理墙钟尾延迟（1/1000 次 52–56 ms 抢占）。★ **闭环复测（2026-09-28，ticket 09）**：空机稳态最坏 **3.995 ms** ⟹ 100 Hz 复现；⚠️ 新增前置条件"**机上别跑别的东西**"（同二进制多跑了几个进程就变 11.297 ms ⟹ 50 Hz），见 [`tier-a-sitl-hover.md`](tier-a-sitl-hover.md) §5 | 已定 |
 | O4 | D9：延迟补偿 | 步骤 1 只用一行状态外推；完整补偿留第二版 | 用户 |
 | ~~O5~~ | ~~`R` 改罚 `u − u_ref`（M6）的具体参考量~~ | ✅ **已关闭（2026-09-28，ticket 04）**：约定写死在 [`offline-ocp.md`](offline-ocp.md) **§3.2** —— 缺省 = **上一帧解平移一拍**（首帧用悬停前馈）；调用方可给解析前馈；`prediction=False` 时**必须显式给**（缺省直接报错，不许悄悄退回悬停前馈）。行为证据见同文 §3.3。★★ **闭环复测（2026-09-28，ticket 09，SITL 真 PX4）**：那个"缺省 = 上一帧解"在**闭环里不成立** —— 它是正反馈，会把外生的小扰动放大成 runaway（`u[3]` 爬到 +4.696 rad/s）。**离线缺省一个字没动**；**在线节点**改喂 §3.2 第二行"调用方给的解析前馈"，见上方 M6 补记与 [`tier-a-sitl-hover.md`](tier-a-sitl-hover.md) §3 | 已定（在线用法已由 ticket 09 修正）|
 | O6 | D5：是否换高 C 电池 | 与本文实施步骤无关，参数化即可 | 用户（硬件决策） |

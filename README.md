@@ -1,10 +1,10 @@
-# MPC_uav — z0 无人机 MPC 控制
+# MPC_uav — z0 无人机模型预测控制栈
 
 > **本仓库是 z0（OddityRC XI35 Pro 152 mm 涵道四旋翼）自主飞行栈的工作副本。**
 > 飞控 MicoAir **NxtPX4v2**（固件真身 = `Minderring/PX4-Autopilot` @ `4a0e65f2`，**v1.14.3 系**的
 > MicoAir 厂商构建 —— 见下方约束表。⚠️ fork `Peize-Liu/PX4-Autopilot @ 5ba2e91f` **与 z0 无关**）
 > \+ 机载 Jetson Orin NX 8GB + Nokov 动捕（VRPN）。
-> 最终目标是 **MPC 接管飞控内置 PID**；**分四阶段落地**，见下。
+> 最终目标是 **模型预测控制接管飞控内置 PID**；**分四阶段落地**，见下。
 
 ---
 
@@ -37,7 +37,7 @@
 | **定位** | **Nokov 动捕** → VRPN → `/mavros/vision_pose/pose` → EKF2（**室内飞行，不用 GPS**） |
 | **中间件** | ROS 2 Humble + mavros2 —— Phase 1 **完全不碰 uXRCE-DDS**，Phase 2 才引入 |
 | **工作区形态** | ROS 2 工作区，★ **colcon 根 = 仓库根**（不是 `src/`）；6 个包见下面目录树 |
-| **目标** | 让 **MPC 接管飞控内置 PID**；分四阶段，**每阶段只引入一个新变量** |
+| **目标** | 让 **模型预测控制接管飞控内置 PID**；分四阶段，**每阶段只引入一个新变量** |
 | **issue tracker** | **`.scratch/<phase>/issues/*.md`** —— 本地 markdown，**随 git 入库**，**不用 GitHub Issues**（规则见 [`docs/agents/issue-tracker.md`](docs/agents/issue-tracker.md)） |
 | **术语表** | [`CONTEXT.md`](CONTEXT.md) —— 查词先看它（含"MPC"这个词的歧义澄清） |
 | **文档优先** | 结论大多带**第一手证据**（源码路径 + 行号 + commit）⟹ **改代码前先确认文档里的结论有没有被推翻**，不要凭记忆。教训见 [`open-source-survey.md`](docs/reference/open-source-survey.md) §0 |
@@ -59,22 +59,22 @@
 | **Phase 1** | **offboard 位置定点飞行** —— 用动捕让 z0 稳定悬停并跟踪简单轨迹，**PX4 跑全部内环 PID** | **(A) 级**：`/mavros/setpoint_raw/local`（位置 + yaw） | 🟨 **代码与台架测试已就绪** + **2026-09-28 真机自由飞一次成**（定点定高 + 各按键 + 三条轨迹，**目测一切正常、数值未量** ⟹ ticket 09 收 `done`）· **阶梯 1–3 级（拆桨 / 系绳 20 cm / 系绳悬停 30 s）未做** —— ★ 2026-09-28 操作者裁定**不再补做**（自由飞已覆盖其风险；**是裁定不是做过了**，那几级的读数仍然是空的）· **台架清单 T1–T8 待下一次台架日一次性全跑** · [`spec`](.scratch/phase1/spec.md) `ready-for-agent` |
 | **Phase 2** | **MPC（模型预测控制）接管 PID —— SITL 验证**：MPC（模型预测控制）输出角速率 + 推力，PX4 只跑角速率环；被控对象**从上游 v1.14.3 构建的 z0 同构机**（**不是 `gz_x500`**；☠️ 原写"从 fork 构建"，该 fork 与 z0 无关） | **(C) 级**：`/fmu/in/vehicle_rates_setpoint` | 🟨 **进行中** —— MPC（模型预测控制）节点 + acados + SITL 同构机都已落地，**闭环跑得起来**；⚠️ **还没收口**（seam 3 的判据未跑满；被控对象**已于 2026-10-09 按真机实测重搭** —— [phase3/04](.scratch/phase3/issues/04-rebuild-sitl-plant-to-measured-baseline.md)，⟹ **A/B 两档读数须重跑**）。★ **本格不抄读数**（抄了就会过期）—— 进度以 [`spec`](.scratch/phase2/spec.md) 与 `.scratch/phase2/issues/` 里各票的 `Status:` 行为准 |
 | **Phase 3** | **整理 Phase 2 的产出 + 收尾它没做完的票**：把入口层与 `docs/` 裁到读得完，并结掉 Phase 2 未结的票（它们是 Phase 4 的前置）—— **不改控制律**，实机飞行不在这里 | ——（**不引入新的控制接口**） | 📋 **进度以 [`spec`](.scratch/phase3/spec.md) 与 `.scratch/phase3/issues/` 各票的 `Status:` 行为准** |
-| **Phase 4** | **MPC 上实机**：四项前置测量（☠️ ~~+ 一次固件重编~~ —— **2026-10-09 操作者裁定不重刷固件，沿用现行这套固件与参数**；**是"裁定收、不做了"，无实测证据作锚**），然后拆桨 → 系绳 → 自由飞四级阶梯 | 同 Phase 2（**(C) 级**） | ⬜ 未开始 · [`spec`](.scratch/phase4/spec.md) `ready-for-human` |
+| **Phase 4** | **模型预测控制上实机**：四项前置测量（☠️ ~~+ 一次固件重编~~ —— **2026-10-09 操作者裁定不重刷固件，沿用现行这套固件与参数**；**是"裁定收、不做了"，无实测证据作锚**），然后拆桨 → 系绳 → 自由飞四级阶梯 | 同 Phase 2（**(C) 级**） | ⬜ 未开始 · [`spec`](.scratch/phase4/spec.md) `ready-for-human` |
 
-**指导思想：每个阶段只引入一个新变量**（★ **Phase 3 是例外** —— 它不引入新变量，只把前面摊开的产出收敛、把 Phase 2 的账结清）。Phase 1 全走 mavros2（**完全不碰 uXRCE-DDS**），把"动捕链路 + 状态机 + offboard"先跑通；Phase 2 再加 MPC + acados + uXRCE-DDS，**但只在 SITL 里验证，不碰飞机**；Phase 4 才上实机，且**先在离地之前把每个能摔机的未知量量出来**。
+**指导思想：每个阶段只引入一个新变量**（★ **Phase 3 是例外** —— 它不引入新变量，只把前面摊开的产出收敛、把 Phase 2 的账结清）。Phase 1 全走 mavros2（**完全不碰 uXRCE-DDS**），把"动捕链路 + 状态机 + offboard"先跑通；Phase 2 再加模型预测控制 + acados + uXRCE-DDS，**但只在 SITL 里验证，不碰飞机**；Phase 4 才上实机，且**先在离地之前把每个能摔机的未知量量出来**。
 
 ---
 
 ## 目录
 
 ```
-├── CONTEXT.md                        术语表（含 MPC 歧义澄清）
+├── CONTEXT.md                        术语表（含"MPC"歧义澄清）
 ├── operation_manual.md               ★★ **现场那一页**：遥控各通道 + FSM + 起链命令（人工飞一次）
 ├── .scratch/                         ★ 本地 issue tracker（随 git 入库，不是临时目录）
 │   ├── phase1/spec.md                Phase 1 spec —— offboard 位置定点飞行
-│   ├── phase2/spec.md                Phase 2 spec —— MPC 接管 PID：SITL 验证
+│   ├── phase2/spec.md                Phase 2 spec —— 模型预测控制接管 PID：SITL 验证
 │   ├── phase3/spec.md                Phase 3 spec —— 整理 Phase 2 的产出 + 收尾未结票
-│   └── phase4/spec.md                Phase 4 spec —— MPC 实机飞行（含四项前置测量；☠️ 固件重编已裁定不做）
+│   └── phase4/spec.md                Phase 4 spec —— 模型预测控制实机飞行（含四项前置测量；☠️ 固件重编已裁定不做）
 ├── docs/    资料与文档
 │   ├── PROJECT.md                    ★ 总纲（先读它）
 │   ├── LOCAL-NOTES.md                ⚠️ 含本机凭据，作者决定随 docs/ 入库 —— 见文件头部须知
@@ -178,7 +178,7 @@ Sim2real-UAV-Params- / Nxt-FC / z0 固件真身 / PX4 上游对照 tag）都就�
 | ⚠️ **电池电流采样通道缺陷（`ADC12_CH(5)`）—— ★ 实测判为"未中招"** —— 那个错值在 `boards/hkust/nxt-dual/src/board_config.h` 里（引脚表写 `/* PC5 */ GPIO_ADC12_INP8` = 通道 8，宏却读**通道 5**）。版本边界（**指上游官方树**，第一手）：v1.15.0 仍带、v1.16.0 才改成 `ADC12_CH(8)`。☠️ ~~而 **z0 真身那棵树没有 `hkust/`**，它的 `boards/micoair/h743-aio` 写的是 `/* PC1 */ ADC1_CH(11)`，**与引脚相符、无此缺陷**~~ —— **这半句 2026-10-09 作废**（z0 跑的就是 `hkust_nxt-dual`） | ✅ **2026-09-21 实测判为"未中招"**（读数与判据见 [`params-changes.md`](docs/reference/params-changes.md) §A4）。★ **2026-10-09 更正解释**：☠️ ~~"这条缺陷不在这块固件里"~~ ⟹ **缺陷就在 z0 的板级目标里，但 z0 那份板级配置本来就带修好的值 `ADC12_CH(8)`**（`33bdd21f` 的 `board_config.h:98`，与 fork 修复提交 `8161c4cd` 同一 blob）—— **不是运气，是这份构建从厂商加板起就已修好**。⚠️ 因此 Phase 4「重编重刷 `pr_fix_hkust_nxt_dual`」这个修法**仍然不适用**（要修的那行早就是修好的），**但理由换了一个**。逐项证据见 [`refs-manifest.md`](docs/reference/refs-manifest.md) **§2.5(d)④ 的 2026-10-09 块**（与 [`PROJECT.md`](docs/PROJECT.md) 同一行的指向保持一致） |
 | ⚠️ **动捕时间戳 `stamp = now()` 是刻意设计，不要改** | 动捕主机与 Jetson 有 **~4 秒**时钟差；改成 `msg_time` 会毁掉 EKF2 融合 |
 | ⚠️ **`TrajectorySetpoint` 没有 `thrust` 字段** | 要发姿态+推力得用 `VehicleAttitudeSetpoint` |
-| ⚠️ **推力是 `[-1, 1]` 归一化，不是 `0–1`、不是牛顿** | 数值约定错了，MPC 算得再对飞机也不会飞 |
+| ⚠️ **推力是 `[-1, 1]` 归一化，不是 `0–1`、不是牛顿** | 数值约定错了，模型预测控制算得再对飞机也不会飞 |
 | ⚠️ **`px4_msgs` 版本必须与固件严格匹配** | v1.15 及以前**不匹配会静默失败**（不报错，只是消息没人收） |
 | ★★ **`px4_msgs` = `release/1.14` @ `ffb6e80e`**（✅ **用户已签字**）—— 与真身 `4a0e65f2` 在**共有的 184 个 `msg/` 文件上 blob 全同**（唯一集合差异是 `msg/CMakeLists.txt`，那是 PX4 自己的构建文件，`px4_msgs` 本就不带） | ☠️ **原判「`release/1.14` 与 z0 固件不兼容（184 里 28 个字段不同）」作废** —— 那是拿 **fork** 的 `msg/` 比出来的（[`refs-manifest.md`](docs/reference/refs-manifest.md) §2.5(a)）。**不要从任何 fork 生成 `px4_msgs`**。**SITL 被控对象 = 上游 v1.14.3（tag `1dacb4c`）**（默认取法，用户未单独表态）。详见 §2.6 执行版 |
 

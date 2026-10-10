@@ -160,7 +160,7 @@ $ grep -rn '☠️' docs/ | grep -vc '~~'  # 166 行，(乙) 逐条确认后原�
 |---|---|---|
 | `phase2-implementation.md` §S1 | 「仍未复验：SITL 机型条目数」 | ✅ 实测 **56** 个条目（`ls ~/refs/px4-v1.14.3-build/ROMFS/px4fmu_common/init.d-posix/airframes/ \| wc -l`） |
 | `acados-orin-build.md` §6 | 「z0 自己那一份的 P3 仍未结／待实测」 | ✅ 2026-09-28 由 `phase2/issues/04`（`done`）回填：纯求解 max 3.58 ms ⟹ D6 定 100 Hz |
-| `px4-interface.md` 延迟表 | 「MPC 求解 … 待实测」 | 同上，行内带锚 |
+| `px4-interface.md` 延迟表 | 「MPC 求解 … 待实测」 | 同上，行内带锚（★ 2026-10-10 清扫后该格首词已写"模型预测控制"） |
 | `mpc-roadmap.md` §9 摘要 | 「D6 待实测」 | **D6 已定 100 Hz**（2026-09-28） |
 | `phase2-implementation.md` §S4 清单 | 「（D6 待实测后调）」 | 「（D6 已定 100 Hz）」 |
 

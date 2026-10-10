@@ -15,7 +15,7 @@ mocap_rel_pose:
     # 留空 = 由 body_name 推出 "/vrpn/<body_name>/pose"；填了就以此为准（逃生口）。
     input_topic: ""
     # 留空 = 由 body_name 推出 "/vrpn/<body_name>/twist"；填了就以此为准（逃生口）。
-    # 速度是**原样转发**（frame = "world"，与 pose 同一个 frame ⟹ 零变换），供 Phase 2 的 MPC 用。
+    # 速度是**原样转发**（frame = "world"，与 pose 同一个 frame ⟹ 零变换），供 Phase 2 的 MPC（模型预测控制）用。
     twist_topic: ""
 
     # ★★ 动捕外参：**动捕刚体原点 → 飞控 IMU 中心** 的偏移，机体系 **FLU**（x 前 / y 左 / z **上**，m）。
@@ -43,7 +43,7 @@ mocap_rel_pose:
 
     vision_pose_topic: "/mavros/vision_pose/pose"
     pose_enu_topic: "/mocap/pose_enu"
-    # Phase 2 的 MPC 速度来源（`geometry_msgs/TwistStamped`，ENU，与 pose_enu 同一个 frame）。
+    # Phase 2 的模型预测控制速度来源（`geometry_msgs/TwistStamped`，ENU，与 pose_enu 同一个 frame）。
     velocity_enu_topic: "/mocap/velocity_enu"
     state_topic: "/mavros/state"
 

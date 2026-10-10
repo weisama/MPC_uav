@@ -27,7 +27,7 @@ Nokov 软件 ──VRPN/UDP(3883)──▶ vrpn_listener ──▶ /vrpn/<刚体
 | 话题 | 内容 |
 |---|---|
 | `/vrpn/<刚体>/pose` | 动捕原始位姿（`PoseStamped`） |
-| `/vrpn/<刚体>/twist` | 动捕自算的速度（`TwistStamped`）。⚠️ **不要 relay 进 mavros/EKF2**（理由见第 6 节）；✅ **Phase 2 的 MPC 用它** —— 由 `mocap` 节点原样转发成 `/mocap/velocity_enu`（ticket 15） |
+| `/vrpn/<刚体>/twist` | 动捕自算的速度（`TwistStamped`）。⚠️ **不要 relay 进 mavros/EKF2**（理由见第 6 节）；✅ **Phase 2 的 MPC（模型预测控制）用它** —— 由 `mocap` 节点原样转发成 `/mocap/velocity_enu`（ticket 15） |
 | `/mocap/velocity_enu` | `mocap` 节点从 `/vrpn/<刚体>/twist` **原样** republish 的速度（`TwistStamped`，与 `/mocap/pose_enu` 同一个 frame ⟹ 零变换）；Phase 2 的 `v`（ticket 15） |
 | `/mavros/vision_pose/pose` | 转发给 PX4 的相对位姿 |
 | `/mavros/state` | 检查 mavros 连接状态 |
@@ -92,7 +92,7 @@ sudo ln -sfn /opt/ros/humble/lib/libvrpn.a /usr/local/lib/libvrpn.a
     tracker_mainloop_frequency: 400.0
 ```
 
-> 📌 **`mainloop_frequency` 要留 2× 余量**：动捕 200 Hz 出包，轮询设 400 Hz。**本项目 MPC 对延迟敏感，这个余量不能省。**
+> 📌 **`mainloop_frequency` 要留 2× 余量**：动捕 200 Hz 出包，轮询设 400 Hz。**本项目模型预测控制对延迟敏感，这个余量不能省。**
 
 ### 2.4 编译与运行
 
@@ -389,8 +389,8 @@ router 日志 `Requested to add endpoint: … udp-b://0.0.0.0:14555@:14550` / `l
 > ★ 这条警告**只针对"喂进 EKF2"这一条路**（理由见本节末「★ 不转发的原因」）——
 > **不是**"Phase 2 不能用它"。**两条路要分开看**：
 > · ❌ **relay 进 mavros/EKF2**：**仍然禁止**（`stamp = now()` 那条理由在整个 EKF2 融合里都成立）。
-> · ✅ **给 Phase 2 的 MPC 用**：**正是推荐做法** —— `mocap` 节点把它原样 republish 成
->   `/mocap/velocity_enu`（同 frame ⟹ 零变换，ticket 15）。MPC 的状态初值 `x = [p, v, q]`
+> · ✅ **给 Phase 2 的模型预测控制用**：**正是推荐做法** —— `mocap` 节点把它原样 republish 成
+>   `/mocap/velocity_enu`（同 frame ⟹ 零变换，ticket 15）。模型预测控制的状态初值 `x = [p, v, q]`
 >   里那个 `v` 就来自它，`x + v·τ` 那条外推靠它才不是恒等变换。
 
 **当前架构**：EKF2 **只融位置、不融速度**（`EKF2_EV_CTRL` 的 bit 3 不勾选）。
@@ -475,7 +475,7 @@ router 日志 `Requested to add endpoint: … udp-b://0.0.0.0:14555@:14550` / `l
 | 旧说法 | 更正 |
 |---|---|
 | "真实最坏延迟可能是 50 + 100 = **150 ms**" | ❌ 不成立。实际 ≈ 50 + 2~5 ≈ **55 ms** |
-| [`../control/mpc-roadmap.md`](../control/mpc-roadmap.md) 第 7 节把"时戳抖动"列为 **★★ 最高风险**，建议"提前到 MPC 开发之前"修 | ❌ **该风险不存在**，不需要为它排任何工期 |
+| [`../control/mpc-roadmap.md`](../control/mpc-roadmap.md) 第 7 节把"时戳抖动"列为 **★★ 最高风险**，建议"提前到模型预测控制开发之前"修 | ❌ **该风险不存在**，不需要为它排任何工期 |
 
 **因此本节的正确结论是**：
 

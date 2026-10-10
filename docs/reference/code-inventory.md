@@ -6,7 +6,7 @@
 >
 > **实施清单已拆分为独立文件**：
 > - Phase 1（offboard 位置定点，`(A)` 级）→ [`../control/phase1-implementation.md`](../control/phase1-implementation.md)
-> - Phase 2（MPC 接管 PID，`(C)` 级）→ [`../control/phase2-implementation.md`](../control/phase2-implementation.md)
+> - Phase 2（模型预测控制接管 PID，`(C)` 级）→ [`../control/phase2-implementation.md`](../control/phase2-implementation.md)
 >
 > 相关：[`open-source-survey.md`](open-source-survey.md)（项目级调查与第一手证据）、[`mocap-setup.md`](mocap-setup.md)（动捕链路）、[`px4-interface.md`](px4-interface.md)（接口事实）、[`params-analysis.md`](params-analysis.md)（`z0.params` 逐项）
 
@@ -36,8 +36,8 @@
 | `src/PX4CtrlFSM.cpp` | 685 行 | ✅ **重点参考** | 状态转移条件（超时、电压、RC 接管、offboard 掉线）是**实飞才会想到的判据** |
 | `src/PX4CtrlParam.{h,cpp}` | 175 行 | 🔶 参考 | 参数结构设计可借；参数值**不可借**（见 A.1.3） |
 | `src/input.{h,cpp}` | 426 行 | 🔶 参考 | RC/指令/里程计的超时检查与 `triggered` 边沿检测写法可借 |
-| `src/controller.cpp` **的推力模型段** | ~1/3 | ✅ **重点参考** | 期望加速度 → 推力 + **电压补偿**。★ MPC 也要这段 |
-| `src/controller.cpp` **的 PID 段** | ~2/3 | ❌ **不用** | 本项目要做的是 MPC |
+| `src/controller.cpp` **的推力模型段** | ~1/3 | ✅ **重点参考** | 期望加速度 → 推力 + **电压补偿**。★ 模型预测控制也要这段 |
+| `src/controller.cpp` **的 PID 段** | ~2/3 | ❌ **不用** | 本项目要做的是模型预测控制 |
 | `src/px4ctrl_node.cpp` | 134 行 | 🔶 参考 | 订阅/发布话题的接线方式 |
 | `launch/run_ctrl.launch` | — | 🔶 参考 | 启动流程可对照；ROS1 → ROS2 要重写 |
 | `config/ctrl_param_fpv.yaml` | 72 行 | ❌ **禁止拷贝** | ⚠️ 见 A.1.3 |
@@ -92,7 +92,7 @@ low_voltage: 18.0     # ← 6S 电池
 
 > *"将动捕输出的 3 个 Topic 整合为一个动捕里程计话题进行集中输出，本 ROS 包通过**固定 Pose 的数据和时间**，将 **Twist 和 Accel 数据进行线性插值**计算出和 Pose 时间戳对齐的数据，最后打包整合发布在 `/motion_capture/motion_capture_odom`"*
 
-**★ 这是本项目目前没做的事**：`mocap-setup.md` 的方案是**直接转发 pose**，没有做 pose/twist/accel 的互相对齐。**Phase 1 用不到速度，但 Phase 2 的 MPC 一定想用动捕速度**——到那时这段插值逻辑就是现成蓝本。
+**★ 这是本项目目前没做的事**：`mocap-setup.md` 的方案是**直接转发 pose**，没有做 pose/twist/accel 的互相对齐。**Phase 1 用不到速度，但 Phase 2 的模型预测控制一定想用动捕速度**——到那时这段插值逻辑就是现成蓝本。
 
 ### A.1.5 其余包
 
@@ -172,7 +172,7 @@ low_voltage: 18.0     # ← 6S 电池
 
 **取舍**：🔶 **Phase 2 再引入**。Phase 1 **完全不需要它**（全 mavros2，(A) 级），现在 clone 下来读一遍可以，但不要进 Phase 1 的构建。
 
-**理由**：Phase 1 的目标是"**让一条链先跑通**"。同时引入 uXRCE-DDS + acados + MPC 是三个新变量一起上，出问题无法归因（这正是"每个阶段只加一个新变量"的原则）。
+**理由**：Phase 1 的目标是"**让一条链先跑通**"。同时引入 uXRCE-DDS + acados + 模型预测控制是三个新变量一起上，出问题无法归因（这正是"每个阶段只加一个新变量"的原则）。
 
 ---
 
@@ -190,7 +190,7 @@ low_voltage: 18.0     # ← 6S 电池
 **但它有 3 条概念上的价值**（详见 [`open-source-survey.md`](open-source-survey.md) §2）：
 
 1. `guard` 模块 = **本项目"安全网"的现成范本**：独立 pipeline + 独立估计 + 3D 边界，主链路异常时自动接管
-2. 它的 MPC 用 **`acados` + `HPIPM`** —— 本项目求解器选型的**独立佐证**
+2. 它的模型预测控制用 **`acados` + `HPIPM`** —— 本项目求解器选型的**独立佐证**
 3. `INDI` 在其架构里明确是**内环（body rate 跟踪）** —— 与 `(C) → (C)+INDI → (D)` 吻合
 
 ---
