@@ -232,7 +232,7 @@ bash tools/px4-sitl/run_sitl.sh
 
 ### 5.2 `THR_MDL_FAC = 0` —— ★ 一处**故意的**背离（2026-09-28 已裁定维持）
 
-z0 固件上 `THR_MDL_FAC = 0.45`（第一手出处 `docs/assets/z0.params:920` =
+z0 固件上 `THR_MDL_FAC = 0.45`（第一手出处 `docs/assets/z0.params:947` =
 `0.449999988079071045`；⚠️ PX4 官方默认是 **`0`**（`src/lib/mixer_module/motor_params.c:73`），
 上游真机机型显式设的是 `0.25–0.35` ⟹ z0 的 `0.45` 是**刻意设的、且偏高**），
 **SITL 侧取 `0`**。
@@ -274,7 +274,7 @@ z0 固件上 `THR_MDL_FAC = 0.45`（第一手出处 `docs/assets/z0.params:920` 
 ### 5.3 `MPC_TILTMAX_AIR` —— 曾想收到 30°，**最终两边都保持 45**
 
 ⚠️ **与模型预测控制毫无关系**，只是缩写撞脸（Multicopter **P**osition **C**ontroller）。
-z0 现值 = PX4 官方默认 = **`45`**（`docs/assets/z0.params:602`）。
+z0 现值 = PX4 官方默认 = **`45`**（`docs/assets/z0.params:632`）。
 
 **本行原来是 `30`（标为"决定"）**，理由是**电池限制下的推力裕度**：
 

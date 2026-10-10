@@ -120,10 +120,15 @@ def decode_param_value(raw: float, ptype: Optional[int]) -> Tuple[float, str]:
 def decode_export(data: bytes) -> str:
     """把导出文件的原始字节解成文本。
 
-    ★ **逐行**解，每行独立退回：z0 那份 `docs/assets/z0.params` 的 header 是 **UTF-8**、
-    body 里带**原始 GBK 字节**（车名那一行），整块按任何一种编码解都会在别处炸。
+    ★ **逐行**解，每行独立退回 —— 因为这种文件**真实存在过**：`docs/assets/z0.params`
+    的 2026-09-29 版（原档仍在 `bag/z0-params-2026-09-29.params`）正文里夹着**一行原始
+    GBK 字节**（`# Vehicle:` 那行的车名），整块按任何一种编码解都会在别处炸。
     数据行本身是纯 ASCII，所以逐行解码对"我们真正要读的那部分"没有任何损失。
-    （文件自己的 header 也写着这条：要改它只能按字节抠。）
+
+    ⚠️ **当前那份 `docs/assets/z0.params`（2026-10-10 起）是纯 UTF-8 + LF**，逐行解码对它
+    已经不必要了；库里留着 09-29 那份原档，所以这条**按防御性留着、不改**。
+    ★ 真文件换了形状**不削弱**下面 `test_params_core.py` 里那条合成输入的负控 ——
+    它钉的是"这个形状能不能解"，不是"z0 现在是不是这个形状"。
     """
     out: List[str] = []
     for raw in data.split(b"\n"):

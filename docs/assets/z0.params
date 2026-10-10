@@ -1,43 +1,43 @@
 # z0 — 飞控参数文件（**真身**）
 #
-# 出处：2026-09-29 现场用 QGC 从 z0 的飞控（MicoAir NxtPX4v2，PX4 1.14.3 —— 与 body 里的
-#       Git Revision 4a0e65f2… 以及 ulog 的 ver_sw 同源）**导出**的机载参数。原本未做任何编辑，
-#       另存一份在 `bag/z0-params-2026-09-29.params`。
-#       ★ 本文件 = 本段说明 + 那份原文件的**逐字**内容：body 的 CRLF 行尾、`# Vehicle:` 那行的
-#         GBK 字节都原样保留 ⟹ `file` 会报 "Non-ISO extended-ASCII"，那是这个缘故，不是坏文件。
-#         （本段说明是 **LF**；从下面 `# Onboard parameters…` 那一行起是那份原文件的 **CRLF**。）
-#       ⚠️⚠️ **要改这个文件，只能按字节拼**（header 的 UTF-8 + body 的原始 bytes）：
-#         任何「解码成字符串再写回」的编辑器/工具都会把 body 里那句 GBK 车名换成 U+FFFD，
-#         而 `file`、参数条数、UTF-8 校验**都不会报错** —— 静默损坏。本仓 2026-09-29 踩过一次。
-#       ⚠️ 要按行解析这个文件，请显式用 UTF-8 并 `split("\n")`：`★` 的 UTF-8 末字节是 `0x85`，
-#         按 latin-1 解再用 `str.splitlines()` 会凭空多切出几行（本仓核对时就踩过一次）。
+# 出处：2026-10-10 现场用 QGC 从 z0 的飞控（MicoAir NxtPX4v2，PX4 1.14.3 —— 与下面 body 的
+#       `# Git Revision: 4a0e65f2…` 以及 ulog 的 ver_sw 同源）**导出**的机载参数，未做任何编辑，
+#       另存一份在 `bag/z0-params-2026-10-10.params`。
+#       ★ 本文件 = 本段说明 + 那份原文件的**逐字**内容（自 `# Onboard parameters…` 起）。
+#         两段**都是 UTF-8 + LF** —— 与上一版（2026-09-29，body 是 CRLF 夹一句 GBK）形状不同。
+#       ⚠️ **要改这个文件，仍请按字节拼**（说明头 + body 两段）：2026-09-29 那一版的 body 夹着
+#         一句原始 GBK 字节的车名，「解码成字符串再写回」会把它换成 U+FFFD，而 `file`、参数
+#         条数、UTF-8 校验**都不报错** —— 静默损坏，本仓踩过一次；这是**导出快照**，不是配置。
+#       ⚠️ 要**按行解析**这个文件，请显式用 UTF-8 并 `split("\n")`：`★` 的 UTF-8 末字节是 `0x85`，
+#         按 latin-1 解再用 `str.splitlines()` 会凭空多切出几行（本仓核对时踩过一次）。
 #
-# ★★ 这份文件**换过一次**（2026-09-29，票 .scratch/phase2/issues/19-record-four-flight-scenarios.md）：
-#       原先是上游 `Huan-qun/Sim2real-UAV-Params-` 的 `uav1.params` 存档 —— 那台机器也叫
-#       "Vehicle 1"、固件版本也相同（所以两份文件的头部一模一样），但**标定值全是那台机器的**。
+# ★★ 这份文件**换过两次**：
+#   ① 2026-09-29（票 .scratch/phase2/issues/19-record-four-flight-scenarios.md）：原先是从上游
+#      `Huan-qun/Sim2real-UAV-Params-` 的 `uav1.params` 存档换成 z0 真身导出 —— 参数条数
+#      914 → 911（少了 `SENS_GPS_MASK`/`SENS_GPS_PRIME`/`SENS_GPS_TAU`，新固件里已无），
+#      另有 **39 条值不同**（12 条 `CAL_*` 标定 / 12 条 `RC*` 行程 / 3 条计数器 / 12 条配置，
+#      逐条清单在 19 号票的 Comments 里）。
+#   ② 2026-10-10（票 .scratch/phase4/issues/05-first-flight-config-freeze.md）：换成本次导出。
+#      **参数条数不变（911）**，值只有 **5 条**不同 —— 3 条 `CAL_ACC0_XOFF/YOFF/ZOFF`
+#      （操作者 2026-10-10 确认**是他重新标定过**，不是异常）+ 2 个本该自增的计数器
+#      （`COM_FLIGHT_UUID`、`LND_FLIGHT_T_LO`）。★ 这 3 条标定值与 2026-10-09 串口读回来的
+#      **逐位相同** —— MAVLink 读回与 QGC 下载两条独立通道互证。
 #
-# 与旧存档的逐条差别（参数条数 914 → 911）：
-#   · **只在旧文件里有的 3 条**：`SENS_GPS_MASK` / `SENS_GPS_PRIME` / `SENS_GPS_TAU`
-#     —— 新固件里已经没有它们了。
-#   · **值不同的 39 条**，分四组（**逐条清单**在 19 号票的 Comments 里，可自己复核）：
-#       (a) 12 条 `CAL_*`（加速度计/陀螺的零偏与刻度）—— **传感器标定，换机器必须换**；
-#       (b) 12 条 `RC*_MIN/MAX/TRIM` —— **遥控器行程标定**（每路的端点与中位，差在几格 µs 量级）；
-#       (c) 3 条计数器：`COM_FLIGHT_UUID` / `LND_FLIGHT_T_HI` / `LND_FLIGHT_T_LO`，本来就该不同；
-#       (d) 12 条**配置**（不是标定，值得逐条看）：
-#       `MPC_VEL_MANUAL` 10 → 2       `MPC_XY_CRUISE` 5 → 2       `MPC_XY_VEL_MAX` 12 → 2
-#       `SYS_HAS_GPS` 1 → 0           `EKF2_GPS_CTRL` 7 → 0       `COM_RC_IN_MODE` 3 → 0
-#       `COM_FLTMODE4` 1 → 8          `NAV_RCL_ACT` 2 → 1
-#       `EKF2_EVA_NOISE` 0.0017 → 0.1 `EKF2_EVP_NOISE` 0.061 → 0.1
-#       `SENS_BOARD_X_OFF` 0.0257 → 0.1503        `SENS_BOARD_Y_OFF` −0.554185 → 0.6844
+# ⚠️⚠️ **每次重导出，行号都整体平移**（说明头长度、飞控上参数条数的增减都会动它）：
+#   · ①→② 这次是 **+36 行**（老参数行第 45 行 → 新第 9 行）；
+#   · 更早那次（`9cbb997`）是 **+30 行**，且被删的 3 条 `SENS_GPS_*` 落在 `MC_*` 与
+#     `THR_MDL_FAC` 之间，所以它们**之后**的参数只 +27 —— 同一份文件里平移量**不是常数**。
+#   ⟹ **引用这份文件时，可查的是参数名，不是行号。**
 #
-# ⚠️⚠️ **下游引用还没跟着改**：`docs/reference/params-analysis.md` 那整张逐项分析、
-#   `CONTEXT.md` / `docs/PROJECT.md` 里"源自上游 uav1.params、**尚未在 z0 的飞控上核实**"那些句子，
-#   说的都是**旧文件**。那些句子的归属是参数核对那张票（phase1/15），本张不代它改 ——
-#   在那之前，**别拿旧文档的结论当 z0 的现状**。
+# ⚠️ 这个说明头**刻意写成 36 行**：+ 下面 8 行原文件头 = 44 行，恰好让参数行落在第 45 行、
+#   与 2026-09-29 那版**行号一致** ⟹ 全仓 26 处老引用原样成立（本次已逐处核过）。
+#   **要改这段说明头，就得同时改那 26 处引用**，否则它们会静默指向别的参数 —— 另有 3 处
+#   是上次换档后没跟着改的遗留（`docs/control/sitl-z0-plant.md:235` 引 `:920`、应指 **947**；
+#    `:277` 引 `:602`、应指 **632**；`mismatch-sweep.md:1006` 转引前者）—— 归属 tickets 08/12，**操作者 2026-10-10 裁定"都改"，已重指**。
 # Onboard parameters for Vehicle 1
 #
 # Stack: PX4 Pro
-# Vehicle: ������
+# Vehicle: 多旋翼
 # Version: 1.14.3 dev
 # Git Revision: 4a0e65f233000000
 #
@@ -65,11 +65,11 @@
 1	1	CAL_ACC0_ID	6946826	6
 1	1	CAL_ACC0_PRIO	50	6
 1	1	CAL_ACC0_ROT	-1	6
-1	1	CAL_ACC0_XOFF	-0.061959743499755859	9
+1	1	CAL_ACC0_XOFF	-0.061853576451539993	9
 1	1	CAL_ACC0_XSCALE	1.000000000000000000	9
-1	1	CAL_ACC0_YOFF	-0.044408321380615234	9
+1	1	CAL_ACC0_YOFF	-0.042340077459812164	9
 1	1	CAL_ACC0_YSCALE	1.000000000000000000	9
-1	1	CAL_ACC0_ZOFF	0.108189582824707031	9
+1	1	CAL_ACC0_ZOFF	0.021617144346237183	9
 1	1	CAL_ACC0_ZSCALE	1.000000000000000000	9
 1	1	CAL_ACC1_ID	6946850	6
 1	1	CAL_ACC1_PRIO	50	6
@@ -265,7 +265,7 @@
 1	1	COM_DISARM_PRFLT	10.000000000000000000	9
 1	1	COM_DL_LOSS_T	10	6
 1	1	COM_FAIL_ACT_T	5.000000000000000000	9
-1	1	COM_FLIGHT_UUID	30	6
+1	1	COM_FLIGHT_UUID	48	6
 1	1	COM_FLTMODE1	2	6
 1	1	COM_FLTMODE2	-1	6
 1	1	COM_FLTMODE3	-1	6
@@ -523,7 +523,7 @@
 1	1	LNDMC_XY_VEL_MAX	1.500000000000000000	9
 1	1	LNDMC_Z_VEL_MAX	0.250000000000000000	9
 1	1	LND_FLIGHT_T_HI	0	6
-1	1	LND_FLIGHT_T_LO	182271483	6
+1	1	LND_FLIGHT_T_LO	393251019	6
 1	1	MAN_ARM_GESTURE	0	6
 1	1	MAV_0_CONFIG	101	6
 1	1	MAV_0_FLOW_CTRL	2	6

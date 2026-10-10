@@ -1263,28 +1263,47 @@ def test_写清单会建目录(tmp_path, monkeypatch):
 
 def test_参数存档与拷进_docs_的那份正文逐字相同():
     """★ 回归（2026-09-29 现场抓到，差点静默入库）：`docs/assets/z0.params` 是
-    **中文头 + 那份从飞控导出的原文件**，而原文件**不是 UTF-8**
-    （`# Vehicle:` 那行是 GBK 的"多旋翼"）。
+    **说明头 + 那份从飞控导出的原文件**，两份**逐字节**拼在一起 ——
+    说明头由人写，正文**一个字都不许动**。
 
-    ⟹ 任何"把整个文件解码成字符串、改一处、再写回"的工具都会把那 6 个字节换成 6 个 U+FFFD，
-    而 `file`（照样报 Non-ISO）、参数条数（照样 911）、UTF-8 校验（照样合法）**全都不报错**。
-    当时就是这么坏的，隔了一次 `endswith` 复核才发现。这条用例把它钉在源码树上：
-    **正文必须与 `bag/z0-params-2026-09-29.params` 逐字相同**。
+    ⟹ 任何"把整个文件解码成字符串、改一处、再写回"的工具都会动到正文（换行尾、换编码、
+    吞掉尾随空行），而 `file`、参数条数、UTF-8 校验**往往都不报错**。
+    当时就是这么坏的（那一版正文里夹着 GBK 字节，被换成 U+FFFD），隔了一次
+    `endswith` 复核才发现。这条用例把它钉在源码树上。
+
+    ⚠️ **2026-10-10 更新**（现场重新导出、替换了这份文件）：
+    ① 存档基准换成 **`bag/z0-params-2026-10-10.params`**（9-29 那份仍在 bag/ 里）；
+    ② 正文**不再是** GBK + CRLF（QGC 这次写的是 UTF-8 + LF），所以"GBK 特征字节"那条
+       指纹没了 —— 但**逐字节相同**这条才是主干，它照旧（换行尾、编码往返、吞尾随空行
+       全都还会被它逮住）。★ 下一次换档时这条用例会**故意**红，逼人把基准一起换掉。
     """
     repo = RUN_DIR.parent
     head = (repo / "docs/assets/z0.params").read_bytes()
-    body = (repo / "bag/z0-params-2026-09-29.params").read_bytes()
+    body = (repo / "bag/z0-params-2026-10-10.params").read_bytes()
     assert head.endswith(body), (
-        "`docs/assets/z0.params` 的**正文**必须与 `bag/z0-params-2026-09-29.params` 逐字相同"
-        "（后者是那份原文件的存档）—— 多半是被哪个编辑器按 UTF-8 往返了一遍，"
-        "把那句 GBK 车名换成了 U+FFFD")
-    assert b"# Vehicle: \xb6\xe0\xd0\xfd\xd2\xed" in body, (
-        "GBK 的 `# Vehicle: 多旋翼` 是这份原文件的特征字节 —— 不许「顺手」改成 UTF-8")
-    assert len(head) > len(body), "前面还要有那段中文头（只拷正文 = 出处没了）"
+        "`docs/assets/z0.params` 的**正文**必须与 `bag/z0-params-2026-10-10.params` 逐字相同"
+        "（后者是那份原文件的存档）—— 多半是被哪个编辑器按某种编码往返了一遍")
+    assert b"# Onboard parameters for Vehicle 1" in body, (
+        "正文得真是那份飞控导出 —— 它自己的首行就是这个")
+    assert (b"# Vehicle: " + "多旋翼".encode("utf-8")) in body, (
+        "`# Vehicle: 多旋翼` 在这版正文里是 **UTF-8**（9-29 那版这里是 GBK 字节）—— "
+        "它是「正文没被换过」的特征字节")
+    assert len(head) > len(body), "前面还要有那段说明头（只拷正文 = 出处没了）"
     prefix = head[:len(head) - len(body)]
-    assert "真身" in prefix.decode("utf-8"), "中文头要在（它写着出处与那次 914→911 的差别）"
-    assert b"\r\n" not in prefix, "★ 中文头是 LF —— 与正文的 CRLF 混着，这是**有意**的（正文逐字）"
-    assert b"\xef\xbf\xbd" not in head, "U+FFFD 一个都不许有：有就是坏了（正文原样是 GBK）"
+    # ★ 结构判据（2026-10-10 补）：说明头 **36 行** + 原档自带的 **8 行**头 = 44 行，
+    #   参数块因此从**第 45 行**开始 —— 全仓那批行号引用（`z0.params:947` 之类）正是按这个
+    #   落点写的。多一行 / 少一行**什么错都不报**，只会让它们**静默指向别的参数**
+    #   （2026-10-10 这次事故就是它的变体：说明头整段没了，全仓引用一起偏 36 行）。
+    #   ⟹ 把这两个数钉死。**要改说明头，就得同时改那批引用**（说明头末行也这么写着）。
+    n_head = prefix.count(b"\n")
+    assert n_head == 36, (
+        f"说明头必须恰好 36 行，现在是 {n_head} 行 —— 参数块落点一挪，"
+        "全仓那批行号引用就静默指错（改就得一起改）")
+    assert body.split(b"\n").index(b"# Vehicle-Id Component-Id Name Value Type") + 1 == 8, (
+        "原档自带的头是 8 行（末行就是上面那句表头）—— 36 + 8 = 44，参数块才落在第 45 行")
+    assert "真身" in prefix.decode("utf-8"), "说明头要在（它写着出处与两次换档的差别）"
+    assert b"\r\n" not in prefix, "★ 说明头是 LF（2026-10-10 起正文也是 LF，两段一致）"
+    assert b"\xef\xbf\xbd" not in head, "U+FFFD 一个都不许有：有就是坏了"
 
 
 # ─────────────────────────── ★ 安全边界 ───────────────────────────

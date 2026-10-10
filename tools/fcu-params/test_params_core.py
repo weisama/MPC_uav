@@ -31,15 +31,18 @@ def _bit(u: int) -> float:
     """造一个"位型是 `u` 的 float32" —— 也就是 PX4 把一个 int32 塞进 `param_value` 之后的样子。"""
     return struct.unpack("<f", struct.pack("<I", u & 0xFFFFFFFF))[0]
 
-#: 仓库里那份真导出（2026-09-29）。用来钉"解析器在**真文件**上确实能用"。
+#: 仓库里那份真导出（现为 2026-10-10 版）。用来钉"解析器在**真文件**上确实能用"。
 Z0_EXPORT = Path(__file__).resolve().parents[2] / "docs/assets/z0.params"
 
 
 def _export_bytes() -> bytes:
-    """合成一份"长得像真文件"的导出：UTF-8 的中文头 + CRLF 数据行 + 一行 GBK 字节。
+    """合成一份"长得像**历史版** `docs/assets/z0.params`"的导出：
+    UTF-8 的中文头 + CRLF 数据行 + 一行 GBK 字节。
 
-    ★ 这不是随手编的：真文件 `docs/assets/z0.params` 的三条形状全在里面
-      （header UTF-8 / body CRLF / body 里夹原始 GBK 字节 ⟹ 整块按任何单一编码解都会炸）。
+    ★ 这不是随手编的：那三条形状是 2026-09-29 版的**逐字**形状（原档现在
+      `bag/z0-params-2026-09-29.params`，你可以拿它复核这三条）。
+    ⚠️ **当前**那份（2026-10-10 起）是纯 UTF-8 + LF —— 所以这条负控钉的不是
+      "z0 现在长这样"，而是"**这个形状**（历史版 / 别的机器导出的）能不能解"。
     """
     head = "# z0 飞控参数文件（**真身**）\r\n".encode("utf-8")
     gbk = b"# Vehicle: \xb3\xb5\xd0\xcd\xa3\xa8GBK\xd7\xd6\xbd\xda\xa3\xa9\r\n"   # "车型（GBK字节）"
@@ -54,7 +57,7 @@ def _export_bytes() -> bytes:
 
 
 def test_解析_中文头_CRLF_GBK字节都拦不住它():
-    """三条形状同时在场时仍能解出参数 —— 而且**不该整块解码**（真文件就是这种）。"""
+    """三条形状同时在场时仍能解出参数 —— 而且**不该整块解码**（09-29 那版真文件就是这种）。"""
     with pytest.raises(UnicodeDecodeError):
         _export_bytes().decode("utf-8")          # 负控：证明"整块解"在这份输入上真的会炸
     params, skipped = parse_qgc_export(decode_export(_export_bytes()))
@@ -263,8 +266,11 @@ def test_对账_枚举型参数按原样字符串比():
 
 @pytest.mark.skipif(not Z0_EXPORT.exists(), reason="仓库里没有那份导出文件")
 def test_在真导出上_自己对自己是干净的():
-    """★ 容差与解析器在**真文件**（955 行 / 911 条 / 混合编码）上必须一致 ——
-    这条要是红了，"对账"这件事本身就不可信。"""
+    """★ 容差与解析器在**真文件**上必须一致 —— 这条要是红了，"对账"这件事本身就不可信。
+
+    ★ 行数/条数**别抄**（这份文件随现场重导出更新，档位见它自己头 36 行）；这里只钉
+      "它解得开、几条关键参数的值对得上、自己对自己干净"。
+    """
     params, _ = parse_qgc_export(decode_export(Z0_EXPORT.read_bytes()))
     assert len(params) > 900
     assert params["NAV_RCL_ACT"].value == 1.0
