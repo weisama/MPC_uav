@@ -758,6 +758,78 @@ z0 的链路跑在 `MAVLINK_MODE_ONBOARD`，该模式配 `ESTIMATOR_STATUS` **1.
 而且真出现"电池话题静默"时，`/mavros/state` 那条判据几乎必然一起成立（同一个 mavros）。
 ⟹ 本张**不加**"电池话题静默 ⟹ 降级"，保留 `battery_timeout_s` 参数与订阅只为记账/诊断。
 
+### 4.5 ★★ 与 XI35 转换表的逐条对照（ticket [`phase4/08`](../../.scratch/phase4/issues/08-safety-paths-and-fallback-drill.md) 的 FSM 审计，2026-10-10）
+
+> **这一节是什么**：§4.2 那张表是 z0 **自己的**设计表（它对照的是更早的"原表"）。
+> 这一节是 `phase4/08` 票面要求的那一步 —— 拿 [`xi35-fsm.md`](../reference/xi35-fsm.md) §3 的转换表
+> （**11 条转移 + 6 条自环 = 17 行**）**逐条**对 z0 的**条件与语义**。
+> **对齐的是条件与语义，不是代码行**（Q1=a；[`phase1/spec.md:173`](../../.scratch/phase1/spec.md)）。
+> **只审计、不改代码**（票面原文）；发现的差异记进票面 Comments 并回链，不就地改。
+> **被审代码**：`src/control/include/control/fsm.hpp`（`update()` 的 ①–⑦）。
+
+#### (1) 「两个维度显式分开」—— ✅ 成立，且比参考更彻底
+
+| | 参考实现（XI35） | z0 |
+|---|---|---|
+| 结构 | **一个扁平枚举** `State_t{MANUAL_CTRL, AUTO_HOVER, CMD_CTRL, AUTO_TAKEOFF, AUTO_LAND}`（`PX4CtrlFSM.h:63-70`）—— "谁在控制"与"在干什么"**压在一起** | **两个正交枚举**：`Authority{MANUAL, AUTO}`（`fsm.hpp:89-93`）× `Phase{INIT, STANDBY, TAKEOFF, HOVER, WAIT_START, TRACK, LAND, RC_OVERRIDE}`（`:95-117`），对外打成 `"<控制权>/<任务态>"` |
+| 第三条内部层 | 无 | `Task`（私有，`:762-771`）管"任务飞到哪一步"，**只有 `update()` ⑦ 一处**翻成 `Phase` ⟹ 加任务子态**不许**动对外契约 |
+
+★ **`AUTO` 的定义是"我们在发会驱动飞机的指令（已解锁的 offboard）"**，所以 `STANDBY`（已在 OFFBOARD、未解锁）对外是 `MANUAL/STANDBY`。
+★ **z0 比参考多一个格子**：参考的 `MANUAL_CTRL` = 完全停用 px4ctrl（不进 offboard、不发 setpoint），
+而 z0 的 `STANDBY` = **已经进 OFFBOARD 且正在流 setpoint**。这是刻意的（§H.6 的 D3：解锁的前置就是
+"已在 OFFBOARD + setpoint 已在流"，出处见 `fsm.hpp:35-36`）—— 两个实现里"我们没在驱动飞机"这句话的**机制**不同。
+
+#### (2) 逐条对照
+
+**判定三档**：✅ 条件与语义等价 ／ ⚠️ **有意不同且写得出来出处** ／ ⛔ **无对应且文档里没有理由**（要人裁定）。
+
+| XI35 行 | XI35 的条件 / 语义 | z0 的落点 | 判定 |
+|---|---|---|---|
+| 1 | `MANUAL_CTRL→AUTO_HOVER`：`enter_hover_mode` ∧ odom 新鲜 ∧ 未在发 cmd ∧ `‖v‖≤3.0` | 没有"进入悬停模式"这条遥控开关；对应物 = 守卫齐 ⟹ `STANDBY`（目标=当前位置）⟹ 流够 `offboard_prestream_s` ⟹ 请求 OFFBOARD（`:1299-1324`） | ⚠️ 主体对得上（都是"开始流 + 进 OFFBOARD"）；**速度门 ⛔** |
+| 2 | `MANUAL_CTRL→AUTO_TAKEOFF`：… ∧ `‖v‖≤0.1` ∧ `landed` ∧（收到 RC 时）`check_centered()` | `request_takeoff`（只拦"已有任务"）+ 解锁前置 = **四条守卫 + `in_offboard` + `rc_fresh`**（`:1354`） | ⛔ `‖v‖≤0.1`、`landed` 无对应；遥控侧只要求"链路在"、**不要求杆居中/不在动** |
+| 3 | `MANUAL_CTRL→MANUAL_CTRL`（reboot，`MAV_CMD 246`） | 无 | ⛔ 无对应 |
+| 4 | `AUTO_HOVER→MANUAL_CTRL`：¬hover ∨ odom 超时 ∨ `kf_fusion_fail`；副作用 `toggle_offboard(false)` | 守卫不成立 ⟹ `halt()` 回 `INIT`（`:1299-1301`）；输入失效 ⟹ 降级（未解锁回 `INIT`、已解锁 `LAND`） | ✅（z0 更细：按输入给 0.5/2.5 s 分级 + 解锁门）。★ 差别：z0 **不发** `toggle_offboard(false)`，交给 PX4 的 `COM_OF_LOSS_T`（刻意，`fsm.hpp:20-22`） |
+| 5 | `AUTO_HOVER→CMD_CTRL`：`is_command_mode` ∧ cmd 新鲜 ∧ ¬emergency ∧ ¬search ∧ **`mode=="OFFBOARD"`**（否则**静默不跳转**） | `kWaitStart → kTrack`（开始键松手） | ✅。★ XI35 明写一条模式前置，z0 **不显式**要求 `in_offboard` —— 但模式一丢会先 `mode_lost` 闩锁 ⟹ 根本走不到 ⑦（`:490-492`、`:1264-1270`）⟹ 等价，且更严（停发 > 静默不跳） |
+| 6 | `AUTO_HOVER→AUTO_LAND`：(`triggered` ∧ `cmd==LAND`) ∨ `emergency_hover` | `LAND` 的**四条来源**（`:1278-1296` + `EndReason` `:544-554`） | ✅（"LAND 指令"那一半）；`emergency_hover` 那半见 (3) |
+| 7 | `AUTO_HOVER→AUTO_HOVER`（兜底）：`set_hov_with_rc()` —— **摇杆直接搬动悬停点**；`publish_trigger()` | z0 **不给**这条（打杆 ⟹ `rc_override` 夺权，`:474`）；`publish_trigger` 对应 `/traj/start` | ⚠️ 有意不同（Q5=a，已记在 `xi35-fsm.md` §5） |
+| 8 | `CMD_CTRL→MANUAL_CTRL`：¬`is_hover_mode` ∨ odom 超时（比第 4 行少了 `kf_fusion_fail`）；副作用同为 `toggle_offboard_mode(false)` | 与第 4 行同一条路径（守卫不成立 ⟹ `halt()` 回 `INIT`） | ✅ |
+| 9 | `CMD_CTRL→AUTO_HOVER`：¬command ∨ cmd 超时 ∨ emergency ∨ search ⟹ **退回悬停** | `TRACK` 里参考断了：**保持上一个目标**，断够 `traj_timeout_s`（3 s）⟹ 停发 + 降落（`:1235-1236`、`:1481-1490`） | ⚠️ 有意不同（参考温和退回悬停、z0 判失效）—— 已记（`src/control/README.md`「轨迹跟踪（ticket 09）」的「断流时保持**上一个目标**」一行） |
+| 10 | `CMD_CTRL→CMD_CTRL`：**拒绝着陆** —— 要求先停发指令 > `msg_timeout.cmd` 秒 | z0 的降落是**当场**停发（`halt()`）+ 请求 `AUTO.LAND` | ⚠️ 有意不同（ticket 07 增补的裁定：长按即降落）；z0 **没有**"正在发指令时拒绝降落"这一层 |
+| 11 | `AUTO_TAKEOFF→AUTO_HOVER`：`t ≥ MOTORS_SPEEDUP_TIME(3.0)` ∧ `z ≥ start+height` | `kClimb→kHover`：`\|z−(原点+高度)\|<0.10` ∧ `\|v_z\|<0.10` **持续** 1 s（`:1392-1404`） | ✅ 语义对得上（都是"到高"） |
+| 12/13 | `AUTO_TAKEOFF` 自环：前 3 s 走 `get_rotor_speed_up_des()`（`exp((Δt−3)·6)·7−7`，>0.1 清零并 ERROR）；之后位置斜坡 + 前 0.1 s 正弦加速度 | `kClimb` 的**线性**斜坡，解锁即上（`:1380-1385`） | ⛔ **`MOTORS_SPEEDUP_TIME` 那段"电机空转"无对应**；正弦整形也没有 —— 文档里没有理由 |
+| 14–17 | `AUTO_LAND` 四条：自己做着陆检测（`POSITION_DEVIATION_C` / `VELOCITY_THR_C` / `TIME_KEEP_C`）+ `motors_idling` + `toggle_arm_disarm(false)` | 全交给 PX4 的 `AUTO.LAND`，我们**只等 `armed` 降沿**（`:1211-1217`，`COM_DISARM_LAND = 2.0`） | ⚠️ 有意不同（控制层级不同）—— 已记（`src/control/README.md`「降落与上锁：我们只做一半」） |
+
+**计数**：17 行全覆盖 —— **5 行 ✅**（4 / 5 / 6 / 8 / 11）／**7 行 ⚠️**（1 的主体 / 7 / 9 / 10 / 14–17，出处都在文档里）／**5 行 ⛔**（1 的速度门、2、3、12、13）。
+⛔ 的那几行**不是"发现 bug"**，是"参考里那条判据在 z0 找不到对应物、而**理由没写下来**" —— 是刻意还是漏了，只能由人裁定（见票面 Comments）。
+
+#### (3) 三处死代码 —— ✅ 没有被照搬
+
+| 参考实现 | z0 的对应物 | 结论 |
+|---|---|---|
+| 恒假的 `emergency_hover`（赋值语句被注释掉，`h:87-91`）——「紧急悬停」**完全不存在**，第 6 行的 `AUTO_HOVER→AUTO_LAND` 实际只能由 LAND 指令触发 | z0 **没有**这个功能，也不假装有：中止任务只有一个出口 `LAND`，由**可判定**的判据驱动（`first_degrade` 的 **11 条**失效令牌 + 三条正常出口，`:471-535`、`:544-554`） | ✅ 未照搬。★ 最接近"永远不成立"的是 `position_invalid`（NaN）—— 但它**被文档点名是防御性的**（`fsm.hpp:227`、`src/control/README.md`），且 ticket 16 补上了真载体 `ekf2_pos_lost`。与参考的区别是"**说清它不成立**" vs "**看着像功能、其实没有**" |
+| `kf_fusion_fail` **单向 latch**（`h:96-99`：只置不清 ⟹ 一旦置位只能手动着陆） | `Latch` 两类**都可复位**：`kArmedDegrade` 由**可信的**落地上锁清（`connected ∧ armed↓`，`:1211-1217` + `reset_mission()` `:883-904`）；`kTakeover` 另可由"模式被外部交回 OFFBOARD"清（`:1218-1224`） | ✅ 未照搬（`src/control/README.md` 明写"这是与 XI35 的 `kf_fusion_fail` 刻意不同的地方"） |
+| `search_hover` **没有任何地方清它**（`h:93-94` ⟹ 只能重启退出） | z0 没有这个标志；"程序自己走不出去的态"是**逐态**堵掉的：`kRequested` 有 `takeoff_timeout_s`（`:1367-1371`）、`kWaitStart` 有 `wait_start_timeout_s`（`:1456-1461`）、`kTrack` 有 `traj_timeout_s`（`:1235-1236`） | ✅ 未照搬 |
+
+#### (4) 溯源注释（票面第三框）—— ⛔ 未落实
+
+票面要求"每处相对参考实现的改动**在代码注释里带编号与出处**（形如 `// ported from XI35 PX4CtrlFSM.cpp:183`）"，
+`phase4/spec.md:192`（Q8=b）同款。
+
+**第一手核实（2026-10-10）**：**全仓代码里一条都没有。**
+
+- 搜法 `grep -rniE "xi35|px4ctrl|ctrlfsm" src/` ⟹ **14 行**命中（分散在 8 个文件），**没有一处**是逐处溯源注释
+  —— 全是**散文里提一句**（`control/README.md:23`/`:264`、`test_fsm.cpp:12-13`、`test_control_*.py`）
+  或**参数值 / 触发时机**的对照（`px4_interface.hpp:99`/`:142`、`control.yaml:120`、
+  `traj/config/traj.yaml:14,24`、`traj/src/traj_node.cpp:21-23`）。
+- 搜法 `grep -rn "ported from" .` ⟹ **代码里 0 命中**；命中全部落在**文档**里
+  （写下这条纪律的 `phase4/spec.md:110,192` 与 `xi35-fsm.md:6`，以及本节所属的这几处说明）。
+- `fsm.hpp` 里确实有 **13 处带行号的源码引用**，但**全部指向 PX4 / mavros / `traj` 的上游事实**
+  （`Commander.cpp:2740`、`mode_requirements.cpp:141/142`、`EKF/ekf_helper.cpp:761`、`ev_control.cpp:75`、
+  `sys_status.cpp:903-911`、`local_position.cpp:210`、`traj_node.cpp:289/302-308` …），
+  另有 87 行引用本项目文档（`§H.6` / `§H.7.1` / `§4.4` / 票号）—— **没有一处**是"这一条相对参考实现改了什么"。
+
+⟹ 这一框**不达标**。按票面纪律（"不就地改代码"），处置记在票面 Comments，**不在此补注释**。
+
 ## 5. 判据与轨迹
 
 ### 5.1 "稳定"判据（已定）
