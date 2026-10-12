@@ -10,6 +10,8 @@ Type: task
 ## 逐条实测
 
 - [ ] **打杆接管**：遥控器任意打杆 → 程序**立刻停止发布 setpoint**，**不自己切模式**；落点由 PX4 按 `COM_OBL_RC_ACT` 决定 —— 这是一个**参数化的、可预演的**行为，不是我藏在代码里的逻辑
+      ★ 2026-10-12：**本框仍未过**。前提查清了（见 Comments：`fsm.hpp:474` 那条判据带**解锁门**）；
+      当天误走成 `degrade=mode_lost`（拨 ch6 而非打杆），夺权通路的四条行为全中，但**判据不同名**。
 - [x] **急停 / 开始通道**实测读数与通道分配的决定一致，且**不与 PX4 模式开关（`RC_MAP_FLTMODE`）共用通道** —— 两者不得互相触发
       ✅ 2026-10-12 实测（台架第一场）：ch9 低 `999`／高 `2000`（与通道分配的裁定一致）；
       ch6 三档拨动**全程 ch9 一帧未动** ⟹ 两者不互相触发。原文落在
@@ -273,3 +275,68 @@ Comments）。那 5 行随之按 §4.5 (2) 开头的三档定义从 ⛔ 升成 �
 **仍未做**：六条实测里**还剩四条**（打杆接管 / 心跳丢失 / 崩溃注入 / 求解失败注入），
 加上 §3.1 的第 2/3 步（等 (C) 链有归属）。
 ⟹ 本票**保持 `ready-for-human`**。
+
+### 2026-10-12 · 夺权通路的**半场实测**（`degrade=mode_lost`）—— §2.1 **不算过**，但夺权本身量到了
+
+**证据行**：
+
+```
+夺权（mode_lost，**不是** §2.1 的判据） | 2026-10-12 03:59:00.046 起（另含 04:03:01–04:06:01 的后半程）
+  | (A) 级；拆桨＋上电＋遥控器在手；**全程 armed=False**（没解锁）；触发是**操作者拨 ch6**
+  | §2.1 要的是 degrade=rc_override ⟹ 本行**不套** §2.1 的判据，单记"夺权通路"自身
+  | /control/state: MANUAL/STANDBY → **MANUAL/RC_OVERRIDE**（03:59:00.057）；
+    mode: OFFBOARD → STABILIZED（.046）→ POSCTL（03:59:01）；setpoint **50 Hz → 0 Hz**（最后一帧 t≈+5.2 s）；
+    日志 degrade=mode_lost **73 次**，闩锁**持续 390 s+ 未自恢复**
+  | 四条行为与设计一致（见下表） | —
+```
+
+**原始输出**（逐字，两份）：
+- **夺权进入那一刻**：[`docs/assets/drill/2026-10-12-takeover-modelost-entry.log`](../../../docs/assets/drill/2026-10-12-takeover-modelost-entry.log)
+- **闩锁后半程 ＋ 拆链**：[`docs/assets/drill/2026-10-12-takeover-modelost.log`](../../../docs/assets/drill/2026-10-12-takeover-modelost.log)
+
+**★ 为什么不算 §2.1 过（这条比结果重要）**：§2.1 要的证据是 `degrade=rc_override`（打杆那条），
+而 [fsm.hpp:474](../../../src/control/include/control/fsm.hpp#L474) 那条判据**带解锁门**：
+```cpp
+if (h.rc_sticks_moving && g.armed) {return Degrade::kRcOverride;}
+```
+本场**全程 `armed=False`** ⟹ 那条判据**不可能**触发；探针也证实**摇杆事件 0 条**（一次杆都没打）。
+⟹ 是**触发了另一条**（`kModeLost`：我们持有的模式被外部切走）。**同一类夺权（`is_takeover`），不同的判据名。**
+
+**意外收获：夺权通路的四条行为，一次全量到**（都是原始输出里的读数）：
+
+| # | 行为 | 读数 |
+|---|---|---|
+| 1 | **立刻停发** | setpoint `50 Hz` → `0 Hz`，最后一帧停在 `t≈5.2 s` |
+| 2 | **不请求任何模式** | 模式一直停在操作者拨到的位置（STABILIZED/POSCTL），**没有一条我方模式命令** —— 没抢回 OFFBOARD |
+| 3 | **闩锁不自恢复** | 390 s+ 内每 10 s 重报「已闩锁」，状态纹丝不动 |
+| 4 | **未解锁时的夺权也闩锁** | `is_takeover` ⟹ `Latch::kTakeover`（`fsm.hpp:1243-1244`），**不看 `armed`** |
+
+**复位路径核实**（源码，两条；★ ch9 那条**被明确拒绝**）：
+
+| 路径 | 触发条件 | 出处 | 副作用 |
+|---|---|---|---|
+| (a) **上锁的下降沿** | `guards.connected && prev_armed && !guards.armed` | `fsm.hpp:1211-1217` | 清闩锁 **+ `reset_mission()`**（任务归零） |
+| (b) **外部把模式放回 OFFBOARD** | `!prev.mode_ours && guards.in_offboard` | `fsm.hpp:1218-1223` | 只清夺权闩锁 |
+| ~~(c) 按 ch9~~ | `note_start_long_press()` 里 `if (latch_ == Latch::kTakeover) return kTakeover;` | `fsm.hpp:1098-1100` | **什么都不做**（纪律：控制权不在我们手上） |
+
+⟹ 未解锁状态下被夺权时，(a) 够不到（`prev_armed` 从来没真过）、(b) 能不能成**取决于 PX4 接不接受**那个 OFFBOARD
+—— 当刻我们已停发、没有 setpoint 流，**可能被拒**（那就成了"没流 ⟹ 拒收 ⟹ 看不到 OFFBOARD ⟹ 闩锁不清 ⟹ 不恢复流"的结）。
+⚠️ **这条结今天没验**（当天直接走了 `down`/断电）⟹ **不写结论**，只把两条路和那个疑点记在这里。
+
+**一处新发现（登记 —— 不是本票的产物，不就地改）**：`degrade=mode_lost` 的**证据串恒等**：
+```
+· 证据：模式从「STABILIZED」变成了「STABILIZED」      （链路断开后是「」变成了「」）
+```
+源码核实它是**结构性**的，不是偶发：`mode_before_` 在 [`control_node.cpp:373`](../../../src/control/src/control_node.cpp#L373)
+（**`tick()` 开头**）赋值，证据串在 [`control_node.cpp:1009`](../../../src/control/src/control_node.cpp#L1009)
+（**同一个 tick**）读它；节点是 `rclcpp::spin`（单线程，`control_node.cpp:1400`）⟹ 两行之间模式**不可能**变。
+⟹ 这行的本意（"说清模式从哪儿变到哪儿"）在代码里**从没兑现过**，而它恰好是告警里**唯一的读数**。
+归因：**代码缺陷**（不是读数过期、不是环境）。
+
+**一处没演示到的、因此不写的**：04:04:36 mavros 被停之后，`/mavros/state` 发了那帧
+`mode= armed=False connected=False` 的**合成帧**（[`fsm.hpp:1200-1208`](../../../src/control/include/control/fsm.hpp#L1200-L1208) 警告过的那种），
+闩锁**没有被它清掉**。但**不能用这个证明那道 `connected` 门生效** —— 本场 `prev_armed` 从来不是 true，
+两条复位路都够不到，闩锁本来就不会清。⟹ **记为"未演示"。**
+
+**仍未做**：§2.1 **本体**（解锁 + 打杆）。★ 操作者已关掉飞控供电并离开工位
+⟹ 需要人工配合的部分**等操作者回来再继续**；本文件与演练页已更新到"能纯读文档推进"为止。

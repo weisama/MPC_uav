@@ -1,0 +1,464 @@
+===== 2026-10-12 04:03:01–04:06:01（180 s）：奔着 §2.1（打杆接管）去，实际量到的是 degrade=mode_lost 夺权 =====
+本场实际发生（只写读数支持的）：
+  ① 起手就是**已闩锁**状态（`MANUAL/RC_OVERRIDE`）：那是**上一场**（本文件之前的 120 s 窗口）造成的
+     —— 拨 ch6 把模式切走 ⟹ `degrade=mode_lost`。那一场的原始输出在
+     [`2026-10-12-takeover-modelost-entry.log`](2026-10-12-takeover-modelost-entry.log)
+     （**要看夺权进入那一刻，看那一份**；这一份是闩锁的**后半程**）；
+  ② 全程 armed=False ⟹ **没解锁** ⟹ 打杆那条判据（`fsm.hpp:474`，带 `g.armed` 门）**不可能**触发；
+     本场**摇杆事件 0 条**（只有开头的基线行），即一次杆都没打；
+  ③ 全程唯一的降级是 degrade=mode_lost（73 次），闩锁**没有自恢复**（持续 390 s+）；
+  ④ 04:04:36 /mavros/state 变成 mode= armed=False connected=False（mavros 被停）；
+     ⚠️ 这正是 fsm.hpp:1200-1208 警告过的**合成帧**（armed=false 是占位值、不是读数）。
+     之后探针再没有拿到任何飞控读数 —— 操作者随后关掉了飞控供电（据会话口述；
+     **读数里看不出断电时刻**，因为没有后续读数了）。
+探针：python3 -u /tmp/drill21_probe.py 180（只读：不发布任何话题、不调用任何服务）。节拍行（每秒一条）原样保留。
+
+===== §2.1 探针挂上，窗口 180 s（04:03:01.027）=====
+  订阅：/mavros/rc/in、/control/state、/mavros/state、/mavros/setpoint_raw/local、/rosout
+[04:03:02.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=None  mode=None  armed=None
+[04:03:02.932] ★状态 /control/state = MANUAL/RC_OVERRIDE
+[04:03:03.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=None  armed=None
+[04:03:03.646] RC   摇杆基线 ch1-4 = [1500, 1499, 989, 1499]（其余通道不报）
+[04:03:04.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=None  armed=None
+[04:03:04.050] 飞控 /mavros/state  mode=STABILIZED  armed=False  connected=True
+[04:03:05.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=STABILIZED  armed=False
+[04:03:06.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=STABILIZED  armed=False
+[04:03:07.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=STABILIZED  armed=False
+[04:03:08.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=STABILIZED  armed=False
+[04:03:09.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=STABILIZED  armed=False
+[04:03:10.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=STABILIZED  armed=False
+[04:03:10.068] 日志[control] degrade=mode_lost（持续 250.0 s，**已闩锁**：不会自己恢复）—— 本节点持有的模式（OFFBOARD / 已请求的 AUTO.LAND）被外部切走。已停发且**不抢回**；复位：有人把模式放回 OFFBOARD，或落地上锁 ⏎   · 证据：模式从「STABILIZED」变成了「STABILIZED」
+[04:03:10.328] 日志[control] 失效已闩锁（degrade=mode_lost，任务态 RC_OVERRIDE）⟹ **不会自己恢复**。复位方式：有人把模式放回 OFFBOARD（外部动作），或落地上锁（armed → false）
+[04:03:11.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=STABILIZED  armed=False
+[04:03:12.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=STABILIZED  armed=False
+[04:03:13.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=STABILIZED  armed=False
+[04:03:14.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=STABILIZED  armed=False
+[04:03:15.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=STABILIZED  armed=False
+[04:03:16.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=STABILIZED  armed=False
+[04:03:17.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=STABILIZED  armed=False
+[04:03:18.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=STABILIZED  armed=False
+[04:03:19.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=STABILIZED  armed=False
+[04:03:20.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=STABILIZED  armed=False
+[04:03:20.068] 日志[control] degrade=mode_lost（持续 260.0 s，**已闩锁**：不会自己恢复）—— 本节点持有的模式（OFFBOARD / 已请求的 AUTO.LAND）被外部切走。已停发且**不抢回**；复位：有人把模式放回 OFFBOARD，或落地上锁 ⏎   · 证据：模式从「STABILIZED」变成了「STABILIZED」
+[04:03:20.329] 日志[control] 失效已闩锁（degrade=mode_lost，任务态 RC_OVERRIDE）⟹ **不会自己恢复**。复位方式：有人把模式放回 OFFBOARD（外部动作），或落地上锁（armed → false）
+[04:03:21.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=STABILIZED  armed=False
+[04:03:22.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=STABILIZED  armed=False
+[04:03:23.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=STABILIZED  armed=False
+[04:03:24.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=STABILIZED  armed=False
+[04:03:25.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=STABILIZED  armed=False
+[04:03:26.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=STABILIZED  armed=False
+[04:03:27.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=STABILIZED  armed=False
+[04:03:28.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=STABILIZED  armed=False
+[04:03:29.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=STABILIZED  armed=False
+[04:03:30.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=STABILIZED  armed=False
+[04:03:30.069] 日志[control] degrade=mode_lost（持续 270.0 s，**已闩锁**：不会自己恢复）—— 本节点持有的模式（OFFBOARD / 已请求的 AUTO.LAND）被外部切走。已停发且**不抢回**；复位：有人把模式放回 OFFBOARD，或落地上锁 ⏎   · 证据：模式从「STABILIZED」变成了「STABILIZED」
+[04:03:30.329] 日志[control] 失效已闩锁（degrade=mode_lost，任务态 RC_OVERRIDE）⟹ **不会自己恢复**。复位方式：有人把模式放回 OFFBOARD（外部动作），或落地上锁（armed → false）
+[04:03:31.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=STABILIZED  armed=False
+[04:03:32.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=STABILIZED  armed=False
+[04:03:33.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=STABILIZED  armed=False
+[04:03:34.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=STABILIZED  armed=False
+[04:03:35.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=STABILIZED  armed=False
+[04:03:36.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=STABILIZED  armed=False
+[04:03:37.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=STABILIZED  armed=False
+[04:03:38.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=STABILIZED  armed=False
+[04:03:39.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=STABILIZED  armed=False
+[04:03:40.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=STABILIZED  armed=False
+[04:03:40.070] 日志[control] degrade=mode_lost（持续 280.0 s，**已闩锁**：不会自己恢复）—— 本节点持有的模式（OFFBOARD / 已请求的 AUTO.LAND）被外部切走。已停发且**不抢回**；复位：有人把模式放回 OFFBOARD，或落地上锁 ⏎   · 证据：模式从「STABILIZED」变成了「STABILIZED」
+[04:03:40.330] 日志[control] 失效已闩锁（degrade=mode_lost，任务态 RC_OVERRIDE）⟹ **不会自己恢复**。复位方式：有人把模式放回 OFFBOARD（外部动作），或落地上锁（armed → false）
+[04:03:41.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=STABILIZED  armed=False
+[04:03:42.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=STABILIZED  armed=False
+[04:03:43.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=STABILIZED  armed=False
+[04:03:44.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=STABILIZED  armed=False
+[04:03:45.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=STABILIZED  armed=False
+[04:03:46.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=STABILIZED  armed=False
+[04:03:47.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=STABILIZED  armed=False
+[04:03:48.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=STABILIZED  armed=False
+[04:03:49.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=STABILIZED  armed=False
+[04:03:50.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=STABILIZED  armed=False
+[04:03:50.070] 日志[control] degrade=mode_lost（持续 290.0 s，**已闩锁**：不会自己恢复）—— 本节点持有的模式（OFFBOARD / 已请求的 AUTO.LAND）被外部切走。已停发且**不抢回**；复位：有人把模式放回 OFFBOARD，或落地上锁 ⏎   · 证据：模式从「STABILIZED」变成了「STABILIZED」
+[04:03:50.330] 日志[control] 失效已闩锁（degrade=mode_lost，任务态 RC_OVERRIDE）⟹ **不会自己恢复**。复位方式：有人把模式放回 OFFBOARD（外部动作），或落地上锁（armed → false）
+[04:03:51.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=STABILIZED  armed=False
+[04:03:52.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=STABILIZED  armed=False
+[04:03:53.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=STABILIZED  armed=False
+[04:03:54.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=STABILIZED  armed=False
+[04:03:55.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=STABILIZED  armed=False
+[04:03:56.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=STABILIZED  armed=False
+[04:03:57.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=STABILIZED  armed=False
+[04:03:58.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=STABILIZED  armed=False
+[04:03:59.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=STABILIZED  armed=False
+[04:04:00.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=STABILIZED  armed=False
+[04:04:00.071] 日志[control] degrade=mode_lost（持续 300.0 s，**已闩锁**：不会自己恢复）—— 本节点持有的模式（OFFBOARD / 已请求的 AUTO.LAND）被外部切走。已停发且**不抢回**；复位：有人把模式放回 OFFBOARD，或落地上锁 ⏎   · 证据：模式从「STABILIZED」变成了「STABILIZED」
+[04:04:00.331] 日志[control] 失效已闩锁（degrade=mode_lost，任务态 RC_OVERRIDE）⟹ **不会自己恢复**。复位方式：有人把模式放回 OFFBOARD（外部动作），或落地上锁（armed → false）
+[04:04:01.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=STABILIZED  armed=False
+[04:04:02.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=STABILIZED  armed=False
+[04:04:03.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=STABILIZED  armed=False
+[04:04:04.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=STABILIZED  armed=False
+[04:04:05.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=STABILIZED  armed=False
+[04:04:06.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=STABILIZED  armed=False
+[04:04:07.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=STABILIZED  armed=False
+[04:04:08.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=STABILIZED  armed=False
+[04:04:09.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=STABILIZED  armed=False
+[04:04:10.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=STABILIZED  armed=False
+[04:04:10.071] 日志[control] degrade=mode_lost（持续 310.0 s，**已闩锁**：不会自己恢复）—— 本节点持有的模式（OFFBOARD / 已请求的 AUTO.LAND）被外部切走。已停发且**不抢回**；复位：有人把模式放回 OFFBOARD，或落地上锁 ⏎   · 证据：模式从「STABILIZED」变成了「STABILIZED」
+[04:04:10.331] 日志[control] 失效已闩锁（degrade=mode_lost，任务态 RC_OVERRIDE）⟹ **不会自己恢复**。复位方式：有人把模式放回 OFFBOARD（外部动作），或落地上锁（armed → false）
+[04:04:11.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=STABILIZED  armed=False
+[04:04:12.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=STABILIZED  armed=False
+[04:04:13.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=STABILIZED  armed=False
+[04:04:14.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=STABILIZED  armed=False
+[04:04:15.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=STABILIZED  armed=False
+[04:04:16.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=STABILIZED  armed=False
+[04:04:17.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=STABILIZED  armed=False
+[04:04:18.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=STABILIZED  armed=False
+[04:04:19.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=STABILIZED  armed=False
+[04:04:20.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=STABILIZED  armed=False
+[04:04:20.071] 日志[control] degrade=mode_lost（持续 320.0 s，**已闩锁**：不会自己恢复）—— 本节点持有的模式（OFFBOARD / 已请求的 AUTO.LAND）被外部切走。已停发且**不抢回**；复位：有人把模式放回 OFFBOARD，或落地上锁 ⏎   · 证据：模式从「STABILIZED」变成了「STABILIZED」
+[04:04:20.332] 日志[control] 失效已闩锁（degrade=mode_lost，任务态 RC_OVERRIDE）⟹ **不会自己恢复**。复位方式：有人把模式放回 OFFBOARD（外部动作），或落地上锁（armed → false）
+[04:04:21.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=STABILIZED  armed=False
+[04:04:22.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=STABILIZED  armed=False
+[04:04:23.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=STABILIZED  armed=False
+[04:04:24.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=STABILIZED  armed=False
+[04:04:25.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=STABILIZED  armed=False
+[04:04:26.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=STABILIZED  armed=False
+[04:04:27.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=STABILIZED  armed=False
+[04:04:28.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=STABILIZED  armed=False
+[04:04:29.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=STABILIZED  armed=False
+[04:04:30.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=STABILIZED  armed=False
+[04:04:30.074] 日志[control] degrade=mode_lost（持续 330.0 s，**已闩锁**：不会自己恢复）—— 本节点持有的模式（OFFBOARD / 已请求的 AUTO.LAND）被外部切走。已停发且**不抢回**；复位：有人把模式放回 OFFBOARD，或落地上锁 ⏎   · 证据：模式从「STABILIZED」变成了「STABILIZED」
+[04:04:30.332] 日志[control] 失效已闩锁（degrade=mode_lost，任务态 RC_OVERRIDE）⟹ **不会自己恢复**。复位方式：有人把模式放回 OFFBOARD（外部动作），或落地上锁（armed → false）
+[04:04:31.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=STABILIZED  armed=False
+[04:04:32.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=STABILIZED  armed=False
+[04:04:33.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=STABILIZED  armed=False
+[04:04:34.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=STABILIZED  armed=False
+[04:04:35.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=STABILIZED  armed=False
+[04:04:36.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=STABILIZED  armed=False
+[04:04:36.057] 飞控 /mavros/state  mode=  armed=False  connected=False
+[04:04:37.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=  armed=False
+[04:04:38.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=  armed=False
+[04:04:39.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=  armed=False
+[04:04:40.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=  armed=False
+[04:04:40.073] 日志[control] degrade=mode_lost（持续 340.0 s，**已闩锁**：不会自己恢复）—— 本节点持有的模式（OFFBOARD / 已请求的 AUTO.LAND）被外部切走。已停发且**不抢回**；复位：有人把模式放回 OFFBOARD，或落地上锁 ⏎   · 证据：模式从「」变成了「」
+[04:04:40.333] 日志[control] 失效已闩锁（degrade=mode_lost，任务态 RC_OVERRIDE）⟹ **不会自己恢复**。复位方式：有人把模式放回 OFFBOARD（外部动作），或落地上锁（armed → false）
+[04:04:41.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=  armed=False
+[04:04:42.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=  armed=False
+[04:04:43.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=  armed=False
+[04:04:44.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=  armed=False
+[04:04:45.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=  armed=False
+[04:04:46.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=  armed=False
+[04:04:47.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=  armed=False
+[04:04:48.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=  armed=False
+[04:04:49.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=  armed=False
+[04:04:50.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=  armed=False
+[04:04:50.073] 日志[control] degrade=mode_lost（持续 350.0 s，**已闩锁**：不会自己恢复）—— 本节点持有的模式（OFFBOARD / 已请求的 AUTO.LAND）被外部切走。已停发且**不抢回**；复位：有人把模式放回 OFFBOARD，或落地上锁 ⏎   · 证据：模式从「」变成了「」
+[04:04:50.333] 日志[control] 失效已闩锁（degrade=mode_lost，任务态 RC_OVERRIDE）⟹ **不会自己恢复**。复位方式：有人把模式放回 OFFBOARD（外部动作），或落地上锁（armed → false）
+[04:04:51.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=  armed=False
+[04:04:52.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=  armed=False
+[04:04:53.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=  armed=False
+[04:04:54.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=  armed=False
+[04:04:55.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=  armed=False
+[04:04:56.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=  armed=False
+[04:04:57.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=  armed=False
+[04:04:58.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=  armed=False
+[04:04:59.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=  armed=False
+[04:05:00.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=  armed=False
+[04:05:00.074] 日志[control] degrade=mode_lost（持续 360.0 s，**已闩锁**：不会自己恢复）—— 本节点持有的模式（OFFBOARD / 已请求的 AUTO.LAND）被外部切走。已停发且**不抢回**；复位：有人把模式放回 OFFBOARD，或落地上锁 ⏎   · 证据：模式从「」变成了「」
+[04:05:00.334] 日志[control] 失效已闩锁（degrade=mode_lost，任务态 RC_OVERRIDE）⟹ **不会自己恢复**。复位方式：有人把模式放回 OFFBOARD（外部动作），或落地上锁（armed → false）
+[04:05:01.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=  armed=False
+[04:05:02.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=  armed=False
+[04:05:03.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=  armed=False
+[04:05:04.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=  armed=False
+[04:05:05.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=  armed=False
+[04:05:06.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=  armed=False
+[04:05:07.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=  armed=False
+[04:05:08.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=  armed=False
+[04:05:09.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=  armed=False
+[04:05:10.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=  armed=False
+[04:05:10.075] 日志[control] degrade=mode_lost（持续 370.0 s，**已闩锁**：不会自己恢复）—— 本节点持有的模式（OFFBOARD / 已请求的 AUTO.LAND）被外部切走。已停发且**不抢回**；复位：有人把模式放回 OFFBOARD，或落地上锁 ⏎   · 证据：模式从「」变成了「」
+[04:05:10.334] 日志[control] 失效已闩锁（degrade=mode_lost，任务态 RC_OVERRIDE）⟹ **不会自己恢复**。复位方式：有人把模式放回 OFFBOARD（外部动作），或落地上锁（armed → false）
+[04:05:11.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=  armed=False
+[04:05:12.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=  armed=False
+[04:05:13.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=  armed=False
+[04:05:14.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=  armed=False
+[04:05:15.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=  armed=False
+[04:05:16.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=  armed=False
+[04:05:17.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=  armed=False
+[04:05:18.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=  armed=False
+[04:05:19.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=  armed=False
+[04:05:20.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=  armed=False
+[04:05:20.075] 日志[control] degrade=mode_lost（持续 380.0 s，**已闩锁**：不会自己恢复）—— 本节点持有的模式（OFFBOARD / 已请求的 AUTO.LAND）被外部切走。已停发且**不抢回**；复位：有人把模式放回 OFFBOARD，或落地上锁 ⏎   · 证据：模式从「」变成了「」
+[04:05:20.335] 日志[control] 失效已闩锁（degrade=mode_lost，任务态 RC_OVERRIDE）⟹ **不会自己恢复**。复位方式：有人把模式放回 OFFBOARD（外部动作），或落地上锁（armed → false）
+[04:05:21.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=  armed=False
+[04:05:22.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=  armed=False
+[04:05:23.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=  armed=False
+[04:05:24.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=  armed=False
+[04:05:25.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=  armed=False
+[04:05:26.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=  armed=False
+[04:05:27.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=  armed=False
+[04:05:28.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=  armed=False
+[04:05:29.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=  armed=False
+[04:05:30.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=  armed=False
+[04:05:30.075] 日志[control] degrade=mode_lost（持续 390.0 s，**已闩锁**：不会自己恢复）—— 本节点持有的模式（OFFBOARD / 已请求的 AUTO.LAND）被外部切走。已停发且**不抢回**；复位：有人把模式放回 OFFBOARD，或落地上锁 ⏎   · 证据：模式从「」变成了「」
+[04:05:30.336] 日志[control] 失效已闩锁（degrade=mode_lost，任务态 RC_OVERRIDE）⟹ **不会自己恢复**。复位方式：有人把模式放回 OFFBOARD（外部动作），或落地上锁（armed → false）
+[04:05:31.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=  armed=False
+[04:05:32.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=  armed=False
+[04:05:33.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=  armed=False
+[04:05:34.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=  armed=False
+[04:05:35.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=  armed=False
+[04:05:36.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=  armed=False
+[04:05:37.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=  armed=False
+[04:05:38.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=  armed=False
+[04:05:39.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=  armed=False
+[04:05:40.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=  armed=False
+[04:05:40.076] 日志[control] degrade=mode_lost（持续 400.0 s，**已闩锁**：不会自己恢复）—— 本节点持有的模式（OFFBOARD / 已请求的 AUTO.LAND）被外部切走。已停发且**不抢回**；复位：有人把模式放回 OFFBOARD，或落地上锁 ⏎   · 证据：模式从「」变成了「」
+[04:05:40.336] 日志[control] 失效已闩锁（degrade=mode_lost，任务态 RC_OVERRIDE）⟹ **不会自己恢复**。复位方式：有人把模式放回 OFFBOARD（外部动作），或落地上锁（armed → false）
+[04:05:41.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=  armed=False
+[04:05:42.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=  armed=False
+[04:05:43.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=  armed=False
+[04:05:44.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=  armed=False
+[04:05:45.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=  armed=False
+[04:05:46.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=  armed=False
+[04:05:47.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=  armed=False
+[04:05:48.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=  armed=False
+[04:05:49.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=  armed=False
+[04:05:50.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=  armed=False
+[04:05:50.076] 日志[control] degrade=mode_lost（持续 410.0 s，**已闩锁**：不会自己恢复）—— 本节点持有的模式（OFFBOARD / 已请求的 AUTO.LAND）被外部切走。已停发且**不抢回**；复位：有人把模式放回 OFFBOARD，或落地上锁 ⏎   · 证据：模式从「」变成了「」
+[04:05:50.336] 日志[control] 失效已闩锁（degrade=mode_lost，任务态 RC_OVERRIDE）⟹ **不会自己恢复**。复位方式：有人把模式放回 OFFBOARD（外部动作），或落地上锁（armed → false）
+[04:05:51.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=  armed=False
+[04:05:52.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=  armed=False
+[04:05:53.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=  armed=False
+[04:05:54.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=  armed=False
+[04:05:55.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=  armed=False
+[04:05:56.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=  armed=False
+[04:05:57.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=  armed=False
+[04:05:58.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=  armed=False
+[04:05:59.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=  armed=False
+[04:06:00.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=  armed=False
+[04:06:00.077] 日志[control] degrade=mode_lost（持续 420.0 s，**已闩锁**：不会自己恢复）—— 本节点持有的模式（OFFBOARD / 已请求的 AUTO.LAND）被外部切走。已停发且**不抢回**；复位：有人把模式放回 OFFBOARD，或落地上锁 ⏎   · 证据：模式从「」变成了「」
+[04:06:00.338] 日志[control] 失效已闩锁（degrade=mode_lost，任务态 RC_OVERRIDE）⟹ **不会自己恢复**。复位方式：有人把模式放回 OFFBOARD（外部动作），或落地上锁（armed → false）
+[04:06:01.028] 节拍  setpoint =   0 Hz（最后一帧 —）  ctl=MANUAL/RC_OVERRIDE  mode=  armed=False
+
+===== 事件表（相对探针启动，秒）=====
+  t=  1.994  ★状态  /control/state = MANUAL/RC_OVERRIDE
+  t=  2.708  RC    摇杆基线 ch1-4 = [1500, 1499, 989, 1499]（其余通道不报）
+  t=  3.112  飞控  /mavros/state  mode=STABILIZED  armed=False  connected=True
+  t=  9.130  日志[control]  degrade=mode_lost（持续 250.0 s，**已闩锁**：不会自己恢复）—— 本节点持有的模式（OFFBOARD / 已请求的 AUTO.LAND）被外部切走。已停发且**不抢回**；复位：有人把模式放回 OFFBOARD，或落地上锁 ⏎   · 证据：模式从「STABILIZED」变成了「STABILIZED」
+  t=  9.389  日志[control]  失效已闩锁（degrade=mode_lost，任务态 RC_OVERRIDE）⟹ **不会自己恢复**。复位方式：有人把模式放回 OFFBOARD（外部动作），或落地上锁（armed → false）
+  t= 19.130  日志[control]  degrade=mode_lost（持续 260.0 s，**已闩锁**：不会自己恢复）—— 本节点持有的模式（OFFBOARD / 已请求的 AUTO.LAND）被外部切走。已停发且**不抢回**；复位：有人把模式放回 OFFBOARD，或落地上锁 ⏎   · 证据：模式从「STABILIZED」变成了「STABILIZED」
+  t= 19.390  日志[control]  失效已闩锁（degrade=mode_lost，任务态 RC_OVERRIDE）⟹ **不会自己恢复**。复位方式：有人把模式放回 OFFBOARD（外部动作），或落地上锁（armed → false）
+  t= 29.131  日志[control]  degrade=mode_lost（持续 270.0 s，**已闩锁**：不会自己恢复）—— 本节点持有的模式（OFFBOARD / 已请求的 AUTO.LAND）被外部切走。已停发且**不抢回**；复位：有人把模式放回 OFFBOARD，或落地上锁 ⏎   · 证据：模式从「STABILIZED」变成了「STABILIZED」
+  t= 29.391  日志[control]  失效已闩锁（degrade=mode_lost，任务态 RC_OVERRIDE）⟹ **不会自己恢复**。复位方式：有人把模式放回 OFFBOARD（外部动作），或落地上锁（armed → false）
+  t= 39.131  日志[control]  degrade=mode_lost（持续 280.0 s，**已闩锁**：不会自己恢复）—— 本节点持有的模式（OFFBOARD / 已请求的 AUTO.LAND）被外部切走。已停发且**不抢回**；复位：有人把模式放回 OFFBOARD，或落地上锁 ⏎   · 证据：模式从「STABILIZED」变成了「STABILIZED」
+  t= 39.391  日志[control]  失效已闩锁（degrade=mode_lost，任务态 RC_OVERRIDE）⟹ **不会自己恢复**。复位方式：有人把模式放回 OFFBOARD（外部动作），或落地上锁（armed → false）
+  t= 49.131  日志[control]  degrade=mode_lost（持续 290.0 s，**已闩锁**：不会自己恢复）—— 本节点持有的模式（OFFBOARD / 已请求的 AUTO.LAND）被外部切走。已停发且**不抢回**；复位：有人把模式放回 OFFBOARD，或落地上锁 ⏎   · 证据：模式从「STABILIZED」变成了「STABILIZED」
+  t= 49.392  日志[control]  失效已闩锁（degrade=mode_lost，任务态 RC_OVERRIDE）⟹ **不会自己恢复**。复位方式：有人把模式放回 OFFBOARD（外部动作），或落地上锁（armed → false）
+  t= 59.132  日志[control]  degrade=mode_lost（持续 300.0 s，**已闩锁**：不会自己恢复）—— 本节点持有的模式（OFFBOARD / 已请求的 AUTO.LAND）被外部切走。已停发且**不抢回**；复位：有人把模式放回 OFFBOARD，或落地上锁 ⏎   · 证据：模式从「STABILIZED」变成了「STABILIZED」
+  t= 59.392  日志[control]  失效已闩锁（degrade=mode_lost，任务态 RC_OVERRIDE）⟹ **不会自己恢复**。复位方式：有人把模式放回 OFFBOARD（外部动作），或落地上锁（armed → false）
+  t= 69.133  日志[control]  degrade=mode_lost（持续 310.0 s，**已闩锁**：不会自己恢复）—— 本节点持有的模式（OFFBOARD / 已请求的 AUTO.LAND）被外部切走。已停发且**不抢回**；复位：有人把模式放回 OFFBOARD，或落地上锁 ⏎   · 证据：模式从「STABILIZED」变成了「STABILIZED」
+  t= 69.393  日志[control]  失效已闩锁（degrade=mode_lost，任务态 RC_OVERRIDE）⟹ **不会自己恢复**。复位方式：有人把模式放回 OFFBOARD（外部动作），或落地上锁（armed → false）
+  t= 79.133  日志[control]  degrade=mode_lost（持续 320.0 s，**已闩锁**：不会自己恢复）—— 本节点持有的模式（OFFBOARD / 已请求的 AUTO.LAND）被外部切走。已停发且**不抢回**；复位：有人把模式放回 OFFBOARD，或落地上锁 ⏎   · 证据：模式从「STABILIZED」变成了「STABILIZED」
+  t= 79.393  日志[control]  失效已闩锁（degrade=mode_lost，任务态 RC_OVERRIDE）⟹ **不会自己恢复**。复位方式：有人把模式放回 OFFBOARD（外部动作），或落地上锁（armed → false）
+  t= 89.135  日志[control]  degrade=mode_lost（持续 330.0 s，**已闩锁**：不会自己恢复）—— 本节点持有的模式（OFFBOARD / 已请求的 AUTO.LAND）被外部切走。已停发且**不抢回**；复位：有人把模式放回 OFFBOARD，或落地上锁 ⏎   · 证据：模式从「STABILIZED」变成了「STABILIZED」
+  t= 89.394  日志[control]  失效已闩锁（degrade=mode_lost，任务态 RC_OVERRIDE）⟹ **不会自己恢复**。复位方式：有人把模式放回 OFFBOARD（外部动作），或落地上锁（armed → false）
+  t= 95.118  飞控  /mavros/state  mode=  armed=False  connected=False
+  t= 99.134  日志[control]  degrade=mode_lost（持续 340.0 s，**已闩锁**：不会自己恢复）—— 本节点持有的模式（OFFBOARD / 已请求的 AUTO.LAND）被外部切走。已停发且**不抢回**；复位：有人把模式放回 OFFBOARD，或落地上锁 ⏎   · 证据：模式从「」变成了「」
+  t= 99.394  日志[control]  失效已闩锁（degrade=mode_lost，任务态 RC_OVERRIDE）⟹ **不会自己恢复**。复位方式：有人把模式放回 OFFBOARD（外部动作），或落地上锁（armed → false）
+  t=109.135  日志[control]  degrade=mode_lost（持续 350.0 s，**已闩锁**：不会自己恢复）—— 本节点持有的模式（OFFBOARD / 已请求的 AUTO.LAND）被外部切走。已停发且**不抢回**；复位：有人把模式放回 OFFBOARD，或落地上锁 ⏎   · 证据：模式从「」变成了「」
+  t=109.395  日志[control]  失效已闩锁（degrade=mode_lost，任务态 RC_OVERRIDE）⟹ **不会自己恢复**。复位方式：有人把模式放回 OFFBOARD（外部动作），或落地上锁（armed → false）
+  t=119.136  日志[control]  degrade=mode_lost（持续 360.0 s，**已闩锁**：不会自己恢复）—— 本节点持有的模式（OFFBOARD / 已请求的 AUTO.LAND）被外部切走。已停发且**不抢回**；复位：有人把模式放回 OFFBOARD，或落地上锁 ⏎   · 证据：模式从「」变成了「」
+  t=119.395  日志[control]  失效已闩锁（degrade=mode_lost，任务态 RC_OVERRIDE）⟹ **不会自己恢复**。复位方式：有人把模式放回 OFFBOARD（外部动作），或落地上锁（armed → false）
+  t=129.136  日志[control]  degrade=mode_lost（持续 370.0 s，**已闩锁**：不会自己恢复）—— 本节点持有的模式（OFFBOARD / 已请求的 AUTO.LAND）被外部切走。已停发且**不抢回**；复位：有人把模式放回 OFFBOARD，或落地上锁 ⏎   · 证据：模式从「」变成了「」
+  t=129.396  日志[control]  失效已闩锁（degrade=mode_lost，任务态 RC_OVERRIDE）⟹ **不会自己恢复**。复位方式：有人把模式放回 OFFBOARD（外部动作），或落地上锁（armed → false）
+  t=139.136  日志[control]  degrade=mode_lost（持续 380.0 s，**已闩锁**：不会自己恢复）—— 本节点持有的模式（OFFBOARD / 已请求的 AUTO.LAND）被外部切走。已停发且**不抢回**；复位：有人把模式放回 OFFBOARD，或落地上锁 ⏎   · 证据：模式从「」变成了「」
+  t=139.396  日志[control]  失效已闩锁（degrade=mode_lost，任务态 RC_OVERRIDE）⟹ **不会自己恢复**。复位方式：有人把模式放回 OFFBOARD（外部动作），或落地上锁（armed → false）
+  t=149.137  日志[control]  degrade=mode_lost（持续 390.0 s，**已闩锁**：不会自己恢复）—— 本节点持有的模式（OFFBOARD / 已请求的 AUTO.LAND）被外部切走。已停发且**不抢回**；复位：有人把模式放回 OFFBOARD，或落地上锁 ⏎   · 证据：模式从「」变成了「」
+  t=149.398  日志[control]  失效已闩锁（degrade=mode_lost，任务态 RC_OVERRIDE）⟹ **不会自己恢复**。复位方式：有人把模式放回 OFFBOARD（外部动作），或落地上锁（armed → false）
+  t=159.137  日志[control]  degrade=mode_lost（持续 400.0 s，**已闩锁**：不会自己恢复）—— 本节点持有的模式（OFFBOARD / 已请求的 AUTO.LAND）被外部切走。已停发且**不抢回**；复位：有人把模式放回 OFFBOARD，或落地上锁 ⏎   · 证据：模式从「」变成了「」
+  t=159.397  日志[control]  失效已闩锁（degrade=mode_lost，任务态 RC_OVERRIDE）⟹ **不会自己恢复**。复位方式：有人把模式放回 OFFBOARD（外部动作），或落地上锁（armed → false）
+  t=169.138  日志[control]  degrade=mode_lost（持续 410.0 s，**已闩锁**：不会自己恢复）—— 本节点持有的模式（OFFBOARD / 已请求的 AUTO.LAND）被外部切走。已停发且**不抢回**；复位：有人把模式放回 OFFBOARD，或落地上锁 ⏎   · 证据：模式从「」变成了「」
+  t=169.398  日志[control]  失效已闩锁（degrade=mode_lost，任务态 RC_OVERRIDE）⟹ **不会自己恢复**。复位方式：有人把模式放回 OFFBOARD（外部动作），或落地上锁（armed → false）
+  t=179.138  日志[control]  degrade=mode_lost（持续 420.0 s，**已闩锁**：不会自己恢复）—— 本节点持有的模式（OFFBOARD / 已请求的 AUTO.LAND）被外部切走。已停发且**不抢回**；复位：有人把模式放回 OFFBOARD，或落地上锁 ⏎   · 证据：模式从「」变成了「」
+  t=179.399  日志[control]  失效已闩锁（degrade=mode_lost，任务态 RC_OVERRIDE）⟹ **不会自己恢复**。复位方式：有人把模式放回 OFFBOARD（外部动作），或落地上锁（armed → false）
+
+===== 时间差 =====
+  摇杆事件 0 条、RC_OVERRIDE 事件 1 条 ⟹ 缺一个就算不出
+
+===== setpoint 帧率（每秒一行）=====
+  t=    1.1    0 Hz
+  t=    2.1    0 Hz
+  t=    3.1    0 Hz
+  t=    4.1    0 Hz
+  t=    5.1    0 Hz
+  t=    6.1    0 Hz
+  t=    7.1    0 Hz
+  t=    8.1    0 Hz
+  t=    9.1    0 Hz
+  t=   10.1    0 Hz
+  t=   11.1    0 Hz
+  t=   12.1    0 Hz
+  t=   13.1    0 Hz
+  t=   14.1    0 Hz
+  t=   15.1    0 Hz
+  t=   16.1    0 Hz
+  t=   17.1    0 Hz
+  t=   18.1    0 Hz
+  t=   19.1    0 Hz
+  t=   20.1    0 Hz
+  t=   21.1    0 Hz
+  t=   22.1    0 Hz
+  t=   23.1    0 Hz
+  t=   24.1    0 Hz
+  t=   25.1    0 Hz
+  t=   26.1    0 Hz
+  t=   27.1    0 Hz
+  t=   28.1    0 Hz
+  t=   29.1    0 Hz
+  t=   30.1    0 Hz
+  t=   31.1    0 Hz
+  t=   32.1    0 Hz
+  t=   33.1    0 Hz
+  t=   34.1    0 Hz
+  t=   35.1    0 Hz
+  t=   36.1    0 Hz
+  t=   37.1    0 Hz
+  t=   38.1    0 Hz
+  t=   39.1    0 Hz
+  t=   40.1    0 Hz
+  t=   41.1    0 Hz
+  t=   42.1    0 Hz
+  t=   43.1    0 Hz
+  t=   44.1    0 Hz
+  t=   45.1    0 Hz
+  t=   46.1    0 Hz
+  t=   47.1    0 Hz
+  t=   48.1    0 Hz
+  t=   49.1    0 Hz
+  t=   50.1    0 Hz
+  t=   51.1    0 Hz
+  t=   52.1    0 Hz
+  t=   53.1    0 Hz
+  t=   54.1    0 Hz
+  t=   55.1    0 Hz
+  t=   56.1    0 Hz
+  t=   57.1    0 Hz
+  t=   58.1    0 Hz
+  t=   59.1    0 Hz
+  t=   60.1    0 Hz
+  t=   61.1    0 Hz
+  t=   62.1    0 Hz
+  t=   63.1    0 Hz
+  t=   64.1    0 Hz
+  t=   65.1    0 Hz
+  t=   66.1    0 Hz
+  t=   67.1    0 Hz
+  t=   68.1    0 Hz
+  t=   69.1    0 Hz
+  t=   70.1    0 Hz
+  t=   71.1    0 Hz
+  t=   72.1    0 Hz
+  t=   73.1    0 Hz
+  t=   74.1    0 Hz
+  t=   75.1    0 Hz
+  t=   76.1    0 Hz
+  t=   77.1    0 Hz
+  t=   78.1    0 Hz
+  t=   79.1    0 Hz
+  t=   80.1    0 Hz
+  t=   81.1    0 Hz
+  t=   82.1    0 Hz
+  t=   83.1    0 Hz
+  t=   84.1    0 Hz
+  t=   85.1    0 Hz
+  t=   86.1    0 Hz
+  t=   87.1    0 Hz
+  t=   88.1    0 Hz
+  t=   89.1    0 Hz
+  t=   90.1    0 Hz
+  t=   91.1    0 Hz
+  t=   92.1    0 Hz
+  t=   93.1    0 Hz
+  t=   94.1    0 Hz
+  t=   95.1    0 Hz
+  t=   96.1    0 Hz
+  t=   97.1    0 Hz
+  t=   98.1    0 Hz
+  t=   99.1    0 Hz
+  t=  100.1    0 Hz
+  t=  101.1    0 Hz
+  t=  102.1    0 Hz
+  t=  103.1    0 Hz
+  t=  104.1    0 Hz
+  t=  105.1    0 Hz
+  t=  106.1    0 Hz
+  t=  107.1    0 Hz
+  t=  108.1    0 Hz
+  t=  109.1    0 Hz
+  t=  110.1    0 Hz
+  t=  111.1    0 Hz
+  t=  112.1    0 Hz
+  t=  113.1    0 Hz
+  t=  114.1    0 Hz
+  t=  115.1    0 Hz
+  t=  116.1    0 Hz
+  t=  117.1    0 Hz
+  t=  118.1    0 Hz
+  t=  119.1    0 Hz
+  t=  120.1    0 Hz
+  t=  121.1    0 Hz
+  t=  122.1    0 Hz
+  t=  123.1    0 Hz
+  t=  124.1    0 Hz
+  t=  125.1    0 Hz
+  t=  126.1    0 Hz
+  t=  127.1    0 Hz
+  t=  128.1    0 Hz
+  t=  129.1    0 Hz
+  t=  130.1    0 Hz
+  t=  131.1    0 Hz
+  t=  132.1    0 Hz
+  t=  133.1    0 Hz
+  t=  134.1    0 Hz
+  t=  135.1    0 Hz
+  t=  136.1    0 Hz
+  t=  137.1    0 Hz
+  t=  138.1    0 Hz
+  t=  139.1    0 Hz
+  t=  140.1    0 Hz
+  t=  141.1    0 Hz
+  t=  142.1    0 Hz
+  t=  143.1    0 Hz
+  t=  144.1    0 Hz
+  t=  145.1    0 Hz
+  t=  146.1    0 Hz
+  t=  147.1    0 Hz
+  t=  148.1    0 Hz
+  t=  149.1    0 Hz
+  t=  150.1    0 Hz
+  t=  151.1    0 Hz
+  t=  152.1    0 Hz
+  t=  153.1    0 Hz
+  t=  154.1    0 Hz
+  t=  155.1    0 Hz
+  t=  156.1    0 Hz
+  t=  157.1    0 Hz
+  t=  158.1    0 Hz
+  t=  159.1    0 Hz
+  t=  160.1    0 Hz
+  t=  161.1    0 Hz
+  t=  162.1    0 Hz
+  t=  163.1    0 Hz
+  t=  164.1    0 Hz
+  t=  165.1    0 Hz
+  t=  166.1    0 Hz
+  t=  167.1    0 Hz
+  t=  168.1    0 Hz
+  t=  169.1    0 Hz
+  t=  170.1    0 Hz
+  t=  171.1    0 Hz
+  t=  172.1    0 Hz
+  t=  173.1    0 Hz
+  t=  174.1    0 Hz
+  t=  175.1    0 Hz
+  t=  176.1    0 Hz
+  t=  177.1    0 Hz
+  t=  178.1    0 Hz
+  t=  179.1    0 Hz
+  t=  180.1    0 Hz
