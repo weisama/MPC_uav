@@ -9,24 +9,35 @@ Type: task
 
 ## 逐条实测
 
-- [ ] **打杆接管**：遥控器任意打杆 → 程序**立刻停止发布 setpoint**，**不自己切模式**；落点由 PX4 按 `COM_OBL_RC_ACT` 决定 —— 这是一个**参数化的、可预演的**行为，不是我藏在代码里的逻辑
-      ★ 2026-10-12：**本框仍未过**。前提查清了（见 Comments：`fsm.hpp:474` 那条判据带**解锁门**）；
-      当天误走成 `degrade=mode_lost`（拨 ch6 而非打杆），夺权通路的四条行为全中，但**判据不同名**。
+- [x] **打杆接管**：遥控器任意打杆 → 程序**立刻停止发布 setpoint**，**不自己切模式**；落点由 PX4 按 `COM_OBL_RC_ACT` 决定 —— 这是一个**参数化的、可预演的**行为，不是我藏在代码里的逻辑
+      ✅ 2026-10-12 **07:23 那场实测过**（Comments「实测 ③」）：`degrade=rc_override` 命中、setpoint `50 → 0 Hz`、
+      我方模式请求 `0` 条。★ 03:59 那场（拨 ch6 ⟹ `degrade=mode_lost`）**不算本框**，
+      它过的是"夺权通路"自身；本框由 07:23 这场才算过。
 - [x] **急停 / 开始通道**实测读数与通道分配的决定一致，且**不与 PX4 模式开关（`RC_MAP_FLTMODE`）共用通道** —— 两者不得互相触发
       ✅ 2026-10-12 实测（台架第一场）：ch9 低 `999`／高 `2000`（与通道分配的裁定一致）；
       ch6 三档拨动**全程 ch9 一帧未动** ⟹ 两者不互相触发。原文落在
       [`docs/assets/drill/2026-10-12-rc-channels.log`](../../../docs/assets/drill/2026-10-12-rc-channels.log)，
       证据行与两条现象归因见下面的 Comments。
-      ⚠️ **ch8（急停）没试** —— 演练页 §2.2 写着「要试 ch8 必须先拆桨」，本次**未拨 ch8**，
-      所以这一框过的是"开始通道 + 不与模式开关冲突"这一半。
-- [ ] **offboard 心跳丢失** → PX4 按预配置动作执行（`COM_OF_LOSS_T` → `COM_OBL_RC_ACT`），机载节点崩溃不会导致飞机飞走
-- [ ] **节点崩溃注入**：主动杀掉 MPC（模型预测控制）节点，确认这条路径在**我需要它之前**就已经被走通过
+      ⚠️ **ch8（急停）**：2026-10-12 **08:35 已补测**（拆桨）—— 低 `999`／高 `2000`；PX4 报
+      `Kill-switch engaged` ⟹ `Preflight Fail: Flight termination active`（CRIT）⟹ 拨回后 `Kill-switch disengaged` 且不再重报；
+      **程序侧零反应**（`/control/state` 一次没动、setpoint 全程 50 Hz 不掉拍、无 `degrade=` 行、其他通道一帧未动）
+      ⟹ 这一框两半都过了，原文见 Comments「实测 ⑥」。
+- [x] **offboard 心跳丢失** → PX4 按预配置动作执行（`COM_OF_LOSS_T` → `COM_OBL_RC_ACT`），机载节点崩溃不会导致飞机飞走
+      ✅ 2026-10-12 **07:52 实测过**（Comments「实测 ⑤」）：心跳断后 ≈ **1.15 s** 报 `Failsafe activated`，
+      再 ≈ 0.86 s 落回 `POSCTL`。
+- [x] **节点崩溃注入**：主动杀掉 MPC（模型预测控制）节点，确认这条路径在**我需要它之前**就已经被走通过
+      ✅ 2026-10-12 **07:40 实测过**（Comments「实测 ④」，`kill -9`）：PX4 侧与 §2.3 同路径；
+      节点日志**停在半句、无收尾**，`/control/state` 不再更新。
 - [ ] **求解失败注入**：在实机链路上让求解失败发生一次，确认行为与 SITL 里一致（保持安全悬停，**不发错指令**）
 - [ ] **回退 (A) 级**：一次确定的、演练过的操作 —— 确认 Phase 1 整条链仍在、随时可用，且**切换动作本身演练到位**
       ★ 2026-10-12：**前半句已实走**（Comments「实测 ②」，`/control/state` = `MANUAL/STANDBY`）；
       **后半句今天做不到** —— 没有正在发的 (C) 链，就没有可"切"的对象（演练页 §3.1 的"今天能不能做"表）。
       ⟹ 这一框**等 (C) 链有归属之后再勾**。
-- [ ] 每条实测留下证据（读数 / 日志 / 现象），不是"试过了没问题"
+- [x] 每条实测留下证据（读数 / 日志 / 现象），不是"试过了没问题"
+      ✅ 2026-10-12：四场实测的**探针逐字输出**都落进 `docs/assets/drill/`
+      （`2026-10-12-drill21-probe-run9.log` / `-drill24-probe-run10.log` /
+      `-drill23-sigint-probe-run12.log` ＋ `-drill23-sigint-control.log` /
+      `-drill22-ch8-killswitch-probe-run13.log`），每条读数在 Comments 里带文件名。
 
 ## FSM 审计（**只审计，不新写代码** —— 实现归 Phase 2 的安全工作）
 
@@ -353,3 +364,125 @@ if (h.rc_sticks_moving && g.armed) {return Degrade::kRcOverride;}
 
 **仍未做**：§2.1 **本体**（解锁 + 打杆）。★ 操作者已关掉飞控供电并离开工位
 ⟹ 需要人工配合的部分**等操作者回来再继续**；本文件与演练页已更新到"能纯读文档推进"为止。
+
+### 2026-10-12 · 实测 ③：§2.1 **打杆接管** —— ✅ **过**（判据 `degrade=rc_override` 命中）
+
+**证据行**：
+
+```
+§2.1 打杆接管 | 2026-10-12 07:23:26 起 | (A) 级；**装桨、实飞**（1 m 悬停起飞中被夺权）
+  | ① 07:23:26.268 ch9 999→2000（压住 0.35 s）⟹ 07:23:26.554 PX4 `Armed by external command`
+      ⟹ 07:23:26.951 /control/state = **AUTO/TAKEOFF**；setpoint 保持 50 Hz；**未出现**「检测到外部解锁」
+  | ② 07:23:27.970 PX4 `Pilot took over using sticks`；07:23:27.972 **摇杆 ch3 989 → 1059**
+      ⟹ 07:23:27.973 /control/state = **MANUAL/RC_OVERRIDE**；07:23:27.976 `degrade=rc_override`（**已闩锁**）
+         · 证据：遥控器新鲜（0.003004 s）且摇杆变化率超过 100.000000 µs/s
+      ⟹ setpoint **50 Hz → 10 Hz → 0 Hz**（07:23:29–39 连续 11 拍 0）；mode → POSCTL（07:23:28.926）
+      ⟹ 07:23:20–07:24:10 内**我方发起的模式请求 = 0 条**
+  | ③ 复位走路径 (a)（落地上锁）：07:23:37.514 `Disarmed by landing`
+      ⟹ 07:23:39.934 /control/state = **MANUAL/STANDBY** + `degrade=none：降级已复位（此前 degrade=rc_override，持续 12.0 s）`
+      ⟹ 07:23:40.764 setpoint 回到 42 → 50 Hz；07:23:42.764 mode = **OFFBOARD**
+```
+
+**打杆 → 停发的**时间差 **Δ = 1 ms**（探针 `07:23:27.972` vs 节点 `07:23:27.973`）——
+两者在**同一帧**看到打杆（节点 10 Hz 采样 ⟹ 量化上限 100 ms，实测 1 ms）。
+
+**原始输出**：[`docs/assets/drill/2026-10-12-drill21-probe-run9.log`](../../../docs/assets/drill/2026-10-12-drill21-probe-run9.log)（967 行）。
+★ 本场之前的**两趟失败**（当天 06:37 / 07:0x）归因也留了档：
+[`2026-10-12-ch9-takeoff-battery-low.log`](../../../docs/assets/drill/2026-10-12-ch9-takeoff-battery-low.log) ——
+一个是**电池低压**（`19.840 V < 20.0 V`，节点阈值；PX4 也独立报 `Preflight Fail: low battery`，
+从按下 ch9 到被打断 = **3.2 s**），一个是**开关按错**（按的是 ch5 而不是 ch9）。
+
+★ 三条判据（演练页 §2.1「什么算过」）逐条命中：`/control/state` 落到 `MANUAL/RC_OVERRIDE` ✓、
+PX4 落回 Position（POSCTL）✓、**日志里没有任何一条"我们自己发的模式命令"** ✓。
+★ 顺带量到两条**不在本框判据里**的：第 2 次 ch9（只压 0.35 s）**被正确拒绝**（节点只锁存"降落资格"、要求按住 ≥ 1.0 s）；
+复位走的是**路径 (a)**（那一刻 mode 是 POSCTL，路径 (b) 够不到）。
+
+### 2026-10-12 · 实测 ④：§2.4 **节点崩溃注入**（`kill -9`）—— ✅ **过**
+
+**证据行**：
+
+```
+§2.4 崩溃注入 | 2026-10-12 07:40 起 | (A) 级；实飞
+  | 07:40:44      最后一帧 setpoint（此后 1800 s 窗口内 **0 帧**）
+  | 07:40:45.279  PX4 `[CRIT] Failsafe activated`
+  | 07:40:45.915  mode = **POSCTL**（心跳断后 ≈ 0.64 s 落回 Position，在 COM_OF_LOSS_T = 1.0 s + 余量内）
+  | 07:40:48.839 / 07:40:50.844  `Landing detected` / `Disarmed by landing`
+  | 节点侧：ps -p 5462 无输出、pgrep -af control/control_node 无输出；
+    `ros2 launch` 报 process has died [pid 5462, exit code -9]
+  | 节点日志**停在一句话中间**：`★ 到高判据…` / `★ 轨迹原点尚未记录…` 之后**没有收尾摘要**
+  | 外加判据（§2.4 专有）：/control/state 已无发布者、**不再更新** ✓
+```
+
+**原始输出**：[`docs/assets/drill/2026-10-12-drill24-probe-run10.log`](../../../docs/assets/drill/2026-10-12-drill24-probe-run10.log)（1092 行）。
+
+### 2026-10-12 · 实测 ⑤：§2.3 **正常停**（`kill -INT`）—— ✅ **过**，但**"与 §2.4 的差别"不成立**
+
+**证据行**：
+
+```
+§2.3 正常停 | 2026-10-12 07:52 起 | (A) 级；实飞
+  | 07:52:20.198  ch9 999→2000（0.4 s）⟹ `Armed by external command` ⟹ 07:52:20.938 /control/state = AUTO/TAKEOFF
+  | 07:52:22.312  PX4 `Takeoff detected`
+  | 07:52:26.897  **最后一帧 setpoint**（操作者敲 kill -INT 13317）
+  | 07:52:28.045  PX4 `[CRIT] Failsafe activated`  ⟹ **Δ ≈ 1.15 s**（对得上 COM_OF_LOSS_T = 1.0 s）
+  | 07:52:28.905  mode = **POSCTL**
+  | 07:52:36.752 / 07:52:38.758  `Landing detected` / `Disarmed by landing`
+  | 节点日志：`signal_handler(SIGINT/SIGTERM)` ⟹ `process has finished cleanly [pid 13317]`；
+    **同样停在半句、没有收尾摘要**
+```
+
+**原始输出**：[`docs/assets/drill/2026-10-12-drill23-sigint-probe-run12.log`](../../../docs/assets/drill/2026-10-12-drill23-sigint-probe-run12.log)、
+[`…-drill23-sigint-control.log`](../../../docs/assets/drill/2026-10-12-drill23-sigint-control.log)。
+
+★★ **两处更正（都指向我，也都指向演练页）**：
+
+1. **我在开工前说过"§2.3 会多一行收尾摘要"—— 没有。** 回查源码：
+   [`control_node.cpp:1396-1401`](../../../src/control/src/control_node.cpp#L1396-L1401) 的 `main()` 就是
+   `rclcpp::spin(...) → rclcpp::shutdown() → return 0`，**没有任何收尾输出**；类也没有自定义析构。
+   ⟹ **(A) 级 `control_node` 在 SIGINT 与 SIGKILL 下的节点日志都是"停在半句"**，
+   两场的差别**只剩 `ros2 launch` 那两行**（`process has finished cleanly` vs `process has died … exit code -9`）。
+   我把 **(C) 级 `mpc_node` 的性质**（演练页 §2.4 括号里引的
+   `src/nmpc/test/test_mpc_node.py::test_SIGINT_之后打出收尾摘要而不是_traceback`）**串到 (A) 级头上了**。
+2. 演练页 §2.4 那句括号（"§2.3 走正常停，节点还会打一行收尾摘要"）**按本场实测应当限定为 (C) 级** ——
+   本票**不就地改演练页**，只在此登记（见下面的待裁定）。
+
+★ **两条场次都复现的一个读数（登记，成因未查明）**：`Disarmed by landing` **同拍**（+0.07 / +0.15 s）
+`/mavros/state` 的 mode 从 POSCTL 跳回 **OFFBOARD**，而此刻 setpoint 早已归零、节点进程已不在
+（`07:40:50.916` 与 `07:52:38.904` 各一次）。判据不受影响（判据要的是"退出 OFFBOARD"，那发生在
+45.915 / 28.905）；**它是不是 PX4 自己在 disarm 时把 `nav_state` 还原成失效前的值，今天没查**，
+`§2.1` 那场（节点活着）**没有**这个现象 ⟹ 只登记，不写结论。
+
+### 2026-10-12 · 实测 ⑥：§2.2 的 **ch8 急停**（补测，拆桨）—— ✅ **过**
+
+**证据行**：
+
+```
+§2.2 ch8 | 2026-10-12 08:35 起 | (A) 级；**拆桨**；全程 armed=False
+  | 08:35:49.164  开关 **ch8: 999 → 2000**
+  | 08:35:49.134  PX4 `[INFO] Kill-switch engaged`
+  | 08:35:49.188  PX4 `[CRIT] Preflight Fail: Kill switch engaged`
+  | 08:35:49.238  PX4 `[CRIT] Preflight Fail: Flight termination active`
+  | 08:35:53.640  PX4 `[INFO] Kill-switch disengaged`；08:35:53.664 ch8: 2000 → 999（此后**不再重报**）
+  | 程序侧**零反应**：/control/state 全程 MANUAL/STANDBY 一次没动；setpoint 全程 **50 Hz**（08:35:45–58 逐拍 50，没掉一拍）；
+    无任何 `degrade=` / 模式请求日志；**其他通道一帧未动**（探针只记到 ch8 那两条）
+```
+
+**原始输出**：[`docs/assets/drill/2026-10-12-drill22-ch8-killswitch-probe-run13.log`](../../../docs/assets/drill/2026-10-12-drill22-ch8-killswitch-probe-run13.log)（325 行）。
+
+★ ch8 与 ch9 同码位（低 `999`／高 `2000`）但**互不触发**：拨 ch8 的 4 s 里 ch9 一次边沿都没有，
+节点也没受理任何起飞 —— 这正是本框"两者不得互相触发"那半句。
+★ 一条额外读数：**未解锁时拨 ch8，PX4 也照样登记**（`Flight termination active` 是 CRIT preflight fail），
+不是"只有 armed 才管用"；拨回低档后 PX4 没有再重报 ⟹ 已清掉，不影响后续解锁。
+⚠️ **本场没有 arm**（因此没有看到"电机真停"）—— 本框要的"实测读数 + 不互相触发"两半都在案，
+"真停桨"要不要另补一场由操作者定。
+
+### 2026-10-12 · 收工时**未结**的三件（都要裁定，我没就地改）
+
+| # | 事项 | 状态 |
+|---|---|---|
+| 1 | 演练页 §2.1 前提写着「**别用 ch9 去解锁**…用 QGC 或 ch5」 | **与今天实测矛盾**：ch5 在 OFFBOARD 下被拒（`Arming denied: switch to manual mode first`），外部解锁又会踩 `Guard::kArmingByUs` ⟹ **ch9 是唯一能"已解锁且还在发 setpoint"的入口**。已问操作者，**未裁定** |
+| 2 | 演练页 §2.4 括号里"§2.3 正常停会打一行收尾摘要" | 对 **(A) 级**是错的（见实测 ⑤ 更正 2）⟹ 应限定为 (C) 级。**未改** |
+| 3 | `degrade=mode_lost` **证据串恒等**（`「X」变成了「X」`） | 上一节已核实为**代码缺陷**（`control_node.cpp:373` 与 `:1009` 在同一个 tick 里读同一个缓存）。**开不开修票未裁定** |
+
+**没做的**（今天做不到，不是漏）：§2.5 求解失败注入（(C) 级不存在）、§3.2 (A)→(C)、
+§3.1 第 2/3 步（没有正在发的 (C) 链 ⟹ 没有可停的对象）、回退 (A) 级那**后半句**。

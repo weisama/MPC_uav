@@ -1,0 +1,26 @@
+[INFO] [launch]: All log files can be found below /home/chen/.ros/log/2026-10-12-07-50-55-933428-orin-nx-13246
+[INFO] [launch]: Default logging verbosity is set to INFO
+[INFO] [control_node-1]: process started with pid [13317]
+[control_node-1] [INFO] [1791791456.194207493] [control]: control 节点启动：setpoint 50.0 Hz → /mavros/setpoint_raw/local；/control/state → /control/state；起飞命令 → /control/takeoff（std_srvs/Trigger）
+[control_node-1]   前置流 1.0 s 后自动切 OFFBOARD（重试间隔 1.0 s）；setpoint：位置/机头**全部由状态机给**（无 yaw 参数）
+[control_node-1]   超时判据：state 2.5 s（★ 该话题实测 1 Hz）、local_position/velocity 0.5 s、mocap 0.5 s、rc 0.5 s、battery 2.0 s
+[control_node-1]   失效判据：低压 < 20.0 V、摇杆变化率 > 100.0 µs/s（≈ COM_RC_STICK_OV = 20）、动捕时间戳不前进 > 0.5 s、/mavros/estimator_status 报 pos_horiz_abs 连续 2 帧为假（★ 只在已解锁时算失效）
+[control_node-1]   ★ 任何失效 ⟹ 立即停发 setpoint；**已解锁**时并请求 AUTO.LAND；打杆/模式被夺走 ⟹ 停发且不抢回 OFFBOARD
+[control_node-1]   ★ 「EKF2 位置失效」的载体 = /mavros/estimator_status（2.5 s 内的帧才算数；该话题实测 1 Hz，**不作超时判据**）
+[control_node-1]   ★ 任务判据：起飞高度 1.00 m（≤ 0.50 m/s）、到高容差 ±0.10 m / ±0.10 m/s 持续 1.0 s、稳定 < 0.10 m ∧ < 0.10 m/s 持续 2.0 s
+[control_node-1]   ★ 开始键（ch9 上升沿）：归一化 > 0.75 起算、< 0.25 复位、去抖 200 ms（越界读数按 1000→0.0 / 2000→1.0 折算）⟹ 第 1 次解锁起飞、第 2 次开始轨迹
+[control_node-1]   ★ WAIT_START 兜底超时 300.0 s（≤0 表示永不超时）；轨迹参考 /traj/reference、完成度 /traj/progress → 转发到 /control/traj_progress；重发 /traj/start 的闸门 0.5 s、参考断流 3.0 s 判 traj_timeout
+[control_node-1]   ★ 解锁：调用 /mavros/cmd/arming **一次**，被拒不重试（登记 /control/takeoff；上锁交给 PX4 自己的 COM_DISARM_LAND）
+[control_node-1] [WARN] [1791791456.215753188] [control]: → MANUAL/INIT：**已停止发布 setpoint**（缺：飞控未连接（/mavros/state 静默 从未收到过 或 connected = false）；动捕无数据（/mocap/pose_enu 静默 从未收到过）；local_position 无效（/mavros/local_position/pose 静默 从未收到过））
+[control_node-1]   交给 PX4 自己的失效保护兜底：断流超过 COM_OF_LOSS_T（z0 现值 1.0 s）后它自行退出 OFFBOARD。
+[control_node-1] [INFO] [1791791456.794812049] [control]: → MANUAL/STANDBY：开始以 50.0 Hz 发布 setpoint（目标 = 当前位置、yaw = 当前机头，即“原地保持”）。前置条件全成立（飞控已连接 ∧ 动捕有数据 ∧ local_position 有效 ∧ arm 守卫成立）；任务态 idle。
+[control_node-1] [WARN] [1791791540.455882513] [control]: 遥控器开始键：**第 1 次上升沿** ⟹ 已受理起飞（★ 受理 ≠ 起飞：真正起飞要等解锁）。（按键计数 1，折算值 1.000000，已确认过低电平 = 是）
+[control_node-1] [INFO] [1791791540.456242231] [control]: 请求解锁（/mavros/cmd/arming，只发这一次）：前置已成立（已在 OFFBOARD ∧ setpoint 已流 83.66 s ∧ 遥控在线）
+[control_node-1] [INFO] [1791791540.475315261] [control]: 解锁请求已受理：arming(true) 已被飞控接受（MAV_RESULT=0）；等 /mavros/state.armed 确认
+[control_node-1] [INFO] [1791791540.917786249] [control]: → AUTO/STANDBY：开始以 50.0 Hz 发布 setpoint（目标 = 当前位置、yaw = 当前机头，即“原地保持”）。前置条件全成立（飞控已连接 ∧ 动捕有数据 ∧ local_position 有效 ∧ arm 守卫成立）；任务态 climb。
+[control_node-1] [WARN] [1791791540.936119972] [control]: → AUTO/TAKEOFF：**已解锁**，开始爬升。目标 z 从起飞原点（起飞瞬间的 EKF 位置）沿 0.50 m/s 的斜坡上升到 +1.00 m，水平两轴钉在原点（垂直起飞，不斜着走）。
+[control_node-1]   takeoff_origin=(-0.001, 0.002, 0.001)；机头锁定在 0.072 rad（不转向）
+[control_node-1]   ★ 到高判据：|z − (原点+1.00)| < 0.10 m ∧ |v_z| < 0.10 m/s 持续 1.0 s
+[control_node-1]   ★ 轨迹原点尚未记录（要等稳定判据成立才记）；此前 traj_origin=（无）
+[control_node-1] [INFO] [1791791546.939229567] [rclcpp]: signal_handler(SIGINT/SIGTERM)
+[INFO] [control_node-1]: process has finished cleanly [pid 13317]

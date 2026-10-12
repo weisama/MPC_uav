@@ -1,0 +1,132 @@
+# 2026-10-12 · §2.1 打杆接管 —— **ch9 起飞成功与被电池低压打断**的原始行
+
+
+**来源**：`run/logs/20261012-063730-up/`（06:37:30 那一场 `up`，**gitignored ⟹ 会丢**）。
+这一场跨越了 07:03 那次机器重启（`/tmp` 被清空，**当场的探针日志已丢**）：
+探针记的 RC 通道读数与 setpoint 帧率已经不在了，**只剩节点自己写在 `run/logs/` 里的原话** ——
+它们活过了重启。
+
+**时间换算**：`本地 = unix − 1791763200`（与 `2026-10-12-node-logs-arming-and-failsafe.log` 同一基准）。
+
+**筛选（`01/05` 都只取 06:46:00–06:48:00 这段；06:57 之后的闩锁尾巴压成一条）**：
+
+- 掐掉 `EVENT ... with args` 刷屏；
+- 掐掉 **38 条** `PositionTargetGlobal failed because no origin`（见 ★ 第 5 条 —— 它只出现在
+  06:47:28.036–06:47:31.738 这 3.7 s 内，是**飞控往上传的**，不是外部注入）；
+- `05-control.log` 里 `失效已闩锁（degrade=mode_lost…` 那 31 条每 10 s 重复的，压成末尾一行说明。
+
+⚠️ **两个源文件里都含 NUL 字节**（`b'\x00' in open(p,'rb').read()` 为真）⟹ **`grep` 把它们当二进制**，
+`grep -c PATTERN file` 会**一声不响地什么都不打印、退出码 1**。本次核对时就这样被骗过一次
+（`grep` 报 0 条，`python3` 数出 38 条）。**在这批日志上做任何"有没有 X"的判断，都用 `python3` 或 `grep -a`。**
+
+---
+
+## ★ 这批行说清的六件事
+
+1. **① 过了**：`06:47:24.813` ch9 第 1 次上升沿 ⟹ 受理起飞；同一条
+   `请求解锁…前置已成立（已在 OFFBOARD ∧ setpoint 已流 58.80 s ∧ 遥控在线）`
+   —— 与 `fsm.hpp:1354-1366` 的三条前置**逐条对上**；`06:47:24.826 MAV_RESULT=0`；
+   PX4 原话 `06:47:24.826 Armed by external command`；`06:47:25.033 → AUTO/TAKEOFF`。
+   （探针侧另证：setpoint 在 06:47:25/26/27 三拍**都保持 50 Hz**，未停发；
+   那条证据随 `/tmp` 丢了，只剩本文件里的节点原话。**必须承认这一条现在无法复核。**）
+2. **§H.6 归属追踪的干净正反对照**（同一个 `Guard::kArmingByUs`）：
+   `06:46:25.010` 遥控器开关（ch5）解锁 ⟹ control **报**「检测到**外部解锁**」；
+   `06:47:24.8` 开始键（ch9）解锁 ⟹ **不报**（这次是节点自己请求的，`own_arming` 成立）。
+   本文件里两次都有，可直接对照。
+3. **OFFBOARD 下两条解锁路的差别**（第二次实测）：ch5 在 OFFBOARD 里被
+   `Arming denied: switch to manual mode first` 拒（本轮之外的 06:42:52 与更早 4 次）；
+   把 ch6 拨走进 STABILIZED 之后，同一只 ch5 **立刻被接受**
+   （`06:46:24.256 Armed by RC (switch)`，隔 0.8 s `06:46:25.059 Disarmed by RC (switch)`）。
+4. **★ 起飞被电池低压打断**：`06:47:26.978` PX4 `Preflight Fail: low battery`（EMERGENCY）、
+   `06:47:27.027` `Failsafe activated`、`06:47:28.014` 节点 `degrade=battery_low`
+   （**证据：/mavros/battery 报 19.840000 V（阈值 20.000000 V）**）。
+   从按下 ch9 到被打断 = **3.2 s** ⟹ ② 想量的"飞行中打杆夺权"**没有窗口**。
+   事后（07:10，**换上新电池后**）只读读数是 `24.525 V / pct=0.890`。
+5. **`PositionTargetGlobal failed because no origin` 不是有人乱发指令**：那条 WARN 出自
+   mavros 的 **RX** 处理（`mavros_extras/src/plugins/guided_target.cpp:155` 的
+   `handle_position_target_global_int`），即**飞控发给上位机的 `POSITION_TARGET_GLOBAL_INT`**；
+   z0 没有 GPS ⟹ 没有 LLA 原点 ⟹ mavros 转不了，只能 WARN。
+   ★ 那 38 条**全部**落在 AUTO.LAND 那 3.7 s 里 ⟹ 反倒是"PX4 真的进了 AUTO.LAND"的旁证，
+   **不是**外部注入。排查时别被它带偏。
+6. **`mode_lost` 闩锁的"不自己恢复"**：`06:57:42.013` ch6 被拨走之后再没被拨回 OFFBOARD，
+   `degrade=mode_lost` 那条告警**每 10 s 一条、连复述 31 次**（06:57:42 → 07:02:42，整 300 s），
+   **一直闩锁到 07:02 机器重启为止** —— 没人去放回 OFFBOARD，它就不复位。
+
+---
+
+## 原始行（已换算本地时刻）
+
+===== 01-mavros.log（16 行）=====
+06:46:21.437  link[1000] detected remote address 59.219
+06:46:21.438  RADIO_STATUS not from 3DR modem?
+06:46:24.256  FCU: Armed by RC (switch)
+06:46:25.059  FCU: Disarmed by RC (switch)
+06:46:27.024  CMD: Unexpected command 176, result 0
+06:46:44.258  link[1000] detected remote address 239.253
+06:47:24.826  FCU: Armed by external command
+06:47:26.669  FCU: Takeoff detected
+06:47:26.978  FCU: Preflight Fail: low battery
+06:47:27.027  FCU: Failsafe activated
+06:47:28.023  CMD: Unexpected command 176, result 0
+06:47:29.028  FCU: Preflight Fail: low battery
+06:47:29.745  FCU: Landing detected
+06:47:31.752  FCU: Disarmed by landing
+06:47:38.687  link[1000] removed stale remote address 59.0
+06:47:38.687  link[1000] removed stale remote address 59.219
+
+===== 05-control.log（52 行）=====
+06:46:23.011  → MANUAL/RC_OVERRIDE：**控制权被夺走** —— 已停止发布 setpoint、已停止请求任何模式（原因见上一行 degrade=）。
+06:46:23.011  degrade=mode_lost（持续 0.0 s，**已闩锁**：不会自己恢复）—— 本节点持有的模式（OFFBOARD / 已请求的 AUTO.LAND）被外部切走。已停发且**不抢回**；复位：有人把模式放回 OFFBOARD，或落地上锁
+06:46:23.470  失效已闩锁（degrade=mode_lost，任务态 RC_OVERRIDE）⟹ **不会自己恢复**。复位方式：有人把模式放回 OFFBOARD（外部动作），或落地上锁（armed → false）
+06:46:25.010  检测到**外部解锁**（/mavros/state 报 armed = true，而本节点这次没有发出过解锁请求）⟹ 立即停发 setpoint（守卫 kArmingByUs 不再成立，状态机退回 INIT）。
+06:46:26.011  → MANUAL/STANDBY：开始以 50.0 Hz 发布 setpoint（目标 = 当前位置、yaw = 当前机头，即“原地保持”）。前置条件全成立（飞控已连接 ∧ 动捕有数据 ∧ local_position 有效 ∧ arm 守卫成立）；任务态 idle。
+06:46:26.011  degrade=none：降级已复位（此前 degrade=mode_lost，持续 3.0 s）—— 判据已恢复
+06:46:27.013  已请求切 OFFBOARD（前置流已满足；流了 1.00 s）；SET_MODE(OFFBOARD) 已发出；等待 /mavros/state.mode 确认。★ 等 /mavros/state.mode 变成 OFFBOARD 才算切成功（该话题 1 Hz ⟹ 最多晚 1 s），未成则每 1.0 s 重试。
+06:47:24.813  遥控器开始键：**第 1 次上升沿** ⟹ 已受理起飞（★ 受理 ≠ 起飞：真正起飞要等解锁）。（按键计数 1，折算值 1.000000，已确认过低电平 = 是）
+06:47:24.813  请求解锁（/mavros/cmd/arming，只发这一次）：前置已成立（已在 OFFBOARD ∧ setpoint 已流 58.80 s ∧ 遥控在线）
+06:47:24.826  解锁请求已受理：arming(true) 已被飞控接受（MAV_RESULT=0）；等 /mavros/state.armed 确认
+06:47:25.013  → AUTO/STANDBY：开始以 50.0 Hz 发布 setpoint（目标 = 当前位置、yaw = 当前机头，即“原地保持”）。前置条件全成立（飞控已连接 ∧ 动捕有数据 ∧ local_position 有效 ∧ arm 守卫成立）；任务态 climb。
+06:47:25.033  → AUTO/TAKEOFF：**已解锁**，开始爬升。目标 z 从起飞原点（起飞瞬间的 EKF 位置）沿 0.50 m/s 的斜坡上升到 +1.00 m，水平两轴钉在原点（垂直起飞，不斜着走）。
+06:47:28.013  → MANUAL/LAND：**已停止发布 setpoint**，并请求 AUTO.LAND 主动中止任务（原因见上一行 degrade=）。
+06:47:28.014  degrade=battery_low（持续 0.0 s，**已闩锁**：不会自己恢复）—— 电压低于阈值 ⟹ 主动中止任务：已停发并请求 AUTO.LAND；复位：落地上锁（换电池 / 充电后即可）
+06:47:28.016  已请求切 AUTO.LAND（失效降级；流了 0.00 s）；SET_MODE(AUTO.LAND) 已发出；等待 /mavros/state.mode 确认。★ 等 /mavros/state.mode 变成 AUTO.LAND 才算切成功（该话题 1 Hz ⟹ 最多晚 1 s），未成则每 1.0 s 重试。
+06:47:28.473  失效已闩锁（degrade=battery_low，任务态 LAND）⟹ **不会自己恢复**。复位方式：落地上锁（armed → false）；未解锁时的降级不闩锁，判据恢复即自动复位
+06:47:31.913  → MANUAL/RC_OVERRIDE：**控制权被夺走** —— 已停止发布 setpoint、已停止请求任何模式（原因见上一行 degrade=）。
+06:47:31.913  degrade=rc_override（持续 0.0 s，**已闩锁**：不会自己恢复）—— 遥控器在打杆（已解锁）⟹ 飞行员接管。已停发且**不请求任何模式**；复位：摇杆回中且模式被交回 OFFBOARD，或落地上锁
+06:47:32.013  → MANUAL/STANDBY：开始以 50.0 Hz 发布 setpoint（目标 = 当前位置、yaw = 当前机头，即“原地保持”）。前置条件全成立（飞控已连接 ∧ 动捕有数据 ∧ local_position 有效 ∧ arm 守卫成立）；任务态 idle。
+06:47:32.013  degrade=none：降级已复位（此前 degrade=rc_override，持续 0.1 s）—— 判据已恢复
+06:57:42.013  → MANUAL/RC_OVERRIDE：**控制权被夺走** —— 已停止发布 setpoint、已停止请求任何模式（原因见上一行 degrade=）。
+06:57:42.013  degrade=mode_lost（持续 0.0 s，**已闩锁**：不会自己恢复）—— 本节点持有的模式（OFFBOARD / 已请求的 AUTO.LAND）被外部切走。已停发且**不抢回**；复位：有人把模式放回 OFFBOARD，或落地上锁
+06:57:52.033  degrade=mode_lost（持续 10.0 s，**已闩锁**：不会自己恢复）—— 本节点持有的模式（OFFBOARD / 已请求的 AUTO.LAND）被外部切走。已停发且**不抢回**；复位：有人把模式放回 OFFBOARD，或落地上锁
+06:58:02.033  degrade=mode_lost（持续 20.0 s，**已闩锁**：不会自己恢复）—— 本节点持有的模式（OFFBOARD / 已请求的 AUTO.LAND）被外部切走。已停发且**不抢回**；复位：有人把模式放回 OFFBOARD，或落地上锁
+06:58:12.033  degrade=mode_lost（持续 30.0 s，**已闩锁**：不会自己恢复）—— 本节点持有的模式（OFFBOARD / 已请求的 AUTO.LAND）被外部切走。已停发且**不抢回**；复位：有人把模式放回 OFFBOARD，或落地上锁
+06:58:22.034  degrade=mode_lost（持续 40.0 s，**已闩锁**：不会自己恢复）—— 本节点持有的模式（OFFBOARD / 已请求的 AUTO.LAND）被外部切走。已停发且**不抢回**；复位：有人把模式放回 OFFBOARD，或落地上锁
+06:58:32.034  degrade=mode_lost（持续 50.0 s，**已闩锁**：不会自己恢复）—— 本节点持有的模式（OFFBOARD / 已请求的 AUTO.LAND）被外部切走。已停发且**不抢回**；复位：有人把模式放回 OFFBOARD，或落地上锁
+06:58:42.034  degrade=mode_lost（持续 60.0 s，**已闩锁**：不会自己恢复）—— 本节点持有的模式（OFFBOARD / 已请求的 AUTO.LAND）被外部切走。已停发且**不抢回**；复位：有人把模式放回 OFFBOARD，或落地上锁
+06:58:52.035  degrade=mode_lost（持续 70.0 s，**已闩锁**：不会自己恢复）—— 本节点持有的模式（OFFBOARD / 已请求的 AUTO.LAND）被外部切走。已停发且**不抢回**；复位：有人把模式放回 OFFBOARD，或落地上锁
+06:59:02.035  degrade=mode_lost（持续 80.0 s，**已闩锁**：不会自己恢复）—— 本节点持有的模式（OFFBOARD / 已请求的 AUTO.LAND）被外部切走。已停发且**不抢回**；复位：有人把模式放回 OFFBOARD，或落地上锁
+06:59:12.035  degrade=mode_lost（持续 90.0 s，**已闩锁**：不会自己恢复）—— 本节点持有的模式（OFFBOARD / 已请求的 AUTO.LAND）被外部切走。已停发且**不抢回**；复位：有人把模式放回 OFFBOARD，或落地上锁
+06:59:22.036  degrade=mode_lost（持续 100.0 s，**已闩锁**：不会自己恢复）—— 本节点持有的模式（OFFBOARD / 已请求的 AUTO.LAND）被外部切走。已停发且**不抢回**；复位：有人把模式放回 OFFBOARD，或落地上锁
+06:59:32.036  degrade=mode_lost（持续 110.0 s，**已闩锁**：不会自己恢复）—— 本节点持有的模式（OFFBOARD / 已请求的 AUTO.LAND）被外部切走。已停发且**不抢回**；复位：有人把模式放回 OFFBOARD，或落地上锁
+06:59:42.036  degrade=mode_lost（持续 120.0 s，**已闩锁**：不会自己恢复）—— 本节点持有的模式（OFFBOARD / 已请求的 AUTO.LAND）被外部切走。已停发且**不抢回**；复位：有人把模式放回 OFFBOARD，或落地上锁
+06:59:52.037  degrade=mode_lost（持续 130.0 s，**已闩锁**：不会自己恢复）—— 本节点持有的模式（OFFBOARD / 已请求的 AUTO.LAND）被外部切走。已停发且**不抢回**；复位：有人把模式放回 OFFBOARD，或落地上锁
+07:00:02.037  degrade=mode_lost（持续 140.0 s，**已闩锁**：不会自己恢复）—— 本节点持有的模式（OFFBOARD / 已请求的 AUTO.LAND）被外部切走。已停发且**不抢回**；复位：有人把模式放回 OFFBOARD，或落地上锁
+07:00:12.037  degrade=mode_lost（持续 150.0 s，**已闩锁**：不会自己恢复）—— 本节点持有的模式（OFFBOARD / 已请求的 AUTO.LAND）被外部切走。已停发且**不抢回**；复位：有人把模式放回 OFFBOARD，或落地上锁
+07:00:22.037  degrade=mode_lost（持续 160.0 s，**已闩锁**：不会自己恢复）—— 本节点持有的模式（OFFBOARD / 已请求的 AUTO.LAND）被外部切走。已停发且**不抢回**；复位：有人把模式放回 OFFBOARD，或落地上锁
+07:00:32.038  degrade=mode_lost（持续 170.0 s，**已闩锁**：不会自己恢复）—— 本节点持有的模式（OFFBOARD / 已请求的 AUTO.LAND）被外部切走。已停发且**不抢回**；复位：有人把模式放回 OFFBOARD，或落地上锁
+07:00:42.038  degrade=mode_lost（持续 180.0 s，**已闩锁**：不会自己恢复）—— 本节点持有的模式（OFFBOARD / 已请求的 AUTO.LAND）被外部切走。已停发且**不抢回**；复位：有人把模式放回 OFFBOARD，或落地上锁
+07:00:52.038  degrade=mode_lost（持续 190.0 s，**已闩锁**：不会自己恢复）—— 本节点持有的模式（OFFBOARD / 已请求的 AUTO.LAND）被外部切走。已停发且**不抢回**；复位：有人把模式放回 OFFBOARD，或落地上锁
+07:01:02.039  degrade=mode_lost（持续 200.0 s，**已闩锁**：不会自己恢复）—— 本节点持有的模式（OFFBOARD / 已请求的 AUTO.LAND）被外部切走。已停发且**不抢回**；复位：有人把模式放回 OFFBOARD，或落地上锁
+07:01:12.039  degrade=mode_lost（持续 210.0 s，**已闩锁**：不会自己恢复）—— 本节点持有的模式（OFFBOARD / 已请求的 AUTO.LAND）被外部切走。已停发且**不抢回**；复位：有人把模式放回 OFFBOARD，或落地上锁
+07:01:22.039  degrade=mode_lost（持续 220.0 s，**已闩锁**：不会自己恢复）—— 本节点持有的模式（OFFBOARD / 已请求的 AUTO.LAND）被外部切走。已停发且**不抢回**；复位：有人把模式放回 OFFBOARD，或落地上锁
+07:01:32.040  degrade=mode_lost（持续 230.0 s，**已闩锁**：不会自己恢复）—— 本节点持有的模式（OFFBOARD / 已请求的 AUTO.LAND）被外部切走。已停发且**不抢回**；复位：有人把模式放回 OFFBOARD，或落地上锁
+07:01:42.040  degrade=mode_lost（持续 240.0 s，**已闩锁**：不会自己恢复）—— 本节点持有的模式（OFFBOARD / 已请求的 AUTO.LAND）被外部切走。已停发且**不抢回**；复位：有人把模式放回 OFFBOARD，或落地上锁
+07:01:52.040  degrade=mode_lost（持续 250.0 s，**已闩锁**：不会自己恢复）—— 本节点持有的模式（OFFBOARD / 已请求的 AUTO.LAND）被外部切走。已停发且**不抢回**；复位：有人把模式放回 OFFBOARD，或落地上锁
+07:02:02.040  degrade=mode_lost（持续 260.0 s，**已闩锁**：不会自己恢复）—— 本节点持有的模式（OFFBOARD / 已请求的 AUTO.LAND）被外部切走。已停发且**不抢回**；复位：有人把模式放回 OFFBOARD，或落地上锁
+07:02:12.041  degrade=mode_lost（持续 270.0 s，**已闩锁**：不会自己恢复）—— 本节点持有的模式（OFFBOARD / 已请求的 AUTO.LAND）被外部切走。已停发且**不抢回**；复位：有人把模式放回 OFFBOARD，或落地上锁
+07:02:22.041  degrade=mode_lost（持续 280.0 s，**已闩锁**：不会自己恢复）—— 本节点持有的模式（OFFBOARD / 已请求的 AUTO.LAND）被外部切走。已停发且**不抢回**；复位：有人把模式放回 OFFBOARD，或落地上锁
+07:02:32.041  degrade=mode_lost（持续 290.0 s，**已闩锁**：不会自己恢复）—— 本节点持有的模式（OFFBOARD / 已请求的 AUTO.LAND）被外部切走。已停发且**不抢回**；复位：有人把模式放回 OFFBOARD，或落地上锁
+07:02:42.042  degrade=mode_lost（持续 300.0 s，**已闩锁**：不会自己恢复）—— 本节点持有的模式（OFFBOARD / 已请求的 AUTO.LAND）被外部切走。已停发且**不抢回**；复位：有人把模式放回 OFFBOARD，或落地上锁
+
+…（此处原有 31 条完全相同的「失效已闩锁（degrade=mode_lost，任务态 RC_OVERRIDE）⟹ **不会自己恢复**」告警，
+  每 10 s 一条，从 06:57:42.492 到 07:02:42.502，为可读性略去 —— 见 ★ 第 6 条。）

@@ -1,0 +1,2100 @@
+===== §2.1 合并版探针挂上，窗口 1200 s（07:10:24.763）=====
+  订阅：/mavros/rc/in（ch1–9）、/control/state、/mavros/state、/mavros/setpoint_raw/local、/rosout、
+        /mavros/statustext/recv（★PX4 原话，best_effort QoS）、/mavros/status_event、/mavros/battery
+  ★ 只读；解锁/拨开关/打杆请你自己做
+[07:10:24.999] ★状态 /control/state = MANUAL/STANDBY
+[07:10:25.541] RC   基线 ch1-9 = [1500, 1500, 989, 1499, 999, 1503, 1503, 999, 999]  rssi=255
+[07:10:25.764] 节拍  setpoint =  52 Hz（最后一帧 0.0 s 前）  rc帧=5  ctl=MANUAL/STANDBY  mode=None  armed=None  bat=—  st=0  ev=0
+[07:10:25.899] 飞控 /mavros/state  mode='OFFBOARD'  armed=False  connected=True
+[07:10:25.902] 电池 24.525 V  -0.000 A  pct=0.890  （阈值 20.0 V）
+[07:10:26.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=25  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.53 V  st=0  ev=0
+[07:10:27.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=45  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.53 V  st=0  ev=0
+[07:10:28.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=65  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.53 V  st=0  ev=0
+[07:10:29.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=85  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.53 V  st=0  ev=0
+[07:10:30.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=105  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.53 V  st=0  ev=0
+[07:10:31.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=125  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.53 V  st=0  ev=0
+[07:10:32.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=145  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.53 V  st=0  ev=0
+[07:10:33.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=165  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.53 V  st=0  ev=0
+[07:10:34.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=185  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.52 V  st=0  ev=0
+[07:10:35.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=205  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.52 V  st=0  ev=0
+[07:10:36.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=225  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.53 V  st=0  ev=0
+[07:10:37.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=245  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.53 V  st=0  ev=0
+[07:10:38.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=265  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.52 V  st=0  ev=0
+[07:10:39.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=285  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.52 V  st=0  ev=0
+[07:10:40.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=305  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.52 V  st=0  ev=0
+[07:10:41.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=325  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.52 V  st=0  ev=0
+[07:10:42.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=345  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.52 V  st=0  ev=0
+[07:10:43.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=365  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.52 V  st=0  ev=0
+[07:10:44.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=385  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.52 V  st=0  ev=0
+[07:10:45.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=405  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.52 V  st=0  ev=0
+[07:10:46.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=425  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.52 V  st=0  ev=0
+[07:10:47.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=445  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.52 V  st=0  ev=0
+[07:10:48.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=465  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.52 V  st=0  ev=0
+[07:10:49.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=485  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.52 V  st=0  ev=0
+[07:10:50.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=505  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.52 V  st=0  ev=0
+[07:10:51.766] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=525  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.52 V  st=0  ev=0
+[07:10:52.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=545  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.52 V  st=0  ev=0
+[07:10:53.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=565  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.52 V  st=0  ev=0
+[07:10:54.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=585  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.52 V  st=0  ev=0
+[07:10:55.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=605  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.52 V  st=0  ev=0
+[07:10:56.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=625  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.52 V  st=0  ev=0
+[07:10:57.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=645  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.52 V  st=0  ev=0
+[07:10:58.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=665  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.52 V  st=0  ev=0
+[07:10:59.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=685  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.52 V  st=0  ev=0
+[07:11:00.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=705  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.52 V  st=0  ev=0
+[07:11:01.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=725  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.52 V  st=0  ev=0
+[07:11:02.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=745  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.51 V  st=0  ev=0
+[07:11:03.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=765  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.51 V  st=0  ev=0
+[07:11:04.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=785  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.52 V  st=0  ev=0
+[07:11:05.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=805  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.52 V  st=0  ev=0
+[07:11:06.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=825  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.52 V  st=0  ev=0
+[07:11:07.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=845  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.52 V  st=0  ev=0
+[07:11:08.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=865  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.51 V  st=0  ev=0
+[07:11:09.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=885  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.51 V  st=0  ev=0
+[07:11:10.764] 节拍  setpoint =  46 Hz（最后一帧 0.0 s 前）  rc帧=905  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.51 V  st=0  ev=0
+[07:11:11.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=925  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.51 V  st=0  ev=0
+[07:11:12.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=945  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.52 V  st=0  ev=0
+[07:11:13.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=965  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.52 V  st=0  ev=0
+[07:11:14.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=985  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.51 V  st=0  ev=0
+[07:11:15.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=1005  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.51 V  st=0  ev=0
+[07:11:16.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=1025  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.51 V  st=0  ev=0
+[07:11:17.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=1045  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.51 V  st=0  ev=0
+[07:11:18.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=1065  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.51 V  st=0  ev=0
+[07:11:19.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=1085  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.51 V  st=0  ev=0
+[07:11:20.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=1105  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.51 V  st=0  ev=0
+[07:11:21.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=1125  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.51 V  st=0  ev=0
+[07:11:22.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=1145  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.51 V  st=0  ev=0
+[07:11:23.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=1165  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.51 V  st=0  ev=0
+[07:11:24.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=1185  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.51 V  st=0  ev=0
+[07:11:25.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=1205  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.51 V  st=0  ev=0
+[07:11:26.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=1225  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.51 V  st=0  ev=0
+[07:11:27.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=1245  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.51 V  st=0  ev=0
+[07:11:28.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=1265  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.51 V  st=0  ev=0
+[07:11:29.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=1285  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.51 V  st=0  ev=0
+[07:11:30.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=1305  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.51 V  st=0  ev=0
+[07:11:31.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=1325  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.51 V  st=0  ev=0
+[07:11:32.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=1345  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.51 V  st=0  ev=0
+[07:11:33.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=1365  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.51 V  st=0  ev=0
+[07:11:34.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=1385  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.51 V  st=0  ev=0
+[07:11:35.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=1405  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.51 V  st=0  ev=0
+[07:11:36.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=1425  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.51 V  st=0  ev=0
+[07:11:37.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=1445  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.51 V  st=0  ev=0
+[07:11:38.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=1465  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.50 V  st=0  ev=0
+[07:11:39.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=1484  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.50 V  st=0  ev=0
+[07:11:40.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=1504  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.51 V  st=0  ev=0
+[07:11:41.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=1524  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.51 V  st=0  ev=0
+[07:11:42.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=1544  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.50 V  st=0  ev=0
+[07:11:43.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=1564  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.50 V  st=0  ev=0
+[07:11:44.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=1584  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.50 V  st=0  ev=0
+[07:11:45.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=1604  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.50 V  st=0  ev=0
+[07:11:46.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=1624  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.50 V  st=0  ev=0
+[07:11:47.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=1644  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.50 V  st=0  ev=0
+[07:11:48.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=1664  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.50 V  st=0  ev=0
+[07:11:49.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=1684  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.50 V  st=0  ev=0
+[07:11:50.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=1704  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.50 V  st=0  ev=0
+[07:11:51.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=1724  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.50 V  st=0  ev=0
+[07:11:52.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=1744  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.50 V  st=0  ev=0
+[07:11:53.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=1764  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.50 V  st=0  ev=0
+[07:11:54.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=1784  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.50 V  st=0  ev=0
+[07:11:55.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=1804  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.50 V  st=0  ev=0
+[07:11:56.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=1824  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.50 V  st=0  ev=0
+[07:11:57.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=1844  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.50 V  st=0  ev=0
+[07:11:58.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=1864  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.50 V  st=0  ev=0
+[07:11:59.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=1884  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.50 V  st=0  ev=0
+[07:12:00.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=1904  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.50 V  st=0  ev=0
+[07:12:01.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=1924  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.50 V  st=0  ev=0
+[07:12:02.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=1944  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.50 V  st=0  ev=0
+[07:12:03.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=1964  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.50 V  st=0  ev=0
+[07:12:04.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=1984  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.50 V  st=0  ev=0
+[07:12:05.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=2004  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.50 V  st=0  ev=0
+[07:12:06.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=2024  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.50 V  st=0  ev=0
+[07:12:07.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=2044  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.50 V  st=0  ev=0
+[07:12:08.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=2064  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.50 V  st=0  ev=0
+[07:12:09.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=2084  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.50 V  st=0  ev=0
+[07:12:10.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=2104  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.50 V  st=0  ev=0
+[07:12:11.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=2124  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.50 V  st=0  ev=0
+[07:12:12.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=2144  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.50 V  st=0  ev=0
+[07:12:13.765] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=2164  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.50 V  st=0  ev=0
+[07:12:14.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=2184  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.50 V  st=0  ev=0
+[07:12:15.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=2204  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.50 V  st=0  ev=0
+[07:12:16.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=2224  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.50 V  st=0  ev=0
+[07:12:17.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=2244  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.50 V  st=0  ev=0
+[07:12:18.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=2264  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.50 V  st=0  ev=0
+[07:12:19.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=2284  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.50 V  st=0  ev=0
+[07:12:20.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=2304  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.49 V  st=0  ev=0
+[07:12:21.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=2324  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.49 V  st=0  ev=0
+[07:12:22.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=2344  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.49 V  st=0  ev=0
+[07:12:23.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=2364  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.49 V  st=0  ev=0
+[07:12:24.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=2384  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.49 V  st=0  ev=0
+[07:12:25.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=2404  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.49 V  st=0  ev=0
+[07:12:26.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=2424  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.49 V  st=0  ev=0
+[07:12:27.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=2444  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.49 V  st=0  ev=0
+[07:12:28.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=2464  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.49 V  st=0  ev=0
+[07:12:29.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=2484  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.49 V  st=0  ev=0
+[07:12:30.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=2504  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.49 V  st=0  ev=0
+[07:12:31.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=2524  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.49 V  st=0  ev=0
+[07:12:32.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=2544  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.49 V  st=0  ev=0
+[07:12:33.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=2564  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.49 V  st=0  ev=0
+[07:12:34.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=2584  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.49 V  st=0  ev=0
+[07:12:35.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=2604  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.49 V  st=0  ev=0
+[07:12:36.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=2624  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.49 V  st=0  ev=0
+[07:12:37.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=2644  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.49 V  st=0  ev=0
+[07:12:38.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=2664  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.49 V  st=0  ev=0
+[07:12:39.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=2684  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.49 V  st=0  ev=0
+[07:12:40.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=2704  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.49 V  st=0  ev=0
+[07:12:41.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=2724  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.49 V  st=0  ev=0
+[07:12:42.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=2744  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.49 V  st=0  ev=0
+[07:12:43.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=2764  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.49 V  st=0  ev=0
+[07:12:44.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=2784  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.49 V  st=0  ev=0
+[07:12:45.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=2804  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.49 V  st=0  ev=0
+[07:12:46.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=2824  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.49 V  st=0  ev=0
+[07:12:47.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=2844  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.49 V  st=0  ev=0
+[07:12:48.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=2864  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.49 V  st=0  ev=0
+[07:12:49.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=2884  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.49 V  st=0  ev=0
+[07:12:50.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=2904  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.49 V  st=0  ev=0
+[07:12:51.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=2924  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.49 V  st=0  ev=0
+[07:12:52.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=2944  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.49 V  st=0  ev=0
+[07:12:53.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=2964  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.49 V  st=0  ev=0
+[07:12:54.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=2984  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.49 V  st=0  ev=0
+[07:12:55.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=3004  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.49 V  st=0  ev=0
+[07:12:56.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=3024  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.49 V  st=0  ev=0
+[07:12:57.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=3044  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.49 V  st=0  ev=0
+[07:12:58.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=3064  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.48 V  st=0  ev=0
+[07:12:59.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=3084  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.48 V  st=0  ev=0
+[07:13:00.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=3104  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.48 V  st=0  ev=0
+[07:13:01.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=3124  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.48 V  st=0  ev=0
+[07:13:02.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=3144  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.48 V  st=0  ev=0
+[07:13:03.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=3164  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.48 V  st=0  ev=0
+[07:13:04.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=3184  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.48 V  st=0  ev=0
+[07:13:05.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=3204  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.48 V  st=0  ev=0
+[07:13:06.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=3224  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.48 V  st=0  ev=0
+[07:13:07.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=3244  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.48 V  st=0  ev=0
+[07:13:08.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=3264  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.48 V  st=0  ev=0
+[07:13:09.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=3284  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.48 V  st=0  ev=0
+[07:13:10.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=3304  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.48 V  st=0  ev=0
+[07:13:11.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=3324  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.48 V  st=0  ev=0
+[07:13:12.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=3344  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.48 V  st=0  ev=0
+[07:13:13.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=3364  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.48 V  st=0  ev=0
+[07:13:14.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=3384  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.48 V  st=0  ev=0
+[07:13:15.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=3404  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.48 V  st=0  ev=0
+[07:13:16.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=3424  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.48 V  st=0  ev=0
+[07:13:17.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=3444  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.48 V  st=0  ev=0
+[07:13:18.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=3464  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.48 V  st=0  ev=0
+[07:13:19.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=3484  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.48 V  st=0  ev=0
+[07:13:20.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=3504  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.48 V  st=0  ev=0
+[07:13:21.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=3524  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.48 V  st=0  ev=0
+[07:13:22.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=3544  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.48 V  st=0  ev=0
+[07:13:23.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=3564  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.48 V  st=0  ev=0
+[07:13:23.890] 电池 24.475 V  -0.010 A  pct=0.880  （阈值 20.0 V）
+[07:13:24.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=3584  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.48 V  st=0  ev=0
+[07:13:25.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=3604  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.48 V  st=0  ev=0
+[07:13:26.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=3624  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.48 V  st=0  ev=0
+[07:13:27.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=3644  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.48 V  st=0  ev=0
+[07:13:28.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=3664  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.47 V  st=0  ev=0
+[07:13:29.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=3684  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.47 V  st=0  ev=0
+[07:13:30.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=3704  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.45 V  st=0  ev=0
+[07:13:31.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=3724  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.45 V  st=0  ev=0
+[07:13:32.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=3744  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.45 V  st=0  ev=0
+[07:13:33.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=3764  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.45 V  st=0  ev=0
+[07:13:34.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=3784  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.44 V  st=0  ev=0
+[07:13:35.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=3804  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.44 V  st=0  ev=0
+[07:13:36.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=3824  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.44 V  st=0  ev=0
+[07:13:37.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=3844  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.44 V  st=0  ev=0
+[07:13:38.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=3864  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.45 V  st=0  ev=0
+[07:13:39.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=3884  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.45 V  st=0  ev=0
+[07:13:40.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=3904  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.43 V  st=0  ev=0
+[07:13:41.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=3924  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.43 V  st=0  ev=0
+[07:13:42.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=3944  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.43 V  st=0  ev=0
+[07:13:43.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=3964  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.43 V  st=0  ev=0
+[07:13:44.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=3984  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.45 V  st=0  ev=0
+[07:13:45.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=4004  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.45 V  st=0  ev=0
+[07:13:45.887] 电池 24.418 V  -1.580 A  pct=0.880  （阈值 20.0 V）
+[07:13:46.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=4024  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.42 V  st=0  ev=0
+[07:13:47.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=4044  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.42 V  st=0  ev=0
+[07:13:48.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=4064  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.44 V  st=0  ev=0
+[07:13:49.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=4084  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.44 V  st=0  ev=0
+[07:13:50.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=4104  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.44 V  st=0  ev=0
+[07:13:51.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=4124  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.44 V  st=0  ev=0
+[07:13:52.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=4144  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.41 V  st=0  ev=0
+[07:13:53.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=4164  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.41 V  st=0  ev=0
+[07:13:54.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=4184  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.43 V  st=0  ev=0
+[07:13:55.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=4204  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.43 V  st=0  ev=0
+[07:13:56.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=4224  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.43 V  st=0  ev=0
+[07:13:57.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=4244  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.43 V  st=0  ev=0
+[07:13:58.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=4264  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.43 V  st=0  ev=0
+[07:13:59.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=4284  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.43 V  st=0  ev=0
+[07:14:00.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=4304  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.43 V  st=0  ev=0
+[07:14:01.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=4324  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.43 V  st=0  ev=0
+[07:14:02.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=4344  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.42 V  st=0  ev=0
+[07:14:03.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=4364  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.42 V  st=0  ev=0
+[07:14:04.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=4384  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.43 V  st=0  ev=0
+[07:14:05.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=4404  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.43 V  st=0  ev=0
+[07:14:06.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=4424  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.44 V  st=0  ev=0
+[07:14:07.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=4444  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.44 V  st=0  ev=0
+[07:14:08.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=4464  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.42 V  st=0  ev=0
+[07:14:09.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=4484  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.42 V  st=0  ev=0
+[07:14:10.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=4504  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.43 V  st=0  ev=0
+[07:14:11.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=4524  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.43 V  st=0  ev=0
+[07:14:12.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=4544  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.44 V  st=0  ev=0
+[07:14:13.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=4564  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.44 V  st=0  ev=0
+[07:14:14.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=4584  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.41 V  st=0  ev=0
+[07:14:15.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=4604  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.41 V  st=0  ev=0
+[07:14:16.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=4624  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.43 V  st=0  ev=0
+[07:14:17.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=4644  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.43 V  st=0  ev=0
+[07:14:18.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=4664  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.43 V  st=0  ev=0
+[07:14:19.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=4684  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.43 V  st=0  ev=0
+[07:14:20.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=4704  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.40 V  st=0  ev=0
+[07:14:21.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=4724  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.40 V  st=0  ev=0
+[07:14:22.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=4744  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.42 V  st=0  ev=0
+[07:14:23.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=4764  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.42 V  st=0  ev=0
+[07:14:24.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=4784  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.42 V  st=0  ev=0
+[07:14:25.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=4804  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.42 V  st=0  ev=0
+[07:14:26.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=4824  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.42 V  st=0  ev=0
+[07:14:27.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=4844  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.42 V  st=0  ev=0
+[07:14:28.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=4864  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.42 V  st=0  ev=0
+[07:14:29.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=4884  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.42 V  st=0  ev=0
+[07:14:30.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=4904  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.42 V  st=0  ev=0
+[07:14:31.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=4924  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.42 V  st=0  ev=0
+[07:14:32.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=4944  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.42 V  st=0  ev=0
+[07:14:33.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=4964  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.42 V  st=0  ev=0
+[07:14:34.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=4984  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.43 V  st=0  ev=0
+[07:14:35.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=5004  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.43 V  st=0  ev=0
+[07:14:36.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=5024  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.41 V  st=0  ev=0
+[07:14:37.765] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=5044  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.41 V  st=0  ev=0
+[07:14:38.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=5064  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.42 V  st=0  ev=0
+[07:14:39.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=5084  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.42 V  st=0  ev=0
+[07:14:40.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=5104  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.43 V  st=0  ev=0
+[07:14:41.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=5124  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.43 V  st=0  ev=0
+[07:14:42.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=5144  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.39 V  st=0  ev=0
+[07:14:43.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=5164  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.39 V  st=0  ev=0
+[07:14:44.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=5184  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.42 V  st=0  ev=0
+[07:14:45.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=5204  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.42 V  st=0  ev=0
+[07:14:46.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=5224  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.42 V  st=0  ev=0
+[07:14:47.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=5244  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.42 V  st=0  ev=0
+[07:14:48.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=5264  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.40 V  st=0  ev=0
+[07:14:49.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=5284  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.40 V  st=0  ev=0
+[07:14:50.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=5304  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.41 V  st=0  ev=0
+[07:14:51.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=5324  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.41 V  st=0  ev=0
+[07:14:52.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=5344  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.41 V  st=0  ev=0
+[07:14:53.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=5364  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.41 V  st=0  ev=0
+[07:14:54.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=5384  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.41 V  st=0  ev=0
+[07:14:55.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=5404  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.41 V  st=0  ev=0
+[07:14:56.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=5424  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.40 V  st=0  ev=0
+[07:14:57.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=5444  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.40 V  st=0  ev=0
+[07:14:58.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=5464  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.40 V  st=0  ev=0
+[07:14:59.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=5484  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.40 V  st=0  ev=0
+[07:15:00.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=5504  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.41 V  st=0  ev=0
+[07:15:01.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=5524  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.41 V  st=0  ev=0
+[07:15:02.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=5544  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.42 V  st=0  ev=0
+[07:15:03.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=5564  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.42 V  st=0  ev=0
+[07:15:04.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=5584  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.40 V  st=0  ev=0
+[07:15:05.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=5604  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.40 V  st=0  ev=0
+[07:15:06.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=5624  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.42 V  st=0  ev=0
+[07:15:07.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=5644  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.42 V  st=0  ev=0
+[07:15:08.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=5664  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.42 V  st=0  ev=0
+[07:15:09.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=5684  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.42 V  st=0  ev=0
+[07:15:10.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=5704  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.38 V  st=0  ev=0
+[07:15:11.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=5724  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.38 V  st=0  ev=0
+[07:15:12.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=5744  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.41 V  st=0  ev=0
+[07:15:13.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=5764  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.41 V  st=0  ev=0
+[07:15:14.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=5784  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.41 V  st=0  ev=0
+[07:15:15.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=5804  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.41 V  st=0  ev=0
+[07:15:16.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=5824  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.41 V  st=0  ev=0
+[07:15:17.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=5844  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.41 V  st=0  ev=0
+[07:15:18.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=5864  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.40 V  st=0  ev=0
+[07:15:19.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=5884  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.40 V  st=0  ev=0
+[07:15:20.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=5904  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.40 V  st=0  ev=0
+[07:15:21.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=5924  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.40 V  st=0  ev=0
+[07:15:22.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=5944  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.40 V  st=0  ev=0
+[07:15:23.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=5964  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.40 V  st=0  ev=0
+[07:15:24.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=5984  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.40 V  st=0  ev=0
+[07:15:25.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=6004  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.40 V  st=0  ev=0
+[07:15:26.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=6024  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.39 V  st=0  ev=0
+[07:15:27.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=6044  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.39 V  st=0  ev=0
+[07:15:28.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=6064  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.39 V  st=0  ev=0
+[07:15:29.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=6084  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.39 V  st=0  ev=0
+[07:15:30.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=6104  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.41 V  st=0  ev=0
+[07:15:31.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=6124  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.41 V  st=0  ev=0
+[07:15:32.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=6144  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.39 V  st=0  ev=0
+[07:15:33.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=6164  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.39 V  st=0  ev=0
+[07:15:34.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=6184  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.41 V  st=0  ev=0
+[07:15:35.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=6204  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.41 V  st=0  ev=0
+[07:15:36.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=6224  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.40 V  st=0  ev=0
+[07:15:37.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=6244  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.40 V  st=0  ev=0
+[07:15:38.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=6264  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.38 V  st=0  ev=0
+[07:15:39.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=6284  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.38 V  st=0  ev=0
+[07:15:40.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=6304  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.40 V  st=0  ev=0
+[07:15:41.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=6324  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.40 V  st=0  ev=0
+[07:15:42.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=6344  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.40 V  st=0  ev=0
+[07:15:43.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=6364  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.40 V  st=0  ev=0
+[07:15:44.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=6384  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.41 V  st=0  ev=0
+[07:15:45.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=6404  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.41 V  st=0  ev=0
+[07:15:46.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=6424  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.40 V  st=0  ev=0
+[07:15:47.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=6444  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.40 V  st=0  ev=0
+[07:15:48.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=6464  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.39 V  st=0  ev=0
+[07:15:49.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=6484  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.39 V  st=0  ev=0
+[07:15:50.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=6503  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.40 V  st=0  ev=0
+[07:15:51.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=6523  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.40 V  st=0  ev=0
+[07:15:52.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=6543  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.39 V  st=0  ev=0
+[07:15:53.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=6563  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.39 V  st=0  ev=0
+[07:15:54.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=6583  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.39 V  st=0  ev=0
+[07:15:55.767] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=6603  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.39 V  st=0  ev=0
+[07:15:56.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=6623  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.39 V  st=0  ev=0
+[07:15:57.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=6643  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.39 V  st=0  ev=0
+[07:15:58.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=6663  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.40 V  st=0  ev=0
+[07:15:59.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=6683  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.40 V  st=0  ev=0
+[07:16:00.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=6703  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.38 V  st=0  ev=0
+[07:16:01.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=6723  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.38 V  st=0  ev=0
+[07:16:02.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=6743  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.40 V  st=0  ev=0
+[07:16:03.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=6763  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.40 V  st=0  ev=0
+[07:16:04.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=6783  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.40 V  st=0  ev=0
+[07:16:05.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=6803  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.40 V  st=0  ev=0
+[07:16:06.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=6823  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.38 V  st=0  ev=0
+[07:16:07.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=6843  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.38 V  st=0  ev=0
+[07:16:08.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=6863  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.40 V  st=0  ev=0
+[07:16:09.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=6883  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.40 V  st=0  ev=0
+[07:16:10.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=6903  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.39 V  st=0  ev=0
+[07:16:11.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=6923  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.39 V  st=0  ev=0
+[07:16:12.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=6943  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.39 V  st=0  ev=0
+[07:16:13.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=6963  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.39 V  st=0  ev=0
+[07:16:14.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=6983  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.39 V  st=0  ev=0
+[07:16:15.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=7003  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.39 V  st=0  ev=0
+[07:16:16.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=7023  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.39 V  st=0  ev=0
+[07:16:17.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=7043  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.39 V  st=0  ev=0
+[07:16:18.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=7063  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.39 V  st=0  ev=0
+[07:16:19.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=7083  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.39 V  st=0  ev=0
+[07:16:20.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=7103  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.39 V  st=0  ev=0
+[07:16:21.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=7123  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.39 V  st=0  ev=0
+[07:16:22.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=7143  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.38 V  st=0  ev=0
+[07:16:23.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=7163  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.38 V  st=0  ev=0
+[07:16:24.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=7183  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.39 V  st=0  ev=0
+[07:16:25.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=7203  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.39 V  st=0  ev=0
+[07:16:26.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=7223  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.40 V  st=0  ev=0
+[07:16:27.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=7243  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.40 V  st=0  ev=0
+[07:16:27.893] 电池 24.367 V  -2.050 A  pct=0.870  （阈值 20.0 V）
+[07:16:28.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=7263  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.37 V  st=0  ev=0
+[07:16:29.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=7283  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.37 V  st=0  ev=0
+[07:16:30.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=7303  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.39 V  st=0  ev=0
+[07:16:31.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=7323  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.39 V  st=0  ev=0
+[07:16:32.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=7343  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.39 V  st=0  ev=0
+[07:16:33.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=7363  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.39 V  st=0  ev=0
+[07:16:34.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=7383  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.39 V  st=0  ev=0
+[07:16:35.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=7403  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.39 V  st=0  ev=0
+[07:16:36.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=7423  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.39 V  st=0  ev=0
+[07:16:37.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=7443  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.39 V  st=0  ev=0
+[07:16:38.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=7463  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.38 V  st=0  ev=0
+[07:16:39.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=7483  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.38 V  st=0  ev=0
+[07:16:40.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=7503  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.39 V  st=0  ev=0
+[07:16:41.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=7523  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.39 V  st=0  ev=0
+[07:16:42.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=7543  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.38 V  st=0  ev=0
+[07:16:43.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=7563  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.38 V  st=0  ev=0
+[07:16:44.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=7583  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.37 V  st=0  ev=0
+[07:16:45.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=7603  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.37 V  st=0  ev=0
+[07:16:46.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=7623  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.38 V  st=0  ev=0
+[07:16:47.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=7643  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.38 V  st=0  ev=0
+[07:16:48.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=7663  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.38 V  st=0  ev=0
+[07:16:49.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=7683  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.38 V  st=0  ev=0
+[07:16:50.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=7703  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.36 V  st=0  ev=0
+[07:16:51.766] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=7723  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.36 V  st=0  ev=0
+[07:16:52.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=7743  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.39 V  st=0  ev=0
+[07:16:53.765] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=7763  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.39 V  st=0  ev=0
+[07:16:54.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=7783  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.39 V  st=0  ev=0
+[07:16:55.765] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=7803  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.39 V  st=0  ev=0
+[07:16:56.765] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=7823  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.36 V  st=0  ev=0
+[07:16:57.765] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=7843  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.36 V  st=0  ev=0
+[07:16:58.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=7863  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.38 V  st=0  ev=0
+[07:16:59.764] 节拍  setpoint =  49 Hz（最后一帧 0.0 s 前）  rc帧=7883  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.38 V  st=0  ev=0
+[07:17:00.765] 节拍  setpoint =  51 Hz（最后一帧 0.0 s 前）  rc帧=7903  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.38 V  st=0  ev=0
+[07:17:01.766] 节拍  setpoint =  49 Hz（最后一帧 0.0 s 前）  rc帧=7923  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.38 V  st=0  ev=0
+[07:17:02.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=7943  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.38 V  st=0  ev=0
+[07:17:03.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=7963  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.38 V  st=0  ev=0
+[07:17:04.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=7983  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.38 V  st=0  ev=0
+[07:17:05.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=8003  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.38 V  st=0  ev=0
+[07:17:06.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=8023  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.37 V  st=0  ev=0
+[07:17:07.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=8043  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.37 V  st=0  ev=0
+[07:17:08.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=8063  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.38 V  st=0  ev=0
+[07:17:09.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=8083  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.38 V  st=0  ev=0
+[07:17:10.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=8102  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.37 V  st=0  ev=0
+[07:17:11.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=8122  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.37 V  st=0  ev=0
+[07:17:12.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=8142  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.37 V  st=0  ev=0
+[07:17:13.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=8162  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.37 V  st=0  ev=0
+[07:17:14.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=8182  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.37 V  st=0  ev=0
+[07:17:15.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=8202  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.37 V  st=0  ev=0
+[07:17:16.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=8222  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.38 V  st=0  ev=0
+[07:17:17.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=8242  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.38 V  st=0  ev=0
+[07:17:18.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=8262  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.35 V  st=0  ev=0
+[07:17:19.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=8282  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.35 V  st=0  ev=0
+[07:17:20.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=8302  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.38 V  st=0  ev=0
+[07:17:21.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=8322  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.38 V  st=0  ev=0
+[07:17:22.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=8342  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.38 V  st=0  ev=0
+[07:17:23.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=8362  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.38 V  st=0  ev=0
+[07:17:24.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=8382  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.37 V  st=0  ev=0
+[07:17:25.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=8402  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.37 V  st=0  ev=0
+[07:17:26.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=8422  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.38 V  st=0  ev=0
+[07:17:27.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=8442  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.38 V  st=0  ev=0
+[07:17:28.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=8462  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.38 V  st=0  ev=0
+[07:17:29.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=8482  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.38 V  st=0  ev=0
+[07:17:30.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=8502  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.38 V  st=0  ev=0
+[07:17:31.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=8522  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.38 V  st=0  ev=0
+[07:17:32.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=8542  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.37 V  st=0  ev=0
+[07:17:33.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=8562  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.37 V  st=0  ev=0
+[07:17:34.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=8582  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.37 V  st=0  ev=0
+[07:17:35.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=8602  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.37 V  st=0  ev=0
+[07:17:36.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=8622  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.37 V  st=0  ev=0
+[07:17:37.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=8642  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.37 V  st=0  ev=0
+[07:17:38.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=8662  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.37 V  st=0  ev=0
+[07:17:39.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=8682  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.37 V  st=0  ev=0
+[07:17:40.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=8702  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.36 V  st=0  ev=0
+[07:17:41.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=8722  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.36 V  st=0  ev=0
+[07:17:42.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=8742  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.37 V  st=0  ev=0
+[07:17:43.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=8762  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.37 V  st=0  ev=0
+[07:17:44.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=8782  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.37 V  st=0  ev=0
+[07:17:45.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=8802  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.37 V  st=0  ev=0
+[07:17:46.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=8822  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.34 V  st=0  ev=0
+[07:17:47.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=8842  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.34 V  st=0  ev=0
+[07:17:48.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=8862  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.37 V  st=0  ev=0
+[07:17:49.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=8882  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.37 V  st=0  ev=0
+[07:17:50.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=8902  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.37 V  st=0  ev=0
+[07:17:51.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=8922  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.37 V  st=0  ev=0
+[07:17:52.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=8942  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.37 V  st=0  ev=0
+[07:17:53.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=8962  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.37 V  st=0  ev=0
+[07:17:54.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=8982  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.37 V  st=0  ev=0
+[07:17:55.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=9002  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.37 V  st=0  ev=0
+[07:17:56.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=9022  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.36 V  st=0  ev=0
+[07:17:57.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=9042  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.36 V  st=0  ev=0
+[07:17:58.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=9062  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.37 V  st=0  ev=0
+[07:17:59.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=9082  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.37 V  st=0  ev=0
+[07:18:00.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=9102  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.36 V  st=0  ev=0
+[07:18:01.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=9122  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.36 V  st=0  ev=0
+[07:18:02.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=9142  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.36 V  st=0  ev=0
+[07:18:03.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=9162  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.36 V  st=0  ev=0
+[07:18:04.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=9182  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.36 V  st=0  ev=0
+[07:18:05.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=9202  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.36 V  st=0  ev=0
+[07:18:06.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=9222  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.36 V  st=0  ev=0
+[07:18:07.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=9242  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.36 V  st=0  ev=0
+[07:18:08.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=9262  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.35 V  st=0  ev=0
+[07:18:09.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=9281  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.35 V  st=0  ev=0
+[07:18:10.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=9301  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.37 V  st=0  ev=0
+[07:18:11.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=9321  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.37 V  st=0  ev=0
+[07:18:12.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=9341  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.37 V  st=0  ev=0
+[07:18:13.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=9361  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.37 V  st=0  ev=0
+[07:18:14.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=9381  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.34 V  st=0  ev=0
+[07:18:15.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=9401  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.34 V  st=0  ev=0
+[07:18:16.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=9421  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.37 V  st=0  ev=0
+[07:18:17.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=9441  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.37 V  st=0  ev=0
+[07:18:18.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=9461  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.36 V  st=0  ev=0
+[07:18:19.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=9481  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.36 V  st=0  ev=0
+[07:18:20.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=9501  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.37 V  st=0  ev=0
+[07:18:21.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=9521  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.37 V  st=0  ev=0
+[07:18:22.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=9541  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.36 V  st=0  ev=0
+[07:18:23.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=9561  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.36 V  st=0  ev=0
+[07:18:24.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=9581  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.36 V  st=0  ev=0
+[07:18:25.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=9601  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.36 V  st=0  ev=0
+[07:18:26.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=9621  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.36 V  st=0  ev=0
+[07:18:27.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=9641  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.36 V  st=0  ev=0
+[07:18:28.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=9661  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.36 V  st=0  ev=0
+[07:18:29.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=9681  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.36 V  st=0  ev=0
+[07:18:30.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=9701  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.35 V  st=0  ev=0
+[07:18:31.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=9721  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.35 V  st=0  ev=0
+[07:18:32.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=9741  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.35 V  st=0  ev=0
+[07:18:33.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=9761  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.35 V  st=0  ev=0
+[07:18:34.765] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=9781  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.35 V  st=0  ev=0
+[07:18:35.766] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=9801  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.35 V  st=0  ev=0
+[07:18:36.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=9821  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.34 V  st=0  ev=0
+[07:18:37.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=9841  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.34 V  st=0  ev=0
+[07:18:38.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=9861  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.36 V  st=0  ev=0
+[07:18:39.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=9881  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.36 V  st=0  ev=0
+[07:18:40.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=9901  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.36 V  st=0  ev=0
+[07:18:41.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=9921  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.36 V  st=0  ev=0
+[07:18:42.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=9941  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.35 V  st=0  ev=0
+[07:18:43.370] ★状态 /control/state = MANUAL/INIT   （上一拍 MANUAL/STANDBY）
+[07:18:43.373] 日志[control] degrade=mocap_timeout（持续 0.0 s，未闩锁：判据一恢复就自动复位）—— 动捕无数据 ⟹ EKF2 的视觉位置会随时间失效；已停发；已解锁时请求 AUTO.LAND（EKF2 位置失效时 PX4 会**拒绝**它，见 ticket 06 的保留说明） ⏎   · 证据：/mocap/pose_enu 静默 0.508754 s；发布者：1 个（/mocap_rel_pose [reliable]）
+[07:18:43.392] ★状态 /control/state = MANUAL/STANDBY   （上一拍 MANUAL/INIT）
+[07:18:43.394] 日志[control] degrade=none：降级已复位（此前 degrade=mocap_timeout，持续 0.0 s）—— 判据已恢复
+[07:18:43.764] 节拍  setpoint =  49 Hz（最后一帧 0.0 s 前）  rc帧=9961  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.35 V  st=0  ev=0
+[07:18:44.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=9981  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.36 V  st=0  ev=0
+[07:18:45.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=10001  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.36 V  st=0  ev=0
+[07:18:46.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=10021  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.36 V  st=0  ev=0
+[07:18:47.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=10041  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.36 V  st=0  ev=0
+[07:18:48.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=10061  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.36 V  st=0  ev=0
+[07:18:49.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=10081  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.36 V  st=0  ev=0
+[07:18:50.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=10101  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.36 V  st=0  ev=0
+[07:18:51.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=10121  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.36 V  st=0  ev=0
+[07:18:52.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=10141  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.35 V  st=0  ev=0
+[07:18:53.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=10161  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.35 V  st=0  ev=0
+[07:18:54.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=10181  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.36 V  st=0  ev=0
+[07:18:55.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=10201  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.36 V  st=0  ev=0
+[07:18:56.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=10221  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.35 V  st=0  ev=0
+[07:18:57.031] ★状态 /control/state = MANUAL/INIT   （上一拍 MANUAL/STANDBY）
+[07:18:57.034] 日志[control] degrade=mocap_timeout（持续 0.0 s，未闩锁：判据一恢复就自动复位）—— 动捕无数据 ⟹ EKF2 的视觉位置会随时间失效；已停发；已解锁时请求 AUTO.LAND（EKF2 位置失效时 PX4 会**拒绝**它，见 ticket 06 的保留说明） ⏎   · 证据：/mocap/pose_enu 静默 0.504174 s；发布者：1 个（/mocap_rel_pose [reliable]）
+[07:18:57.712] ★状态 /control/state = MANUAL/STANDBY   （上一拍 MANUAL/INIT）
+[07:18:57.717] 日志[control] degrade=none：降级已复位（此前 degrade=mocap_timeout，持续 0.7 s）—— 判据已恢复
+[07:18:57.764] 节拍  setpoint =  16 Hz（最后一帧 0.0 s 前）  rc帧=10240  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.35 V  st=0  ev=0
+[07:18:58.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=10260  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.34 V  st=0  ev=0
+[07:18:59.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=10280  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.34 V  st=0  ev=0
+[07:19:00.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=10300  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.35 V  st=0  ev=0
+[07:19:01.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=10320  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.35 V  st=0  ev=0
+[07:19:02.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=10340  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.35 V  st=0  ev=0
+[07:19:03.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=10360  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.35 V  st=0  ev=0
+[07:19:04.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=10380  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.33 V  st=0  ev=0
+[07:19:05.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=10400  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.33 V  st=0  ev=0
+[07:19:06.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=10420  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.36 V  st=0  ev=0
+[07:19:07.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=10440  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.36 V  st=0  ev=0
+[07:19:08.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=10460  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.36 V  st=0  ev=0
+[07:19:09.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=10480  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.36 V  st=0  ev=0
+[07:19:10.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=10500  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.36 V  st=0  ev=0
+[07:19:11.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=10520  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.36 V  st=0  ev=0
+[07:19:12.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=10540  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.36 V  st=0  ev=0
+[07:19:13.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=10560  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.36 V  st=0  ev=0
+[07:19:14.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=10580  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.35 V  st=0  ev=0
+[07:19:15.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=10600  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.35 V  st=0  ev=0
+[07:19:16.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=10620  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.35 V  st=0  ev=0
+[07:19:17.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=10640  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.35 V  st=0  ev=0
+[07:19:18.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=10660  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.35 V  st=0  ev=0
+[07:19:19.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=10680  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.35 V  st=0  ev=0
+[07:19:20.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=10700  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.34 V  st=0  ev=0
+[07:19:21.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=10720  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.34 V  st=0  ev=0
+[07:19:22.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=10740  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.35 V  st=0  ev=0
+[07:19:23.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=10760  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.35 V  st=0  ev=0
+[07:19:24.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=10780  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.34 V  st=0  ev=0
+[07:19:25.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=10800  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.34 V  st=0  ev=0
+[07:19:26.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=10820  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.33 V  st=0  ev=0
+[07:19:27.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=10840  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.33 V  st=0  ev=0
+[07:19:28.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=10860  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.34 V  st=0  ev=0
+[07:19:29.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=10880  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.34 V  st=0  ev=0
+[07:19:30.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=10900  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.34 V  st=0  ev=0
+[07:19:31.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=10920  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.34 V  st=0  ev=0
+[07:19:32.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=10940  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.33 V  st=0  ev=0
+[07:19:33.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=10960  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.33 V  st=0  ev=0
+[07:19:34.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=10980  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.36 V  st=0  ev=0
+[07:19:35.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=11000  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.36 V  st=0  ev=0
+[07:19:36.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=11020  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.35 V  st=0  ev=0
+[07:19:37.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=11040  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.35 V  st=0  ev=0
+[07:19:38.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=11059  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.35 V  st=0  ev=0
+[07:19:39.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=11079  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.35 V  st=0  ev=0
+[07:19:40.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=11099  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.35 V  st=0  ev=0
+[07:19:41.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=11119  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.35 V  st=0  ev=0
+[07:19:42.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=11139  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.34 V  st=0  ev=0
+[07:19:43.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=11159  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.34 V  st=0  ev=0
+[07:19:44.533] ★★STATUSTEXT[CRIT] Preflight Fail: Yaw estimate error
+[07:19:44.536] EVENT[sev3] px4_id=9581033  seq=74
+[07:19:44.538] EVENT[sev3] px4_id=10011251  seq=75
+[07:19:44.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=11179  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.35 V  st=1  ev=6
+[07:19:45.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=11199  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.35 V  st=1  ev=6
+[07:19:46.618] EVENT[sev3] px4_id=10011251  seq=80
+[07:19:46.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=11219  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.34 V  st=1  ev=11
+[07:19:47.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=11239  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.34 V  st=1  ev=11
+[07:19:48.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=11259  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.34 V  st=1  ev=11
+[07:19:49.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=11279  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.34 V  st=1  ev=11
+[07:19:50.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=11299  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.34 V  st=1  ev=11
+[07:19:51.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=11319  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.34 V  st=1  ev=11
+[07:19:52.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=11339  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.34 V  st=1  ev=11
+[07:19:53.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=11359  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.34 V  st=1  ev=11
+[07:19:54.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=11379  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.33 V  st=1  ev=11
+[07:19:55.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=11399  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.33 V  st=1  ev=11
+[07:19:56.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=11419  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.35 V  st=1  ev=11
+[07:19:57.217] ★状态 /control/state = MANUAL/INIT   （上一拍 MANUAL/STANDBY）
+[07:19:57.219] 日志[control] degrade=mocap_timeout（持续 0.0 s，未闩锁：判据一恢复就自动复位）—— 动捕无数据 ⟹ EKF2 的视觉位置会随时间失效；已停发；已解锁时请求 AUTO.LAND（EKF2 位置失效时 PX4 会**拒绝**它，见 ticket 06 的保留说明） ⏎   · 证据：/mocap/pose_enu 静默 0.519849 s；发布者：1 个（/mocap_rel_pose [reliable]）
+[07:19:57.316] ★状态 /control/state = MANUAL/STANDBY   （上一拍 MANUAL/INIT）
+[07:19:57.318] 日志[control] degrade=none：降级已复位（此前 degrade=mocap_timeout，持续 0.1 s）—— 判据已恢复
+[07:19:57.764] 节拍  setpoint =  45 Hz（最后一帧 0.0 s 前）  rc帧=11439  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.35 V  st=1  ev=11
+[07:19:57.816] ★状态 /control/state = MANUAL/INIT   （上一拍 MANUAL/STANDBY）
+[07:19:57.818] 日志[control] degrade=mocap_timeout（持续 0.0 s，未闩锁：判据一恢复就自动复位）—— 动捕无数据 ⟹ EKF2 的视觉位置会随时间失效；已停发；已解锁时请求 AUTO.LAND（EKF2 位置失效时 PX4 会**拒绝**它，见 ticket 06 的保留说明） ⏎   · 证据：/mocap/pose_enu 静默 0.506301 s；发布者：1 个（/mocap_rel_pose [reliable]）
+[07:19:58.236] ★状态 /control/state = MANUAL/STANDBY   （上一拍 MANUAL/INIT）
+[07:19:58.239] 日志[control] degrade=none：降级已复位（此前 degrade=mocap_timeout，持续 0.4 s）—— 判据已恢复
+[07:19:58.764] 节拍  setpoint =  29 Hz（最后一帧 0.0 s 前）  rc帧=11459  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.34 V  st=1  ev=11
+[07:19:59.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=11479  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.34 V  st=1  ev=11
+[07:20:00.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=11499  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.34 V  st=1  ev=11
+[07:20:01.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=11519  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.34 V  st=1  ev=11
+[07:20:02.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=11539  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.35 V  st=1  ev=11
+[07:20:03.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=11559  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.35 V  st=1  ev=11
+[07:20:04.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=11579  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.34 V  st=1  ev=11
+[07:20:05.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=11599  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.34 V  st=1  ev=11
+[07:20:06.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=11619  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.35 V  st=1  ev=11
+[07:20:07.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=11639  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.35 V  st=1  ev=11
+[07:20:08.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=11659  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.34 V  st=1  ev=11
+[07:20:09.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=11679  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.34 V  st=1  ev=11
+[07:20:10.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=11699  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.34 V  st=1  ev=11
+[07:20:11.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=11719  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.34 V  st=1  ev=11
+[07:20:12.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=11739  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.34 V  st=1  ev=11
+[07:20:13.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=11759  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.34 V  st=1  ev=11
+[07:20:14.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=11779  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.34 V  st=1  ev=11
+[07:20:15.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=11799  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.34 V  st=1  ev=11
+[07:20:16.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=11819  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.33 V  st=1  ev=11
+[07:20:17.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=11839  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.33 V  st=1  ev=11
+[07:20:18.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=11859  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.33 V  st=1  ev=11
+[07:20:19.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=11879  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.33 V  st=1  ev=11
+[07:20:20.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=11899  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.33 V  st=1  ev=11
+[07:20:21.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=11919  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.33 V  st=1  ev=11
+[07:20:22.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=11939  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.32 V  st=1  ev=11
+[07:20:23.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=11959  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.32 V  st=1  ev=11
+[07:20:24.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=11979  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.34 V  st=1  ev=11
+[07:20:25.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=11999  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.34 V  st=1  ev=11
+[07:20:26.765] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=12019  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.33 V  st=1  ev=11
+[07:20:27.765] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=12039  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.33 V  st=1  ev=11
+[07:20:28.765] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=12059  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.34 V  st=1  ev=11
+[07:20:29.764] 节拍  setpoint =  49 Hz（最后一帧 0.0 s 前）  rc帧=12079  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.34 V  st=1  ev=11
+[07:20:30.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=12099  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.34 V  st=1  ev=11
+[07:20:31.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=12119  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.34 V  st=1  ev=11
+[07:20:32.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=12139  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.33 V  st=1  ev=11
+[07:20:33.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=12159  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.33 V  st=1  ev=11
+[07:20:34.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=12179  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.34 V  st=1  ev=11
+[07:20:35.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=12199  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.34 V  st=1  ev=11
+[07:20:36.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=12219  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.34 V  st=1  ev=11
+[07:20:37.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=12239  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.34 V  st=1  ev=11
+[07:20:38.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=12259  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.32 V  st=1  ev=11
+[07:20:39.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=12279  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.32 V  st=1  ev=11
+[07:20:40.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=12299  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.33 V  st=1  ev=11
+[07:20:41.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=12319  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.33 V  st=1  ev=11
+[07:20:42.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=12339  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.33 V  st=1  ev=11
+[07:20:43.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=12359  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.33 V  st=1  ev=11
+[07:20:44.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=12379  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.32 V  st=1  ev=11
+[07:20:45.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=12399  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.32 V  st=1  ev=11
+[07:20:46.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=12419  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.33 V  st=1  ev=11
+[07:20:47.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=12439  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.33 V  st=1  ev=11
+[07:20:48.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=12459  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.32 V  st=1  ev=11
+[07:20:49.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=12479  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.32 V  st=1  ev=11
+[07:20:50.765] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=12499  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.32 V  st=1  ev=11
+[07:20:51.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=12519  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.32 V  st=1  ev=11
+[07:20:52.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=12539  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.34 V  st=1  ev=11
+[07:20:53.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=12559  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.34 V  st=1  ev=11
+[07:20:54.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=12579  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.33 V  st=1  ev=11
+[07:20:55.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=12599  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.33 V  st=1  ev=11
+[07:20:56.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=12619  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.34 V  st=1  ev=11
+[07:20:57.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=12639  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.34 V  st=1  ev=11
+[07:20:58.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=12659  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.33 V  st=1  ev=11
+[07:20:59.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=12679  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.33 V  st=1  ev=11
+[07:21:00.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=12699  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.33 V  st=1  ev=11
+[07:21:01.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=12719  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.33 V  st=1  ev=11
+[07:21:02.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=12739  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.33 V  st=1  ev=11
+[07:21:03.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=12759  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.33 V  st=1  ev=11
+[07:21:04.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=12779  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.33 V  st=1  ev=11
+[07:21:05.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=12799  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.33 V  st=1  ev=11
+[07:21:06.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=12819  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.32 V  st=1  ev=11
+[07:21:07.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=12839  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.32 V  st=1  ev=11
+[07:21:08.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=12859  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.33 V  st=1  ev=11
+[07:21:09.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=12879  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.33 V  st=1  ev=11
+[07:21:10.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=12899  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.32 V  st=1  ev=11
+[07:21:11.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=12919  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.32 V  st=1  ev=11
+[07:21:11.916] 电池 24.311 V  -1.820 A  pct=0.860  （阈值 20.0 V）
+[07:21:12.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=12939  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.31 V  st=1  ev=11
+[07:21:13.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=12959  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.31 V  st=1  ev=11
+[07:21:14.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=12979  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.32 V  st=1  ev=11
+[07:21:15.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=12999  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.32 V  st=1  ev=11
+[07:21:16.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=13019  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.32 V  st=1  ev=11
+[07:21:17.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=13039  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.32 V  st=1  ev=11
+[07:21:18.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=13059  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.33 V  st=1  ev=11
+[07:21:19.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=13079  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.33 V  st=1  ev=11
+[07:21:20.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=13099  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.33 V  st=1  ev=11
+[07:21:21.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=13119  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.33 V  st=1  ev=11
+[07:21:22.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=13139  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.32 V  st=1  ev=11
+[07:21:23.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=13159  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.32 V  st=1  ev=11
+[07:21:24.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=13179  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.33 V  st=1  ev=11
+[07:21:25.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=13199  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.33 V  st=1  ev=11
+[07:21:26.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=13219  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.33 V  st=1  ev=11
+[07:21:27.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=13239  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.33 V  st=1  ev=11
+[07:21:28.765] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=13259  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.32 V  st=1  ev=11
+[07:21:29.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=13279  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.32 V  st=1  ev=11
+[07:21:30.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=13299  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.33 V  st=1  ev=11
+[07:21:31.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=13319  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.33 V  st=1  ev=11
+[07:21:31.927] ★★STATUSTEXT[CRIT] Arming denied: switch to manual mode first	
+[07:21:31.935] EVENT[sev2] px4_id=12420351  seq=84
+[07:21:31.958] 开关 ch5: 999 → 2000
+[07:21:32.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=13339  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.33 V  st=2  ev=12
+[07:21:33.208] 开关 ch6: 1503 → 2000
+[07:21:33.509] 开关 ch6: 2000 → 1503
+[07:21:33.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=13359  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.33 V  st=2  ev=12
+[07:21:33.923] 飞控 /mavros/state  mode='STABILIZED'  armed=False  connected=True
+[07:21:33.937] ★状态 /control/state = MANUAL/RC_OVERRIDE   （上一拍 MANUAL/STANDBY）
+[07:21:33.938] 日志[control] → MANUAL/RC_OVERRIDE：**控制权被夺走** —— 已停止发布 setpoint、已停止请求任何模式（原因见上一行 degrade=）。 ⏎   ★ 本节点**不会主动抢回** OFFBOARD（否则与飞行员一秒一次地拉锯）。 ⏎   ★ 复位条件：有人把模式放回 OFFBOARD，或落地上锁；对打杆夺权则是摇杆回中且模式被交回。
+[07:21:33.941] 日志[control] degrade=mode_lost（持续 0.0 s，**已闩锁**：不会自己恢复）—— 本节点持有的模式（OFFBOARD / 已请求的 AUTO.LAND）被外部切走。已停发且**不抢回**；复位：有人把模式放回 OFFBOARD，或落地上锁 ⏎   · 证据：模式从「STABILIZED」变成了「STABILIZED」
+[07:21:34.458] 开关 ch5: 2000 → 999
+[07:21:34.557] 日志[control] 失效已闩锁（degrade=mode_lost，任务态 RC_OVERRIDE）⟹ **不会自己恢复**。复位方式：有人把模式放回 OFFBOARD（外部动作），或落地上锁（armed → false）
+[07:21:34.764] 节拍  setpoint =   8 Hz（最后一帧 0.8 s 前）  rc帧=13379  ctl=MANUAL/RC_OVERRIDE  mode=STABILIZED  armed=False  bat=24.31 V  st=2  ev=12
+[07:21:34.962] EVENT[sev3] px4_id=10011251  seq=86
+[07:21:34.966] EVENT[sev3] px4_id=3087815  seq=88
+[07:21:35.764] 节拍  setpoint =   0 Hz（最后一帧 1.8 s 前）  rc帧=13399  ctl=MANUAL/RC_OVERRIDE  mode=STABILIZED  armed=False  bat=24.31 V  st=2  ev=18
+[07:21:36.764] 节拍  setpoint =   0 Hz（最后一帧 2.8 s 前）  rc帧=13419  ctl=MANUAL/RC_OVERRIDE  mode=STABILIZED  armed=False  bat=24.32 V  st=2  ev=18
+[07:21:36.910] 开关 ch6: 1503 → 999
+[07:21:37.758] 开关 ch6: 999 → 1503
+[07:21:37.764] 节拍  setpoint =   0 Hz（最后一帧 3.8 s 前）  rc帧=13439  ctl=MANUAL/RC_OVERRIDE  mode=STABILIZED  armed=False  bat=24.32 V  st=2  ev=18
+[07:21:38.737] ★★STATUSTEXT[INFO] Armed by RC (switch)	
+[07:21:38.759] 开关 ch5: 999 → 2000
+[07:21:38.764] 节拍  setpoint =   0 Hz（最后一帧 4.8 s 前）  rc帧=13459  ctl=MANUAL/RC_OVERRIDE  mode=STABILIZED  armed=False  bat=24.32 V  st=3  ev=19
+[07:21:38.918] 飞控 /mavros/state  mode='STABILIZED'  armed=True  connected=True
+[07:21:39.764] 节拍  setpoint =   0 Hz（最后一帧 5.8 s 前）  rc帧=13479  ctl=MANUAL/RC_OVERRIDE  mode=STABILIZED  armed=True  bat=24.32 V  st=3  ev=19
+[07:21:39.808] 开关 ch5: 2000 → 999
+[07:21:39.814] ★★STATUSTEXT[INFO] Disarmed by RC (switch)	
+[07:21:39.918] 飞控 /mavros/state  mode='STABILIZED'  armed=False  connected=True
+[07:21:39.921] ★状态 /control/state = MANUAL/STANDBY   （上一拍 MANUAL/RC_OVERRIDE）
+[07:21:39.923] 电池 24.167 V  -1.000 A  pct=0.830  （阈值 20.0 V）
+[07:21:39.924] 日志[control] degrade=none：降级已复位（此前 degrade=mode_lost，持续 6.0 s）—— 判据已恢复
+[07:21:39.942] EVENT[sev3] px4_id=10011251  seq=94
+[07:21:40.764] 节拍  setpoint =  43 Hz（最后一帧 0.0 s 前）  rc帧=13499  ctl=MANUAL/STANDBY  mode=STABILIZED  armed=False  bat=24.17 V  st=4  ev=25
+[07:21:41.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=13519  ctl=MANUAL/STANDBY  mode=STABILIZED  armed=False  bat=24.17 V  st=4  ev=25
+[07:21:41.918] 飞控 /mavros/state  mode='OFFBOARD'  armed=False  connected=True
+[07:21:41.921] 电池 24.308 V  -0.110 A  pct=0.850  （阈值 20.0 V）
+[07:21:42.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=13539  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.31 V  st=4  ev=25
+[07:21:43.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=13559  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.31 V  st=4  ev=25
+[07:21:44.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=13579  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.33 V  st=4  ev=25
+[07:21:45.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=13599  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.33 V  st=4  ev=25
+[07:21:46.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=13619  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.34 V  st=4  ev=25
+[07:21:47.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=13639  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.34 V  st=4  ev=25
+[07:21:48.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=13659  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.34 V  st=4  ev=25
+[07:21:49.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=13679  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.34 V  st=4  ev=25
+[07:21:50.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=13699  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.35 V  st=4  ev=25
+[07:21:51.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=13719  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.35 V  st=4  ev=25
+[07:21:52.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=13739  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.35 V  st=4  ev=25
+[07:21:53.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=13759  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.35 V  st=4  ev=25
+[07:21:54.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=13779  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.35 V  st=4  ev=25
+[07:21:55.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=13799  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.35 V  st=4  ev=25
+[07:21:56.765] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=13819  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.35 V  st=4  ev=25
+[07:21:57.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=13839  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.35 V  st=4  ev=25
+[07:21:58.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=13859  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.35 V  st=4  ev=25
+[07:21:59.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=13879  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.35 V  st=4  ev=25
+[07:22:00.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=13899  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.35 V  st=4  ev=25
+[07:22:01.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=13919  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.35 V  st=4  ev=25
+[07:22:02.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=13939  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.35 V  st=4  ev=25
+[07:22:03.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=13959  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.35 V  st=4  ev=25
+[07:22:04.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=13979  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.35 V  st=4  ev=25
+[07:22:05.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=13999  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.35 V  st=4  ev=25
+[07:22:06.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=14018  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.35 V  st=4  ev=25
+[07:22:07.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=14039  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.35 V  st=4  ev=25
+[07:22:08.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=14059  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.35 V  st=4  ev=25
+[07:22:09.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=14079  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.35 V  st=4  ev=25
+[07:22:10.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=14098  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.35 V  st=4  ev=25
+[07:22:11.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=14119  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.35 V  st=4  ev=25
+[07:22:12.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=14138  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.35 V  st=4  ev=25
+[07:22:13.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=14159  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.35 V  st=4  ev=25
+[07:22:14.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=14179  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.35 V  st=4  ev=25
+[07:22:15.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=14198  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.35 V  st=4  ev=25
+[07:22:16.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=14219  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.35 V  st=4  ev=25
+[07:22:17.765] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=14239  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.35 V  st=4  ev=25
+[07:22:18.765] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=14258  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.35 V  st=4  ev=25
+[07:22:19.764] 节拍  setpoint =  49 Hz（最后一帧 0.0 s 前）  rc帧=14279  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.35 V  st=4  ev=25
+[07:22:20.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=14299  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.35 V  st=4  ev=25
+[07:22:21.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=14318  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.35 V  st=4  ev=25
+[07:22:22.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=14339  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.35 V  st=4  ev=25
+[07:22:23.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=14358  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.35 V  st=4  ev=25
+[07:22:24.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=14379  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.35 V  st=4  ev=25
+[07:22:25.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=14398  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.35 V  st=4  ev=25
+[07:22:26.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=14418  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.35 V  st=4  ev=25
+[07:22:27.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=14438  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.35 V  st=4  ev=25
+[07:22:28.765] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=14459  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.35 V  st=4  ev=25
+[07:22:29.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=14478  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.35 V  st=4  ev=25
+[07:22:30.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=14498  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.35 V  st=4  ev=25
+[07:22:31.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=14518  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.35 V  st=4  ev=25
+[07:22:32.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=14538  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.35 V  st=4  ev=25
+[07:22:33.767] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=14559  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.35 V  st=4  ev=25
+[07:22:34.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=14578  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.35 V  st=4  ev=25
+[07:22:35.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=14598  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.35 V  st=4  ev=25
+[07:22:36.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=14618  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.35 V  st=4  ev=25
+[07:22:37.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=14638  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.35 V  st=4  ev=25
+[07:22:38.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=14658  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.35 V  st=4  ev=25
+[07:22:39.765] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=14678  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.35 V  st=4  ev=25
+[07:22:40.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=14698  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.35 V  st=4  ev=25
+[07:22:41.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=14718  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.35 V  st=4  ev=25
+[07:22:42.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=14738  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.35 V  st=4  ev=25
+[07:22:43.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=14758  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.35 V  st=4  ev=25
+[07:22:44.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=14778  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.35 V  st=4  ev=25
+[07:22:45.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=14798  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.35 V  st=4  ev=25
+[07:22:46.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=14818  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.35 V  st=4  ev=25
+[07:22:47.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=14838  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.35 V  st=4  ev=25
+[07:22:48.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=14858  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.35 V  st=4  ev=25
+[07:22:49.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=14878  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.35 V  st=4  ev=25
+[07:22:50.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=14898  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.35 V  st=4  ev=25
+[07:22:51.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=14918  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.35 V  st=4  ev=25
+[07:22:52.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=14938  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.35 V  st=4  ev=25
+[07:22:53.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=14958  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.35 V  st=4  ev=25
+[07:22:54.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=14978  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.35 V  st=4  ev=25
+[07:22:55.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=14998  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.35 V  st=4  ev=25
+[07:22:56.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=15018  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.35 V  st=4  ev=25
+[07:22:57.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=15038  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.35 V  st=4  ev=25
+[07:22:58.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=15058  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.35 V  st=4  ev=25
+[07:22:59.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=15078  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.35 V  st=4  ev=25
+[07:23:00.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=15098  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.35 V  st=4  ev=25
+[07:23:01.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=15118  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.35 V  st=4  ev=25
+[07:23:02.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=15138  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.35 V  st=4  ev=25
+[07:23:03.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=15158  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.35 V  st=4  ev=25
+[07:23:04.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=15178  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.35 V  st=4  ev=25
+[07:23:05.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=15198  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.35 V  st=4  ev=25
+[07:23:06.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=15218  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.35 V  st=4  ev=25
+[07:23:07.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=15238  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.35 V  st=4  ev=25
+[07:23:08.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=15258  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.35 V  st=4  ev=25
+[07:23:09.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=15278  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.35 V  st=4  ev=25
+[07:23:10.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=15298  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.35 V  st=4  ev=25
+[07:23:11.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=15318  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.35 V  st=4  ev=25
+[07:23:12.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=15338  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.35 V  st=4  ev=25
+[07:23:13.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=15358  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.35 V  st=4  ev=25
+[07:23:14.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=15378  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.35 V  st=4  ev=25
+[07:23:15.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=15398  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.35 V  st=4  ev=25
+[07:23:16.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=15418  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.35 V  st=4  ev=25
+[07:23:17.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=15438  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.35 V  st=4  ev=25
+[07:23:18.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=15458  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.35 V  st=4  ev=25
+[07:23:19.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=15478  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.35 V  st=4  ev=25
+[07:23:20.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=15498  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.35 V  st=4  ev=25
+[07:23:21.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=15517  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.35 V  st=4  ev=25
+[07:23:22.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=15537  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.35 V  st=4  ev=25
+[07:23:23.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=15557  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.35 V  st=4  ev=25
+[07:23:24.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=15577  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.35 V  st=4  ev=25
+[07:23:25.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=15597  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.35 V  st=4  ev=25
+[07:23:26.268] 开关 ch9: 999 → 2000
+[07:23:26.554] ★★STATUSTEXT[INFO] Armed by external command	
+[07:23:26.619] 开关 ch9: 2000 → 999
+[07:23:26.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=15617  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.35 V  st=5  ev=26
+[07:23:26.926] 飞控 /mavros/state  mode='OFFBOARD'  armed=True  connected=True
+[07:23:26.933] ★状态 /control/state = AUTO/STANDBY   （上一拍 MANUAL/STANDBY）
+[07:23:26.951] ★状态 /control/state = AUTO/TAKEOFF   （上一拍 AUTO/STANDBY）
+[07:23:27.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=15637  ctl=AUTO/TAKEOFF  mode=OFFBOARD  armed=True  bat=24.35 V  st=5  ev=26
+[07:23:27.970] ★★STATUSTEXT[INFO] Pilot took over using sticks	
+[07:23:27.972] 摇杆 ch3: 989 → 1059
+[07:23:27.973] ★状态 /control/state = MANUAL/RC_OVERRIDE   （上一拍 AUTO/TAKEOFF）
+[07:23:27.975] 日志[control] → MANUAL/RC_OVERRIDE：**控制权被夺走** —— 已停止发布 setpoint、已停止请求任何模式（原因见上一行 degrade=）。 ⏎   ★ 本节点**不会主动抢回** OFFBOARD（否则与飞行员一秒一次地拉锯）。 ⏎   ★ 复位条件：有人把模式放回 OFFBOARD，或落地上锁；对打杆夺权则是摇杆回中且模式被交回。
+[07:23:27.976] 日志[control] degrade=rc_override（持续 0.0 s，**已闩锁**：不会自己恢复）—— 遥控器在打杆（已解锁）⟹ 飞行员接管。已停发且**不请求任何模式**；复位：摇杆回中且模式被交回 OFFBOARD，或落地上锁 ⏎   · 证据：遥控器新鲜（0.003004 s）且摇杆变化率超过 100.000000 µs/s
+[07:23:28.018] 摇杆 ch3: 1059 → 1194
+[07:23:28.218] 摇杆 ch3: 1194 → 1303
+[07:23:28.369] 摇杆 ch3: 1303 → 1372
+[07:23:28.384] ★★STATUSTEXT[INFO] Takeoff detected	
+[07:23:28.419] 摇杆 ch3: 1372 → 1439
+[07:23:28.470] 摇杆 ch3: 1439 → 1562
+[07:23:28.520] 摇杆 ch3: 1562 → 1630
+[07:23:28.573] 日志[control] 失效已闩锁（degrade=rc_override，任务态 RC_OVERRIDE）⟹ **不会自己恢复**。复位方式：有人把模式放回 OFFBOARD（外部动作），或落地上锁（armed → false）
+[07:23:28.670] 摇杆 ch3: 1630 → 1718
+[07:23:28.718] 摇杆 ch3: 1718 → 1840
+[07:23:28.764] 节拍  setpoint =  10 Hz（最后一帧 0.8 s 前）  rc帧=15657  ctl=MANUAL/RC_OVERRIDE  mode=OFFBOARD  armed=True  bat=24.27 V  st=7  ev=28
+[07:23:28.769] 摇杆 ch3: 1840 → 1907
+[07:23:28.869] 摇杆 ch3: 1907 → 1968
+[07:23:28.926] 飞控 /mavros/state  mode='POSCTL'  armed=True  connected=True
+[07:23:29.062] EVENT[sev3] px4_id=10011251  seq=102
+[07:23:29.065] EVENT[sev3] px4_id=3087815  seq=104
+[07:23:29.764] 节拍  setpoint =   0 Hz（最后一帧 1.8 s 前）  rc帧=15677  ctl=MANUAL/RC_OVERRIDE  mode=POSCTL  armed=True  bat=24.27 V  st=7  ev=34
+[07:23:29.929] 电池 23.617 V  -2.570 A  pct=0.750  （阈值 20.0 V）
+[07:23:30.069] 摇杆 ch3: 1968 → 1812
+[07:23:30.119] 摇杆 ch3: 1812 → 1749
+[07:23:30.219] 摇杆 ch3: 1749 → 1675
+[07:23:30.270] 摇杆 ch3: 1675 → 1345
+[07:23:30.320] 摇杆 ch3: 1345 → 1137
+[07:23:30.368] 摇杆 ch3: 1137 → 989
+[07:23:30.764] 节拍  setpoint =   0 Hz（最后一帧 2.8 s 前）  rc帧=15697  ctl=MANUAL/RC_OVERRIDE  mode=POSCTL  armed=True  bat=23.62 V  st=7  ev=34
+[07:23:31.764] 节拍  setpoint =   0 Hz（最后一帧 3.8 s 前）  rc帧=15717  ctl=MANUAL/RC_OVERRIDE  mode=POSCTL  armed=True  bat=23.62 V  st=7  ev=34
+[07:23:32.764] 节拍  setpoint =   0 Hz（最后一帧 4.8 s 前）  rc帧=15737  ctl=MANUAL/RC_OVERRIDE  mode=POSCTL  armed=True  bat=23.66 V  st=7  ev=34
+[07:23:33.764] 节拍  setpoint =   0 Hz（最后一帧 5.8 s 前）  rc帧=15757  ctl=MANUAL/RC_OVERRIDE  mode=POSCTL  armed=True  bat=23.66 V  st=7  ev=34
+[07:23:33.820] 开关 ch9: 999 → 2000
+[07:23:33.930] 电池 23.719 V  -1.540 A  pct=0.760  （阈值 20.0 V）
+[07:23:34.170] 开关 ch9: 2000 → 999
+[07:23:34.764] 节拍  setpoint =   0 Hz（最后一帧 6.8 s 前）  rc帧=15777  ctl=MANUAL/RC_OVERRIDE  mode=POSCTL  armed=True  bat=23.72 V  st=7  ev=34
+[07:23:35.504] ★★STATUSTEXT[INFO] Landing detected	
+[07:23:35.764] 节拍  setpoint =   0 Hz（最后一帧 7.8 s 前）  rc帧=15797  ctl=MANUAL/RC_OVERRIDE  mode=POSCTL  armed=True  bat=23.72 V  st=8  ev=35
+[07:23:35.931] 电池 23.957 V  -0.570 A  pct=0.800  （阈值 20.0 V）
+[07:23:36.764] 节拍  setpoint =   0 Hz（最后一帧 8.8 s 前）  rc帧=15817  ctl=MANUAL/RC_OVERRIDE  mode=POSCTL  armed=True  bat=23.96 V  st=8  ev=35
+[07:23:37.514] ★★STATUSTEXT[INFO] Disarmed by landing	
+[07:23:37.763] ★★STATUSTEXT[INFO] Armed by RC (switch)	
+[07:23:37.764] 节拍  setpoint =   0 Hz（最后一帧 9.8 s 前）  rc帧=15837  ctl=MANUAL/RC_OVERRIDE  mode=POSCTL  armed=True  bat=23.96 V  st=10  ev=36
+[07:23:37.768] 开关 ch5: 999 → 2000
+[07:23:37.932] 电池 24.119 V  -0.320 A  pct=0.820  （阈值 20.0 V）
+[07:23:37.993] 日志[control] degrade=rc_override（持续 10.0 s，**已闩锁**：不会自己恢复）—— 遥控器在打杆（已解锁）⟹ 飞行员接管。已停发且**不请求任何模式**；复位：摇杆回中且模式被交回 OFFBOARD，或落地上锁 ⏎   · 证据：遥控器新鲜（0.024197 s）且摇杆变化率超过 100.000000 µs/s
+[07:23:38.572] 日志[control] 失效已闩锁（degrade=rc_override，任务态 RC_OVERRIDE）⟹ **不会自己恢复**。复位方式：有人把模式放回 OFFBOARD（外部动作），或落地上锁（armed → false）
+[07:23:38.764] 节拍  setpoint =   0 Hz（最后一帧 10.8 s 前）  rc帧=15857  ctl=MANUAL/RC_OVERRIDE  mode=POSCTL  armed=True  bat=24.12 V  st=10  ev=37
+[07:23:39.000] ★★STATUSTEXT[INFO] Disarmed by RC (switch)	
+[07:23:39.021] 开关 ch5: 2000 → 999
+[07:23:39.764] 节拍  setpoint =   0 Hz（最后一帧 11.8 s 前）  rc帧=15877  ctl=MANUAL/RC_OVERRIDE  mode=POSCTL  armed=True  bat=24.12 V  st=11  ev=38
+[07:23:39.929] 飞控 /mavros/state  mode='POSCTL'  armed=False  connected=True
+[07:23:39.931] 电池 24.189 V  -0.080 A  pct=0.830  （阈值 20.0 V）
+[07:23:39.934] ★状态 /control/state = MANUAL/STANDBY   （上一拍 MANUAL/RC_OVERRIDE）
+[07:23:39.937] 日志[control] degrade=none：降级已复位（此前 degrade=rc_override，持续 12.0 s）—— 判据已恢复
+[07:23:39.947] EVENT[sev3] px4_id=10011251  seq=112
+[07:23:40.764] 节拍  setpoint =  42 Hz（最后一帧 0.0 s 前）  rc帧=15897  ctl=MANUAL/STANDBY  mode=POSCTL  armed=False  bat=24.19 V  st=11  ev=43
+[07:23:41.766] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=15917  ctl=MANUAL/STANDBY  mode=POSCTL  armed=False  bat=24.19 V  st=11  ev=43
+[07:23:41.927] 飞控 /mavros/state  mode='OFFBOARD'  armed=False  connected=True
+[07:23:42.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=15937  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.23 V  st=11  ev=43
+[07:23:43.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=15957  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.23 V  st=11  ev=43
+[07:23:43.936] 电池 24.246 V  -0.080 A  pct=0.840  （阈值 20.0 V）
+[07:23:44.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=15977  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.25 V  st=11  ev=43
+[07:23:45.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=15997  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.25 V  st=11  ev=43
+[07:23:46.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=16017  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.25 V  st=11  ev=43
+[07:23:47.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=16037  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.25 V  st=11  ev=43
+[07:23:48.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=16057  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.26 V  st=11  ev=43
+[07:23:49.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=16077  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.26 V  st=11  ev=43
+[07:23:50.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=16097  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.27 V  st=11  ev=43
+[07:23:51.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=16117  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.27 V  st=11  ev=43
+[07:23:52.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=16137  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.27 V  st=11  ev=43
+[07:23:53.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=16157  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.27 V  st=11  ev=43
+[07:23:54.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=16177  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.28 V  st=11  ev=43
+[07:23:55.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=16197  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.28 V  st=11  ev=43
+[07:23:56.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=16217  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.28 V  st=11  ev=43
+[07:23:57.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=16237  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.28 V  st=11  ev=43
+[07:23:58.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=16257  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.28 V  st=11  ev=43
+[07:23:59.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=16277  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.28 V  st=11  ev=43
+[07:24:00.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=16297  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.29 V  st=11  ev=43
+[07:24:01.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=16317  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.29 V  st=11  ev=43
+[07:24:02.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=16337  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.29 V  st=11  ev=43
+[07:24:03.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=16357  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.29 V  st=11  ev=43
+[07:24:04.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=16377  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.29 V  st=11  ev=43
+[07:24:05.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=16397  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.29 V  st=11  ev=43
+[07:24:06.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=16417  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.30 V  st=11  ev=43
+[07:24:07.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=16437  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.30 V  st=11  ev=43
+[07:24:07.933] 电池 24.297 V  -0.040 A  pct=0.850  （阈值 20.0 V）
+[07:24:08.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=16457  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.30 V  st=11  ev=43
+[07:24:09.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=16477  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.30 V  st=11  ev=43
+[07:24:10.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=16497  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.30 V  st=11  ev=43
+[07:24:11.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=16517  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.30 V  st=11  ev=43
+[07:24:12.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=16537  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.30 V  st=11  ev=43
+[07:24:13.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=16557  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.30 V  st=11  ev=43
+[07:24:14.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=16577  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.30 V  st=11  ev=43
+[07:24:15.765] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=16597  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.30 V  st=11  ev=43
+[07:24:16.766] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=16617  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.30 V  st=11  ev=43
+[07:24:17.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=16637  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.30 V  st=11  ev=43
+[07:24:18.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=16657  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.30 V  st=11  ev=43
+[07:24:19.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=16677  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.30 V  st=11  ev=43
+[07:24:20.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=16697  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.30 V  st=11  ev=43
+[07:24:21.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=16717  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.30 V  st=11  ev=43
+[07:24:22.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=16737  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.30 V  st=11  ev=43
+[07:24:23.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=16757  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.30 V  st=11  ev=43
+[07:24:24.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=16777  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.31 V  st=11  ev=43
+[07:24:25.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=16797  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.31 V  st=11  ev=43
+[07:24:26.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=16817  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.30 V  st=11  ev=43
+[07:24:27.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=16837  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.30 V  st=11  ev=43
+[07:24:28.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=16857  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.31 V  st=11  ev=43
+[07:24:29.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=16877  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.31 V  st=11  ev=43
+[07:24:30.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=16897  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.30 V  st=11  ev=43
+[07:24:31.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=16917  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.30 V  st=11  ev=43
+[07:24:32.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=16937  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.31 V  st=11  ev=43
+[07:24:33.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=16957  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.31 V  st=11  ev=43
+[07:24:34.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=16977  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.31 V  st=11  ev=43
+[07:24:35.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=16997  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.31 V  st=11  ev=43
+[07:24:36.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=17017  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.31 V  st=11  ev=43
+[07:24:37.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=17037  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.31 V  st=11  ev=43
+[07:24:38.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=17057  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.31 V  st=11  ev=43
+[07:24:39.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=17077  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.31 V  st=11  ev=43
+[07:24:40.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=17097  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.31 V  st=11  ev=43
+[07:24:41.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=17117  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.31 V  st=11  ev=43
+[07:24:42.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=17137  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.31 V  st=11  ev=43
+[07:24:43.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=17157  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.31 V  st=11  ev=43
+[07:24:44.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=17177  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.31 V  st=11  ev=43
+[07:24:45.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=17197  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.31 V  st=11  ev=43
+[07:24:46.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=17217  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.31 V  st=11  ev=43
+[07:24:47.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=17237  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.31 V  st=11  ev=43
+[07:24:48.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=17257  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.31 V  st=11  ev=43
+[07:24:49.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=17277  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.31 V  st=11  ev=43
+[07:24:50.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=17297  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.31 V  st=11  ev=43
+[07:24:51.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=17317  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.31 V  st=11  ev=43
+[07:24:52.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=17337  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.31 V  st=11  ev=43
+[07:24:53.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=17357  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.31 V  st=11  ev=43
+[07:24:54.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=17377  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.31 V  st=11  ev=43
+[07:24:55.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=17397  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.31 V  st=11  ev=43
+[07:24:56.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=17417  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.31 V  st=11  ev=43
+[07:24:57.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=17437  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.31 V  st=11  ev=43
+[07:24:58.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=17457  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.31 V  st=11  ev=43
+[07:24:59.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=17477  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.31 V  st=11  ev=43
+[07:25:00.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=17497  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.31 V  st=11  ev=43
+[07:25:01.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=17517  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.31 V  st=11  ev=43
+[07:25:02.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=17537  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.31 V  st=11  ev=43
+[07:25:03.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=17557  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.31 V  st=11  ev=43
+[07:25:04.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=17577  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.31 V  st=11  ev=43
+[07:25:05.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=17597  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.31 V  st=11  ev=43
+[07:25:06.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=17617  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.31 V  st=11  ev=43
+[07:25:07.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=17637  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.31 V  st=11  ev=43
+[07:25:08.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=17657  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.31 V  st=11  ev=43
+[07:25:09.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=17677  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.31 V  st=11  ev=43
+[07:25:10.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=17697  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.31 V  st=11  ev=43
+[07:25:11.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=17717  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.31 V  st=11  ev=43
+[07:25:12.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=17737  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.31 V  st=11  ev=43
+[07:25:13.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=17757  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.31 V  st=11  ev=43
+[07:25:14.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=17777  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.31 V  st=11  ev=43
+[07:25:15.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=17797  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.31 V  st=11  ev=43
+[07:25:16.765] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=17817  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.31 V  st=11  ev=43
+[07:25:17.765] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=17837  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.31 V  st=11  ev=43
+[07:25:18.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=17857  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.31 V  st=11  ev=43
+[07:25:19.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=17877  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.31 V  st=11  ev=43
+[07:25:20.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=17897  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.31 V  st=11  ev=43
+[07:25:21.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=17917  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.31 V  st=11  ev=43
+[07:25:22.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=17937  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.31 V  st=11  ev=43
+[07:25:23.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=17957  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.31 V  st=11  ev=43
+[07:25:24.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=17977  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.31 V  st=11  ev=43
+[07:25:25.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=17997  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.31 V  st=11  ev=43
+[07:25:26.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=18017  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.31 V  st=11  ev=43
+[07:25:27.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=18037  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.31 V  st=11  ev=43
+[07:25:28.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=18057  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.31 V  st=11  ev=43
+[07:25:29.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=18077  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.31 V  st=11  ev=43
+[07:25:30.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=18097  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.31 V  st=11  ev=43
+[07:25:31.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=18117  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.31 V  st=11  ev=43
+[07:25:32.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=18137  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.31 V  st=11  ev=43
+[07:25:33.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=18157  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.31 V  st=11  ev=43
+[07:25:34.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=18177  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.31 V  st=11  ev=43
+[07:25:35.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=18197  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.31 V  st=11  ev=43
+[07:25:36.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=18217  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.31 V  st=11  ev=43
+[07:25:37.765] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=18237  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.31 V  st=11  ev=43
+[07:25:38.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=18257  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.31 V  st=11  ev=43
+[07:25:39.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=18277  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.31 V  st=11  ev=43
+[07:25:40.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=18297  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.31 V  st=11  ev=43
+[07:25:41.764] 节拍  setpoint =  50 Hz（最后一帧 0.0 s 前）  rc帧=18317  ctl=MANUAL/STANDBY  mode=OFFBOARD  armed=False  bat=24.31 V  st=11  ev=43
+
+===== 事件表（相对探针启动，秒）=====
+  t=  0.400  ★状态  /control/state = MANUAL/STANDBY
+  t=  1.300  飞控  /mavros/state  mode='OFFBOARD'  armed=False  connected=True
+  t=498.772  ★状态  /control/state = MANUAL/INIT   （上一拍 MANUAL/STANDBY）
+  t=498.775  日志[control]  degrade=mocap_timeout（持续 0.0 s，未闩锁：判据一恢复就自动复位）—— 动捕无数据 ⟹ EKF2 的视觉位置会随时间失效；已停发；已解锁时请求 AUTO.LAND（EKF2 位置失效时 PX4 会**拒绝**它，见 ticket 06 的保留说明） ⏎   · 证据：/mocap/pose_enu 静默 0.508754 s；发布者：1 个（/mocap_rel_pose [reliable]）
+  t=498.793  ★状态  /control/state = MANUAL/STANDBY   （上一拍 MANUAL/INIT）
+  t=498.796  日志[control]  degrade=none：降级已复位（此前 degrade=mocap_timeout，持续 0.0 s）—— 判据已恢复
+  t=512.432  ★状态  /control/state = MANUAL/INIT   （上一拍 MANUAL/STANDBY）
+  t=512.435  日志[control]  degrade=mocap_timeout（持续 0.0 s，未闩锁：判据一恢复就自动复位）—— 动捕无数据 ⟹ EKF2 的视觉位置会随时间失效；已停发；已解锁时请求 AUTO.LAND（EKF2 位置失效时 PX4 会**拒绝**它，见 ticket 06 的保留说明） ⏎   · 证据：/mocap/pose_enu 静默 0.504174 s；发布者：1 个（/mocap_rel_pose [reliable]）
+  t=513.114  ★状态  /control/state = MANUAL/STANDBY   （上一拍 MANUAL/INIT）
+  t=513.118  日志[control]  degrade=none：降级已复位（此前 degrade=mocap_timeout，持续 0.7 s）—— 判据已恢复
+  t=559.935  ★★STATUSTEXT[CRIT]  Preflight Fail: Yaw estimate error
+  t=559.938  EVENT[sev3]  px4_id=9581033  seq=74
+  t=559.939  EVENT[sev3]  px4_id=10011251  seq=75
+  t=562.020  EVENT[sev3]  px4_id=10011251  seq=80
+  t=572.618  ★状态  /control/state = MANUAL/INIT   （上一拍 MANUAL/STANDBY）
+  t=572.620  日志[control]  degrade=mocap_timeout（持续 0.0 s，未闩锁：判据一恢复就自动复位）—— 动捕无数据 ⟹ EKF2 的视觉位置会随时间失效；已停发；已解锁时请求 AUTO.LAND（EKF2 位置失效时 PX4 会**拒绝**它，见 ticket 06 的保留说明） ⏎   · 证据：/mocap/pose_enu 静默 0.519849 s；发布者：1 个（/mocap_rel_pose [reliable]）
+  t=572.717  ★状态  /control/state = MANUAL/STANDBY   （上一拍 MANUAL/INIT）
+  t=572.720  日志[control]  degrade=none：降级已复位（此前 degrade=mocap_timeout，持续 0.1 s）—— 判据已恢复
+  t=573.217  ★状态  /control/state = MANUAL/INIT   （上一拍 MANUAL/STANDBY）
+  t=573.219  日志[control]  degrade=mocap_timeout（持续 0.0 s，未闩锁：判据一恢复就自动复位）—— 动捕无数据 ⟹ EKF2 的视觉位置会随时间失效；已停发；已解锁时请求 AUTO.LAND（EKF2 位置失效时 PX4 会**拒绝**它，见 ticket 06 的保留说明） ⏎   · 证据：/mocap/pose_enu 静默 0.506301 s；发布者：1 个（/mocap_rel_pose [reliable]）
+  t=573.638  ★状态  /control/state = MANUAL/STANDBY   （上一拍 MANUAL/INIT）
+  t=573.640  日志[control]  degrade=none：降级已复位（此前 degrade=mocap_timeout，持续 0.4 s）—— 判据已恢复
+  t=667.328  ★★STATUSTEXT[CRIT]  Arming denied: switch to manual mode first	
+  t=667.336  EVENT[sev2]  px4_id=12420351  seq=84
+  t=667.360  开关  ch5: 999 → 2000
+  t=668.609  开关  ch6: 1503 → 2000
+  t=668.910  开关  ch6: 2000 → 1503
+  t=669.324  飞控  /mavros/state  mode='STABILIZED'  armed=False  connected=True
+  t=669.339  ★状态  /control/state = MANUAL/RC_OVERRIDE   （上一拍 MANUAL/STANDBY）
+  t=669.339  日志[control]  → MANUAL/RC_OVERRIDE：**控制权被夺走** —— 已停止发布 setpoint、已停止请求任何模式（原因见上一行 degrade=）。 ⏎   ★ 本节点**不会主动抢回** OFFBOARD（否则与飞行员一秒一次地拉锯）。 ⏎   ★ 复位条件：有人把模式放回 OFFBOARD，或落地上锁；对打杆夺权则是摇杆回中且模式被交回。
+  t=669.342  日志[control]  degrade=mode_lost（持续 0.0 s，**已闩锁**：不会自己恢复）—— 本节点持有的模式（OFFBOARD / 已请求的 AUTO.LAND）被外部切走。已停发且**不抢回**；复位：有人把模式放回 OFFBOARD，或落地上锁 ⏎   · 证据：模式从「STABILIZED」变成了「STABILIZED」
+  t=669.859  开关  ch5: 2000 → 999
+  t=669.958  日志[control]  失效已闩锁（degrade=mode_lost，任务态 RC_OVERRIDE）⟹ **不会自己恢复**。复位方式：有人把模式放回 OFFBOARD（外部动作），或落地上锁（armed → false）
+  t=670.364  EVENT[sev3]  px4_id=10011251  seq=86
+  t=670.367  EVENT[sev3]  px4_id=3087815  seq=88
+  t=672.311  开关  ch6: 1503 → 999
+  t=673.159  开关  ch6: 999 → 1503
+  t=674.138  ★★STATUSTEXT[INFO]  Armed by RC (switch)	
+  t=674.161  开关  ch5: 999 → 2000
+  t=674.320  飞控  /mavros/state  mode='STABILIZED'  armed=True  connected=True
+  t=675.209  开关  ch5: 2000 → 999
+  t=675.215  ★★STATUSTEXT[INFO]  Disarmed by RC (switch)	
+  t=675.318  飞控  /mavros/state  mode='STABILIZED'  armed=False  connected=True
+  t=675.323  ★状态  /control/state = MANUAL/STANDBY   （上一拍 MANUAL/RC_OVERRIDE）
+  t=675.326  日志[control]  degrade=none：降级已复位（此前 degrade=mode_lost，持续 6.0 s）—— 判据已恢复
+  t=675.343  EVENT[sev3]  px4_id=10011251  seq=94
+  t=677.319  飞控  /mavros/state  mode='OFFBOARD'  armed=False  connected=True
+  t=781.669  开关  ch9: 999 → 2000
+  t=781.955  ★★STATUSTEXT[INFO]  Armed by external command	
+  t=782.020  开关  ch9: 2000 → 999
+  t=782.327  飞控  /mavros/state  mode='OFFBOARD'  armed=True  connected=True
+  t=782.334  ★状态  /control/state = AUTO/STANDBY   （上一拍 MANUAL/STANDBY）
+  t=782.352  ★状态  /control/state = AUTO/TAKEOFF   （上一拍 AUTO/STANDBY）
+  t=783.371  ★★STATUSTEXT[INFO]  Pilot took over using sticks	
+  t=783.373  摇杆  ch3: 989 → 1059
+  t=783.374  ★状态  /control/state = MANUAL/RC_OVERRIDE   （上一拍 AUTO/TAKEOFF）
+  t=783.376  日志[control]  → MANUAL/RC_OVERRIDE：**控制权被夺走** —— 已停止发布 setpoint、已停止请求任何模式（原因见上一行 degrade=）。 ⏎   ★ 本节点**不会主动抢回** OFFBOARD（否则与飞行员一秒一次地拉锯）。 ⏎   ★ 复位条件：有人把模式放回 OFFBOARD，或落地上锁；对打杆夺权则是摇杆回中且模式被交回。
+  t=783.377  日志[control]  degrade=rc_override（持续 0.0 s，**已闩锁**：不会自己恢复）—— 遥控器在打杆（已解锁）⟹ 飞行员接管。已停发且**不请求任何模式**；复位：摇杆回中且模式被交回 OFFBOARD，或落地上锁 ⏎   · 证据：遥控器新鲜（0.003004 s）且摇杆变化率超过 100.000000 µs/s
+  t=783.419  摇杆  ch3: 1059 → 1194
+  t=783.620  摇杆  ch3: 1194 → 1303
+  t=783.770  摇杆  ch3: 1303 → 1372
+  t=783.786  ★★STATUSTEXT[INFO]  Takeoff detected	
+  t=783.820  摇杆  ch3: 1372 → 1439
+  t=783.871  摇杆  ch3: 1439 → 1562
+  t=783.922  摇杆  ch3: 1562 → 1630
+  t=783.974  日志[control]  失效已闩锁（degrade=rc_override，任务态 RC_OVERRIDE）⟹ **不会自己恢复**。复位方式：有人把模式放回 OFFBOARD（外部动作），或落地上锁（armed → false）
+  t=784.071  摇杆  ch3: 1630 → 1718
+  t=784.119  摇杆  ch3: 1718 → 1840
+  t=784.170  摇杆  ch3: 1840 → 1907
+  t=784.270  摇杆  ch3: 1907 → 1968
+  t=784.328  飞控  /mavros/state  mode='POSCTL'  armed=True  connected=True
+  t=784.463  EVENT[sev3]  px4_id=10011251  seq=102
+  t=784.466  EVENT[sev3]  px4_id=3087815  seq=104
+  t=785.470  摇杆  ch3: 1968 → 1812
+  t=785.520  摇杆  ch3: 1812 → 1749
+  t=785.621  摇杆  ch3: 1749 → 1675
+  t=785.671  摇杆  ch3: 1675 → 1345
+  t=785.722  摇杆  ch3: 1345 → 1137
+  t=785.769  摇杆  ch3: 1137 → 989
+  t=789.221  开关  ch9: 999 → 2000
+  t=789.571  开关  ch9: 2000 → 999
+  t=790.905  ★★STATUSTEXT[INFO]  Landing detected	
+  t=792.915  ★★STATUSTEXT[INFO]  Disarmed by landing	
+  t=793.164  ★★STATUSTEXT[INFO]  Armed by RC (switch)	
+  t=793.170  开关  ch5: 999 → 2000
+  t=793.394  日志[control]  degrade=rc_override（持续 10.0 s，**已闩锁**：不会自己恢复）—— 遥控器在打杆（已解锁）⟹ 飞行员接管。已停发且**不请求任何模式**；复位：摇杆回中且模式被交回 OFFBOARD，或落地上锁 ⏎   · 证据：遥控器新鲜（0.024197 s）且摇杆变化率超过 100.000000 µs/s
+  t=793.973  日志[control]  失效已闩锁（degrade=rc_override，任务态 RC_OVERRIDE）⟹ **不会自己恢复**。复位方式：有人把模式放回 OFFBOARD（外部动作），或落地上锁（armed → false）
+  t=794.402  ★★STATUSTEXT[INFO]  Disarmed by RC (switch)	
+  t=794.423  开关  ch5: 2000 → 999
+  t=795.330  飞控  /mavros/state  mode='POSCTL'  armed=False  connected=True
+  t=795.335  ★状态  /control/state = MANUAL/STANDBY   （上一拍 MANUAL/RC_OVERRIDE）
+  t=795.339  日志[control]  degrade=none：降级已复位（此前 degrade=rc_override，持续 12.0 s）—— 判据已恢复
+  t=795.348  EVENT[sev3]  px4_id=10011251  seq=112
+  t=797.328  飞控  /mavros/state  mode='OFFBOARD'  armed=False  connected=True
+
+===== 时间差 =====
+  摇杆事件 17 条、开关事件 14 条、RC_OVERRIDE 状态事件 4 条、degrade=rc_override 日志 5 条
+  ⚠️ RC_OVERRIDE 出现在 t=669.339，但没有**在先的**摇杆事件 ⟹ 要么节点的门比探针的 60 µs 粗门灵敏，要么打杆太快没被采样到
+  degrade 日志 t=783.377  degrade=rc_override（持续 0.0 s，**已闩锁**：不会自己恢复）—— 遥控器在打杆（已解锁）⟹ 飞行员接管。已停发且**不请求任何模式**；复位：摇杆回中且模式被交回 OFFBOARD，或落地上锁 ⏎   · 证据：遥控器新鲜（0.003004 s）且摇杆变化率超过 100.000000 µs/s
+  degrade 日志 t=783.974  失效已闩锁（degrade=rc_override，任务态 RC_OVERRIDE）⟹ **不会自己恢复**。复位方式：有人把模式放回 OFFBOARD（外部动作），或落地上锁（armed → false）
+  degrade 日志 t=793.394  degrade=rc_override（持续 10.0 s，**已闩锁**：不会自己恢复）—— 遥控器在打杆（已解锁）⟹ 飞行员接管。已停发且**不请求任何模式**；复位：摇杆回中且模式被交回 OFFBOARD，或落地上锁 ⏎   · 证据：遥控器新鲜（0.024197 s）且摇杆变化率超过 100.000000 µs/s
+  degrade 日志 t=793.973  失效已闩锁（degrade=rc_override，任务态 RC_OVERRIDE）⟹ **不会自己恢复**。复位方式：有人把模式放回 OFFBOARD（外部动作），或落地上锁（armed → false）
+  degrade 日志 t=795.339  degrade=none：降级已复位（此前 degrade=rc_override，持续 12.0 s）—— 判据已恢复
+
+===== 电池（变化 ≥ 0.05 V 才记一条）=====
+  最低 23.617 V（阈值 20.0 V）
+  t=    1.3  24.525 V
+  t=  179.3  24.475 V
+  t=  201.3  24.418 V
+  t=  363.3  24.367 V
+  t=  647.3  24.311 V
+  t=  675.3  24.167 V
+  t=  677.3  24.308 V
+  t=  785.3  23.617 V
+  t=  789.3  23.719 V
+  t=  791.3  23.957 V
+  t=  793.3  24.119 V
+  t=  795.3  24.189 V
+  t=  799.3  24.246 V
+  t=  823.3  24.297 V
+
+===== setpoint 帧率（每秒一行）=====
+  t=    1.2   52 Hz
+  t=    2.2   50 Hz
+  t=    3.2   50 Hz
+  t=    4.2   50 Hz
+  t=    5.2   50 Hz
+  t=    6.2   50 Hz
+  t=    7.2   50 Hz
+  t=    8.2   50 Hz
+  t=    9.2   50 Hz
+  t=   10.2   50 Hz
+  t=   11.2   50 Hz
+  t=   12.2   50 Hz
+  t=   13.2   50 Hz
+  t=   14.2   50 Hz
+  t=   15.2   50 Hz
+  t=   16.2   50 Hz
+  t=   17.2   50 Hz
+  t=   18.2   50 Hz
+  t=   19.2   50 Hz
+  t=   20.2   50 Hz
+  t=   21.2   50 Hz
+  t=   22.2   50 Hz
+  t=   23.2   50 Hz
+  t=   24.2   50 Hz
+  t=   25.2   50 Hz
+  t=   26.2   50 Hz
+  t=   27.2   50 Hz
+  t=   28.2   50 Hz
+  t=   29.2   50 Hz
+  t=   30.2   50 Hz
+  t=   31.2   50 Hz
+  t=   32.2   50 Hz
+  t=   33.2   50 Hz
+  t=   34.2   50 Hz
+  t=   35.2   50 Hz
+  t=   36.2   50 Hz
+  t=   37.2   50 Hz
+  t=   38.2   50 Hz
+  t=   39.2   50 Hz
+  t=   40.2   50 Hz
+  t=   41.2   50 Hz
+  t=   42.2   50 Hz
+  t=   43.2   50 Hz
+  t=   44.2   50 Hz
+  t=   45.2   50 Hz
+  t=   46.2   46 Hz
+  t=   47.2   50 Hz
+  t=   48.2   50 Hz
+  t=   49.2   50 Hz
+  t=   50.2   50 Hz
+  t=   51.2   50 Hz
+  t=   52.2   50 Hz
+  t=   53.2   50 Hz
+  t=   54.2   50 Hz
+  t=   55.2   50 Hz
+  t=   56.2   50 Hz
+  t=   57.2   50 Hz
+  t=   58.2   50 Hz
+  t=   59.2   50 Hz
+  t=   60.2   50 Hz
+  t=   61.2   50 Hz
+  t=   62.2   50 Hz
+  t=   63.2   50 Hz
+  t=   64.2   50 Hz
+  t=   65.2   50 Hz
+  t=   66.2   50 Hz
+  t=   67.2   50 Hz
+  t=   68.2   50 Hz
+  t=   69.2   50 Hz
+  t=   70.2   50 Hz
+  t=   71.2   50 Hz
+  t=   72.2   50 Hz
+  t=   73.2   50 Hz
+  t=   74.2   50 Hz
+  t=   75.2   50 Hz
+  t=   76.2   50 Hz
+  t=   77.2   50 Hz
+  t=   78.2   50 Hz
+  t=   79.2   50 Hz
+  t=   80.2   50 Hz
+  t=   81.2   50 Hz
+  t=   82.2   50 Hz
+  t=   83.2   50 Hz
+  t=   84.2   50 Hz
+  t=   85.2   50 Hz
+  t=   86.2   50 Hz
+  t=   87.2   50 Hz
+  t=   88.2   50 Hz
+  t=   89.2   50 Hz
+  t=   90.2   50 Hz
+  t=   91.2   50 Hz
+  t=   92.2   50 Hz
+  t=   93.2   50 Hz
+  t=   94.2   50 Hz
+  t=   95.2   50 Hz
+  t=   96.2   50 Hz
+  t=   97.2   50 Hz
+  t=   98.2   50 Hz
+  t=   99.2   50 Hz
+  t=  100.2   50 Hz
+  t=  101.2   50 Hz
+  t=  102.2   50 Hz
+  t=  103.2   50 Hz
+  t=  104.2   50 Hz
+  t=  105.2   50 Hz
+  t=  106.2   50 Hz
+  t=  107.2   50 Hz
+  t=  108.2   50 Hz
+  t=  109.2   50 Hz
+  t=  110.2   50 Hz
+  t=  111.2   50 Hz
+  t=  112.2   50 Hz
+  t=  113.2   50 Hz
+  t=  114.2   50 Hz
+  t=  115.2   50 Hz
+  t=  116.2   50 Hz
+  t=  117.2   50 Hz
+  t=  118.2   50 Hz
+  t=  119.2   50 Hz
+  t=  120.2   50 Hz
+  t=  121.2   50 Hz
+  t=  122.2   50 Hz
+  t=  123.2   50 Hz
+  t=  124.2   50 Hz
+  t=  125.2   50 Hz
+  t=  126.2   50 Hz
+  t=  127.2   50 Hz
+  t=  128.2   50 Hz
+  t=  129.2   50 Hz
+  t=  130.2   50 Hz
+  t=  131.2   50 Hz
+  t=  132.2   50 Hz
+  t=  133.2   50 Hz
+  t=  134.2   50 Hz
+  t=  135.2   50 Hz
+  t=  136.2   50 Hz
+  t=  137.2   50 Hz
+  t=  138.2   50 Hz
+  t=  139.2   50 Hz
+  t=  140.2   50 Hz
+  t=  141.2   50 Hz
+  t=  142.2   50 Hz
+  t=  143.2   50 Hz
+  t=  144.2   50 Hz
+  t=  145.2   50 Hz
+  t=  146.2   50 Hz
+  t=  147.2   50 Hz
+  t=  148.2   50 Hz
+  t=  149.2   50 Hz
+  t=  150.2   50 Hz
+  t=  151.2   50 Hz
+  t=  152.2   50 Hz
+  t=  153.2   50 Hz
+  t=  154.2   50 Hz
+  t=  155.2   50 Hz
+  t=  156.2   50 Hz
+  t=  157.2   50 Hz
+  t=  158.2   50 Hz
+  t=  159.2   50 Hz
+  t=  160.2   50 Hz
+  t=  161.2   50 Hz
+  t=  162.2   50 Hz
+  t=  163.2   50 Hz
+  t=  164.2   50 Hz
+  t=  165.2   50 Hz
+  t=  166.2   50 Hz
+  t=  167.2   50 Hz
+  t=  168.2   50 Hz
+  t=  169.2   50 Hz
+  t=  170.2   50 Hz
+  t=  171.2   50 Hz
+  t=  172.2   50 Hz
+  t=  173.2   50 Hz
+  t=  174.2   50 Hz
+  t=  175.2   50 Hz
+  t=  176.2   50 Hz
+  t=  177.2   50 Hz
+  t=  178.2   50 Hz
+  t=  179.2   50 Hz
+  t=  180.2   50 Hz
+  t=  181.2   50 Hz
+  t=  182.2   50 Hz
+  t=  183.2   50 Hz
+  t=  184.2   50 Hz
+  t=  185.2   50 Hz
+  t=  186.2   50 Hz
+  t=  187.2   50 Hz
+  t=  188.2   50 Hz
+  t=  189.2   50 Hz
+  t=  190.2   50 Hz
+  t=  191.2   50 Hz
+  t=  192.2   50 Hz
+  t=  193.2   50 Hz
+  t=  194.2   50 Hz
+  t=  195.2   50 Hz
+  t=  196.2   50 Hz
+  t=  197.2   50 Hz
+  t=  198.2   50 Hz
+  t=  199.2   50 Hz
+  t=  200.2   50 Hz
+  t=  201.2   50 Hz
+  t=  202.2   50 Hz
+  t=  203.2   50 Hz
+  t=  204.2   50 Hz
+  t=  205.2   50 Hz
+  t=  206.2   50 Hz
+  t=  207.2   50 Hz
+  t=  208.2   50 Hz
+  t=  209.2   50 Hz
+  t=  210.2   50 Hz
+  t=  211.2   50 Hz
+  t=  212.2   50 Hz
+  t=  213.2   50 Hz
+  t=  214.2   50 Hz
+  t=  215.2   50 Hz
+  t=  216.2   50 Hz
+  t=  217.2   50 Hz
+  t=  218.2   50 Hz
+  t=  219.2   50 Hz
+  t=  220.2   50 Hz
+  t=  221.2   50 Hz
+  t=  222.2   50 Hz
+  t=  223.2   50 Hz
+  t=  224.2   50 Hz
+  t=  225.2   50 Hz
+  t=  226.2   50 Hz
+  t=  227.2   50 Hz
+  t=  228.2   50 Hz
+  t=  229.2   50 Hz
+  t=  230.2   50 Hz
+  t=  231.2   50 Hz
+  t=  232.2   50 Hz
+  t=  233.2   50 Hz
+  t=  234.2   50 Hz
+  t=  235.2   50 Hz
+  t=  236.2   50 Hz
+  t=  237.2   50 Hz
+  t=  238.2   50 Hz
+  t=  239.2   50 Hz
+  t=  240.2   50 Hz
+  t=  241.2   50 Hz
+  t=  242.2   50 Hz
+  t=  243.2   50 Hz
+  t=  244.2   50 Hz
+  t=  245.2   50 Hz
+  t=  246.2   50 Hz
+  t=  247.2   50 Hz
+  t=  248.2   50 Hz
+  t=  249.2   50 Hz
+  t=  250.2   50 Hz
+  t=  251.2   50 Hz
+  t=  252.2   50 Hz
+  t=  253.2   50 Hz
+  t=  254.2   50 Hz
+  t=  255.2   50 Hz
+  t=  256.2   50 Hz
+  t=  257.2   50 Hz
+  t=  258.2   50 Hz
+  t=  259.2   50 Hz
+  t=  260.2   50 Hz
+  t=  261.2   50 Hz
+  t=  262.2   50 Hz
+  t=  263.2   50 Hz
+  t=  264.2   50 Hz
+  t=  265.2   50 Hz
+  t=  266.2   50 Hz
+  t=  267.2   50 Hz
+  t=  268.2   50 Hz
+  t=  269.2   50 Hz
+  t=  270.2   50 Hz
+  t=  271.2   50 Hz
+  t=  272.2   50 Hz
+  t=  273.2   50 Hz
+  t=  274.2   50 Hz
+  t=  275.2   50 Hz
+  t=  276.2   50 Hz
+  t=  277.2   50 Hz
+  t=  278.2   50 Hz
+  t=  279.2   50 Hz
+  t=  280.2   50 Hz
+  t=  281.2   50 Hz
+  t=  282.2   50 Hz
+  t=  283.2   50 Hz
+  t=  284.2   50 Hz
+  t=  285.2   50 Hz
+  t=  286.2   50 Hz
+  t=  287.2   50 Hz
+  t=  288.2   50 Hz
+  t=  289.2   50 Hz
+  t=  290.2   50 Hz
+  t=  291.2   50 Hz
+  t=  292.2   50 Hz
+  t=  293.2   50 Hz
+  t=  294.2   50 Hz
+  t=  295.2   50 Hz
+  t=  296.2   50 Hz
+  t=  297.2   50 Hz
+  t=  298.2   50 Hz
+  t=  299.2   50 Hz
+  t=  300.2   50 Hz
+  t=  301.2   50 Hz
+  t=  302.2   50 Hz
+  t=  303.2   50 Hz
+  t=  304.2   50 Hz
+  t=  305.2   50 Hz
+  t=  306.2   50 Hz
+  t=  307.2   50 Hz
+  t=  308.2   50 Hz
+  t=  309.2   50 Hz
+  t=  310.2   50 Hz
+  t=  311.2   50 Hz
+  t=  312.2   50 Hz
+  t=  313.2   50 Hz
+  t=  314.2   50 Hz
+  t=  315.2   50 Hz
+  t=  316.2   50 Hz
+  t=  317.2   50 Hz
+  t=  318.2   50 Hz
+  t=  319.2   50 Hz
+  t=  320.2   50 Hz
+  t=  321.2   50 Hz
+  t=  322.2   50 Hz
+  t=  323.2   50 Hz
+  t=  324.2   50 Hz
+  t=  325.2   50 Hz
+  t=  326.2   50 Hz
+  t=  327.2   50 Hz
+  t=  328.2   50 Hz
+  t=  329.2   50 Hz
+  t=  330.2   50 Hz
+  t=  331.2   50 Hz
+  t=  332.2   50 Hz
+  t=  333.2   50 Hz
+  t=  334.2   50 Hz
+  t=  335.2   50 Hz
+  t=  336.2   50 Hz
+  t=  337.2   50 Hz
+  t=  338.2   50 Hz
+  t=  339.2   50 Hz
+  t=  340.2   50 Hz
+  t=  341.2   50 Hz
+  t=  342.2   50 Hz
+  t=  343.2   50 Hz
+  t=  344.2   50 Hz
+  t=  345.2   50 Hz
+  t=  346.2   50 Hz
+  t=  347.2   50 Hz
+  t=  348.2   50 Hz
+  t=  349.2   50 Hz
+  t=  350.2   50 Hz
+  t=  351.2   50 Hz
+  t=  352.2   50 Hz
+  t=  353.2   50 Hz
+  t=  354.2   50 Hz
+  t=  355.2   50 Hz
+  t=  356.2   50 Hz
+  t=  357.2   50 Hz
+  t=  358.2   50 Hz
+  t=  359.2   50 Hz
+  t=  360.2   50 Hz
+  t=  361.2   50 Hz
+  t=  362.2   50 Hz
+  t=  363.2   50 Hz
+  t=  364.2   50 Hz
+  t=  365.2   50 Hz
+  t=  366.2   50 Hz
+  t=  367.2   50 Hz
+  t=  368.2   50 Hz
+  t=  369.2   50 Hz
+  t=  370.2   50 Hz
+  t=  371.2   50 Hz
+  t=  372.2   50 Hz
+  t=  373.2   50 Hz
+  t=  374.2   50 Hz
+  t=  375.2   50 Hz
+  t=  376.2   50 Hz
+  t=  377.2   50 Hz
+  t=  378.2   50 Hz
+  t=  379.2   50 Hz
+  t=  380.2   50 Hz
+  t=  381.2   50 Hz
+  t=  382.2   50 Hz
+  t=  383.2   50 Hz
+  t=  384.2   50 Hz
+  t=  385.2   50 Hz
+  t=  386.2   50 Hz
+  t=  387.2   50 Hz
+  t=  388.2   50 Hz
+  t=  389.2   50 Hz
+  t=  390.2   50 Hz
+  t=  391.2   50 Hz
+  t=  392.2   50 Hz
+  t=  393.2   50 Hz
+  t=  394.2   50 Hz
+  t=  395.2   49 Hz
+  t=  396.2   51 Hz
+  t=  397.2   49 Hz
+  t=  398.2   50 Hz
+  t=  399.2   50 Hz
+  t=  400.2   50 Hz
+  t=  401.2   50 Hz
+  t=  402.2   50 Hz
+  t=  403.2   50 Hz
+  t=  404.2   50 Hz
+  t=  405.2   50 Hz
+  t=  406.2   50 Hz
+  t=  407.2   50 Hz
+  t=  408.2   50 Hz
+  t=  409.2   50 Hz
+  t=  410.2   50 Hz
+  t=  411.2   50 Hz
+  t=  412.2   50 Hz
+  t=  413.2   50 Hz
+  t=  414.2   50 Hz
+  t=  415.2   50 Hz
+  t=  416.2   50 Hz
+  t=  417.2   50 Hz
+  t=  418.2   50 Hz
+  t=  419.2   50 Hz
+  t=  420.2   50 Hz
+  t=  421.2   50 Hz
+  t=  422.2   50 Hz
+  t=  423.2   50 Hz
+  t=  424.2   50 Hz
+  t=  425.2   50 Hz
+  t=  426.2   50 Hz
+  t=  427.2   50 Hz
+  t=  428.2   50 Hz
+  t=  429.2   50 Hz
+  t=  430.2   50 Hz
+  t=  431.2   50 Hz
+  t=  432.2   50 Hz
+  t=  433.2   50 Hz
+  t=  434.2   50 Hz
+  t=  435.2   50 Hz
+  t=  436.2   50 Hz
+  t=  437.2   50 Hz
+  t=  438.2   50 Hz
+  t=  439.2   50 Hz
+  t=  440.2   50 Hz
+  t=  441.2   50 Hz
+  t=  442.2   50 Hz
+  t=  443.2   50 Hz
+  t=  444.2   50 Hz
+  t=  445.2   50 Hz
+  t=  446.2   50 Hz
+  t=  447.2   50 Hz
+  t=  448.2   50 Hz
+  t=  449.2   50 Hz
+  t=  450.2   50 Hz
+  t=  451.2   50 Hz
+  t=  452.2   50 Hz
+  t=  453.2   50 Hz
+  t=  454.2   50 Hz
+  t=  455.2   50 Hz
+  t=  456.2   50 Hz
+  t=  457.2   50 Hz
+  t=  458.2   50 Hz
+  t=  459.2   50 Hz
+  t=  460.2   50 Hz
+  t=  461.2   50 Hz
+  t=  462.2   50 Hz
+  t=  463.2   50 Hz
+  t=  464.2   50 Hz
+  t=  465.2   50 Hz
+  t=  466.2   50 Hz
+  t=  467.2   50 Hz
+  t=  468.2   50 Hz
+  t=  469.2   50 Hz
+  t=  470.2   50 Hz
+  t=  471.2   50 Hz
+  t=  472.2   50 Hz
+  t=  473.2   50 Hz
+  t=  474.2   50 Hz
+  t=  475.2   50 Hz
+  t=  476.2   50 Hz
+  t=  477.2   50 Hz
+  t=  478.2   50 Hz
+  t=  479.2   50 Hz
+  t=  480.2   50 Hz
+  t=  481.2   50 Hz
+  t=  482.2   50 Hz
+  t=  483.2   50 Hz
+  t=  484.2   50 Hz
+  t=  485.2   50 Hz
+  t=  486.2   50 Hz
+  t=  487.2   50 Hz
+  t=  488.2   50 Hz
+  t=  489.2   50 Hz
+  t=  490.2   50 Hz
+  t=  491.2   50 Hz
+  t=  492.2   50 Hz
+  t=  493.2   50 Hz
+  t=  494.2   50 Hz
+  t=  495.2   50 Hz
+  t=  496.2   50 Hz
+  t=  497.2   50 Hz
+  t=  498.2   50 Hz
+  t=  499.2   49 Hz
+  t=  500.2   50 Hz
+  t=  501.2   50 Hz
+  t=  502.2   50 Hz
+  t=  503.2   50 Hz
+  t=  504.2   50 Hz
+  t=  505.2   50 Hz
+  t=  506.2   50 Hz
+  t=  507.2   50 Hz
+  t=  508.2   50 Hz
+  t=  509.2   50 Hz
+  t=  510.2   50 Hz
+  t=  511.2   50 Hz
+  t=  512.2   50 Hz
+  t=  513.2   16 Hz
+  t=  514.2   50 Hz
+  t=  515.2   50 Hz
+  t=  516.2   50 Hz
+  t=  517.2   50 Hz
+  t=  518.2   50 Hz
+  t=  519.2   50 Hz
+  t=  520.2   50 Hz
+  t=  521.2   50 Hz
+  t=  522.2   50 Hz
+  t=  523.2   50 Hz
+  t=  524.2   50 Hz
+  t=  525.2   50 Hz
+  t=  526.2   50 Hz
+  t=  527.2   50 Hz
+  t=  528.2   50 Hz
+  t=  529.2   50 Hz
+  t=  530.2   50 Hz
+  t=  531.2   50 Hz
+  t=  532.2   50 Hz
+  t=  533.2   50 Hz
+  t=  534.2   50 Hz
+  t=  535.2   50 Hz
+  t=  536.2   50 Hz
+  t=  537.2   50 Hz
+  t=  538.2   50 Hz
+  t=  539.2   50 Hz
+  t=  540.2   50 Hz
+  t=  541.2   50 Hz
+  t=  542.2   50 Hz
+  t=  543.2   50 Hz
+  t=  544.2   50 Hz
+  t=  545.2   50 Hz
+  t=  546.2   50 Hz
+  t=  547.2   50 Hz
+  t=  548.2   50 Hz
+  t=  549.2   50 Hz
+  t=  550.2   50 Hz
+  t=  551.2   50 Hz
+  t=  552.2   50 Hz
+  t=  553.2   50 Hz
+  t=  554.2   50 Hz
+  t=  555.2   50 Hz
+  t=  556.2   50 Hz
+  t=  557.2   50 Hz
+  t=  558.2   50 Hz
+  t=  559.2   50 Hz
+  t=  560.2   50 Hz
+  t=  561.2   50 Hz
+  t=  562.2   50 Hz
+  t=  563.2   50 Hz
+  t=  564.2   50 Hz
+  t=  565.2   50 Hz
+  t=  566.2   50 Hz
+  t=  567.2   50 Hz
+  t=  568.2   50 Hz
+  t=  569.2   50 Hz
+  t=  570.2   50 Hz
+  t=  571.2   50 Hz
+  t=  572.2   50 Hz
+  t=  573.2   45 Hz
+  t=  574.2   29 Hz
+  t=  575.2   50 Hz
+  t=  576.2   50 Hz
+  t=  577.2   50 Hz
+  t=  578.2   50 Hz
+  t=  579.2   50 Hz
+  t=  580.2   50 Hz
+  t=  581.2   50 Hz
+  t=  582.2   50 Hz
+  t=  583.2   50 Hz
+  t=  584.2   50 Hz
+  t=  585.2   50 Hz
+  t=  586.2   50 Hz
+  t=  587.2   50 Hz
+  t=  588.2   50 Hz
+  t=  589.2   50 Hz
+  t=  590.2   50 Hz
+  t=  591.2   50 Hz
+  t=  592.2   50 Hz
+  t=  593.2   50 Hz
+  t=  594.2   50 Hz
+  t=  595.2   50 Hz
+  t=  596.2   50 Hz
+  t=  597.2   50 Hz
+  t=  598.2   50 Hz
+  t=  599.2   50 Hz
+  t=  600.2   50 Hz
+  t=  601.2   50 Hz
+  t=  602.2   50 Hz
+  t=  603.2   50 Hz
+  t=  604.2   50 Hz
+  t=  605.2   49 Hz
+  t=  606.2   50 Hz
+  t=  607.2   50 Hz
+  t=  608.2   50 Hz
+  t=  609.2   50 Hz
+  t=  610.2   50 Hz
+  t=  611.2   50 Hz
+  t=  612.2   50 Hz
+  t=  613.2   50 Hz
+  t=  614.2   50 Hz
+  t=  615.2   50 Hz
+  t=  616.2   50 Hz
+  t=  617.2   50 Hz
+  t=  618.2   50 Hz
+  t=  619.2   50 Hz
+  t=  620.2   50 Hz
+  t=  621.2   50 Hz
+  t=  622.2   50 Hz
+  t=  623.2   50 Hz
+  t=  624.2   50 Hz
+  t=  625.2   50 Hz
+  t=  626.2   50 Hz
+  t=  627.2   50 Hz
+  t=  628.2   50 Hz
+  t=  629.2   50 Hz
+  t=  630.2   50 Hz
+  t=  631.2   50 Hz
+  t=  632.2   50 Hz
+  t=  633.2   50 Hz
+  t=  634.2   50 Hz
+  t=  635.2   50 Hz
+  t=  636.2   50 Hz
+  t=  637.2   50 Hz
+  t=  638.2   50 Hz
+  t=  639.2   50 Hz
+  t=  640.2   50 Hz
+  t=  641.2   50 Hz
+  t=  642.2   50 Hz
+  t=  643.2   50 Hz
+  t=  644.2   50 Hz
+  t=  645.2   50 Hz
+  t=  646.2   50 Hz
+  t=  647.2   50 Hz
+  t=  648.2   50 Hz
+  t=  649.2   50 Hz
+  t=  650.2   50 Hz
+  t=  651.2   50 Hz
+  t=  652.2   50 Hz
+  t=  653.2   50 Hz
+  t=  654.2   50 Hz
+  t=  655.2   50 Hz
+  t=  656.2   50 Hz
+  t=  657.2   50 Hz
+  t=  658.2   50 Hz
+  t=  659.2   50 Hz
+  t=  660.2   50 Hz
+  t=  661.2   50 Hz
+  t=  662.2   50 Hz
+  t=  663.2   50 Hz
+  t=  664.2   50 Hz
+  t=  665.2   50 Hz
+  t=  666.2   50 Hz
+  t=  667.2   50 Hz
+  t=  668.2   50 Hz
+  t=  669.2   50 Hz
+  t=  670.2    8 Hz
+  t=  671.2    0 Hz
+  t=  672.2    0 Hz
+  t=  673.2    0 Hz
+  t=  674.2    0 Hz
+  t=  675.2    0 Hz
+  t=  676.2   43 Hz
+  t=  677.2   50 Hz
+  t=  678.2   50 Hz
+  t=  679.2   50 Hz
+  t=  680.2   50 Hz
+  t=  681.2   50 Hz
+  t=  682.2   50 Hz
+  t=  683.2   50 Hz
+  t=  684.2   50 Hz
+  t=  685.2   50 Hz
+  t=  686.2   50 Hz
+  t=  687.2   50 Hz
+  t=  688.2   50 Hz
+  t=  689.2   50 Hz
+  t=  690.2   50 Hz
+  t=  691.2   50 Hz
+  t=  692.2   50 Hz
+  t=  693.2   50 Hz
+  t=  694.2   50 Hz
+  t=  695.2   50 Hz
+  t=  696.2   50 Hz
+  t=  697.2   50 Hz
+  t=  698.2   50 Hz
+  t=  699.2   50 Hz
+  t=  700.2   50 Hz
+  t=  701.2   50 Hz
+  t=  702.2   50 Hz
+  t=  703.2   50 Hz
+  t=  704.2   50 Hz
+  t=  705.2   50 Hz
+  t=  706.2   50 Hz
+  t=  707.2   50 Hz
+  t=  708.2   50 Hz
+  t=  709.2   50 Hz
+  t=  710.2   50 Hz
+  t=  711.2   50 Hz
+  t=  712.2   50 Hz
+  t=  713.2   50 Hz
+  t=  714.2   50 Hz
+  t=  715.2   49 Hz
+  t=  716.2   50 Hz
+  t=  717.2   50 Hz
+  t=  718.2   50 Hz
+  t=  719.2   50 Hz
+  t=  720.2   50 Hz
+  t=  721.2   50 Hz
+  t=  722.2   50 Hz
+  t=  723.2   50 Hz
+  t=  724.2   50 Hz
+  t=  725.2   50 Hz
+  t=  726.2   50 Hz
+  t=  727.2   50 Hz
+  t=  728.2   50 Hz
+  t=  729.2   50 Hz
+  t=  730.2   50 Hz
+  t=  731.2   50 Hz
+  t=  732.2   50 Hz
+  t=  733.2   50 Hz
+  t=  734.2   50 Hz
+  t=  735.2   50 Hz
+  t=  736.2   50 Hz
+  t=  737.2   50 Hz
+  t=  738.2   50 Hz
+  t=  739.2   50 Hz
+  t=  740.2   50 Hz
+  t=  741.2   50 Hz
+  t=  742.2   50 Hz
+  t=  743.2   50 Hz
+  t=  744.2   50 Hz
+  t=  745.2   50 Hz
+  t=  746.2   50 Hz
+  t=  747.2   50 Hz
+  t=  748.2   50 Hz
+  t=  749.2   50 Hz
+  t=  750.2   50 Hz
+  t=  751.2   50 Hz
+  t=  752.2   50 Hz
+  t=  753.2   50 Hz
+  t=  754.2   50 Hz
+  t=  755.2   50 Hz
+  t=  756.2   50 Hz
+  t=  757.2   50 Hz
+  t=  758.2   50 Hz
+  t=  759.2   50 Hz
+  t=  760.2   50 Hz
+  t=  761.2   50 Hz
+  t=  762.2   50 Hz
+  t=  763.2   50 Hz
+  t=  764.2   50 Hz
+  t=  765.2   50 Hz
+  t=  766.2   50 Hz
+  t=  767.2   50 Hz
+  t=  768.2   50 Hz
+  t=  769.2   50 Hz
+  t=  770.2   50 Hz
+  t=  771.2   50 Hz
+  t=  772.2   50 Hz
+  t=  773.2   50 Hz
+  t=  774.2   50 Hz
+  t=  775.2   50 Hz
+  t=  776.2   50 Hz
+  t=  777.2   50 Hz
+  t=  778.2   50 Hz
+  t=  779.2   50 Hz
+  t=  780.2   50 Hz
+  t=  781.2   50 Hz
+  t=  782.2   50 Hz
+  t=  783.2   50 Hz
+  t=  784.2   10 Hz
+  t=  785.2    0 Hz
+  t=  786.2    0 Hz
+  t=  787.2    0 Hz
+  t=  788.2    0 Hz
+  t=  789.2    0 Hz
+  t=  790.2    0 Hz
+  t=  791.2    0 Hz
+  t=  792.2    0 Hz
+  t=  793.2    0 Hz
+  t=  794.2    0 Hz
+  t=  795.2    0 Hz
+  t=  796.2   42 Hz
+  t=  797.2   50 Hz
+  t=  798.2   50 Hz
+  t=  799.2   50 Hz
+  t=  800.2   50 Hz
+  t=  801.2   50 Hz
+  t=  802.2   50 Hz
+  t=  803.2   50 Hz
+  t=  804.2   50 Hz
+  t=  805.2   50 Hz
+  t=  806.2   50 Hz
+  t=  807.2   50 Hz
+  t=  808.2   50 Hz
+  t=  809.2   50 Hz
+  t=  810.2   50 Hz
+  t=  811.2   50 Hz
+  t=  812.2   50 Hz
+  t=  813.2   50 Hz
+  t=  814.2   50 Hz
+  t=  815.2   50 Hz
+  t=  816.2   50 Hz
+  t=  817.2   50 Hz
+  t=  818.2   50 Hz
+  t=  819.2   50 Hz
+  t=  820.2   50 Hz
+  t=  821.2   50 Hz
+  t=  822.2   50 Hz
+  t=  823.2   50 Hz
+  t=  824.2   50 Hz
+  t=  825.2   50 Hz
+  t=  826.2   50 Hz
+  t=  827.2   50 Hz
+  t=  828.2   50 Hz
+  t=  829.2   50 Hz
+  t=  830.2   50 Hz
+  t=  831.2   50 Hz
+  t=  832.2   50 Hz
+  t=  833.2   50 Hz
+  t=  834.2   50 Hz
+  t=  835.2   50 Hz
+  t=  836.2   50 Hz
+  t=  837.2   50 Hz
+  t=  838.2   50 Hz
+  t=  839.2   50 Hz
+  t=  840.2   50 Hz
+  t=  841.2   50 Hz
+  t=  842.2   50 Hz
+  t=  843.2   50 Hz
+  t=  844.2   50 Hz
+  t=  845.2   50 Hz
+  t=  846.2   50 Hz
+  t=  847.2   50 Hz
+  t=  848.2   50 Hz
+  t=  849.2   50 Hz
+  t=  850.2   50 Hz
+  t=  851.2   50 Hz
+  t=  852.2   50 Hz
+  t=  853.2   50 Hz
+  t=  854.2   50 Hz
+  t=  855.2   50 Hz
+  t=  856.2   50 Hz
+  t=  857.2   50 Hz
+  t=  858.2   50 Hz
+  t=  859.2   50 Hz
+  t=  860.2   50 Hz
+  t=  861.2   50 Hz
+  t=  862.2   50 Hz
+  t=  863.2   50 Hz
+  t=  864.2   50 Hz
+  t=  865.2   50 Hz
+  t=  866.2   50 Hz
+  t=  867.2   50 Hz
+  t=  868.2   50 Hz
+  t=  869.2   50 Hz
+  t=  870.2   50 Hz
+  t=  871.2   50 Hz
+  t=  872.2   50 Hz
+  t=  873.2   50 Hz
+  t=  874.2   50 Hz
+  t=  875.2   50 Hz
+  t=  876.2   50 Hz
+  t=  877.2   50 Hz
+  t=  878.2   50 Hz
+  t=  879.2   50 Hz
+  t=  880.2   50 Hz
+  t=  881.2   50 Hz
+  t=  882.2   50 Hz
+  t=  883.2   50 Hz
+  t=  884.2   50 Hz
+  t=  885.2   50 Hz
+  t=  886.2   50 Hz
+  t=  887.2   50 Hz
+  t=  888.2   50 Hz
+  t=  889.2   50 Hz
+  t=  890.2   50 Hz
+  t=  891.2   50 Hz
+  t=  892.2   50 Hz
+  t=  893.2   50 Hz
+  t=  894.2   50 Hz
+  t=  895.2   50 Hz
+  t=  896.2   50 Hz
+  t=  897.2   50 Hz
+  t=  898.2   50 Hz
+  t=  899.2   50 Hz
+  t=  900.2   50 Hz
+  t=  901.2   50 Hz
+  t=  902.2   50 Hz
+  t=  903.2   50 Hz
+  t=  904.2   50 Hz
+  t=  905.2   50 Hz
+  t=  906.2   50 Hz
+  t=  907.2   50 Hz
+  t=  908.2   50 Hz
+  t=  909.2   50 Hz
+  t=  910.2   50 Hz
+  t=  911.2   50 Hz
+  t=  912.2   50 Hz
+  t=  913.2   50 Hz
+  t=  914.2   50 Hz
+  t=  915.2   50 Hz
+  t=  916.2   50 Hz
+  t=  917.2   50 Hz
+Traceback (most recent call last):
+  File "/tmp/drill21_probe2.py", line 202, in main
+    rclpy.spin_once(n, timeout_sec=0.1)
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/__init__.py", line 208, in spin_once
+    executor.spin_once(timeout_sec=timeout_sec)
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 812, in spin_once
+    self._spin_once_impl(timeout_sec)
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 801, in _spin_once_impl
+    handler, entity, node = self.wait_for_ready_callbacks(timeout_sec=timeout_sec)
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 784, in wait_for_ready_callbacks
+    return next(self._cb_iter)
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/executors.py", line 685, in _wait_for_ready_callbacks
+    raise ExternalShutdownException()
+rclpy.executors.ExternalShutdownException
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/tmp/drill21_probe2.py", line 212, in <module>
+    main()
+  File "/tmp/drill21_probe2.py", line 208, in main
+    rclpy.shutdown()
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/__init__.py", line 130, in shutdown
+    _shutdown(context=context)
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/utilities.py", line 58, in shutdown
+    return context.shutdown()
+  File "/opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/context.py", line 102, in shutdown
+    self.__context.shutdown()
+rclpy._rclpy_pybind11.RCLError: failed to shutdown: rcl_shutdown already called on the given context, at ./src/rcl/init.c:241
