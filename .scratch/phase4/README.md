@@ -65,10 +65,11 @@ git log --oneline --follow -- .scratch/phase4/issues/11-tau-cross-flight-reprodu
 git show <提交>^:.scratch/phase3/issues/11-tau-cross-flight-reproduction.md   # 旧路径读改名前的版本
 ```
 
-★ 也可以在**顺延之前**那棵树上直接读（`v2.0` 打在 2026-10-08 顺延**之前**）：
+★ 也可以在**顺延之前**那棵树上直接读 —— 那棵树是**裸提交 `a119a02`**（2026-10-08，正是顺延那一提交 `e9c62ee` 的**父提交**）。
+⚠️ 它原先叫 `v2.0` **标签**，而这个名字 **2026-10-12 已改指 Phase 2 收口点的分支**（`175e298`）⟹ **按名字取会拿到错的树，而且不报错**：
 
 ```bash
-git show v2.0:.scratch/phase3/spec.md        # ← 这就是"旧的 Phase 3 spec"，即现在的 phase4/spec.md
+git show a119a02:.scratch/phase3/spec.md     # ← 这就是"旧的 Phase 3 spec"，即现在的 phase4/spec.md
 ```
 
 ⚠️ **`spec.md` 在两种查法下看到的答案不一样，别只看 `git status`**：
