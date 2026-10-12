@@ -7,6 +7,9 @@ Status: ready-for-human
 > 步骤 2（13 状态 + `k_ω`）与 INDI 见 Out of Scope。
 > **tracker**：本地 markdown，约定见 [`issue-tracker.md`](../../docs/agents/issue-tracker.md)、标签见 [`triage-labels.md`](../../docs/agents/triage-labels.md)。
 >
+> ★★ **2026-10-12 新增一处前置决定**：**(C) 级下行从 px4_msgs/uXRCE-DDS 换成 mavros**（见
+> Implementation Decisions → §★★ 2026-10-12），连带 seam 1 要**再跑一次**（见 Testing Decisions）。
+>
 > **阻塞关系**：本 spec **被两件事硬阻塞** —— Phase 2 的 SITL 达标、`hover_thrust` 的实机测量。
 > ☠️ ~~以及一次固件重编~~ —— **2026-10-09 操作者裁定不重刷固件**
 > （沿用现行固件与参数；**这是"裁定收、不做了"，没有实测证据作锚**）⟹ **该项阻塞消失**。详见 Further Notes。
@@ -52,6 +55,11 @@ Phase 2 结束时，我有一条**在 SITL 里闭环验证过**的 (C) 级模型
 3. **参数落地**：按 [`params-changes.md`](../../docs/reference/params-changes.md) 执行首飞阻塞项（☠️ 原写"尤其 `NAV_RCL_ACT = 1` Hold"——**那条已落地**：2026-09-28 实测飞控现值就是 `1`，见 §A1；首飞前**确认仍在 `1`** 即可，不是"要改成 1"），并导出 z0 自己的参数与参考表 diff。
 4. **四级实机阶梯**：拆桨看方向 → 系绳离地 20 cm → 系绳闭环悬停 → 自由飞三条轨迹。**每级停下来看日志，不通过不进下一级。**
 5. **保留 Phase 1 回退**：任何时刻可退回 (A) 级控制。
+6. ★★ **2026-10-12 新增**：**(C) 级下行改走 mavros**（`/mavros/setpoint_raw/attitude`）——
+   不新增硬件、不抢串口，让阶梯能往下走。起因是真机 `UXRCE_DDS_CFG = 0` 且那条串口被 MAVLink 占着。
+   **它不是"改控制律"，是把控制律脚下的那条通路换掉**：飞机的被控量仍是 `body_rate` + 总推力。
+   三处**不可等价**（标量 `thrust` 由飞控写负号、mavros 自己转 FLU→FRD、闸门源变成 1 Hz 的
+   `/mavros/state`）**必须在票面写死口径**。全文见 Implementation Decisions → §★★ 2026-10-12。
 
 ---
 
@@ -121,6 +129,69 @@ Phase 2 结束时，我有一条**在 SITL 里闭环验证过**的 (C) 级模型
 - **控制层级仍是 `(C)` 级**（总推力 + 机体三轴角速率），**模型预测控制节点与 Phase 2 是同一份代码**，本阶段不重写控制律。理由：Phase 2 已在 SITL 里逐条验过符号、量纲与兜底路径，**在实机阶段引入新代码 = 引入无法归因的变量**。
 - **`(A)` 级整条链保持可用**，随时可退回。Phase 1 的 `control` 与 `mocap` 包不做破坏性改动。
 - **回退演练属于本阶段范围**，不是可选项：没演练过的回退路径不算回退路径。
+
+### ★★ 2026-10-12 —— (C) 级下行改走 mavros（`/mavros/setpoint_raw/attitude`）
+
+> **本节是追加，不改上面任何一条。** 上面「控制层级与复用」里那句"模型预测控制节点与 Phase 2 是同一份代码"
+> **仍然成立**（控制律不改）；变的是**这份代码把指令发到哪个话题上**。
+
+#### 为什么（第一手）
+
+1. **真机上 uXRCE-DDS 是关的**：`UXRCE_DDS_CFG = 0`
+   （[`z0.params:949`](../../docs/assets/z0.params)；同值见 [`bag/z0-params-2026-10-10.params:913`](../../bag/z0-params-2026-10-10.params)）。
+2. **没有空闲串口给它**（[`mpc-node-seam1.md`](../../docs/control/mpc-node-seam1.md) §12.3① 的读数）：
+   `MAV_0_CONFIG = 101`（TELEM1，[`z0.params:528`](../../docs/assets/z0.params)）、
+   `MAV_1_CONFIG = 102`（Onboard，**已被 mavros 占**，[`:534`](../../docs/assets/z0.params)）、
+   `MAV_2_CONFIG = 0`（[`:540`](../../docs/assets/z0.params)）。
+3. **PX4 的串口分配器一冲突就静默不启动**：`port_config_param` 发现两条流要同一条串口时只打一句
+   `Conflicting config` 并把该客户端置为**不启动** —— `Tools/serial/rc.serial_port.jinja:3`（`set SERIAL_DEV none`）
+   与 `:14`；且 `rc.serial.jinja` 只在 `SERIAL_DEV != none` 时才执行该命令。
+   **⟹ 打开 uXRCE-DDS 必须抢走那条串口，代价是 mavros 与 (A) 级链同时死。**
+4. ⟹ 原路只有两个走法：**加一路 UART/USB 转串**（要停机改接线）或**抢串口**（(A) 级链陪葬）。
+   **改走 mavros 把成本从"硬件/接线"挪到"软件"**，且 (A) 级链一根线都不用动。
+
+#### 等价性（第一手）
+
+- 两条路在飞控内部**汇合到同一条 uORB** `vehicle_rates_setpoint`：`mavlink_receiver.cpp:1580-1596`
+  由 `SET_ATTITUDE_TARGET` 填完 `body_rate` 与 `thrust_body` 后发布；`:1593` 那个发布**只在 OFFBOARD 里才做**。
+- **心跳不用我们发**：飞控从收到的 `SET_ATTITUDE_TARGET` **自己派生** `OffboardControlMode`
+  （同文件 `:1531-1535`）⟹ 我们侧不再需要 `/fmu/in/offboard_control_mode` 这条流。
+- 解锁 / 切模式 / 闸门：`/mavros/cmd/arming`、`/mavros/set_mode`、闸门读 `/mavros/state`。
+- ★★ **一条硬前置（真机已满足，但必须记下来）**：整个 `SET_ATTITUDE_TARGET` handler **被一个参数守着** ——
+  `if (_mavlink->get_forward_externalsp() && …)`（`mavlink_receiver.cpp:1508-1515`），
+  即 **`MAV_FWDEXTSP`**（`PARAM_DEFINE_INT32(MAV_FWDEXTSP, 1)`，说明为
+  "Forward external setpoint messages…"，`src/modules/mavlink/mavlink_params.c:112-121`）。
+  **z0 现值 = `1`**（[`z0.params:542`](../../docs/assets/z0.params)）✓。
+  ⚠️ **若它是 `0`，整条 mavros 下行会静默死掉**（消息直接被丢，飞控侧**没有任何日志**）——
+  ⟹ 它必须进实飞前检查清单（票 [13](issues/13-docs-mavros-downlink-canon.md) ③ 与票
+  [14](issues/14-mpc-node-mavros-downlink.md) ⑥ 各落一处）。
+
+#### ⛔ 三处**不可等价** —— 这是本节存在的理由，也是票面必须写死的口径
+
+| # | 差在哪 | 落到谁头上 | 后果（**都不是报错，是静默**） |
+|---|---|---|---|
+| **N1** | `mavros_msgs/AttitudeTarget` **只有标量 `thrust`**，没有 `thrust_body`（`/opt/ros/humble/share/mavros_msgs/msg/AttitudeTarget.msg`）；飞控收到后由 `fill_thrust` 写成 `thrust_body[2] = −thrust`（`mavlink_receiver.cpp:1456` / `:1475`） | 负号与轴向 ⇒ **飞控那行代码**，不再是我们的 `sign_map` | ① `sign_map.px4_rates_setpoint()` 的 `thrust_body_z` 这一路在 mavros 路径上**不再是被验对象**；② `offboard_smoke.py` 的「**悬停倍数**」那一列的**基准与归一化都换了**（它乘的基准从 `t_max` 变成"飞控自己那套"），读数**不能与换之前并列比较** |
+| **N2** | mavros **自己**在 `attitude_cb` 里对 `body_rate` 做 FLU→FRD：`AIRCRAFT_BASELINK_Q = quaternion_from_rpy(M_PI, 0, 0)`（`ftf_frame_conversions.cpp:40`），应用处 `setpoint_raw.cpp:321-331` | 恰好**就是** `sign_map` 对 pitch/yaw 的取负（roll 不受影响） | 若把 `sign_map` 的输出**直接**喂进去 ⟹ pitch/yaw 被取负**两次**（= 不取负）⟹ **静默反向**。**结论：不许自己先转**（与 [`px4-interface.md`](../../docs/reference/px4-interface.md) §5.1 已记的"转两次"教训同族） |
+| **N3** | 闸门源从 `/fmu/out/vehicle_status` 换成 `/mavros/state`，而后者**只在收到 MAVLink HEARTBEAT 时才发布**（1 Hz 定频，mavros 侧改不了） | 判据的**时间尺度**换了 | 节点现值 `status_timeout_s = 0.75` **< 1 s** ⟹ `status_stale` 会**恒真**、每秒报"飞控失联"并停发 setpoint。**Phase 1 已踩过同一个坑**：`src/control/config/control.yaml:120-125` 明写 `state_timeout_s: 2.5` 与"**不要照抄 px4ctrl 的 0.5 s**" |
+
+#### 范围
+
+- **只换 (C) 级的载体与闸门源**。(A) 级链、控制律、模型、参数一律不变。
+- **不新增 seam**（见 Testing Decisions）：seam 1 是**同一个形态的第 4 次应用**。
+- **阶梯判据页（`ladder-acceptance-criteria.md`）的驱动工具一旦换掉，按该页 §7.1 留痕**
+  —— 点出哪一级的哪个数 → 在 §7.2 增一行 → 被废的那条**就地标 ☠️**，**⛔ 不许原地改数**。
+  留痕本身是票 [17](issues/17-ladder-criteria-trace.md)，不是"改判据"。
+
+#### 票
+
+| 票 | 做什么 | 状态 |
+|---|---|---|
+| [13](issues/13-docs-mavros-downlink-canon.md) | **口径冻结**（docs 先行）：`sign-map.md` / `mpc-node-seam1.md` §12.3 / `px4-interface.md` §4.3·§5.1·§8 | `ready-for-agent` |
+| [14](issues/14-mpc-node-mavros-downlink.md) | `mpc_node.py` 下行 + 闸门源 + 超时 + 依赖 | 阻塞于 13 |
+| [15](issues/15-offboard-smoke-mavros.md) | `offboard_smoke.py`（阶梯 1/2 的驱动工具）+ `--t-max` 那笔账 | 阻塞于 13 |
+| [16](issues/16-fixtures-and-seam1-mavros.md) | 夹具（`fake_mavros.py`）+ seam 1 改写 | 阻塞于 14 |
+| [17](issues/17-ladder-criteria-trace.md) | 阶梯判据页 §7.1 留痕 | 阻塞于 13、15 |
+| [18](issues/18-actuator-test-output-corner-map.md) | **独立项**：QGC 执行器测试落实「物理口 ↔ 机体角」 | 无阻塞 |
 
 ### ★ 四项前置测量（全部在装桨之前）
 
@@ -212,6 +283,20 @@ Phase 2 结束时，我有一条**在 SITL 里闭环验证过**的 (C) 级模型
 
 模型预测控制节点的 ROS 话题边界测试（喂脚本输入 + 断言发出话题 + 假 PX4）**在实机前重跑**，
 用实机参数而不是仿真参数。它挡住的是"搬到真机后参数/话题改错了"这一类错误，成本≈0。
+（★ 见下方 2026-10-12 的追加：这一次重跑**还不够**，下行换载体后要**再跑一次**。）
+
+### ★★ 2026-10-12 —— seam 1 要**再跑一次**（下行换载体）
+
+上面那条写在 2026-09-20，前提是**下行仍是 px4_msgs**。2026-10-12 换成 mavros 之后，
+**被验对象本身变了**（正文 §★★ 的 N1 / N2 / N3）⟹ 那次重跑的结论**不能平移**：
+话题名、消息类型、QoS、**谁做 FLU→FRD**、闸门话题与它的超时**全变了**。
+
+- 这是**同一个 seam 形态的第 4 次应用**（Phase 1 → Phase 2 → Phase 4 首次 → 本次），**不新增 seam 形态**。
+- 夹具侧复用 Phase 1 已有的 [`fake_mavros.py`](../../src/bench/bench/fake_mavros.py)（已是"假飞控 + mavros 形状"），
+  而不是把 `fake_px4.py` 改造成四不像 —— 两者的死活用票 [16](issues/16-fixtures-and-seam1-mavros.md) 定。
+- 断言里**必须有一条专测 N2**：把 `sign_map` 的输出原样发进去时，**我们这一侧不许再转一次**
+  （否则 pitch/yaw 静默反向）。★ 这类"两条通路各转一次"的错**判据全绿也看不出来**，
+  所以 Assertion 要量**我们自己发出的那一条消息里的 `body_rate` 字段值**，而不是量最终效果。
 
 ### 实机阶梯（本阶段的主要判据）
 
@@ -314,4 +399,27 @@ Phase 1 / Phase 2 的 seam 1 形态；Phase 1 的实机验证顺序（拆桨 →
 
 ## Comments
 
-（暂无）
+### 2026-10-12 —— 追加决定：(C) 级下行改走 mavros（+ 6 张新票 13–18）
+
+**改了本 spec 的哪些地方**（都是**追加**，没有就地改数）：
+
+| 位置 | 改了什么 |
+|---|---|
+| 开头引言块 | 加一行指向本节 |
+| Solution | 加第 6 条（= 本决定的摘要） |
+| Implementation Decisions | 新增 **§★★ 2026-10-12**（起因 / 等价性 / 三处不可等价 N1–N3 / 范围 / 票表） |
+| Testing Decisions | 新增 **§★★ 2026-10-12**（seam 1 要**再跑一次**；这不是新 seam 形态） |
+| 本节 | 你正在读的 |
+
+**为什么现在写**：真机参数读数（`UXRCE_DDS_CFG = 0` 与三条 `MAV_*_CONFIG`）**已经是第一手**，
+不用再等任何实测；而它挡着阶梯 1/2 的下行——**不决定就没法往下走**。
+
+**本节没有证据作锚的地方（明说）**：
+- **没有**在真机 mavros 链路上跑过一次 `setpoint_raw/attitude`。三处不可等价里的 N1/N2/N3
+  **全部是读源码与读 mavros 源码得来的**（锚点写在正文表里），**不是实测**。
+- ⟹ "换成 mavros 后能飞"这句话**现在还不成立**；本节只主张**口径已经定清**，
+  成不成立由票 16 的 seam 1 与阶梯 1/2 去证。
+
+**新票**：13（口径冻结）/ 14（节点）/ 15（阶梯驱动工具）/ 16（夹具 + seam 1）/ 17（阶梯判据留痕）/
+18（QGC 执行器测试 —— 独立项，与走哪条通路无关）。
+**本阶段仍未结的旧票**不抄在这里 —— 现算：见 [`docs/agents/issue-tracker.md`](../../docs/agents/issue-tracker.md)。
