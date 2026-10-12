@@ -23,6 +23,34 @@
 > 独立于节点、也不随本页的口径变；而重搭后机型是 `46.3027 N` ⟹ **同一条悬停指令会让 SIH 出 3.92 倍推力**，
 > `⑤` 那两条判据（"只给悬停推力 ⟹ 不掉高度"、"从电机反推的推力 ≈ 机重"）**会红**。
 > 修它属 ticket 05 / 10 的域，`04` **不擅自改**。
+>
+> ☠️ **载体已换（2026-10-12，[`phase4/13`](../../.scratch/phase4/issues/13-mavros-downlink-switch.md) §三）**：
+> 本页描述的 `offboard_smoke.py` 走的是 **px4_msgs + uXRCE-DDS**
+> （`/fmu/in/vehicle_rates_setpoint` + `OffboardControlMode` 心跳 + `/fmu/in/vehicle_command` 解锁/切模式）；
+> 该节点**已改成 mavros 载体**（`/mavros/setpoint_raw/attitude` + `/mavros/cmd/arming` +
+> `/mavros/set_mode`，闸门源换成 `/mavros/state`）。⟹ 本页以下内容**一律按"旧载体"读**，
+> 其中**这几处在新载体上没有对应物**（逐项点名，理由见 [`sign-map.md`](sign-map.md) §2.3.1 与 `13` §三③）：
+>
+> 1. **§1 那个跑法块** —— 缺 `--t-max`（该参数 2026-10-12 起**必须显式给**，不给就拒绝启动，
+>    今天的正确值 46.3027 N = `m·g/hover_thrust`），且 `--qos` 的取值集合已按新载体重核；
+> 2. **§3.2「QoS 双向可通」** —— 新载体的闸门源 `/mavros/state` 由 mavros 以 **reliable** 发布，
+>    "订阅声明错 ⟹ 零回调"那一档**造不出来**（两个取值都收得到）；
+> 3. **§3.3「时间戳：一条生成代码，三个后果」整节** —— `SET_ATTITUDE_TARGET` 的 `time_boot_ms`
+>    在飞控那段 handler（`mavlink_receiver.cpp:1509-1599`）里**一次都没被读** ⟹
+>    单位写成零/毫秒/纳秒**注入效果逐位相同**，`--timestamp-unit` / `--timestamp-shift-us`
+>    **已从节点里删掉**（留着会让操作者以为"这一档也测过了"，而这一场里它**再也取不到第二个值**）；
+> 4. **§4 那张 12 场表里 `ts-ms` / `ts-ns` / `ts-zero` / `ts-lag-1s` / `ts-lag-2s` 五场**，
+>    以及 `rate-step-broken` 那两场的 `--break pitch-sign` —— 后者已改名 `pitch-preconvert`，
+>    含义从"符号写反"变成 **N2**（我们自己多做了一次预转换 ⟹ 转两次 = 不转，
+>    飞控最终收到的分毫不差，"这不是一个会被飞控行为测出来的错"）；
+> 5. **§3.5 ⑤ 那两条判据**的另一半（归一化）—— 读数同时受上面 2026-10-09 那条基线作废影响。
+>
+> ★★ **驱动脚本本身也还是旧载体的**：[`verify_offboard_smoke.py`](../../tools/px4-sitl/verify_offboard_smoke.py)
+> 的场景表（`:544-564`）照样传 `--timestamp-unit` / `--timestamp-shift-us` / `--break pitch-sign`，
+> 闸门源与话题也钉在 `/fmu/*` 上 ⟹ **本页的命令今天跑不通**（argparse 直接拒），
+> 不是"跑出来红了"。同一条也适用于 [`test_verify_judges.py`](../../tools/px4-sitl/test_verify_judges.py):123
+> 与 `src/bench/bench/fake_px4.py`。这三处的归属是 `13` **§四**（夹具与 seam 1），
+> ⚠️ **本页不重跑、也不改驱动**（那是 §四 / 05 的重跑），本段只做"标作废"。
 
 ---
 
@@ -52,6 +80,9 @@
 | 取证工具的离线单测 | [`tools/px4-sitl/test_px4_console.py`](../../tools/px4-sitl/test_px4_console.py) | 4 例，不启 SITL（为什么必须有：§5.3） |
 | **判据**的离线单测 | [`tools/px4-sitl/test_verify_judges.py`](../../tools/px4-sitl/test_verify_judges.py) | 14 例，不启 SITL：把**能脱离飞机判的**判据（⑤ 的高度、报告层两条跨档）喂人造数。判据本身也要有判据 —— 跑一次 1 分钟，没人会去试判据错没错 |
 | 逻辑单测（零 ROS） | [`src/nmpc/test/test_sign_map.py`](../../src/nmpc/test/test_sign_map.py)、[`test_commands.py`](../../src/nmpc/test/test_commands.py) | 52 例；`test_sign_map` 解析的是 **`sign-map.md` 的 `sign-map:canonical` 块** |
+
+> ☠️ **本块按旧载体写，今天跑不通**：`ros2 run … offboard_smoke.py` 少了 `--t-max`
+> （2026-10-12 起必填）⟹ 节点会拒绝启动；`verify_offboard_smoke.py` 仍按 `/fmu/*` 起 DUT。见本页顶的载体作废块。
 
 ```bash
 # 一次跑完 12 场（每场一套全新 SITL + agent，约 1 分钟/场），末了打一张汇总表
@@ -123,6 +154,10 @@ DUT 以 50 Hz 发心跳 + rates setpoint，PX4 收到后把 `nav_state` 置为 1
 
 ### 3.2 ② QoS 双向可通：订阅 `/fmu/out/*` 必须显式 BEST_EFFORT
 
+> ☠️ **这一档在 mavros 载体上没有对应物**（2026-10-12，`13` §三③）：闸门源 `/mavros/state`
+> 由 mavros 以 reliable 发布 ⟹ `--qos reliable|best_effort` 两个取值**都收得到**，
+> "声明错 ⟹ 零回调"造不出来。本节的证据只对旧载体成立。
+
 PX4 在 DDS 边界上给 `/fmu/out/*` 建的是 best_effort 流（`dds_topics.h.em:62`）。
 把订阅侧写成 RELIABLE（**ROS 2 的默认值**）的后果是 —— **一条回调都不进**：
 
@@ -139,6 +174,10 @@ PX4 在 DDS 边界上给 `/fmu/out/*` 建的是 best_effort 流（`dds_topics.h.
 （顺带：`qos-reliable` 那场飞机一直贴地（真值 z=+0.0002 m），**EKF 的 z 却报到 −0.46 m** —— 见 §5.7。）
 
 ### 3.3 ③ 时间戳：一条生成代码，三个后果
+
+> ☠️ **整节只对旧载体成立**（2026-10-12，`13` §三③）：本节测的三档（单位错、挪到过去、零）
+> 全靠 `time_boot_ms` 被飞控读；`SET_ATTITUDE_TARGET` 那段 handler **一次都没读它**
+> ⟹ 那三档在新载体上**注入效果逐位相同**，两个开关已从节点里删掉。理由见 [`sign-map.md`](sign-map.md) §2.3.1。
 
 PX4 收下我们的 `timestamp` 时**不是原样存**，而是过一遍生成的 uCDR 反序列化器
 （心跳走 `uORB/ucdr/offboard_control_mode.h:87-88`，rates 走 `vehicle_rates_setpoint.h:82-84`，
@@ -255,6 +294,11 @@ bool offboard_available = (… || offboard_control_mode.body_rate …) && data_i
 ---
 
 ## 4. 12 场一张表（`--table` 的逐字输出，从这个输出里挑 `|` 开头的行）
+
+> ☠️ **表里这七行随载体一起作废**（2026-10-12，`13` §三③）：`ts-ms` / `ts-ns` / `ts-zero` /
+> `ts-lag-1s` / `ts-lag-2s` 五档的开关已删除（没有对应物），`rate-step-broken` 那两行的
+> `--break pitch-sign` 已改名 `pitch-preconvert` 且**含义换了**（从"符号写反"变成 N2）。
+> ★ 表里其余各行是**旧载体**的读数（并且另有 2026-10-09 那条基线作废）—— 本页不重跑。
 
 （2026-09-28 一次跑完，`exit 0`，**12 场 38 条判据全过**（每场另有 0~1 条不计数的说明），
 外加报告层 2 条**跨档**判据：QoS 阳性对照 25 vs 0、Δ 一致性；原始观测 `/tmp/obs_all2.json`，

@@ -32,10 +32,20 @@ PX4 的 offboard 分支对 `thrust_body` **不做任何悬停油门重标定、�
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 
 #: 重力加速度 [m/s²] —— 与参考实现 `multirotor_rate_model.py` 的 `g` 同一个值
 G = 9.81
+
+#: 「归一化自洽」的判据容差（**相对**）—— ★ 与 `node_core.SAT_TOL_REL` **同值同口径**：
+#: 那是生产里判"顶没顶界"用的相对容差，这里判"归一化常数与悬停油门是不是同一个物理量"，
+#: 属同一类"读到的值落在边界上还算不算数"的问题 ⟹ 复用它，**不另起一个数**
+#: （★ 那一条是 [判据全绿也可能是机理反了] 的反面：判据的阈值来自生产口径，不是我现编的）。
+#: ⚠️ 这两个常量**不能合并成一处**：`node_core` 反过来 import 本模块（`:387` 用 `params.f_max`）
+#: ⟹ 本模块 import `node_core` 会成环。值相同这件事由
+#: `test/test_params.py::test_normalization_tolerance_matches_production` 盯着（改一个忘另一个会红）。
+NORM_TOL_REL = 1e-3
 
 #: 悬停油门 —— ★ **实测值**（无量纲，[0, 1]）。2026-09-29 由 ticket 10 回填，替换占位 `0.6235`。
 #:
@@ -86,6 +96,69 @@ YAW_RATE_MAX = 6.28
 F_MAX_BATTERY = 11.8
 
 
+def t_max_from_hover(mass_kg: float, hover_thrust: float = HOVER_THRUST) -> float:
+    """`T_max = m·g / hover_thrust` —— 那条导出关系的**唯一实现**，且**拦住坏入参**。
+
+    ★ 为什么要有这个函数而不是让调用方各写一遍：这是**命令行**与**模型**的交汇处。
+    [`offboard_smoke.py`](offboard_smoke.py) 的 `--t-max` 是**必须显式给**的参数
+    （2026-10-12 操作者裁定），而它该给多少、凭什么，就是这一行。
+    ★ 它同时是那条报错话术的来源（`check_hover_consistency` 用它算出"正确值是 …"）。
+
+    ⚠️ 与 `Z0Params.t_max` 的分工：那是**读**（不检查，坏参数也要读得出来，供自检点名），
+    这是**守**（入参不合法就 raise）。两处都写同一个公式，靠
+    `test/test_params.py::test_the_property_reads_while_this_door_guards` 钉住"同值"。
+    """
+    if not math.isfinite(mass_kg) or mass_kg <= 0.0:
+        raise ValueError(f"质量必须是正的有限值，收到 {mass_kg!r}")
+    if not math.isfinite(hover_thrust) or not 0.0 < hover_thrust < 1.0:
+        raise ValueError(f"hover_thrust 必须落在 (0, 1)，收到 {hover_thrust!r}")
+    return mass_kg * G / hover_thrust
+
+
+def hover_thrust_implied(mass_kg: float, t_max_n: float) -> float:
+    """反着算：这一对 `(m, T_max)` 隐含的悬停油门（无量纲）—— 应当等于 `HOVER_THRUST`。
+
+    ⛔ 这里**不**开一个 `g=` 形参：本仓库没有任何调用方要换重力（`G` 是本模块的口径常量），
+    留一个没人传的旋钮，下次读代码的人会以为"有人会改它" —— 本轮复核把这三个形参删掉了
+    （2026-10-12）。
+    """
+    if not math.isfinite(t_max_n) or t_max_n <= 0.0:
+        raise ValueError(f"T_max 必须是正的有限值，收到 {t_max_n!r}")
+    return mass_kg * G / t_max_n
+
+
+def check_hover_consistency(mass_kg: float, t_max_n: float,
+                            hover_thrust: float = HOVER_THRUST,
+                            rel_tol: float = NORM_TOL_REL) -> float:
+    """**归一化自洽自检**：`(m, T_max)` 隐含的悬停油门必须等于实测的 `hover_thrust`。
+
+    返回那个隐含值（调用方拿去打印），不一致时抛 `ValueError`（**fail loud**，不给回落值）。
+
+    ★ 为什么这条自检值得存在（2026-10-12，[`13`](../../../.scratch/phase4/issues/13-mavros-downlink-switch.md) §三②）：
+    `offboard_smoke.py` 的 `Config.t_max_n` 曾经默认 `11.8` —— 那是 `f_max`（**电池能持续兑现多少**），
+    不是归一化常数。混用之后悬停那一档发出去的数是正确值的 **≈3.92 倍**（`0.6235 / 0.1589`），
+    **不报错、不崩溃、判据全绿**，只是飞机上飘。这条自检就是当场把它变红的那一个东西。
+
+    ⚠️ 容差用**生产口径**（`NORM_TOL_REL`），不是 `==`：正确的一对（`Z0Params` 那对）残差是
+    浮点级的 ~1e-16，所以 1e-3 是"只要操作者按 `m·g/hover_thrust` 算过就过、随手写个 46 就红"的分界
+    （`46` vs `46.3027` 差 6.5e-3 ⟹ **红**）。
+    ⛔ 别把这条改松去迁就某个"看着差不多"的读数 —— 它挡的正是那种迁就。
+    """
+    implied = hover_thrust_implied(mass_kg, t_max_n)
+    if not math.isclose(implied, hover_thrust, rel_tol=rel_tol, abs_tol=0.0):
+        right = t_max_from_hover(mass_kg, hover_thrust)
+        raise ValueError(
+            f"归一化常数与悬停油门对不上：m={mass_kg!r} kg、T_max={t_max_n!r} N ⟹ 隐含悬停油门 "
+            f"{implied:.6f}，而实测 hover_thrust = {hover_thrust:.6f}"
+            f"（相差 {abs(implied / hover_thrust - 1.0) * 100:.3f}%，容差 {rel_tol:.0e} 相对）。"
+            f"这一对的正确值是 T_max = m·g/hover_thrust = {right:.4f} N："
+            f"照现在这个 {t_max_n!r} N 发出去的归一化推力会是正确值的 {right / t_max_n:.2f} 倍。"
+            f"★ 常见的错值 {F_MAX_BATTERY!r} N 是 f_max（电池口径的 F 上限），"
+            f"**不是**归一化常数 —— 混用它悬停那一档会多发 ≈{right / F_MAX_BATTERY:.2f} 倍推力，"
+            f"而且不报错。")
+    return implied
+
+
 @dataclass(frozen=True)
 class Z0Params:
     """一套模型参数。**可变**（`dataclasses.replace`）—— [ticket 12](../../../.scratch/phase2/issues/12-mismatch-sweep.md)
@@ -123,6 +196,13 @@ class Z0Params:
         2026-09-29 之前这两个角色兼在一个常数上：回填后它变成 46.3 N，
         于是 `ocp.py` 的 `F ≤ T_max` 悄悄从"按电池"漂成了"按电机"（差 3.9 倍，且不报错）。
         ★ 也**别**为了让它 < 40 N 去动 `hover_thrust`（那是把测量改小去迁就判据）。
+
+        ⛔ **本属性故意不走 `t_max_from_hover()`**（那个函数会检查入参）：这里是"**读出来**"，
+        不是"**守住门口**"。`preflight_check.check_params` 与 [ticket 12] 的失配扫描要拿着
+        **装着坏参数**的对象去问"哪里不对"（`NodeParams(mass=0.0)` ⟹ 报"质量为正"、
+        `hover_thrust=1.2` ⟹ 报"悬停有上余量"）：属性一 raise，那两条点名就报不出来，
+        自检从"点名"退化成"崩掉"（`test/test_preflight_check.py` 2026-10-12 抓到过一次）。
+        守门口的是 `t_max_from_hover()` 与 `check_hover_consistency()`，那两个才是命令行入口用的。
         """
         return self.t_hover / self.hover_thrust
 

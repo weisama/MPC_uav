@@ -1,9 +1,16 @@
 # 13: (C) 级下行从 px4_msgs/uXRCE-DDS 换成 mavros
 
-Status: done
+Status: ready-for-human
 Type: task
 
-**★ 2026-10-12 操作者裁定收口 → `done`**：本票的交付 = **票面本身**，加上 **§六 的实测结果已入册**。
+**★★ 2026-10-12 操作者裁定：重开本票（`Status: done` 退回），本轮只落 `§三` + `§一①` 的最小片段。**
+退回的**不是**上面那条收口裁定的结论，而是"本票到此为止"这件事：§一–§五 的施工**仍未全部开工**，
+而 `§三`（阶梯 1/2 唯一的执行者 `offboard_smoke.py`）+ `§一①`（`sign-map.md` 加"谁执行"一列）
+被判定为**不必等人、也不该再等**的两节。**本轮范围与逐项落地情况见 Comments 的「2026-10-12 第二轮」一节**
+（那里同时登记了本轮**新造出来的**悬空引用 —— 属于 §二 / §四 / §五 的落点，按 §一④ 的口径只登记、不改）。
+★ `§五` / `§六` 仍需人（签字、动飞机）⟹ 状态回到 `ready-for-human`，而不是 `ready-for-agent`。
+
+**☠️ 2026-10-12 操作者裁定收口 → `done`（本段随重开作废，原文留档）**：本票的交付 = **票面本身**，加上 **§六 的实测结果已入册**。
 **§一–§五 描述的施工未开工** —— 现场证据：`src/nmpc/nmpc/mpc_node.py:255-261` 仍发 `/fmu/in/*`、
 `src/nmpc/nmpc/offboard_smoke.py:108-112` 同、阶梯页 §7.2 里**没有** A/B/C/E 那四行。施工不在本票范围内。
 ★ 因此本仓库 `done` 的成文定义（`docs/agents/triage-labels.md:12`：「验收项**全部勾上**且结论已落进文档」）
@@ -22,6 +29,8 @@ Type: task
 
 **☠️ 2026-10-12 本段随收口作废（原文留档）**：下面这段是当初定 `Status: ready-for-human` 的理由；
 票已于同日收口为 `done`（见上面那条），**`ready-for-human` 的判据不再适用**。
+★★ 2026-10-12（同日第二轮）：**上面这条作废标记随重开一并撤回** —— `Status` 已退回
+`ready-for-human`，本段的判据**重新适用**（本段原文一字未改：留档的是"它曾经被作废过"这件事）。
 
 **★ 本票为什么是 `ready-for-human`（而内部有一大半是 AFK 可推进的）**：
 `ready-for-human` 只要**有一处**必须人来做就成立 —— 本票有两处：**§五**（§7.2 的"谁定的"列要操作者签字，
@@ -789,3 +798,231 @@ A/B/E 行的锚是**参数读数**，C 行的锚是**算术**。⛔ 三处都别
 所以它们随 §二 / §三 的改动落地，落地时照抄草稿、逐行插入。
 
 ★ 这次裁定**没有动任何代码**：`.py` / `.xml` / 参数文件一个没碰，`Status` 仍是 `ready-for-human`。
+
+---
+
+### 2026-10-12 —— 第二轮：`§一①` + `§三` 落地（本轮实测）
+
+范围见票面节首那条重开块：**只落 `§三` + `§一①` 的最小片段**，其余不动。
+本节登记 ①落了什么 ②本轮**新造出来的**悬空引用（按 `§一④` 的口径只登记、不改）
+③没做的 ④施工中踩到并修掉的一处自伤（留作边界证据）⑤测试与套件状态。
+
+#### 一、落了什么（逐项对票面）
+
+**`§三①` 接口换掉** —— [`src/nmpc/nmpc/offboard_smoke.py`](../../../src/nmpc/nmpc/offboard_smoke.py) 按新载体改写：
+
+| 票面要求 | 落地 | 位置 |
+|---|---|---|
+| pub `/fmu/in/offboard_control_mode` **删掉** | 删了（旧话题名在代码里**不再出现**，由 AST 断言守着） | —— |
+| pub `/mavros/setpoint_raw/attitude`，`type_mask = 128` | `TYPE_MASK_IGNORE_ATTITUDE`（取自消息自己的常量），只置这一位 | `:77`、`:339` |
+| `/mavros/cmd/arming` + `/mavros/set_mode` | 两个服务客户端 + 应答回调（被拒时把 `result` / `mode_sent` 打进日志） | `:246`、`:276` |
+| sub `/mavros/state`（`armed` 且 `mode == "OFFBOARD"`） | ✓（模式名取 `State.MODE_PX4_OFFBOARD`，不手写字符串） | `:84`、`:318-322` |
+| `_map()` 调 **具名 mavros 入口**、⛔ 不许预转换 | 调 `sign_map.mavros_attitude_target()`；预转换那一档仍可注入 | `:218-236` |
+| `--pre-stream` 语义 "大致保留，按 mavros 时序重核" | 保留；★ 重核的结论见下 | `:457`、`:479` |
+| `_CHECKED_POSITIVE` **保留** | 保留，并加一条归一化自洽 | `:457`、`:479` |
+
+★ `§三①` 那条"**心跳时序要重核**"的第一手结论：闸门源 `/mavros/state` 是 **1 Hz**
+（`mavros sys_status.cpp:966-972`，每收到一条 HEARTBEAT 才发一帧），
+而旧载体上 `--cmd-interval` 的默认 **0.5 s** 是按"2 Hz 以上的流"配的 ⟹
+**解锁/切模式的最小间隔必须 > 1 s**，默认提到 **1.1 s**（`Config.cmd_interval_s`）；
+进 OFFBOARD 的那一刻把程序时钟归零（`offboard_since_ns`），
+⚠️ 所以"切进 OFFBOARD"最多比飞控真正进入晚一个上报周期 ⟹ 时间轴偏**短**、不会偏长。
+
+**`§三②` `--t-max` 那笔账**（三条全落）：
+1. `Config.t_max_n` **没有默认值**（`Config()` ⟹ `TypeError`），argparse `required=True`，
+   帮助文本写明今天的正确值 46.3027 N 的来历（`m·g / hover_thrust`）与**它为什么会变**；
+2. 自检落在 [`params.check_hover_consistency()`](../../../src/nmpc/nmpc/params.py)：
+   容差 = `NORM_TOL_REL = 1e-3`（**与 `node_core.SAT_TOL_REL` 同值同口径**，有漂移守卫钉着），
+   `validate_args()` 在**建节点之前**调它，不一致 ⟹ `SystemExit`（fail loud，不给回落值）；
+3. `_describe_emitted()` 每段打一行 `F=…N ⟹ thrust=+…`（**归一化之后真正发出去的那个数**）——
+   ② 这类错误在屏幕上可见（`commands.describe()` 只印 `F`，看不出归一化常数错了）。
+
+**变异测试（4 次，逐条都红了）** —— 按票面要求，新断言都要先弄坏一次：
+
+| 变异 | 期望 | 结果 |
+|---|---|---|
+| `sign_map.mavros_attitude_target()` 里给 `body_rate_y` 加负号 | N2 断言红 | ✅ 2 条红（`test_mavros_entry_emits_the_flu_values_verbatim`、`test_the_two_entries_differ_only_in_who_applies_the_sign`） |
+| `TYPE_MASK_IGNORE_ATTITUDE` 多置 `IGNORE_THRUST`（64） | 形状断言红 | ✅ `test_our_type_mask_ignores_only_the_orientation` |
+| 节点里加一个 `/fmu/in/vehicle_rates_setpoint` 字符串字面量 | AST 断言红 | ✅ `test_the_px4_msgs_downlink_is_gone_from_the_code` |
+| `NORM_TOL_REL` 改松到 `10.0` | 自检失去鉴别力 ⟹ 红 | ✅ 3 条红（含票面点名要的那一档） |
+
+★ 票面 `§三②` 点名的那次变异（"**把 `--t-max` 改回 11.8 ⟹ 必须变红**"）现在是**常驻断言**：
+`test_mavros_interface.py::test_the_old_default_is_rejected_before_the_node_is_built`
+（`validate_args` 必须 `SystemExit`，且话术里要能**照抄出**正确值 46.3027）。
+
+**`§三③` 故障注入逐条处置**：
+
+| 开关 | 处置 | 依据 |
+|---|---|---|
+| `--break thrust-sign` / `thrust-scale` / `roll-sign` | **保留** | 三档在新载体上含义没变（roll 不被 mavros 取负 ⟹ 仍是"符号写反"） |
+| `--break pitch-sign` / `yaw-sign` | **改名** `pitch-preconvert` / `yaw-preconvert` | 这两档现在模拟的是 **N2**（我们多做一次预转换），**不是**"符号写反"；⛔ 旧名字不再被接受（同一个名字指另一件事） |
+| `--timestamp-unit` / `--timestamp-shift-us` | **删掉** | 飞控那段 handler 一次没读 `time_boot_ms`（`mavlink_receiver.cpp:1508-1598`）⟹ 注入效果逐位相同；留着会让操作者以为"这一档也测过了" |
+| `--qos` | **保留**，取值集合不变，但帮助文本改写 | 发布者是 reliable ⟹ 两个取值**都收得到** ⟹ 在新载体上**不再能造出"零回调"** |
+
+**`§一①`（[`docs/control/sign-map.md`](../../../docs/control/sign-map.md)）**：§2 拆成
+**§2.1 端到端映射（判据，与通路无关）** / **§2.2 我们实际发出的字段（按通路分叉）** /
+**§2.3 所有权对照 + 锚点表** / **§2.3.1 时间戳那一档为什么没有对应物**；
+§8 契约 1 / 3 / 5 与 §9 重新表述。
+★ `sign-map:canonical` 那个块**一个字节没动**（`test_sign_map.py` 解析它，`tools/sign-map/test_sign_map_core.py:230` 还断言它的键集）。
+
+★ 票面 `§一①` 要"在 Comments 里记一笔"的那条（**§8 第 4·5 条契约的取舍与措辞**）：
+
+> **§8.5 的落点换了对象**：从"飞控收到的那个字段"改成"**我们发出的那个字段**"。
+> 理由是第一手核对过的：mavros 在 `attitude_cb` 里**自己**再转一次 FLU→FRD
+> （`setpoint_raw.cpp:323-324`）⟹ 我们若预转换一次，**飞控最终收到的分毫不变**（N2）⟹
+> 任何落在"飞控收到了什么"上的断言，在"我们写对了"和"我们多转了一次"两种情况下**都会绿**。
+> 所以 mavros 路径的断言必须落在 `sign_map.mavros_attitude_target()` 的**返回值**上
+> （`body_rate_* == ω 原样`、`thrust == +F/T_max`）。**§8.4**（docstring 不复述数值）**不变**。
+
+★ **顺手复核过的锚点行号**（`§一①` 的活文档义务，2026-10-12 在 `~/refs/px4-v1.14.3-build` 下逐行看过）：
+
+- `mavlink_receiver.cpp:1456`（`fill_thrust` 签名）、`:1475`（`thrust_body_array[2] = -thrust;`）、
+  `:1522`（`const bool attitude = !(type_mask & …ATTITUDE_IGNORE);`）、`:1530-1535`（OCM 派生并发布）、
+  `:1588-1589`（`THROTTLE_IGNORE` 未置位才 `fill_thrust`）、`:1593-1594`（只在 OFFBOARD 里发布 +
+  飞控自己打时间戳）—— **逐条对上**。
+- ⚠️ **`MAV_FWDEXTSP` 那个 `if` 在 `:1516`，不在 `:1515`**（`:1515` 是它上面那行注释
+  `/* Only accept messages which are intended for this system */`）⟹ `sign-map.md` §2.3 已改成 `:1516`。
+- ⚠️ 整个 handler 实际是 **`:1509-1599`**（`void` 在 `:1509`、函数名 `:1510`、闭括号 `:1599`）；
+  票面 `§三③` 与 `spec.md` 里那种 `1508-1598` 的**区间**写法整体偏一行 ——
+  结论不变（那一整段里确实**没读** `time_boot_ms`），按 `§一④` 只登记、不逐个改。
+
+#### 二、本轮**新造出来的**悬空引用（按 `§一④` 的口径：只登记、不改）
+
+| 引用处 | 今天的状态 | 归谁 |
+|---|---|---|
+| [`verify_offboard_smoke.py`](../../../tools/px4-sitl/verify_offboard_smoke.py) `:544-564`（场景表） | 仍传**已删**的 `--timestamp-unit` / `--timestamp-shift-us` 与**旧名** `--break pitch-sign` ⟹ argparse 直接拒 | `§四`（或另开票） |
+| [`test_verify_judges.py`](../../../tools/px4-sitl/test_verify_judges.py) `:123` | 同上（一条用例的 argv） | 同上 |
+| `verify_offboard_smoke.py` 全文（话题 / 闸门源 / 判据 ⑤ 的"总推力"） | 钉在 `/fmu/*` + `px4_msgs` 上 | `§四` |
+| [`src/bench/bench/fake_px4.py`](../../../src/bench/bench/fake_px4.py) | 旧载体夹具（假 PX4 的 uORB 侧） | `§四④`（要显式判去留） |
+| [`src/bench/bench/fake_mavros.py`](../../../src/bench/bench/fake_mavros.py) | **已存在**（Phase 1 的），但**没有** `/mavros/setpoint_raw/attitude` 那条流 | `§四①` |
+| [`ladder-acceptance-criteria.md`](../../../docs/control/ladder-acceptance-criteria.md) `:64`、`:127`（两处跑法块） | 缺 `--t-max` ⟹ 照抄会被拒 | `§五` C 行 |
+| `ladder-acceptance-criteria.md:183` | 「归一的基准 `--t-max`（**默认 11.8 N**）」—— 这句话**今天为假** | `§五` C 行 |
+| [`src/nmpc/README.md`](../../../src/nmpc/README.md) `:52`（跑法块） | 缺 `--t-max` | `§一④` 登记（本轮**未改**） |
+| `mpc_node.py:255-261` 与 `package.xml:22` | 节点仍走 `/fmu/*`、仍依赖 `px4_msgs`（本票 `§二` 的活） | `§二` |
+| [`mpc-node-seam1.md`](../../../docs/control/mpc-node-seam1.md) `:307` | 写着"删那个取证开关是 05 的事"—— 现在**已删**（在 `offboard_smoke.py` 里），该句口径要改 | `§四⑤` |
+| [`sitl-offboard-smoke.md`](../../../docs/control/sitl-offboard-smoke.md) | **本轮已加 ☠️ 载体作废块**（页首 + §1 / §3.2 / §3.3 / §4 四处**节首**逐项点名） | 本票本轮 |
+
+★ 两处**查过、结论是"不用改"**的（登记备查，免得下一个人重查）：
+`src/nmpc/nmpc/__init__.py:16,18` 与 `src/nmpc/README.md:20,22` ——
+它们写的是"`offboard_smoke` 是唯一 import `rclpy` / 中间件的那个"，换载体后**仍然成立**
+（现在它是唯一 import `mavros_msgs` 的那个）。
+
+#### 三、本轮**没做**的（票面里明确留着）
+
+`§二`（`mpc_node.py` 换下行）、`§四`（夹具 / seam 1 / 上表那三份驱动）、
+`§五`（阶梯判据页四行落地）、`§六`（结果放置），以及**任何一次上飞机的跑场**。
+`Status` 由此停在 `ready-for-human` 而不是 `ready-for-agent`：`§五`（要签字 / 改写判据页）
+与 `§六`（要动飞机）仍在。
+
+#### 四、施工中踩到并修掉的一处**自伤**（留作边界证据）
+
+把 `Z0Params.t_max` 改成调 `params.t_max_from_hover()`（"同一个公式只该有一处实现"看着更干净）⟹
+`NodeParams(mass=0.0)` / `NodeParams(hover_thrust=1.2)` 在读属性时**直接抛**
+⟹ [`preflight_check`](../../../src/nmpc/nmpc/preflight_check.py) 那两条**按名字点名**
+（「质量为正」`preflight_check.py:101`、「悬停有上余量」`:104`）从**报错**退化成**崩掉**
+（`test/test_preflight_check.py::test_坏参数会被点名[...]` 当场红，2 例）。
+
+**根因**：属性是**读**、函数是**守门口** —— 混用之后"**拿着坏参数去问哪里不对**"这件事做不了，
+而自检存在的意义正是把坏参数**说出来**。
+已回退成 `return self.t_hover / self.hover_thrust`（与改动前**逐字相同**），
+并把这条分工写成常驻断言（两个方向都钉）：
+`test_params.py::test_the_property_reads_while_this_door_guards`。
+
+★ 记下来是因为它**不在原计划里** —— 是**别的票写下的既有断言**替我们挡下来的（这正是它们的价值）。
+
+#### 五、测试与套件状态（本轮实测）
+
+**新增 / 受影响的测试**：
+`src/nmpc/test/test_params.py`（12 例，**新增**，零 ROS）、
+`src/nmpc/test/test_mavros_interface.py`（17 例，**新增**，要 `mavros_msgs` 但不起 mavros）、
+`src/nmpc/test/test_sign_map.py`（+6 例，针对 mavros 入口与 N2）。
+
+**全量套件（`src/nmpc/test/`，逐条实测，不是推算）**：**266 passed / 0 failed**，
+= `--ignore=test/test_mpc_node.py` 那一组 **221 passed（63.9 s）**
++ `test/test_mpc_node.py`（seam 1，45 例）**45 passed（455.4 s）**。
+⚠️ 分两段跑**不是**因为结果不同：本机 8 GB、seam 1 一例起一个 DUT 子进程，
+两段合起来跑会超过单次命令的时限；而且**两段都跑 OCP 时会在共享的代码生成缓存
+（`~/.cache/mpc-ocp-codegen`）上互踩** —— 本轮踩到过一次：另一个 pytest 进程正在重建
+`libacados_ocp_solver_…so` 时，本进程的 OCP 用例会报
+`OSError: …cannot open shared object file`（**看着像代码坏了，其实是并发**）。
+如果要并行跑，用 `MPC_CODEGEN_DIR` 把两个进程的缓存隔开。
+
+**跑之前要备的环境**（缺一条就会看到"几十个红"，那些**不是**代码问题）：
+
+```bash
+source /opt/ros/humble/setup.bash
+source ~/px4_msgs_ws/install/setup.bash        # px4_msgs 在这个独立工作空间里
+source install/setup.bash                      # 缺它 ⟹ seam 1 全红：`包 nmpc 不在环境里（prefix 查不到）`
+export ACADOS_SOURCE_DIR=$HOME/acados          # 缺它 ⟹ 几十个 OCP 红
+export LD_LIBRARY_PATH=$HOME/acados/lib:$LD_LIBRARY_PATH   # 缺它 ⟹ libhpipm.so 找不到
+export PYTHONPATH=$PWD/../bench:$PYTHONPATH    # 缺它 ⟹ conftest 里的夹具 import 不到
+cd src/nmpc && python3 -m pytest test/ -q
+```
+
+★ 本轮之前那张"47 failed / 21 errors"的读数**全部是环境**（缺 `px4_msgs` 工作空间、
+缺 `LD_LIBRARY_PATH`、缺 `install/setup.bash`）+ 上面那 2 例自伤；备齐环境后是 0 failed。
+
+**CLI 冒烟（不起 mavros、不起 SITL，只喂参数）**：
+`--t-max 11.8` ⟹ 启动即被拒、话术里带正确值 46.3027 与 3.92 倍；
+正确值 ⟹ 启动横幅把两行都打出来 ——
+`hover F=7.355N (1.00×悬停) ⟹ thrust=+0.1588`（对得上实测 `hover_thrust = 0.1589`）
+与 `lift F=8.826N (1.20×悬停) ⟹ thrust=+0.1906`，
+JSONL 里 `type_mask=128`、`body_rate_x=+0.1`（**FLU 原样**）、`thrust=0.1906`、`hover_multiple=1.2`。
+⚠️ 顺带看到一处**既有**噪音（不是本轮引入、也不是本轮改的）：`timeout`/`SIGTERM` 结束进程时
+`rclpy.executors.ExternalShutdownException` 会带 traceback 退出（`SIGINT`/Ctrl-C 那条路是干净的）。
+要不要收它，属于"停机路径"那张票，本票不碰。
+
+### 2026-10-12 —— 第三轮：`/code-review` 两轴复核（同一批文件；未新增功能）
+
+**做法**：`/code-review`，两个并行子代理（Standards / Spec），固定点 = `HEAD` = `95b1d57`。
+★ 每条意见都**先回代码 / 一手源核实**再落地（本仓库的规矩）；核不实的写在这里。
+
+**Standards 轴（4 条，核后 2 条为真）**
+
+1. ✅ **真、已改** —— `sign-map.md` §8 契约 1 那句「本仓库里**唯一**的调用点是
+   `offboard_smoke.py`（`px4_rates_setpoint`）与 `mpc_node.py`（…）」**同一 diff 里已为假、且自相矛盾**：
+   `grep -n px4_rates_setpoint src/nmpc/nmpc/offboard_smoke.py` **零命中**（它今天调
+   `mavros_attitude_target`，`:214` / `:223`），而"唯一"却列了两项。非测试调用点实为
+   `mpc_node.py:557`/`:885` 与 `preflight_check.py:43`/`:172`/`:203`/`:380`。该句已重写。
+2. ✅ **真、已改** —— 新写的两处「整个 handler」区间 `:1508-1598` 偏一行。
+   第一手：`awk 'NR>=1505 && NR<=1520'` 那份 `mavlink_receiver.cpp` ——
+   **`void` 在 `:1509`、函数名在 `:1510`、闭括号在 `:1599`** ⟹ 已统一改为 `:1509-1599`
+   （`sign-map.md` §2.3.1 与 `sitl-offboard-smoke.md` 顶块），并在 §2.3.1 记一句
+   「票面 §三③ 与 `spec.md` 那种写法偏一行 —— 本文件不改票面的字」。★ 票面 §三③ 的字**没动**。
+3. ❌ **驳** —— `_request_arm` / `_request_mode` 同形骨架（Duplicated Code）。
+   两个服务的请求与应答字段名、语义都不同（`value`/`success` vs `custom_mode`/`mode_sent`），
+   抽一个泛型服务包装会让"这个服务到底在等什么"变得不可读 ⟹ **保留**。
+4. ✅ **真（小）、已改** —— `STATE_PERIOD_S = 1.0` 只被散文引用；`params` 两个函数各带一个
+   **没有任何调用方**的 `g=` 形参（`grep` 全仓无一处传值）。两处都按本仓库自己那条
+   "**仪器没给那个量变过**"的教训处置：
+   - `Config.cmd_interval_s` 改为 `STATE_PERIOD_S + 0.1`（**数值不变 = 1.1**），让那个常量参与计算；
+   - `t_max_from_hover` / `hover_thrust_implied` 的 `g=` 形参**删掉** —— 留一个没人传的旋钮，
+     下一个人会以为"有人会改它"。
+
+**Spec 轴（4 条，核后 2 条为真）**
+
+1. ✅ **真、已补** —— **`§一①` 的 §9 那一条本轮没落**：票面 §一① 明写「§9 那四件自检…**语义要一并说清**」
+   「**本票只负责在文档里把这个论证写出来**」，而本轮 diff 的最后一个 hunk 是
+   `@@ -298,14 +373,31 @@`（止于新 `:404`），§9 在其后 ⟹ **一字未动**。
+   ⛔ 而我上一轮那句 Comments「§8 契约 1 / 3 / 5 **与 §9** 重新表述」里的 **§9 是假的**（§8 那三处为真）。
+   ⟹ 已补写 `sign-map.md` **§9.1**（第 ③ 件换了主人：三条反例一条没删，证的是"这一步不许没人做"，
+   从"我们实现的错法"升级成"**所有权转移的安全性证明**"；那条新断言归本票 §四，本节只写论证）。
+   三个反例测试名逐字核过存在（`tools/sign-map/test_sign_map_core.py:180`/`:193`/`:202`）。
+2. ❌ **驳** —— `§2.1` 没按字面加"谁执行"列。该信息落在 **§2.3 所有权对照表**（6 行、两条通路并列，
+   信息量比一列大），§2.1 里另有一句 ⭐ 明说「§2.1 那四行没说'由谁做' … 逐行见 §2.3」⟹ **保留**。
+   硬往判据表里塞那一列，会把"与通路无关的物理约定"与"按通路分叉的所有权"混进同一张表。
+3. ⚠️ **留给操作者裁定** —— `sitl-offboard-smoke.md` 那 44 行 ☠️ 留痕，Spec 轴判「越了 §一④ 的'只登记不改'」。
+   我的依据是 **§三③ 的授权句**：「（**若该工具在活文档里被描述过**）相应文档」，
+   而这一页正是描述该工具的那一页；该段也只**标作废**（明写"本页不重跑、也不改驱动"）。
+   两处都引得出票面原文 ⟹ 不自行改回，**等裁定**。
+4. ★ **附带发现（本轮只登记、不改）** —— `tools/px4-sitl/verify_offboard_smoke.py:592` 给每一场传
+   `--cmd-interval 0.5`，**短于** `/mavros/state` 的 1 Hz 上报周期，正是 §三① 点名的那个
+   "闸门还没上报就判绿（或恒红）"的风险。该脚本的归属是 **§四**（它今天也跑不通：场景表还传
+   `--timestamp-unit` / `--break pitch-sign`）。
+
+**复核后的验证**（复核改动是新的一批编辑，故重跑）：
+`test_params` + `test_mavros_interface` + `test_sign_map` + `test_preflight_check` = **97 passed**；
+`tools/sign-map/test_sign_map_core.py` = **18 passed**；
+**全量 `test/` = 266 passed / 0 failed**（除 `test_mpc_node.py` 的 221 条 62.98 s + `test_mpc_node.py` 45 条 455.09 s，
+两块分开跑，避开单次 600 s 上限）。
+⚠️ 跑之前机器重启过一次（`uptime` 28 min）—— 没有别的会话在用 acados 代码生成缓存，故未隔离 `MPC_CODEGEN_DIR`。

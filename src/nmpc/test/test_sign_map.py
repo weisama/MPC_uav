@@ -27,7 +27,7 @@ sys.path.insert(0, str(REPO / "tools" / "sign-map"))  # 复核模块（独立推
 
 import sign_map_core  # noqa: E402  （tools/sign-map 下的复核库，不是本包的实现）
 
-from nmpc.sign_map import px4_rates_setpoint  # noqa: E402
+from nmpc.sign_map import mavros_attitude_target, px4_rates_setpoint  # noqa: E402
 
 #: 断言用的样例：(ωx, ωy, ωz)[rad/s]，F[N]，T_max[N] —— 刻意带上 0 与负值
 CASES = [
@@ -107,6 +107,72 @@ def test_bad_thrust_is_rejected(thrust):
 def test_bad_omega_is_rejected(omega):
     with pytest.raises(ValueError):
         px4_rates_setpoint(omega, 5.0, 11.8)
+
+
+# ─────────────────── 2026-10-12 换通路：mavros 路径的第二个入口 ───────────────────
+#
+# 口径见 `sign-map.md` **§2.2 / §2.3**（"谁取负"那张表）。★ 下面这几条的落点**必须**是
+# "**我们发出去的那个值**"：mavros 会在 `attitude_cb` 里再转一次 FLU→FRD
+# （`setpoint_raw.cpp:323-324`）⟹ 若我们自己先转一次，**飞控最终收到的东西分毫不差**，
+# 任何落在"飞控收到了什么"上的断言都会绿（`spec.md` §★★ 的 N2）。
+
+
+def test_mavros_entry_emits_the_flu_values_verbatim():
+    """★ N2 的断言：`body_rate` 三轴都是 **FLU 原样**，我们一个负号都不许加。"""
+    for omega, thrust, t_max in CASES:
+        mav = mavros_attitude_target(omega, thrust, t_max)
+        assert mav.body_rate_x == pytest.approx(omega[0], abs=1e-12)
+        assert mav.body_rate_y == pytest.approx(omega[1], abs=1e-12)
+        assert mav.body_rate_z == pytest.approx(omega[2], abs=1e-12)
+
+
+def test_the_two_entries_differ_only_in_who_applies_the_sign():
+    """两条路是**同一张 §2.1 的表**，差别只在"负号由谁加"（§2.2 / §2.3）。
+
+    roll 两边一样（mavros 那一步不换 x 分量）；pitch / yaw / 推力**互反**（别人替我们取负）。
+    ⛔ 这条同时是"两条路不能混用"的护栏：把 px4 那一版的结果塞进 mavros 的消息里，
+    飞控最终拿到的是**反的** pitch/yaw 与**朝下的**推力 —— 而两个入口谁也不会报错。
+    """
+    for omega, thrust, t_max in CASES:
+        px4 = px4_rates_setpoint(omega, thrust, t_max)
+        mav = mavros_attitude_target(omega, thrust, t_max)
+        assert mav.body_rate_x == pytest.approx(px4.roll, abs=1e-12)       # roll：都不取负
+        assert mav.body_rate_y == pytest.approx(-px4.pitch, abs=1e-12)     # pitch：mavros 取负
+        assert mav.body_rate_z == pytest.approx(-px4.yaw, abs=1e-12)       # yaw：同上
+        assert mav.thrust == pytest.approx(-px4.thrust_body_z, rel=1e-12, abs=1e-15)
+
+
+def test_mavros_thrust_is_positive_and_normalized():
+    """`AttitudeTarget.thrust`：**正号**、按 `T_max` 归一化（负号由飞控 `fill_thrust` 加）。
+
+    归一化的**模**必须与另一条路一致（同一个物理量、同一个 `T_max`）—— 差别只在符号。
+    """
+    assert mavros_attitude_target((0, 0, 0), 0.0, 11.8).thrust == 0.0
+    assert mavros_attitude_target((0, 0, 0), 11.8, 11.8).thrust == pytest.approx(1.0)
+    assert mavros_attitude_target((0, 0, 0), 3.0, 11.8).thrust > 0.0
+    # 同一个物理推力、`T_max` 减半 ⟹ 归一化值翻倍（这件事两条路上都必须成立）
+    one = mavros_attitude_target((0, 0, 0), 3.0, 11.8).thrust
+    two = mavros_attitude_target((0, 0, 0), 3.0, 5.9).thrust
+    assert two == pytest.approx(2.0 * one)
+
+
+@pytest.mark.parametrize("t_max", [0.0, -1.0, float("nan"), float("inf")])
+def test_mavros_entry_rejects_bad_t_max(t_max):
+    """两个入口**共用一个检查器**（`_checked_inputs`）—— 拒绝条件不许只有一条路拦得住。"""
+    with pytest.raises(ValueError):
+        mavros_attitude_target((0, 0, 0), 5.0, t_max)
+
+
+@pytest.mark.parametrize("thrust", [-0.1, float("nan"), float("inf")])
+def test_mavros_entry_rejects_bad_thrust(thrust):
+    with pytest.raises(ValueError):
+        mavros_attitude_target((0, 0, 0), thrust, 11.8)
+
+
+@pytest.mark.parametrize("omega", [(0.0, 0.0), (0.0, 0.0, 0.0, 0.0), (0.0, float("nan"), 0.0)])
+def test_mavros_entry_rejects_bad_omega(omega):
+    with pytest.raises(ValueError):
+        mavros_attitude_target(omega, 5.0, 11.8)
 
 
 def test_no_ros_import_leaks_in():

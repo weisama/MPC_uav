@@ -39,12 +39,34 @@ PX4 收到一条**语法完全合法**的消息，然后**照做**。
 
 ## 2. 权威表
 
-| 量 | MPC（模型预测控制）内部 | PX4 `VehicleRatesSetpoint` | 变换 |
+**★ 2026-10-12 起本节分两半**（起因：Phase 4 的下行通路从一条变成两条 —— px4_msgs/uXRCE-DDS 与
+mavros 并存，决定与证据见 [`13`](../../.scratch/phase4/issues/13-mavros-downlink-switch.md) 与
+[`phase4/spec.md`](../../.scratch/phase4/spec.md) §★★ 2026-10-12）。**两半的分工是**：
+
+- **§2.1 端到端映射** —— 「MPC（模型预测控制）内部量 ⟹ **飞控最终拿到什么**」。
+  **与走哪条通路无关，一个字都不变**：两条路在飞控内部汇进**同一个** uORB 消息
+  `vehicle_rates_setpoint`（px4_msgs 路径直写它；mavros 路径由 `SET_ATTITUDE_TARGET` 的 handler
+  建出来，`mavlink_receiver.cpp:1560-1596`）⟹ 下表这些数**对两条路都对**，它是判据。
+- **§2.2 我们这条路上实际发出什么** + **§2.3 所有权对照** —— 同一个内部量，两条路上**我们**填的
+  字段名不同、**中间那一步（取负 / 换轴）由谁做也不同**。★ 这一半是**按通路分叉**的，
+  读的时候先看自己走的是哪条路。
+
+⭐ **§2.1 那四行没说"由谁做"** —— 这件事在 2026-10-12 之前**没有一处写下来过**（它是那天的
+一次通路切换才暴露出来的口径空洞）。填法：
+**px4_msgs 路径上四行全由我们做；mavros 路径上只有 roll 的轴向与推力的幅值由我们做**
+（取负挪进了别人的代码），逐行见 §2.3。
+
+### 2.1 端到端映射（判据；与走哪条下行通路无关）
+
+| 量 | MPC（模型预测控制）内部 | 飞控侧（uORB `vehicle_rates_setpoint`，FRD） | 端到端变换 |
 |---|---|---|---|
 | roll rate | `ω_x`（FLU） | `roll`（FRD） | **不变号** |
 | pitch rate | `ω_y`（FLU） | `pitch`（FRD） | **取反** |
 | yaw rate | `ω_z`（FLU） | `yaw`（FRD） | **取反** |
 | 推力 | `F` [N]，`F ≥ 0`，沿机体 **+z** | `thrust_body[2]` ∈ `[−1, 0]`（FRD） | **`−F / T_max`** |
+
+★ 末列那个 `thrust_body_2` 是**飞控内部的变量**（两条路的共同落点），**不是**"我们发出去的字段"：
+px4_msgs 路径上它恰好等于我们填的值，mavros 路径上它是飞控 `fill_thrust()` 算出来的（§2.3）。
 
 配套的**方向约定**（同样只有这一处）：
 
@@ -60,6 +82,63 @@ pitch_rate    = -1 * omega_y_flu
 yaw_rate      = -1 * omega_z_flu
 thrust_body_2 = -1 * F / T_max
 ```
+
+### 2.2 我们实际发出的字段（按通路分叉）
+
+★ 下表**不新增任何数值** —— 每一格都是 §2.1 / `sign-map:canonical` 那四行的**同一个数**，
+只是标出它落在哪条路的哪个字段上、以及**我们有没有自己动手**。
+
+| 量 | px4_msgs 路径：我们发给 `/fmu/in/vehicle_rates_setpoint` | mavros 路径：我们发给 `/mavros/setpoint_raw/attitude` |
+|---|---|---|
+| roll rate | `roll = +ω_x`（FRD 字段，数值 = 内部量原样） | `body_rate.x = +ω_x`（**FLU 原样**，见 §2.3） |
+| pitch rate | `pitch = −ω_y`（我们取负） | `body_rate.y = +ω_y`（**FLU 原样** ⟹ **我们不许预先取负**） |
+| yaw rate | `yaw = −ω_z`（我们取负） | `body_rate.z = +ω_z`（同上） |
+| 推力 | `thrust_body[2] = −F/T_max`（我们取负） | `thrust = +F/T_max`（**正号**） |
+
+⛔ **mavros 路径上"我们自己再转一次 FLU→FRD"是最危险的错法**：中间那一步**已经有人做了**（§2.3），
+两次取负 = 不取负 —— **roll 不受影响、pitch/yaw 静默反向**，而且判据全绿
+（这就是 `phase4/spec.md` §★★ 的 **N2**）。本仓库复现这一档的开关：
+`offboard_smoke.py --break pitch-preconvert` / `yaw-preconvert`。
+
+### 2.3 两条下行路径的所有权对照（★ 2026-10-12 新增）
+
+| 这一步 | px4_msgs / uXRCE-DDS 路径 | mavros 路径 |
+|---|---|---|
+| roll 的轴向（FLU x ⟹ FRD x） | **我们**：`sign_map.px4_rates_setpoint()` 原样填 `roll` | **我们**：原样填 `body_rate.x`（mavros 那一步的 `AIRCRAFT_BASELINK_Q = R_x(π)` **不动 x 分量**） |
+| pitch / yaw 的取负 | **我们**：同一个函数里取负 | **mavros 替我们做**：`attitude_cb` 里的 `transform_frame_baselink_aircraft()` |
+| 推力的取负 | **我们**：填 `thrust_body_z = −F/T_max` | **飞控替我们做**：`fill_thrust()` 的 `thrust_body_array[2] = -thrust` |
+| 心跳 `OffboardControlMode` | **我们**：单发 `/fmu/in/offboard_control_mode` | **飞控替我们做**：从收到的 `SET_ATTITUDE_TARGET` 自己派生 ⟹ **这一条发布删掉** |
+| 解锁 / 切模式 | **我们**：`/fmu/in/vehicle_command`（`VehicleCommand`） | **我们**：`/mavros/cmd/arming` + `/mavros/set_mode`（★ **服务**，不是话题） |
+| 时间戳 | **我们**：填 `timestamp`（µs，PX4 会做 `min(ts − time_offset, hrt)`） | **飞控自己打**：`SET_ATTITUDE_TARGET` 的 `time_boot_ms` **那个 handler 一次都没读**（§2.3.1） |
+
+**锚点（全部第一手，2026-10-12 复核过行号）**：
+
+| 结论 | 证据 |
+|---|---|
+| 多旋翼的推力取负 | `~/refs/px4-v1.14.3-build/src/modules/mavlink/mavlink_receiver.cpp:1456`（`fill_thrust` 签名）、`:1475`（`thrust_body_array[2] = -thrust;`，`MAV_TYPE_QUADROTOR` 那一段） |
+| 整个 handler 的硬前置 `MAV_FWDEXTSP` | 同上 **`:1516`**（`if (_mavlink->get_forward_externalsp() && …)`；`:1515` 是它上面那行注释）；它是 `0` 时**整条下行静默死掉** |
+| 心跳由飞控派生 | 同上 `:1531-1535`（`attitude \|\| body_rates` ⟹ `_offboard_control_mode_pub.publish(ocm)`） |
+| 推力只在 `THROTTLE_IGNORE` 未置位时填 | 同上 `:1588`（`if (!(type_mask & ATTITUDE_TARGET_TYPEMASK_THROTTLE_IGNORE))`） |
+| 只在 OFFBOARD 里发布、时间戳由飞控打 | 同上 `:1593-1596`（`if (nav_state == NAVIGATION_STATE_OFFBOARD) { setpoint.timestamp = hrt_absolute_time(); …}`） |
+| mavros 替我们做的 FLU→FRD | `~/mavros_ws/src/mavros/mavros/src/plugins/setpoint_raw.cpp:323-324`（`body_rate = ftf::transform_frame_baselink_aircraft(ftf::to_eigen(req->body_rate))`） |
+| 那个 `R_x(π)` | `.../mavros/src/lib/ftf_frame_conversions.cpp:40`（`AIRCRAFT_BASELINK_Q = quaternion_from_rpy(M_PI, 0.0, 0.0)`）、`.../include/mavros/frame_tf.hpp:271`（`transform_frame_baselink_aircraft`） |
+| mavros 订阅侧 QoS | `setpoint_raw.cpp:62`（`auto sensor_qos = rclcpp::SensorDataQoS();` ⟹ best_effort / keep_last 5 / volatile） |
+| 解锁 / 切模式是**服务** | `.../mavros/src/plugins/command.cpp:111-113`（`create_service<CommandBool>("~/arming", …)`）、`.../sys_status.cpp:617-621`（`create_service<SetMode>("set_mode", …)`）；★ 本仓库自己已经在跑的一手用例：[`control/src/px4_interface.cpp:176-177`](../../src/control/src/px4_interface.cpp)（客户端建在 `/mavros/cmd/arming` 与 `/mavros/set_mode` 上） |
+| 闸门源 `/mavros/state` | `sys_status.cpp:926`（`state_msg.mode = uas->str_mode_v10(...)` ⟹ 它是**模式名字符串**；OFFBOARD 时的取值 = `"OFFBOARD"`，本仓库已在跑的同一口径见 [`control/include/control/px4_interface.hpp:117-119`](../../src/control/include/control/px4_interface.hpp)）、`:966-972`（**每收到一条 HEARTBEAT 才发一帧** ⟹ 频率 = 心跳频率，本机实测 **1.000 Hz**）、`:579-583`（`StateQoS` = reliable + **transient_local**） |
+
+#### 2.3.1 为什么"时间戳"那一档取证开关在 mavros 路径上**没有对应物**
+
+`SET_ATTITUDE_TARGET` 的 `time_boot_ms` **在整个 handler（`:1509-1599`）里一次都没被读** ——
+飞控自己用 `hrt_absolute_time()` 打时间戳（`:1594`）。⟹ 我们把 `header.stamp` 写成零、毫秒、纳秒，
+**注入效果逐位相同**。所以 px4_msgs 路径上那套"发错时间戳单位"的取证开关（`--timestamp-unit` /
+`--timestamp-shift-us`）在 mavros 路径上**必须删掉，不能留着**：留着会让操作者以为"这一档也测过了"，
+而这一场里那个开关**再也取不到第二个值**。
+
+★ 区间 `:1509-1599` 是**第一手核过**的（`void` 在 `:1509`、函数名在 `:1510`、闭括号在 `:1599`）；
+[`13`](../../.scratch/phase4/issues/13-mavros-downlink-switch.md) §三③ 与 `spec.md` 里那种 `1508-1598`
+的写法**整体偏一行**，该票 Comments 已登记（本文件不去改票面的字）。
+★ 这属于「**仪器根本没给那个量变过**」那一族静默，**不是**"这一档过了"。
+处置留痕见 [`13`](../../.scratch/phase4/issues/13-mavros-downlink-switch.md) 的 Comments。
 
 ---
 
@@ -298,14 +377,34 @@ thrust_body[2] = F_z_FRD / T_max = −F / T_max        ∈ [−1, 0]（向上推
 1. **只有一个实现**。它必须是一个**不依赖 ROS / `rclpy` / `px4_msgs` 的纯函数模块**
    （这样离线 OCP 与假 PX4 夹具都能直接用，不需要起节点）。
    落在 Phase 2 的 MPC（模型预测控制）节点包内，**包名由 ticket 06 决定** —— 本票不替它定包结构。
+   ★ **2026-10-12 补上"它的输出投喂给谁"**（两条通路并存后这件事不再显然）：
+   非测试代码里 `px4_rates_setpoint` 的调用点是 `nmpc/mpc_node.py`（填 `VehicleRatesSetpoint`）
+   与 `nmpc/preflight_check.py`（拿它当**默认实现**做符号 / 归一化的探针）—— 两处都还在 px4_msgs 路径上。
+   `nmpc/offboard_smoke.py` 在 2026-10-12 换到了 mavros 路径
+   （[`13`](../../.scratch/phase4/issues/13-mavros-downlink-switch.md) §三），它调的是**同一个模块的另一个入口**
+   `mavros_attitude_target`（同为纯函数、同一个模块、**没有任何 ROS 依赖**）。
+   ⛔ 别照旧版把这句读成"`offboard_smoke.py` 仍在用 `px4_rates_setpoint`"—— 那正是本票换掉的那一处。
 2. **05 的 stub 与 06 的节点都从这一处导入**，**不是两处各写一遍**（05 的验收清单里点名了这一条）。
-3. **接口语义**：吃 MPC（模型预测控制）内部量（`ω` 三个分量 + 推力 `F` [N] + `T_max` [N]），吐 PX4 的四个字段
-   （`roll` / `pitch` / `yaw` / `thrust_body[2]`）。**输入输出的单位与坐标系必须写在 docstring 里。**
+3. **接口语义**：吃 MPC（模型预测控制）内部量（`ω` 三个分量 + 推力 `F` [N] + `T_max` [N]），吐**我们这条路上要填的字段**。
+   px4_msgs 路径吐四个字段（`roll` / `pitch` / `yaw` / `thrust_body[2]`）；
+   ★ **mavros 路径吐另四个字段**（`body_rate.x/y/z` 与 `thrust`，见 §2.2）——
+   **两个具名入口、两个返回类型，不用一个 `path=` 开关塞进同一个返回类型**：那样字段名会开始撒谎
+   （`thrust` 与 `thrust_body_z` 反号，见 §2.2），而"字段名自证"正是 N1 要挡的那类静默。
+   **输入输出的单位与坐标系必须写在 docstring 里。**
 4. ★ **模块与函数的 docstring 必须回链本文件，且不得复写数值** —— 写
    「符号映射见 `docs/control/sign-map.md` §2」，不要写「pitch 取反、yaw 取反、推力取负」。
    这条是**防漂移**的机制：数值只有一处，改的时候只有一处要改。
 5. **测试断言的是本文件的那张表，不是实现里复述的口径** ——
    否则实现错了、测试跟着错，两边一起通过（这正是本期 seam 1 存在的理由）。
+   ★★ **2026-10-12：这一条的落点要说清"断言哪张表"** —— 两条通路并存之后，
+   本文件里有**两张**表（§2.1 端到端 / §2.2 我们发出去什么），它们**不是同一个量**：
+
+   - **px4_msgs 路径**：我们发出去的就是 §2.1 的落点（`thrust_body[2]` 等）⟹ 断言可以直接落在它上面。
+   - **mavros 路径**：我们发出去的是 `body_rate`（FLU **原样**）与 `thrust`（**正号**）⟹
+     断言**必须落在我们发出的这两个字段上**。
+     ⚠️ 若改去断言"飞控最终收到的物理方向"，**"我们自己又转了一次"（N2）会与正确实现长得一模一样**
+     —— 两次取负抵掉，飞控拿到的东西分毫不差，而中间那条消息是错的。这条断言归
+     [`13`](../../.scratch/phase4/issues/13-mavros-downlink-switch.md) §四（夹具逐字段记我们发出去的原值）。
 
 ---
 
@@ -328,6 +427,31 @@ python3 tools/sign-map/test_sign_map_core.py --self-test      # 或 python3 -m p
    （即：这些错法真的会摔机，不是因为"看起来不对"）。
 4. **三方对照**：与 `~/refs/px4-mpc` 的实际源码行、以及 `px4_msgs` 的消息定义逐条比对。
    外部仓库不在时**明确报 SKIP**，不静默通过。
+
+### 9.1 ★★ 第 ③ 件在 mavros 路径上**换了主人**（2026-10-12 补）
+
+上面第 ③ 件那三条反例（`test_counterexample_pitch_not_flipped_flies_backwards` /
+`test_counterexample_yaw_not_flipped_turns_the_wrong_way` /
+`test_counterexample_thrust_sign_flipped_crashes`）**一条都没删，也不能删** ——
+但走 mavros 之后，它们证的**不再是**"我们的实现该怎么写"，而是：
+
+> **这一步不许没人做。**
+
+因为取负**挪到了别人的代码里**（pitch / yaw 挪进 mavros 的 `attitude_cb`，
+推力挪进飞控的 `fill_thrust()`，逐行见 §2.3）：
+
+- 走 px4_msgs 时，这三条反例的失败模式是"**我们的映射函数**漏了取负"——**我们自己的错**；
+- 走 mavros 时，同一个失败模式的入口变成"**别人的那一步没有被触发**"：
+  `MAV_FWDEXTSP = 0`（整条下行静默死掉，§2.3 锚点表）、mavros 版本不含那次 `body_rate` 转换、
+  或我们自己**多**做了一次预转换（N2：两次取负 = 不取负，roll 不受影响、pitch/yaw 静默反向）。
+
+⟹ 这三条反例在这里的作用从"我们实现的错法样本"**升级成"所有权转移的安全性证明"**：
+**正因为它们钉死了"漏掉这一步就会摔机"，才需要一条新断言去证明"在 mavros 路径上它恰好被做了、且只做了一次"。**
+
+⚠️ **那条新断言不在这份文档里，也不在本票的文档范围内** —— 它归
+[`13`](../../.scratch/phase4/issues/13-mavros-downlink-switch.md) **§四**（夹具逐字段记下**我们发出去的原值**，
+在那上面断言"我们没有预先取负"）。本节只把这条论证写下来，免得后来人看见"取负在别人的代码里"
+就以为这三条反例已经过期、可以删了。
 
 ---
 
