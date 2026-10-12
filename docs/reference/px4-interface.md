@@ -131,9 +131,9 @@ PX4 官方 Offboard 文档明确列出每种 setpoint 需要什么估计：
 
 | 方案 | 状态 | 评价 |
 |---|---|---|
-| **uXRCE-DDS** | ✅ **PX4 v1.14+ 的默认 ROS2 中间件** | ✅ 推荐 |
-| **mavros** | ✅ 长期存在，ROS1/ROS2 都有 | ⚠️ 备选（见 4.3） |
-| **`px4_ros_com`** | ❌ **v1.14 起已废弃**，仓库里只剩示例 | ❌ **不要用** |
+| **uXRCE-DDS** | ✅ **PX4 v1.14+ 的默认 ROS2 中间件** | ☠️ 原文"✅ 推荐"。**对本项目已不适用** —— z0 上这条链根本不通（`UXRCE_DDS_CFG = 0` + 无串口可分），见 4.3 |
+| **mavros** | ✅ 长期存在，ROS1/ROS2 都有 | ☠️ 原文"⚠️ 备选（见 4.3）"。**2026-10-12 起是本项目的定案**，见 4.3 |
+| **`px4_ros_com`** | ❌ **v1.14 起已废弃**，仓库里只剩示例 | ❌ **不要用**（不变） |
 
 > ⚠️ **已纠正的错误认知**：`px4_ros_com` 在 v1.14 之前是标准的 ROS2 桥（走 FastRTPS）。**从 v1.14 起被 uXRCE-DDS 取代**，现在仓库里保留的部分只是示例代码。任何 2023 年之前的教程都会过时地推荐它。
 
@@ -144,7 +144,8 @@ PX4 官方 Offboard 文档明确列出每种 setpoint 需要什么估计：
 | `/fmu/in/*` | ROS2 → PX4（**发指令**） |
 | `/fmu/out/*` | PX4 → ROS2（**读状态**） |
 
-`(C)` 方案要用到的：
+`(C)` 方案**原计划**要用到的（☠️ 2026-10-12 起 `(C)` 下行改走 mavros ⟹ **下面这一串不再是我们依赖的话题**；
+`/fmu/out/*` 那几个"读状态"若还有消费者，属别的模块，不在本票范围）：
 
 ```
 /fmu/in/offboard_control_mode     ← 心跳（≥2 Hz）
@@ -155,7 +156,11 @@ PX4 官方 Offboard 文档明确列出每种 setpoint 需要什么估计：
 /fmu/out/vehicle_local_position   ← 位置/速度
 ```
 
-### 4.3 ⚠️ 备选：全走 mavros
+### 4.3 ☠️ 原题"⚠️ 备选：全走 mavros" —— **2026-10-12 起是定案**
+
+> ☠️ 节标题原文是 **"⚠️ 备选：全走 mavros"**。**"备选"这个词已作废**：本节标了
+> **「☠️ 上面那一段 2026-10-12 作废。定案 = 全走 mavros。」** 的那一段记的就是**定案**本身，
+> 不再是备选。标题就地保留原文、只加记号，正文不改写。
 
 有一条**完全可行但代码更啰嗦**的路线：用 mavros 的 `setpoint_raw/attitude` 消息，其中也带 `body_rate` 字段。
 
@@ -167,6 +172,24 @@ PX4 官方 Offboard 文档明确列出每种 setpoint 需要什么估计：
 | 关键依据 | `px4-mpc` 用的是 `/fmu/in/vehicle_rates_setpoint`，**可直接对照** | |
 
 **当前倾向：混合。** 理由：`px4-mpc` 是一个运行中的蓝本，"少写代码"在这个阶段比"单一中间件"更值钱。**但这仍是开放决策**（见 [`../PROJECT.md`](../PROJECT.md) O6）。
+
+☠️ **上面那一段 2026-10-12 作废。定案 = 全走 mavros。**
+
+- **定案**：`(C)` 级下行 = **全走 mavros**（`/mavros/setpoint_raw/attitude` 出、`/mavros/state` 进），
+  **不用 uXRCE-DDS**。落地日期 **2026-10-12**（ticket [13](../../.scratch/phase4/issues/13-mavros-downlink-switch.md)
+  §二 / §三）。⟹ 上表"混合"那一列**不再是要做的事**。
+- **起因（第一手）**：uXRCE-DDS 这条链**在 z0 上根本通不了** ——
+  ① `UXRCE_DDS_CFG = 0`（禁用；两次独立导出都读 `0`）；
+  ② **没有串口分给它**：`MAV_0_CONFIG = 101`（TELEM1）、`MAV_1_CONFIG = 102`（Onboard，**mavros 占着**）、
+  `MAV_2_CONFIG = 0`。两条都在 [`params-changes.md`](params-changes.md) §E1。
+  ⟹ "再找一个串口给 XRCE"是**加硬件**，而 mavros 那条链 Phase 1 已经在跑 ⟹ 换载体不是偏好，是被迫。
+  ⚠️ **票面还列了第三条起因"分配器静默不启动"—— 本仓库里找不到它的一手锚点**
+  （`grep -rn 分配器 docs/` 命中的全是**控制分配器** `CA_ROTOR*`，与 uXRCE-DDS 无关）
+  ⟹ 本节**不抄**那一条；要用它得先补证据。
+- ★ 上表"混合"那一列里**仍然成立**的一格：uXRCE-DDS 那部分**从未验证过**（今天也一样）——
+  这正是它可以被换掉而无损失的原因。
+- ⚠️ 与 `PROJECT.md` **O6** 的关系：O6 记的是"当时的开放决策"。本节把它**结掉**，
+  O6 那一行的口径更新归 ticket 13 的 §一④ 清单（本票只登记）。
 
 ### 4.4 ★ `px4_msgs` 版本必须严格匹配
 
@@ -224,10 +247,20 @@ v1.14.3 / v1.15.0 / v1.16.0 / fork `5ba2e91f` / `px4_msgs` 逐棵树查过，**�
 |---|---|---|---|
 | `/mavros/vision_pose/pose`（**我们 → PX4**） | 入 | **ENU→NED**（位置）、**ENU→NED + FLU→FRD**（姿态） | `mavros_extras/src/plugins/vision_pose_estimate.cpp` `send_vision_estimate()`：`ftf::transform_frame_enu_ned(tr.translation())` + `ftf::transform_orientation_enu_ned(ftf::transform_orientation_baselink_aircraft(q))` |
 | `/mavros/odometry/out`（**PX4 → 我们**） | 出 | **NED→ENU** | `mavros/src/plugins/odometry.cpp` |
+| **`/mavros/setpoint_raw/attitude`**（**我们 → PX4**，`body_rate`） | 入 | **FLU→FRD**（角速率三轴；`thrust` **不转**，那个负号由飞控 `fill_thrust` 加） | `mavros/src/plugins/setpoint_raw.cpp:323-324` 的 `ftf::transform_frame_baselink_aircraft(ftf::to_eigen(req->body_rate))`；飞控侧 `mavlink_receiver.cpp:1475` 的 `thrust_body_array[2] = -thrust` |
 
 > ⚠️ **已纠正的错误认知（来自项目自身的旧笔记）**：早先笔记写的是"mavros 会把 `/mavros/odometry/out` 的 **ENU 转成 NED** 给飞控"。**方向写反了**——那是 **PX4→ROS 的出方向（NED→ENU）**，不是入方向。
 >
 > **为什么这个方向很重要**：因为 `/mavros/vision_pose/pose` 走的是**入方向（ENU→NED）**，所以**我们的动捕节点应该发原生 ENU/FLU 值，不要自己先转一遍**。自己转了 mavros 会再转一次 → **转两次**，症状是"能飞但方向不对/持续飘"。
+
+★★ **同一个陷阱在下行那一条上再来一次 —— 这一行是 N2 的存档处**（2026-10-12，ticket [13](../../.scratch/phase4/issues/13-mavros-downlink-switch.md) §一③ / §二② 新增）。
+`/mavros/setpoint_raw/attitude` 的 `body_rate` 同样走**入方向**：我们交 **FLU 原样**，
+mavros 在 `setpoint_raw.cpp:323-324` 自己转 FLU→FRD。**我们若"顺手"再转一次 ⟹ 转两次 = 不转**，
+而这个错误的指纹与别处不同：**roll 不受影响**（`R_x(π)` 不动 x 轴），**只有 pitch/yaw 静默反向** ——
+更毒的是**飞控最终收到的数值分毫不差**（两次取负还是对数），所以任何落在"飞控收到了什么"上的
+断言在**写对**和**多转一次**两种情况下**都会绿**。
+⟹ 断言只能落在**我们发出的那个字段**上（`body_rate_* == ω 原样`、`thrust == +F/T_max`）。
+详情：`docs/control/sign-map.md` §2.2 / §2.3，代码侧 `sign_map.mavros_attitude_target()`。
 
 **★ `send_vision_estimate()` 还有一个隐藏行为**：
 
@@ -293,10 +326,11 @@ if (last_transform_stamp == stamp) { /* dropped */ return; }
 - [ ] QGC 里能切 **Position 模式**并稳定悬停（**这一步必须先过**——[_PROJECT.md_](../PROJECT.md) 里程碑 1）
 - [ ] `COM_RC_OVERRIDE = 3` 生效：打杆能踢出 Offboard（**实飞前用低油门验证一次**）
 - [ ] 遥控器链路确认（`COM_RC_IN_MODE` 含义已核实，见 params-analysis 3.9）
-- [ ] `UXRCE_DDS_CFG` 已打开，`ros2 topic list | grep /fmu` 能看到话题
-- [ ] `px4_msgs` 钉在 **`release/1.14` @ `ffb6e80e`**（与真身 `4a0e65f2` 的 `msg/` blob 全同；跑过 `tools/px4-sitl/check_msg_compat.py`，见 [`../control/px4-sitl-baseline.md`](../control/px4-sitl-baseline.md) §4）。☠️ 原记「跑过官方 `check-message-compatibility.py`」**作废**：那份**不在 PX4-Autopilot 里**，真身在 `auterion/px4-ros2-interface-lib`，**直接跑会给假 FAILED**，见 [`../control/px4-sitl-baseline.md`](../control/px4-sitl-baseline.md) §2.3
-- [ ] `/fmu/in/offboard_control_mode` 心跳 ≥ 2 Hz 且持续 ≥ 1 s
-- [ ] **推力数值范围写死为 `[-1, 1]`**，在代码里有断言
+- [ ] ☠️ **本条作废（2026-10-12，ticket [13](../../.scratch/phase4/issues/13-mavros-downlink-switch.md) §一③）**：原写「`UXRCE_DDS_CFG` 已打开，`ros2 topic list | grep /fmu` 能看到话题」。**改**：不再走 `/fmu/*`（下行走 mavros），⟹ 不再需要打开它、也**不该**再期望看到 `/fmu` 话题。★ 底下那两行读数**不是**被否掉——`UXRCE_DDS_CFG` 至今是 `0`，那正是换载体的起因。
+- [ ] `px4_msgs` 钉在 **`release/1.14` @ `ffb6e80e`**（与真身 `4a0e65f2` 的 `msg/` blob 全同；跑过 `tools/px4-sitl/check_msg_compat.py`，见 [`../control/px4-sitl-baseline.md`](../control/px4-sitl-baseline.md) §4）。☠️ 原记「跑过官方 `check-message-compatibility.py`」**作废**：那份**不在 PX4-Autopilot 里**，真身在 `auterion/px4-ros2-interface-lib`，**直接跑会给假 FAILED**，见 [`../control/px4-sitl-baseline.md`](../control/px4-sitl-baseline.md) §2.3。⚠️ **2026-10-12 补充**：换载体后**这条 `(C)` 级链不再需要 `px4_msgs`**（`nmpc/package.xml` 里那条依赖已撤）；它**仍然**是 `bench` 与 `tools/px4-sitl/` 的前置 ⟹ 本条**对本清单不再是硬前置**，但别把它当"整个仓库都不用管了"。
+- [ ] ☠️ **本条作废（2026-10-12，同上）**：原写「`/fmu/in/offboard_control_mode` 心跳 ≥ 2 Hz 且持续 ≥ 1 s」。**改**：心跳那条流**已删**（ticket 13 §二④ 裁定"收成单频"）—— setpoint 本身就是心跳。⟹ 要查"飞机能不能进 OFFBOARD"，看的是**有没有在发 setpoint**，不是另一条心跳流。
+- [ ] ★★ **新增（2026-10-12）：`MAV_FWDEXTSP = 1`** —— ⛔ **这一条是"新增项"，与上面两条的处置方向相反**。它是整条下行的**硬前置**：飞控那个 `SET_ATTITUDE_TARGET` handler 被 `if (_mavlink->get_forward_externalsp() && …)` 守着（`mavlink_receiver.cpp:1516-1518`；参数定义 `mavlink_params.c:112-121`）。**它是 `0` 时我们发的每一条 setpoint 都被静默丢掉**（飞控侧**没有任何日志**，表现和"话题名写错"几乎一样）。**z0 现值 = `1`**（`docs/assets/z0.params`，按名字查）；`nmpc/preflight_check.py` 里已有这一条自检。
+- [ ] **推力数值范围写死为 `[-1, 1]`**，在代码里有断言　⚠️ **2026-10-12 记账**：换载体后**我们发出去的那个字段是 `thrust = +F/T_max ∈ [0, 1]`**（正号；`[-1, 1]` 是**旧**字段 `thrust_body_z` 的口径）。而且**核过：代码里并没有**一条 `[-1, 1]` 的形状断言（`grep` 无命中）⟹ 这一条今天的真实效力是"物理上一个上界"，**不是**"跑过一条断言"。要不要补一条、补在哪（`sign_map` 还是节点），归 `phase4/13` 的 §四。★ 其余各条**不受**这两处 ☠️ 影响。
 - [ ] 角速率符号（FRD）经实机验证
 - [ ] 角速率不超过 `MC_ROLLRATE_MAX = 220 °/s`
 - [ ] 电池监测链路确认（`listener battery_status`，见 params-analysis 3.5）

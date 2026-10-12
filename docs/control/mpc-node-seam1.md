@@ -483,36 +483,70 @@ python3 -m pytest src/nmpc/test/test_mpc_node.py -q      # 2026-10-10 实测 ≈
 
 ### 12.1 链的成员（与 Phase 1 的链**不是同一条**）
 
+> ☠️ **本表有三行被 2026-10-12 的下行换载体作废**（ticket 13 §二）：`MicroXRCEAgent` 那一行
+> （**不再需要它**——(C) 级不再走 `/fmu/*`）、`mavros` 那一行（**节点自己现在也需要它**，
+> 它就是新的下行载体）、`mpc_node.py` 那一行（下发的是 `/mavros/setpoint_raw/attitude`，
+> 且**没有了心跳那条**）。下面那张 ★ 话题面同样作废，逐条见紧跟着的 ☠️。
+> ★ **票面 `§一②` 只点名了 §12.3**；这三处是**同一事实的另一个出口**，不一起标会自相矛盾
+> （本节说"不需要 mavros"、§12.3 说"改走 mavros"）。若判越权请当场驳。
+
 | 进程 | 起法 | 它在这条链里干什么 |
 |---|---|---|
-| `MicroXRCEAgent` | `/usr/local/bin/MicroXRCEAgent …`（SITL 用 `udp4 -p 8888`，见 `tools/px4-sitl/run_sitl.sh:108`；端口默认 8888 在 `:24`） | `/fmu/*` 的桥。**节点与 PX4 之间唯一的下行通路**，缺它则帧发不出去 |
+| `MicroXRCEAgent` | `/usr/local/bin/MicroXRCEAgent …`（SITL 用 `udp4 -p 8888`，见 `tools/px4-sitl/run_sitl.sh:108`；端口默认 8888 在 `:24`） | ☠️ 原文："`/fmu/*` 的桥。**节点与 PX4 之间唯一的下行通路**，缺它则帧发不出去"。**2026-10-12 起 (C) 级下行不经它** ⟹ 这条链里**不再有它**（`tools/px4-sitl/` 那条 SITL 链仍要用，那是另一回事） |
 | `vrpn_listener` | `ros2 launch vrpn_listener sync_entity_state.launch` | `/vrpn/<刚体>/pose` |
 | `mocap` | `ros2 launch mocap mocap.launch.py` | 同**一个**节点（`MocapRelPoseNode`）发 **三条**：`/mocap/pose_enu` 与 `/mocap/velocity_enu`（→ 给**节点**当测量，`mocap_rel_pose_node.cpp:132-134`）、`/mavros/vision_pose/pose`（→ 给 **EKF2**，`:130-131`）。★ 它还**订阅** `/mavros/state`（`:126`）—— 解锁上升沿切原点要用它 |
-| `mavros` | `ros2 launch mavros px4.launch fcu_url:=/dev/ttyTHS1:921600` | 节点**自己不**需要它；但 **EKF2 需要**（视觉位姿那条），且 `mocap` 的解锁边沿要靠它 |
-| `mpc_node.py` | `ros2 run nmpc mpc_node.py --ros-args -p tau_s:=0.0`（首飞冻结档，见 §11.1） | `/fmu/in/vehicle_rates_setpoint` + `/fmu/in/offboard_control_mode`（心跳） |
-| （前置闸门） | `ros2 run nmpc preflight_check.py -p tau_s:=0.0` | **必须 `exit 0` 才装桨**（`first-flight-config.md` §5 ③） |
+| `mavros` | `ros2 launch mavros px4.launch fcu_url:=/dev/ttyTHS1:921600` | ☠️ 原文："节点**自己不**需要它；但 **EKF2 需要**（视觉位姿那条），且 `mocap` 的解锁边沿要靠它"。**改**：节点**自己就要它了** —— 它就是 (C) 级的新下行载体（`/mavros/setpoint_raw/attitude` 出、`/mavros/state` 进）。⛔ 别再把 mavros 当成"只是给 EKF2 用的" |
+| `mpc_node.py` | `ros2 run nmpc mpc_node.py --ros-args -p tau_s:=0.0`（首飞冻结档，见 §11.1） | ☠️ 原文："`/fmu/in/vehicle_rates_setpoint` + `/fmu/in/offboard_control_mode`（心跳）"。**改**：`/mavros/setpoint_raw/attitude`（**单频**，setpoint 自己就是心跳） |
+| （前置闸门） | `ros2 run nmpc preflight_check.py -p tau_s:=0.0` | **必须 `exit 0` 才装桨**（`first-flight-config.md` §5 ③）。★ 2026-10-12 起它多三条**下行前置**（`MAV_FWDEXTSP` / `thrust_scaling` / 那份 `px4_config.yaml` 被加载），且最后那条**要 source 过 `~/mavros_ws`** 才验得了（验不了时**报红**，不是跳过） |
 
-★ 节点的**完整**话题面（第一手，`mpc_node.py:476-506`）。**两处订阅是有条件的**，都得看参数档：
+★ 节点的**完整**话题面（第一手；☠️ 下面这个行号区间是 2026-10-10 那个版本的，
+**换载体后已不指同一处** ⟹ 要读清单请看 `mpc_node.py` 的 `TOPIC_*` 与 `QOS_*` 两张表）。
+**两处订阅是有条件的**，都得看参数档：
 
-- **订阅**：`/mocap/pose_enu` + `/mocap/velocity_enu`（默认档 `state_source:=mocap`）；
+> ☠️ **下面这一节按旧载体写，2026-10-12 作废**。新的权威在代码里那两张表
+> （`mpc_node.py` 的 `TOPIC_*` 与 `QOS_*`，各带依据），或 §2 节首那个作废块。
+> 逐条差异：订阅侧 `/fmu/out/vehicle_status` → **`/mavros/state`**（无条件）；
+> `state_source:=px4` 那一档**整档拒绝**（不再是"换两条话题"）；
+> 发布侧**少一条**（心跳删除）、`/fmu/in/vehicle_rates_setpoint` → `/mavros/setpoint_raw/attitude`。
+
+- ☠️ **订阅**：`/mocap/pose_enu` + `/mocap/velocity_enu`（默认档 `state_source:=mocap`）；
   **`/fmu/out/vehicle_status`（无条件，与两个档位都无关）**；
   `/traj/reference` **只在 `reference_source:=traj` 时**才订 —— 而**默认是 `hold`**（`mpc_node.py:328`）
   ⟹ **首飞冻结档（只给 `-p tau_s:=0.0`）下这条不订**。
   （`state_source:=px4` 时把测量换成 `/fmu/out/vehicle_local_position` + `/fmu/out/vehicle_attitude`。）
-- **发布**：`/fmu/in/vehicle_rates_setpoint`、`/fmu/in/offboard_control_mode`、`/mpc/predicted_path`、`/mpc/reference`。
+- ☠️ **发布**：`/fmu/in/vehicle_rates_setpoint`、`/fmu/in/offboard_control_mode`、`/mpc/predicted_path`、`/mpc/reference`。
 
 ### 12.2 ★★ 节点**不**做两件事（第一手，别指望它）
 
-1. **不解锁、不切模式**。`mpc_node.py` 的 publisher 只有上面那 4 条，**没有 `VehicleCommand`**
-   （`grep -n 'VehicleCommand' src/nmpc/nmpc/mpc_node.py` ⟹ 0 命中；对照 `src/nmpc/nmpc/offboard_smoke.py:112` 有）。
-   ⟹ 它只发**心跳**，等**别人**把 PX4 弄到「已解锁 + OFFBOARD」；在那之前一帧都不发
+1. **不解锁、不切模式**。`mpc_node.py` 里**没有**任何命令通路
+   （`grep -n 'VehicleCommand\|create_client\|/mavros/cmd\|/mavros/set_mode' src/nmpc/nmpc/mpc_node.py`
+   ⟹ 0 命中，2026-10-12 复核；对照 `src/nmpc/nmpc/offboard_smoke.py` 有）。
+   ⟹ 它**等别人**把 PX4 弄到「已解锁 + OFFBOARD」；在那之前一帧都不发
    （`node_core.py:213-214`：`warmup_cycles` 的定义就是「收到 armed + OFFBOARD **之后**先解这么多次，**不发**」）。
+   ☠️ **原文接着写的是"⟹ 它只发**心跳**，等**别人**…"** —— 那半句 2026-10-12 作废：
+   心跳那条流已删（ticket 13 §二④），现在它发的就是 setpoint 本身（**单频**）。
+   ⚠️ 另加一条限定（换载体带来的）：闸门源 `/mavros/state` 是 **1 Hz**，
+   所以"确认已进 OFFBOARD"会比操作者的动作**晚最多一个上报周期**。
 2. **不认"任务"**。没有 Phase 1 那种状态机 —— "这一趟飞行"从哪开始、到哪结束，它不知道
    （`node_core.py:204-206`：「本节点**不是**任务状态机，它不认识"这一趟"是什么；"任务放弃"归 `control`（Phase 1）那一侧」）。
 
 ### 12.3 三个未决（每条都是查出来的空缺，**归属要人裁定**）
 
-**① ⛔ uXRCE-DDS 链路在 z0 上不存在 —— 今天整条 (C) 级下行是断的。**
+> ☠️☠️ **本节 2026-10-12 逐条改写过**（[ticket 13](../../.scratch/phase4/issues/13-mavros-downlink-switch.md) §一②）：
+> 下行从 uXRCE-DDS 的 `/fmu/*` 换到 **mavros** ⟹ 三条未决的**前提**都变了。
+> 体例如下：每条**先写新状态**，原文**原样留在**「原文（2026-10-10，uXRCE-DDS 前提）」块里 ——
+> ⛔ 原文是**起因证据**（`MAV_*_CONFIG` 那些读数就是"为什么换载体"的第一手），不许删。
+> **逐条**：① 消解（不再是未决）；② **仍未决**，但换成 mavros 形态；③ 仍成立且**更难办**。
+
+**① ☠️ 已消解：不走 uXRCE-DDS ⟹ 不占串口、不加硬件。**
+
+2026-10-12 起（ticket 13 §二 落地）(C) 级下行走 **mavros**（`/mavros/setpoint_raw/attitude`
++ `/mavros/state`），即**复用 Phase 1 已经在跑的那条链**（`~/mavros_ws`，`fcu_url:=/dev/ttyTHS1:921600`）。
+⟹ 原文那条"要找一个串口给 XRCE、再把 `UXRCE_DDS_CFG` 打开"的**未决**从"归属待定"变成
+"**此路不通，改走 mavros**"，**不需要任何新的串口或硬件**。
+★ 下面原文里那三个 `MAV_*_CONFIG` 读数**保留**：它们正是这个决定的**起因**（不是已作废的结论）。
+
+**原文（2026-10-10，uXRCE-DDS 前提）**：
 
 - 第一手：`UXRCE_DDS_CFG = 0`（禁用），**今天**的导出 `bag/z0-params-2026-10-10.params:913` 与
   `docs/assets/z0.params:949` 两次都读 `0`；且**没有任何串口分给它**
@@ -524,7 +558,19 @@ python3 -m pytest src/nmpc/test/test_mpc_node.py -q      # 2026-10-10 实测 ≈
   "Phase-1 链还在"那一半可以验，(C) 级那一半不行。
 - ⚠️ §E1 当年把它标成"★ Phase 2 阻塞"，但**全仓 `.scratch/` 里没有任何一张票认领它**（`grep -rn UXRCE_DDS_CFG .scratch/` ⟹ 只有 `phase1/15` 的一张对账表提到）。**归属待定。**
 
-**② ⛔ "谁解锁、谁切 OFFBOARD" 没有归属。**
+**② ☠️ 仍然是未决，但接口换成了 mavros 形态**（三种候选一个没少）。
+
+- 接口：`/fmu/in/vehicle_command` → **`/mavros/cmd/arming`**（解锁）+ **`/mavros/set_mode`**（切 OFFBOARD）。
+  ★ 这两条现在**已经有一份可用实现**：[`offboard_smoke.py`](../../src/nmpc/nmpc/offboard_smoke.py)
+  在 ticket 13 §三 里已按新载体改写（两个服务客户端 + 应答回调，被拒时把 `result` / `mode_sent`
+  打进日志），且它的等待间隔已重核过（`/mavros/state` 是 **1 Hz** ⟹ 最小间隔必须 **> 1 s**，
+  默认 1.1 s）⟹ 原文那句"搬出来的活已经有人干过大半"现在是"**已经干完了**"。
+- 候选**一个没少**：(a) QGC 手动解锁 + 手动切；(b) 写一个小的 arm 助手；(c) 直接用
+  `offboard_smoke.py` 自己那套。
+- ⚠️ **票面 `§一②` 曾写"归属由 §二 裁"—— 但 §二 落地时（2026-10-12）**没有**裁这件事
+  （§二 的裁定只涉及 ⑤ 的 A 档与 ④ 的心跳）。⟹ 这一条**仍是未决**，归属待定。
+
+**原文（2026-10-10，uXRCE-DDS 前提）**：
 
 - 由 §12.2，节点不干这件事；而 SITL 里干这件事的是一个**测试夹具**里的节点
   （`tools/px4-sitl/verify_tier_a_hover.py:279` 的 `ArmAgent`：先 `ARM_DISARM`、`armed` 之后 `DO_SET_MODE`）。
@@ -538,7 +584,24 @@ python3 -m pytest src/nmpc/test/test_mpc_node.py -q      # 2026-10-10 实测 ≈
   但两条链共用同一架飞机，**别把两套纪律混着记**。
 - **归属待定**（阶梯 1 要"只给 ±小角速率、目视电机转速差"，那一步同样需要先解锁 + OFFBOARD）。
 
-**③ 两条链互斥 —— 一次只跑一条。**
+**③ ☠️ 仍然成立，而且「更难办」了：两条链现在共用同一组 mavros 话题。**
+
+2026-10-12 起 (C) 级也走 mavros（ticket 13 §二）⟹ 互斥不再只是"两个驾驶员抢 OFFBOARD"：
+
+| | 下行话题 | 谁在发 | 闸门/模式话题 |
+|---|---|---|---|
+| (A)/(B) 级（Phase 1） | `/mavros/setpoint_raw/local` | `control`（+ `traj` 给参考） | `/mavros/state` |
+| (C) 级（Phase 4） | **`/mavros/setpoint_raw/attitude`** | `mpc_node` | **`/mavros/state`** |
+| ☠️ 共用（**不是假设，两边都配了**） | —— | —— | **`/mavros/state`**、**`/mavros/cmd/arming`**、**`/mavros/set_mode`** |
+
+★ 上表第三行是**读配置核出来的**（`src/control/config/control.yaml:41` 的 `state_topic`、
+`:64` 的 `set_mode_service`、`:66` 的 `arming_service`；`offboard_smoke.py` 侧是同名两条），
+⛔ 不是"以后可能会"。⟹ 除了"两个驾驶员"，还多出两类**新**的互踩面：
+**谁去切模式**（同一个 `set_mode` 服务，两条链各切一次会互相打断，而**两条链都会去切**）与
+**闸门判读**（两条链都盯 `/mavros/state`，一条把飞机切走，另一条会把它读成"离开 OFFBOARD"
+⟹ 触发各自的停机路径）。
+
+**原文（2026-10-10，uXRCE-DDS 前提）**：
 
 | | 下行话题 | 谁在发 |
 |---|---|---|
