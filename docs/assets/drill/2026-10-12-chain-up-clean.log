@@ -1,0 +1,47 @@
+===== ① python3 run/z0.py check —— 清掉孤儿 mocap/vrpn 之后（采样时刻 2026-10-12 03:54:12）=====
+ROS_DOMAIN_ID=0 —— 真机域（默认）
+⚠️ 串口 /dev/ttyTHS1 被占用：mavros_node(24513) —— 第二个 mavros 打不开它，而那个报错**长得像 launch 坏了**
+
+话题                              读数                    说明
+✓ /mavros/state                   4 帧 / 4 s ≈ 1 Hz       connected=True armed=False mode=OFFBOARD
+✓ /mavros/local_position/pose     119 帧 / 4 s ≈ 30 Hz    x=-0.003 y=+0.002 z=+0.002
+✓ /mavros/vision_pose/pose        808 帧 / 4 s ≈ 202 Hz   x=+0.000 y=+0.000 z=-0.000
+✓ /mocap/pose_enu                 808 帧 / 4 s ≈ 202 Hz   x=+0.000 y=+0.000 z=-0.000
+✓ /control/state                  4 帧 / 4 s ≈ 1 Hz       MANUAL/STANDBY
+· /traj/reference                 无帧                    参考流 50 Hz —— **没选轨迹时本该是空的**
+✓ /mavros/setpoint_raw/local      200 帧 / 4 s ≈ 50 Hz    x=-0.003 y=+0.002 z=+0.002
+· /vrpn/VRPN_Control/pose         无帧                    动捕刚体的原始位姿（~200 Hz）
+✓ /vrpn/z0/pose                   802 帧 / 4 s ≈ 200 Hz   x=-2.311 y=-1.041 z=+0.391
+✓ /vrpn/z0_Marker1/pose           801 帧 / 4 s ≈ 200 Hz   x=-2.248 y=-1.036 z=+0.405
+✓ /vrpn/z0_Marker2/pose           801 帧 / 4 s ≈ 200 Hz   x=-2.295 y=-1.093 z=+0.382
+✓ /vrpn/z0_Marker3/pose           799 帧 / 4 s ≈ 200 Hz   x=-2.283 y=-0.997 z=+0.384
+✓ /vrpn/z0_Marker4/pose           799 帧 / 4 s ≈ 200 Hz   x=-2.361 y=-0.994 z=+0.402
+✓ /vrpn/z0_Marker5/pose           798 帧 / 4 s ≈ 200 Hz   x=-2.368 y=-1.085 z=+0.381
+
+这一侧齐了 —— 但**齐了不等于对**：判据仍按 `bench-runbook.md` 走。
+
+下一步（★ 脚本刻意不代劳，见文件头）：
+  ① 选轨迹：`ros2 run bringup fly.py` 敲 1/2/3（★ 起飞前选好）
+  ② 遥控器开始键第 1 次上升沿 = 解锁 + 起飞，第 2 次 = 进 TRACK
+     （每次压住 ≥ 0.3 s 再松；台架上没有接收机时走 bench-runbook.md T4 的服务）
+
+两件**本脚本查不到、但会拦住解锁**的事（都在 bench-runbook.md P0）：
+  · SD 卡根目录的 `fault_*.log`：PX4 会拒绝解锁（`vehicle needs service`），且**删档不当场生效**。
+    ⚠️ 本脚本读不了它：mavros **独占**串口 ⟹ 本机没有第二条 MAVLink 通道走 FTP，
+    看它只能靠 QGC（或把卡拔下来）。⚠️ 转储**同名覆盖** ⟹「只有一个」推不出故障次数。
+  · 参数（`NAV_RCL_ACT` 等）：`params-changes.md` 的 A1/§I 那张表，用 QGC 或 mavros 对账。
+
+===== ② 发布者查询：rclpy get_publishers_info_by_topic + /mocap/pose_enu 收 3 s =====
+/mocap/pose_enu:  发布者 1 个
+    node=mocap_rel_pose ns=/ gid=010f2c2f7060930300000000000016030000000000000000
+/vrpn/z0/pose:  发布者 1 个
+    node=_NODE_NAME_UNKNOWN_ ns=_NODE_NAMESPACE_UNKNOWN_ gid=010f2c2f1060d38c00000000000015030000000000000000
+/vrpn/z0_Marker1/pose:  发布者 1 个
+    node=_NODE_NAME_UNKNOWN_ ns=_NODE_NAMESPACE_UNKNOWN_ gid=010f2c2f1060d38c00000000000018030000000000000000
+  [pose_enu] #1  x=+0.0001 y=-0.0002 z=-0.0001
+  [pose_enu] #60  x=+0.0001 y=+0.0001 z=-0.0002
+  [pose_enu] #184  x=-0.0001 y=+0.0002 z=-0.0001
+  [pose_enu] #295  x=+0.0001 y=+0.0000 z=-0.0002
+  [pose_enu] #383  x=-0.0004 y=+0.0000 z=-0.0000
+  [pose_enu] #503  x=-0.0000 y=+0.0000 z=-0.0002
+3 s 收到 548 帧，≈182 Hz
