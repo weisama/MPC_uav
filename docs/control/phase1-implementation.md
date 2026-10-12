@@ -783,11 +783,14 @@ z0 的链路跑在 `MAVLINK_MODE_ONBOARD`，该模式配 `ESTIMATOR_STATUS` **1.
 
 **判定三档**：✅ 条件与语义等价 ／ ⚠️ **有意不同且写得出来出处** ／ ⛔ **无对应且文档里没有理由**（要人裁定）。
 
+★ **2026-10-12：原本 5 行 ⛔ 已全部裁定为「有意不补」** —— 逐条理由补在 (2′)，
+于是它们按本档的定义升成 ⚠️（"有意不同**且写得出来出处**"）。**本表现在没有 ⛔ 行了。**
+
 | XI35 行 | XI35 的条件 / 语义 | z0 的落点 | 判定 |
 |---|---|---|---|
-| 1 | `MANUAL_CTRL→AUTO_HOVER`：`enter_hover_mode` ∧ odom 新鲜 ∧ 未在发 cmd ∧ `‖v‖≤3.0` | 没有"进入悬停模式"这条遥控开关；对应物 = 守卫齐 ⟹ `STANDBY`（目标=当前位置）⟹ 流够 `offboard_prestream_s` ⟹ 请求 OFFBOARD（`:1299-1324`） | ⚠️ 主体对得上（都是"开始流 + 进 OFFBOARD"）；**速度门 ⛔** |
-| 2 | `MANUAL_CTRL→AUTO_TAKEOFF`：… ∧ `‖v‖≤0.1` ∧ `landed` ∧（收到 RC 时）`check_centered()` | `request_takeoff`（只拦"已有任务"）+ 解锁前置 = **四条守卫 + `in_offboard` + `rc_fresh`**（`:1354`） | ⛔ `‖v‖≤0.1`、`landed` 无对应；遥控侧只要求"链路在"、**不要求杆居中/不在动** |
-| 3 | `MANUAL_CTRL→MANUAL_CTRL`（reboot，`MAV_CMD 246`） | 无 | ⛔ 无对应 |
+| 1 | `MANUAL_CTRL→AUTO_HOVER`：`enter_hover_mode` ∧ odom 新鲜 ∧ 未在发 cmd ∧ `‖v‖≤3.0` | 没有"进入悬停模式"这条遥控开关；对应物 = 守卫齐 ⟹ `STANDBY`（目标=当前位置）⟹ 流够 `offboard_prestream_s` ⟹ 请求 OFFBOARD（`:1299-1324`） | ⚠️ 主体对得上（都是"开始流 + 进 OFFBOARD"）；**速度门 = 有意不补**（2026-10-12 裁定，(2′)-①） |
+| 2 | `MANUAL_CTRL→AUTO_TAKEOFF`：… ∧ `‖v‖≤0.1` ∧ `landed` ∧（收到 RC 时）`check_centered()` | `request_takeoff`（只拦"已有任务"）+ 解锁前置 = **四条守卫 + `in_offboard` + `rc_fresh`**（`:1354`） | ⚠️ 三个子项**都判有意不补**（2026-10-12 裁定，(2′)-②）：`‖v‖≤0.1` 与 `landed` 无对应物、也不需要；遥控侧只要求"链路在"、**不要求杆居中/不在动** |
+| 3 | `MANUAL_CTRL→MANUAL_CTRL`（reboot，`MAV_CMD 246`） | 无 | ⚠️ 无对应 —— **有意不补**（2026-10-12 裁定，(2′)-③）：地面维护用的动作，不进飞行程序 |
 | 4 | `AUTO_HOVER→MANUAL_CTRL`：¬hover ∨ odom 超时 ∨ `kf_fusion_fail`；副作用 `toggle_offboard(false)` | 守卫不成立 ⟹ `halt()` 回 `INIT`（`:1299-1301`）；输入失效 ⟹ 降级（未解锁回 `INIT`、已解锁 `LAND`） | ✅（z0 更细：按输入给 0.5/2.5 s 分级 + 解锁门）。★ 差别：z0 **不发** `toggle_offboard(false)`，交给 PX4 的 `COM_OF_LOSS_T`（刻意，`fsm.hpp:20-22`） |
 | 5 | `AUTO_HOVER→CMD_CTRL`：`is_command_mode` ∧ cmd 新鲜 ∧ ¬emergency ∧ ¬search ∧ **`mode=="OFFBOARD"`**（否则**静默不跳转**） | `kWaitStart → kTrack`（开始键松手） | ✅。★ XI35 明写一条模式前置，z0 **不显式**要求 `in_offboard` —— 但模式一丢会先 `mode_lost` 闩锁 ⟹ 根本走不到 ⑦（`:490-492`、`:1264-1270`）⟹ 等价，且更严（停发 > 静默不跳） |
 | 6 | `AUTO_HOVER→AUTO_LAND`：(`triggered` ∧ `cmd==LAND`) ∨ `emergency_hover` | `LAND` 的**四条来源**（`:1278-1296` + `EndReason` `:544-554`） | ✅（"LAND 指令"那一半）；`emergency_hover` 那半见 (3) |
@@ -796,11 +799,73 @@ z0 的链路跑在 `MAVLINK_MODE_ONBOARD`，该模式配 `ESTIMATOR_STATUS` **1.
 | 9 | `CMD_CTRL→AUTO_HOVER`：¬command ∨ cmd 超时 ∨ emergency ∨ search ⟹ **退回悬停** | `TRACK` 里参考断了：**保持上一个目标**，断够 `traj_timeout_s`（3 s）⟹ 停发 + 降落（`:1235-1236`、`:1481-1490`） | ⚠️ 有意不同（参考温和退回悬停、z0 判失效）—— 已记（`src/control/README.md`「轨迹跟踪（ticket 09）」的「断流时保持**上一个目标**」一行） |
 | 10 | `CMD_CTRL→CMD_CTRL`：**拒绝着陆** —— 要求先停发指令 > `msg_timeout.cmd` 秒 | z0 的降落是**当场**停发（`halt()`）+ 请求 `AUTO.LAND` | ⚠️ 有意不同（ticket 07 增补的裁定：长按即降落）；z0 **没有**"正在发指令时拒绝降落"这一层 |
 | 11 | `AUTO_TAKEOFF→AUTO_HOVER`：`t ≥ MOTORS_SPEEDUP_TIME(3.0)` ∧ `z ≥ start+height` | `kClimb→kHover`：`\|z−(原点+高度)\|<0.10` ∧ `\|v_z\|<0.10` **持续** 1 s（`:1392-1404`） | ✅ 语义对得上（都是"到高"） |
-| 12/13 | `AUTO_TAKEOFF` 自环：前 3 s 走 `get_rotor_speed_up_des()`（`exp((Δt−3)·6)·7−7`，>0.1 清零并 ERROR）；之后位置斜坡 + 前 0.1 s 正弦加速度 | `kClimb` 的**线性**斜坡，解锁即上（`:1380-1385`） | ⛔ **`MOTORS_SPEEDUP_TIME` 那段"电机空转"无对应**；正弦整形也没有 —— 文档里没有理由 |
+| 12/13 | `AUTO_TAKEOFF` 自环：前 3 s 走 `get_rotor_speed_up_des()`（`exp((Δt−3)·6)·7−7`，>0.1 清零并 ERROR）；之后位置斜坡 + 前 0.1 s 正弦加速度 | `kClimb` 的**线性**斜坡，解锁即上（`:1380-1385`） | ⚠️ **`MOTORS_SPEEDUP_TIME` 那段"电机空转"无对应**、正弦整形也没有 —— **都判有意不补**（2026-10-12 裁定，(2′)-④） |
 | 14–17 | `AUTO_LAND` 四条：自己做着陆检测（`POSITION_DEVIATION_C` / `VELOCITY_THR_C` / `TIME_KEEP_C`）+ `motors_idling` + `toggle_arm_disarm(false)` | 全交给 PX4 的 `AUTO.LAND`，我们**只等 `armed` 降沿**（`:1211-1217`，`COM_DISARM_LAND = 2.0`） | ⚠️ 有意不同（控制层级不同）—— 已记（`src/control/README.md`「降落与上锁：我们只做一半」） |
 
-**计数**：17 行全覆盖 —— **5 行 ✅**（4 / 5 / 6 / 8 / 11）／**7 行 ⚠️**（1 的主体 / 7 / 9 / 10 / 14–17，出处都在文档里）／**5 行 ⛔**（1 的速度门、2、3、12、13）。
-⛔ 的那几行**不是"发现 bug"**，是"参考里那条判据在 z0 找不到对应物、而**理由没写下来**" —— 是刻意还是漏了，只能由人裁定（见票面 Comments）。
+**计数**：17 行全覆盖 —— **5 行 ✅**（4 / 5 / 6 / 8 / 11）／**12 行 ⚠️**／**0 行 ⛔**。
+★ 后一档由 7 行涨到 12 行，**不是因为改了什么，是因为裁定把理由补齐了**：原本 5 行 ⛔
+（1 的速度门、2、3、12、13）在 2026-10-12 全部判为"**有意不补**"，逐条理由见 (2′)。
+⚠️ 判 ⚠️ **不等于"z0 做了同一件事"** —— 它只等于"**这里有意不同，且为什么不同写在文档里了**"。
+
+#### (2′) 那 5 行 ⛔ 的裁定（2026-10-12，操作者）：全部「**有意不补**」
+
+> **裁定的是什么**：不是"这 5 条该不该实现"，而是**"找不到对应物"这件事是刻意还是漏了"**。
+> 操作者对 5 条**逐条**判 **A = 刻意不补**。⟹ 每条按 (2) 开头那三档的定义升成 ⚠️。
+> **本裁定不动一行代码、不新开票** —— 它落在文档里，就是 (2) 里"写得出来出处"那句话本身。
+
+**① 行 1 的速度门 `‖v‖≤3.0`（进悬停模式前）—— 没有可挂的对象。**
+z0 没有"进入悬停模式"这个动作；对应物是「守卫齐 ⟹ `STANDBY`」，而 `STANDBY` 时飞机
+**未解锁、在地面**（(1) 的 ★：`AUTO` 的定义＝已解锁的 offboard ⟹ `STANDBY` 对外是 `MANUAL/STANDBY`；
+而"未解锁"之所以等价于"在地面"，是因为 z0 只认 PX4 的 `armed` 降沿、PX4 只在落地后才自主上锁
+—— `COM_DISARM_LAND = 2.0`，见本表 14–17 行）⟹ **没有"带着速度"进这个态的可能**，门也就无处可设。
+★ 参考那条门**为什么存在**：它的拒绝语义写着"`‖v‖>3` 判**定位失效**"（`xi35-fsm.md:97`）——
+一条"速度太大就拒绝"的门，语义上等于承认"进这个态时可能已经在动"。
+z0 的对应物只在地面、未解锁时可达 ⟹ **不是"漏了这条判据"，是这个态里不存在它要防的东西**。
+（⚠️ 参考侧"这个转换可以在空中发生"是从**它自己那条门的语义反推**的，
+不是逐行读它的 `cpp` 得来的 —— 记在这里以免被当成第一手。）
+
+**② 行 2 的三个子项（`‖v‖≤0.1` ∧ `landed` ∧ `check_centered()`）—— 各有各的理由。**
+
+- **`landed`**：**无载体，也不补**。第一手（2026-10-12 复核）：`grep -rn "extended_state" src/`
+  ⟹ **0 命中**；`grep -n "landed" src/control/include/control/fsm.hpp src/control/src/px4_interface.cpp`
+  ⟹ **0 命中**（全仓那 13 次命中全在 `test_fsm.cpp`，是测试自己的局部变量名，不是载体）。
+  同一件事由 `armed` 承担 —— 解锁请求只在 `armed == false` 那一支可达（`:1354`），
+  z0 用"我们有没有在驱动飞机"（(1) ★ 的 `AUTO` 定义）当这一步的判据，不再叠一个落地标志。
+- **`‖v‖≤0.1`**：**不补 —— 用"晚锁原点"顶掉了**。参考那条防的是"带速度起飞 ⟹ 基准取歪"；
+  z0 的原点锁在**看到 `armed` 的那一帧**，`fsm.hpp:1343-1348` 的注释原文写着
+  "请求与生效之间飞机可能已经在地上被风吹着挪了一点，而我们要的基准是**起飞时的**位置"。
+  ⟹ 尺度上，参考用一个 0.1 m/s 的**门槛**挡，z0 用"基准取在起飞那一刻"**消掉**要挡的东西。
+  （现成的量其实都有：`odom.vx/vy/vz` 与 `speed()`，常量 `takeoff_vel_tol_mps = 0.10` 就在
+  `fsm.hpp:366` —— 不是"量不到"，是**有意不用它当门槛**。）
+- **`check_centered()`**：**不补 —— z0 对"人在动杆"的答案是起飞后夺权，不是起飞前阻塞。**
+  `rc_sticks_moving` 已经存在（`fsm.hpp:220-222`，检测器 `px4_interface.cpp:232-246`
+  ＋ 取值那一步 `:423`），
+  但**有意只在已解锁时**用（`fsm.hpp:474`：`rc_sticks_moving && g.armed ⟹ kRcOverride`）。
+  参考那是 `check_centered()` 里一个**阻塞 while 循环**（`xi35-fsm.md:98`，`cpp:116-124`）——
+  移植进来会造出"摇杆抖一下 ⟹ **永远解不了锁**"这种"程序自己走不出去"的态，
+  而那种态正是本票第一框要挡住的东西（见 (3) 的 `search_hover`）。
+  ★ 另有一处结构性缺口：z0 **没有中位基准** —— `grep -rniE "center|居中|中位|mid" src/control/{include,src,config}`
+  ⟹ **0 命中**，只有变化率阈值 `rc_stick_ov_us_per_s`（`control.yaml:154`）。
+  补 `check_centered()` 不只要写判断，还要先有"居中"的标定 ⟹ **另开一张票都嫌大**，
+  更不该塞进一次审计。
+
+**③ 行 3 的 `MAV_CMD 246` 远程重启 —— 地面维护动作，不进飞行程序。**
+参考自己就写着"**已解锁则 ERROR 拒绝**"（`xi35-fsm.md:99`）⟹ 它的适用域被自己限定在地面。
+z0 的边界是"**程序不抢模式、不代操作者动手**"（同 [`mpc-node-seam1.md`](mpc-node-seam1.md) §12.2），
+重启飞控走 QGC / 命令行，不该藏在一个自动状态机里。
+
+**④ 行 12/13 的 `MOTORS_SPEEDUP_TIME` 空转段与正弦整形 —— 前提在 z0 这一层不存在。**
+参考那一段的前提是 `resetThrustMapping(bat)`（`xi35-fsm.md:98`、`:108-109`）—— 它自己算推力、
+自己映射到电机，所以才有"空转 3 s 把映射标定出来"这件事，以及电机指令上的那个尖峰要整形。
+z0 走 **(A) 级**：推力由 PX4 生成，我们发的是**位置/速度 setpoint**，
+**z0 这一层根本没有推力映射这回事** ⟹ 要防的尖峰不在我们这里。
+★ 整形也不必：z0 的斜坡**起点就是原点**（水平钉在原点、`z` 线性上升，`fsm.hpp:1378-1385`），
+⟹ **起飞瞬间没有位置阶跃**可整形。
+
+**落点**：本裁定只改本节（把 ⛔ 改成 ⚠️ ＋ 补上理由）；票面那 5 个未决项随之关闭，
+记账在 [`phase4/08` 的 Comments](../../.scratch/phase4/issues/08-safety-paths-and-fallback-drill.md)。
+⚠️ **本裁定只覆盖 (2) 那张表的 5 行** —— (4) 那一框（溯源注释，票面第三框）**不在范围内**，
+它仍然不达标。
 
 #### (3) 三处死代码 —— ✅ 没有被照搬
 
@@ -810,7 +875,7 @@ z0 的链路跑在 `MAVLINK_MODE_ONBOARD`，该模式配 `ESTIMATOR_STATUS` **1.
 | `kf_fusion_fail` **单向 latch**（`h:96-99`：只置不清 ⟹ 一旦置位只能手动着陆） | `Latch` 两类**都可复位**：`kArmedDegrade` 由**可信的**落地上锁清（`connected ∧ armed↓`，`:1211-1217` + `reset_mission()` `:883-904`）；`kTakeover` 另可由"模式被外部交回 OFFBOARD"清（`:1218-1224`） | ✅ 未照搬（`src/control/README.md` 明写"这是与 XI35 的 `kf_fusion_fail` 刻意不同的地方"） |
 | `search_hover` **没有任何地方清它**（`h:93-94` ⟹ 只能重启退出） | z0 没有这个标志；"程序自己走不出去的态"是**逐态**堵掉的：`kRequested` 有 `takeoff_timeout_s`（`:1367-1371`）、`kWaitStart` 有 `wait_start_timeout_s`（`:1456-1461`）、`kTrack` 有 `traj_timeout_s`（`:1235-1236`） | ✅ 未照搬 |
 
-#### (4) 溯源注释（票面第三框）—— ⛔ 未落实
+#### (4) 溯源注释（票面第三框）—— 未落实
 
 票面要求"每处相对参考实现的改动**在代码注释里带编号与出处**（形如 `// ported from XI35 PX4CtrlFSM.cpp:183`）"，
 `phase4/spec.md:192`（Q8=b）同款。
