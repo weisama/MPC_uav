@@ -189,7 +189,7 @@ Phase 2 结束时，我有一条**在 SITL 里闭环验证过**的 (C) 级模型
 
 | 票 | 六节各自做什么 | 状态 |
 |---|---|---|
-| [13](issues/13-mavros-downlink-switch.md) | **§一** 口径冻结（docs 先行：`sign-map.md` / `mpc-node-seam1.md` §12.3 / `px4-interface.md` §4.3·§5.1·§8）<br>**§二** `mpc_node.py` 下行 + 闸门源 + 超时 + 依赖<br>**§三** `offboard_smoke.py`（阶梯 1/2 的驱动工具）+ `--t-max` 那笔账<br>**§四** 夹具（`fake_mavros.py`）+ seam 1 改写<br>**§五** 阶梯判据页 §7.1 留痕<br>**§六** **独立项**：QGC 执行器测试落实「物理口 ↔ 机体角」 | `ready-for-human`（**§一–§四 是 AFK 可推进的**，只有 §五 / §六 要人在场） |
+| [13](issues/13-mavros-downlink-switch.md) | **§一** 口径冻结（docs 先行：`sign-map.md` / `mpc-node-seam1.md` §12.3 / `px4-interface.md` §4.3·§5.1·§8）<br>**§二** `mpc_node.py` 下行 + 闸门源 + 超时 + 依赖<br>**§三** `offboard_smoke.py`（阶梯 1/2 的驱动工具）+ `--t-max` 那笔账<br>**§四** 夹具（`fake_mavros.py`）+ seam 1 改写<br>**§五** 阶梯判据页 §7.1 留痕<br>**§六** **独立项**：QGC 执行器测试落实「物理口 ↔ 机体角」 | ✅ `done`（2026-10-12 操作者收口；**§六 实测结果已入册**，**§一–§五 施工未开工**） |
 
 ★ **票内的次序**（= 原先六张票的阻塞边，现在退化成同一张票里的先后）：
 **§一 → §二 / §三**（口径没冻就动手 = 按个人理解写 N1/N2/N3）；**§四** 在 §二 之后（DUT 得先会说 mavros 的话）；
