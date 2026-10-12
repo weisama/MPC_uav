@@ -163,14 +163,13 @@ Phase 2 结束时，我有一条**在 SITL 里闭环验证过**的 (C) 级模型
   "Forward external setpoint messages…"，`src/modules/mavlink/mavlink_params.c:112-121`）。
   **z0 现值 = `1`**（[`z0.params:542`](../../docs/assets/z0.params)）✓。
   ⚠️ **若它是 `0`，整条 mavros 下行会静默死掉**（消息直接被丢，飞控侧**没有任何日志**）——
-  ⟹ 它必须进实飞前检查清单（票 [13](issues/13-docs-mavros-downlink-canon.md) ③ 与票
-  [14](issues/14-mpc-node-mavros-downlink.md) ⑥ 各落一处）。
+  ⟹ 它必须进实飞前检查清单（票 [19](issues/19-mavros-downlink-switch.md) 的 §一 ③ 与 §二 ⑤bis 各落一处）。
 
 #### ⛔ 三处**不可等价** —— 这是本节存在的理由，也是票面必须写死的口径
 
 | # | 差在哪 | 落到谁头上 | 后果（**都不是报错，是静默**） |
 |---|---|---|---|
-| **N1** | `mavros_msgs/AttitudeTarget` **只有标量 `thrust`**，没有 `thrust_body`（`/opt/ros/humble/share/mavros_msgs/msg/AttitudeTarget.msg`）；飞控收到后由 `fill_thrust` 写成 `thrust_body[2] = −thrust`（`mavlink_receiver.cpp:1456` / `:1475`） | 负号与轴向 ⇒ **飞控那行代码**，不再是我们的 `sign_map` | ① `sign_map.px4_rates_setpoint()` 的 `thrust_body_z` 这一路在 mavros 路径上**不再是被验对象**；② `offboard_smoke.py` 的「**悬停倍数**」那一列的**基准与归一化都换了**（它乘的基准从 `t_max` 变成"飞控自己那套"），读数**不能与换之前并列比较** |
+| **N1** | `mavros_msgs/AttitudeTarget` **只有标量 `thrust`**，没有 `thrust_body`（`/opt/ros/humble/share/mavros_msgs/msg/AttitudeTarget.msg`）；飞控收到后由 `fill_thrust` 写成 `thrust_body[2] = −thrust`（`mavlink_receiver.cpp:1456` / `:1475`，**多旋翼那一支就是这两个字段之间的一个负号，没有任何缩放**） | 负号与轴向 ⇒ **飞控那行代码**，不再是我们的 `sign_map` | ① `sign_map.px4_rates_setpoint()` 的 `thrust_body_z` 这一路在 mavros 路径上**不再是被验对象**；② `offboard_smoke.py` 的「**悬停倍数**」那一列：**基准仍是 `m·g`、归一化常数仍是 `t_max`，两者都没换**，换的是**符号与字段名**（发 `AttitudeTarget.thrust`，正号，不再是我们取负的 `thrust_body[2]`）⟹ 同一个物理量在两条路上是**反号的两个字段**，读数**不能与换之前并列比较**（⛔ 别把它读成"归一化换了"—— 归一化常数一个字没变，见 §三 ④） |
 | **N2** | mavros **自己**在 `attitude_cb` 里对 `body_rate` 做 FLU→FRD：`AIRCRAFT_BASELINK_Q = quaternion_from_rpy(M_PI, 0, 0)`（`ftf_frame_conversions.cpp:40`），应用处 `setpoint_raw.cpp:321-331` | 恰好**就是** `sign_map` 对 pitch/yaw 的取负（roll 不受影响） | 若把 `sign_map` 的输出**直接**喂进去 ⟹ pitch/yaw 被取负**两次**（= 不取负）⟹ **静默反向**。**结论：不许自己先转**（与 [`px4-interface.md`](../../docs/reference/px4-interface.md) §5.1 已记的"转两次"教训同族） |
 | **N3** | 闸门源从 `/fmu/out/vehicle_status` 换成 `/mavros/state`，而后者**只在收到 MAVLink HEARTBEAT 时才发布**（1 Hz 定频，mavros 侧改不了） | 判据的**时间尺度**换了 | 节点现值 `status_timeout_s = 0.75` **< 1 s** ⟹ `status_stale` 会**恒真**、每秒报"飞控失联"并停发 setpoint。**Phase 1 已踩过同一个坑**：`src/control/config/control.yaml:120-125` 明写 `state_timeout_s: 2.5` 与"**不要照抄 px4ctrl 的 0.5 s**" |
 
@@ -180,18 +179,20 @@ Phase 2 结束时，我有一条**在 SITL 里闭环验证过**的 (C) 级模型
 - **不新增 seam**（见 Testing Decisions）：seam 1 是**同一个形态的第 4 次应用**。
 - **阶梯判据页（`ladder-acceptance-criteria.md`）的驱动工具一旦换掉，按该页 §7.1 留痕**
   —— 点出哪一级的哪个数 → 在 §7.2 增一行 → 被废的那条**就地标 ☠️**，**⛔ 不许原地改数**。
-  留痕本身是票 [17](issues/17-ladder-criteria-trace.md)，不是"改判据"。
+  留痕本身是票 [19](issues/19-mavros-downlink-switch.md) 的 **§五**，不是"改判据"。
 
 #### 票
 
-| 票 | 做什么 | 状态 |
+**一张票**（2026-10-12 由原先的六张合并而来，原来的 13–18 已撤；合并只并容器、不并内容，
+六节原文逐字保留在票里，跨节引用改成了 `§一`…`§六`）：
+
+| 票 | 六节各自做什么 | 状态 |
 |---|---|---|
-| [13](issues/13-docs-mavros-downlink-canon.md) | **口径冻结**（docs 先行）：`sign-map.md` / `mpc-node-seam1.md` §12.3 / `px4-interface.md` §4.3·§5.1·§8 | `ready-for-agent` |
-| [14](issues/14-mpc-node-mavros-downlink.md) | `mpc_node.py` 下行 + 闸门源 + 超时 + 依赖 | 阻塞于 13 |
-| [15](issues/15-offboard-smoke-mavros.md) | `offboard_smoke.py`（阶梯 1/2 的驱动工具）+ `--t-max` 那笔账 | 阻塞于 13 |
-| [16](issues/16-fixtures-and-seam1-mavros.md) | 夹具（`fake_mavros.py`）+ seam 1 改写 | 阻塞于 14 |
-| [17](issues/17-ladder-criteria-trace.md) | 阶梯判据页 §7.1 留痕 | 阻塞于 13、15 |
-| [18](issues/18-actuator-test-output-corner-map.md) | **独立项**：QGC 执行器测试落实「物理口 ↔ 机体角」 | 无阻塞 |
+| [19](issues/19-mavros-downlink-switch.md) | **§一** 口径冻结（docs 先行：`sign-map.md` / `mpc-node-seam1.md` §12.3 / `px4-interface.md` §4.3·§5.1·§8）<br>**§二** `mpc_node.py` 下行 + 闸门源 + 超时 + 依赖<br>**§三** `offboard_smoke.py`（阶梯 1/2 的驱动工具）+ `--t-max` 那笔账<br>**§四** 夹具（`fake_mavros.py`）+ seam 1 改写<br>**§五** 阶梯判据页 §7.1 留痕<br>**§六** **独立项**：QGC 执行器测试落实「物理口 ↔ 机体角」 | `ready-for-human`（**§一–§四 是 AFK 可推进的**，只有 §五 / §六 要人在场） |
+
+★ **票内的次序**（= 原先六张票的阻塞边，现在退化成同一张票里的先后）：
+**§一 → §二 / §三**（口径没冻就动手 = 按个人理解写 N1/N2/N3）；**§四** 在 §二 之后（DUT 得先会说 mavros 的话）；
+**§五** 在 §三 之后（留痕要写"换成了什么"）；**§六** 与任何人无关、随时可做。
 
 ### ★ 四项前置测量（全部在装桨之前）
 
@@ -293,7 +294,7 @@ Phase 2 结束时，我有一条**在 SITL 里闭环验证过**的 (C) 级模型
 
 - 这是**同一个 seam 形态的第 4 次应用**（Phase 1 → Phase 2 → Phase 4 首次 → 本次），**不新增 seam 形态**。
 - 夹具侧复用 Phase 1 已有的 [`fake_mavros.py`](../../src/bench/bench/fake_mavros.py)（已是"假飞控 + mavros 形状"），
-  而不是把 `fake_px4.py` 改造成四不像 —— 两者的死活用票 [16](issues/16-fixtures-and-seam1-mavros.md) 定。
+  而不是把 `fake_px4.py` 改造成四不像 —— 两者的死活用票 [19](issues/19-mavros-downlink-switch.md) 的 **§四** 定。
 - 断言里**必须有一条专测 N2**：把 `sign_map` 的输出原样发进去时，**我们这一侧不许再转一次**
   （否则 pitch/yaw 静默反向）。★ 这类"两条通路各转一次"的错**判据全绿也看不出来**，
   所以 Assertion 要量**我们自己发出的那一条消息里的 `body_rate` 字段值**，而不是量最终效果。
@@ -399,7 +400,7 @@ Phase 1 / Phase 2 的 seam 1 形态；Phase 1 的实机验证顺序（拆桨 →
 
 ## Comments
 
-### 2026-10-12 —— 追加决定：(C) 级下行改走 mavros（+ 6 张新票 13–18）
+### 2026-10-12 —— 追加决定：(C) 级下行改走 mavros（+ 1 张新票 19）
 
 **改了本 spec 的哪些地方**（都是**追加**，没有就地改数）：
 
@@ -418,8 +419,11 @@ Phase 1 / Phase 2 的 seam 1 形态；Phase 1 的实机验证顺序（拆桨 →
 - **没有**在真机 mavros 链路上跑过一次 `setpoint_raw/attitude`。三处不可等价里的 N1/N2/N3
   **全部是读源码与读 mavros 源码得来的**（锚点写在正文表里），**不是实测**。
 - ⟹ "换成 mavros 后能飞"这句话**现在还不成立**；本节只主张**口径已经定清**，
-  成不成立由票 16 的 seam 1 与阶梯 1/2 去证。
+  成不成立由票 19 的 **§四**（seam 1）与阶梯 1/2 去证。
 
-**新票**：13（口径冻结）/ 14（节点）/ 15（阶梯驱动工具）/ 16（夹具 + seam 1）/ 17（阶梯判据留痕）/
-18（QGC 执行器测试 —— 独立项，与走哪条通路无关）。
+**新票**：**只有一张 [19](issues/19-mavros-downlink-switch.md)**，内含六节：
+§一 口径冻结 / §二 节点 / §三 阶梯驱动工具 / §四 夹具 + seam 1 / §五 阶梯判据留痕 /
+§六 QGC 执行器测试（独立项，与走哪条通路无关）。
+★ 它由原来六张票（13–18）在**同一次会话内合并**而来（`70fac4b` 提交了那六张，随后撤掉）——
+**合并只并容器、不并内容**：六节原文逐字保留，跨节引用改成了 `§一`…`§六`。
 **本阶段仍未结的旧票**不抄在这里 —— 现算：见 [`docs/agents/issue-tracker.md`](../../docs/agents/issue-tracker.md)。
