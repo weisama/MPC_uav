@@ -138,7 +138,7 @@ Type: task
 - **§8「实飞前检查清单」**：`UXRCE_DDS_CFG` 已打开 / `ros2 topic list | grep /fmu` 能看到话题
   这两条**就地标 ☠️**（写清"本条作废，因为不再走 `/fmu/*`"），不要原地删。
   ★★ **并且新增一条**：**`MAV_FWDEXTSP = 1`** —— 整个 `SET_ATTITUDE_TARGET` handler 被它守着
-  （`mavlink_receiver.cpp:1508-1515` 的 `if (_mavlink->get_forward_externalsp() && …)`），
+  （`mavlink_receiver.cpp:1516-1518` 的 `if (_mavlink->get_forward_externalsp() && …)`），
   参数定义与说明见 `.../src/modules/mavlink/mavlink_params.c:112-121`；
   **z0 现值 = `1`**（`docs/assets/z0.params:542`）。
   ⚠️ **它是 `0` 时整条下行静默死掉**（消息被丢、飞控无日志）⟹ **必须进清单**。
@@ -244,7 +244,7 @@ Type: task
 ### ⑤bis ★★ 一条**硬前置**：`MAV_FWDEXTSP = 1`
 
 整个 `SET_ATTITUDE_TARGET` handler 被 **`_mavlink->get_forward_externalsp()`** 守着
-（`mavlink_receiver.cpp:1508-1515`），也就是飞控参数 **`MAV_FWDEXTSP`**
+（`mavlink_receiver.cpp:1516-1518`），也就是飞控参数 **`MAV_FWDEXTSP`**
 （`.../src/modules/mavlink/mavlink_params.c:112-121`，"Forward external setpoint messages"）。
 **z0 现值 = `1`**（[`z0.params:542`](../../../docs/assets/z0.params)）✓。
 ⚠️ **若它是 `0`，我们发的每一条 setpoint 都会被静默丢掉**（飞控侧**没有任何日志**，
@@ -354,7 +354,7 @@ Type: task
 
 ★★ **为什么时间戳那几档必须处置掉**（这一条是本票最容易被忽略的地方）：
 `SET_ATTITUDE_TARGET` 的 `time_boot_ms` 在飞控那段 handler
-（`mavlink_receiver.cpp:1508-1598`，**整个函数**）里**一次都没被读** ——
+（`mavlink_receiver.cpp:1509-1599`，**整个函数**）里**一次都没被读** ——
 飞控自己用 `hrt_absolute_time()` 打时间戳（`:1593` 附近）。
 ⟹ 我们把 `header.stamp` 写成**零、毫秒、纳秒**，**注入效果逐位相同**。
 **留着它的害处大于删掉它**：它会让操作者以为"时间戳这一档也测过了"，
@@ -422,7 +422,7 @@ Type: task
 | **话题名 / QoS**（接口那一节） | **逐条换**成新话题与新 QoS（含"QoS 不匹配就收不到"的负控） |
 | **符号 + 推力归一化**（本节） | ★★ **重写断言对象**：断言落在**我们发出的那条消息**的 `body_rate` 与 `thrust` 上（见 ① 最后一条）。**必须有一条专测 N2**：断言 `body_rate` 是 **FLU 原样**（`pitch/yaw` **没有**被我们预先取负） |
 | **闸门**（未解锁 / 未在 OFFBOARD / status 过期 ⟹ 不发布） | 数据源换成 `/mavros/state`；★ **超时那条必须变异测试**过（改回 `0.75` ⟹ 变红） |
-| **时间戳**（那一节） | ⛔ **本类在新载体上没有对应物**：飞控不读 `time_boot_ms`（`mavlink_receiver.cpp:1508-1598` 整个 handler 里没读）⟹ **删除或标记为"不再可测"**，并在映射表里写明**为什么**。**不许留成"绿着但不测任何东西"** |
+| **时间戳**（那一节） | ⛔ **本类在新载体上没有对应物**：飞控不读 `time_boot_ms`（`mavlink_receiver.cpp:1509-1599` 整个 handler 里没读）⟹ **删除或标记为"不再可测"**，并在映射表里写明**为什么**。**不许留成"绿着但不测任何东西"** |
 | **频率与 RViz**（那一节） | 按 §二 ④ 选定的心跳方案改（收成单频 / 双频重解释） |
 | **A 档**（`state_source="px4"`） | 按 §二 ⑤ 的裁定改：选 (b) 的话断言"入口当场拒绝" |
 | **求解失败兜底 / NaN 整帧丢弃 / 进程收尾** | **语义不变**，只换消息类型 |
@@ -681,7 +681,7 @@ A 行废的是"跑法"，B 行废的是"**我们往线上放的那个数**"。
 | `AttitudeTarget` 字段（无 `thrust_body`） | `/opt/ros/humble/share/mavros_msgs/msg/AttitudeTarget.msg` |
 | `/mavros/state` 1 Hz + `StateQoS` | `sys_status.cpp:962-985`、`:583` |
 | 同款超时坑的先例 | `src/control/config/control.yaml:120-125`（`state_timeout_s: 2.5`） |
-| **硬前置** `MAV_FWDEXTSP = 1` | 消费端 `mavlink_receiver.cpp:1508-1515`；定义 `.../mavlink_params.c:112-121`；z0 现值 `z0.params:542` |
+| **硬前置** `MAV_FWDEXTSP = 1` | 消费端 `mavlink_receiver.cpp:1516-1518`；定义 `.../mavlink_params.c:112-121`；z0 现值 `z0.params:542` |
 **未核（本票开工时要补，⛔ 不许当成已知）**：
 1. **`/mavros/state.mode` 在 OFFBOARD 时的字符串**（见 ③）—— 只核到"飞控侧的判据是
    `NAVIGATION_STATE_OFFBOARD = 14`"，**mavros 报出来的名字没核**。
@@ -700,7 +700,7 @@ A 行废的是"跑法"，B 行废的是"**我们往线上放的那个数**"。
 **已核（读源码得来）**：
 | 事实 | 锚点 |
 |---|---|
-| 飞控**不读** `time_boot_ms`，自己打时间戳 | `mavlink_receiver.cpp:1508-1598`（整个 handler，逐行看过） |
+| 飞控**不读** `time_boot_ms`，自己打时间戳 | `mavlink_receiver.cpp:1509-1599`（整个 handler，逐行看过） |
 | 心跳由收到的消息派生 | 同文件 `:1531-1535`（且**不受 OFFBOARD 限制地**发） |
 | rates setpoint 的发布**被 OFFBOARD 守着** | 同文件 `:1593` |
 | `type_mask = 128` ⟹ `body_rates = true`、`attitude = false`、`fill_thrust` 被调用 | 同文件 `:1522-1524` 与 `:1589` |
@@ -722,7 +722,7 @@ A 行废的是"跑法"，B 行废的是"**我们往线上放的那个数**"。
 - `/mavros/state` 由 `StateQoS()`（reliable + transient_local）发布、每条 HEARTBEAT 一次 = 1 Hz：
   `.../src/plugins/sys_status.cpp:583` 与 `:962-985`。
 - 飞控**不读** `time_boot_ms`，自己打 `hrt_absolute_time()`：
-  `mavlink_receiver.cpp:1508-1598`（整个 handler 逐行看过）。
+  `mavlink_receiver.cpp:1509-1599`（整个 handler 逐行看过）。
 - `AttitudeTarget` 的字段与 `type_mask` 位常量（`IGNORE_ROLL_RATE=1/…/IGNORE_ATTITUDE=128`）：
   `/opt/ros/humble/share/mavros_msgs/msg/AttitudeTarget.msg`（**有** `std_msgs/Header`）。
 **未核（开工时先核）**：
@@ -856,7 +856,7 @@ A/B/E 行的锚是**参数读数**，C 行的锚是**算术**。⛔ 三处都别
 |---|---|---|
 | `--break thrust-sign` / `thrust-scale` / `roll-sign` | **保留** | 三档在新载体上含义没变（roll 不被 mavros 取负 ⟹ 仍是"符号写反"） |
 | `--break pitch-sign` / `yaw-sign` | **改名** `pitch-preconvert` / `yaw-preconvert` | 这两档现在模拟的是 **N2**（我们多做一次预转换），**不是**"符号写反"；⛔ 旧名字不再被接受（同一个名字指另一件事） |
-| `--timestamp-unit` / `--timestamp-shift-us` | **删掉** | 飞控那段 handler 一次没读 `time_boot_ms`（`mavlink_receiver.cpp:1508-1598`）⟹ 注入效果逐位相同；留着会让操作者以为"这一档也测过了" |
+| `--timestamp-unit` / `--timestamp-shift-us` | **删掉** | 飞控那段 handler 一次没读 `time_boot_ms`（`mavlink_receiver.cpp:1509-1599`）⟹ 注入效果逐位相同；留着会让操作者以为"这一档也测过了" |
 | `--qos` | **保留**，取值集合不变，但帮助文本改写 | 发布者是 reliable ⟹ 两个取值**都收得到** ⟹ 在新载体上**不再能造出"零回调"** |
 
 **`§一①`（[`docs/control/sign-map.md`](../../../docs/control/sign-map.md)）**：§2 拆成
@@ -883,8 +883,14 @@ A/B/E 行的锚是**参数读数**，C 行的锚是**算术**。⛔ 三处都别
 - ⚠️ **`MAV_FWDEXTSP` 那个 `if` 在 `:1516`，不在 `:1515`**（`:1515` 是它上面那行注释
   `/* Only accept messages which are intended for this system */`）⟹ `sign-map.md` §2.3 已改成 `:1516`。
 - ⚠️ 整个 handler 实际是 **`:1509-1599`**（`void` 在 `:1509`、函数名 `:1510`、闭括号 `:1599`）；
-  票面 `§三③` 与 `spec.md` 里那种 `1508-1598` 的**区间**写法整体偏一行 ——
-  结论不变（那一整段里确实**没读** `time_boot_ms`），按 `§一④` 只登记、不逐个改。
+  票面 `§三③` 与 `spec.md` 原先那种 `1508-1598` 的**区间**写法整体偏一行
+  （`:1508` 是空行、`:1598` 是函数体里那个 `}`，闭括号在旁边一行）——
+  ✅ **2026-10-12 操作者裁定：原地改正**，两文件共 7 处 `1508-1598` 已改成 `1509-1599`
+  （结论不变：那一整段里确实**没读** `time_boot_ms`）。
+- ⚠️ 同源的第三处：`MAV_FWDEXTSP` 那个 `if` 的引用原先写 `:1508-1515`，**`if` 其实在 `:1516-1518`**
+  （`:1515` 是它上面那行注释）—— 一并按同一裁定改为 `:1516-1518`（票面 3 处 + `spec.md` 1 处）。
+  ★ 顺带核过、**没动**的：`:1530-1535` 与 `:1531-1535` 两种写法**都指到那段 OCM 派生代码**
+  （`:1530` 是条件、`:1531-1535` 是块体），不是错，故保留原样。
 
 #### 二、本轮**新造出来的**悬空引用（按 `§一④` 的口径：只登记、不改）
 
@@ -986,9 +992,12 @@ JSONL 里 `type_mask=128`、`body_rate_x=+0.1`（**FLU 原样**）、`thrust=0.1
    `mpc_node.py:557`/`:885` 与 `preflight_check.py:43`/`:172`/`:203`/`:380`。该句已重写。
 2. ✅ **真、已改** —— 新写的两处「整个 handler」区间 `:1508-1598` 偏一行。
    第一手：`awk 'NR>=1505 && NR<=1520'` 那份 `mavlink_receiver.cpp` ——
-   **`void` 在 `:1509`、函数名在 `:1510`、闭括号在 `:1599`** ⟹ 已统一改为 `:1509-1599`
-   （`sign-map.md` §2.3.1 与 `sitl-offboard-smoke.md` 顶块），并在 §2.3.1 记一句
-   「票面 §三③ 与 `spec.md` 那种写法偏一行 —— 本文件不改票面的字」。★ 票面 §三③ 的字**没动**。
+   **`void` 在 `:1509`、函数名在 `:1510`、闭括号在 `:1599`** ⟹ 文档那两处已改为 `:1509-1599`
+   （`sign-map.md` §2.3.1 与 `sitl-offboard-smoke.md` 顶块）。
+   ✅ **操作者随后裁定"原地改正"** ⟹ 票面 `§三③` 与 `spec.md` 里那 6 处也一并改正，
+   同源的 `MAV_FWDEXTSP` 引用 `1508-1515` → `:1516-1518`（票面 3 处 + `spec.md` 1 处）见上面那段锚点记录。
+   ★ **已无一处偏一行**：把这两段"记录旧值"的提及本身排除后，全仓 `1508-15` 零命中
+   （`grep -rn "1508-15" --include=*.md .` 应只剩本页这两段与 `sign-map.md` §2.3.1 那句）。
 3. ❌ **驳** —— `_request_arm` / `_request_mode` 同形骨架（Duplicated Code）。
    两个服务的请求与应答字段名、语义都不同（`value`/`success` vs `custom_mode`/`mode_sent`），
    抽一个泛型服务包装会让"这个服务到底在等什么"变得不可读 ⟹ **保留**。

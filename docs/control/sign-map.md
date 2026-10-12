@@ -135,8 +135,9 @@ thrust_body_2 = -1 * F / T_max
 而这一场里那个开关**再也取不到第二个值**。
 
 ★ 区间 `:1509-1599` 是**第一手核过**的（`void` 在 `:1509`、函数名在 `:1510`、闭括号在 `:1599`）；
-[`13`](../../.scratch/phase4/issues/13-mavros-downlink-switch.md) §三③ 与 `spec.md` 里那种 `1508-1598`
-的写法**整体偏一行**，该票 Comments 已登记（本文件不去改票面的字）。
+同一函数的另一处引用 `MAV_FWDEXTSP` 那个 `if` 是 `:1516-1518`。这两个区间原先在本文件里都偏一行
+（写成 `1508-1598` / `1508-1515`），2026-10-12 操作者裁定**原地改正**
+⟹ [`13`](../../.scratch/phase4/issues/13-mavros-downlink-switch.md) §三③ 与 `spec.md` 里的写法也已同步改正。
 ★ 这属于「**仪器根本没给那个量变过**」那一族静默，**不是**"这一档过了"。
 处置留痕见 [`13`](../../.scratch/phase4/issues/13-mavros-downlink-switch.md) 的 Comments。
 

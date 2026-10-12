@@ -158,7 +158,7 @@ Phase 2 结束时，我有一条**在 SITL 里闭环验证过**的 (C) 级模型
   （同文件 `:1531-1535`）⟹ 我们侧不再需要 `/fmu/in/offboard_control_mode` 这条流。
 - 解锁 / 切模式 / 闸门：`/mavros/cmd/arming`、`/mavros/set_mode`、闸门读 `/mavros/state`。
 - ★★ **一条硬前置（真机已满足，但必须记下来）**：整个 `SET_ATTITUDE_TARGET` handler **被一个参数守着** ——
-  `if (_mavlink->get_forward_externalsp() && …)`（`mavlink_receiver.cpp:1508-1515`），
+  `if (_mavlink->get_forward_externalsp() && …)`（`mavlink_receiver.cpp:1516-1518`），
   即 **`MAV_FWDEXTSP`**（`PARAM_DEFINE_INT32(MAV_FWDEXTSP, 1)`，说明为
   "Forward external setpoint messages…"，`src/modules/mavlink/mavlink_params.c:112-121`）。
   **z0 现值 = `1`**（[`z0.params:542`](../../docs/assets/z0.params)）✓。
