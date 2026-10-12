@@ -18,12 +18,15 @@ from pathlib import Path
 import pytest
 
 from nmpc.mpc_node import NodeParams
+from nmpc.node_core import STATUS_SOURCE_PERIOD_S
 from nmpc.params import Z0Params
 from nmpc.preflight_check import (
+    FCU_FWDEXTSP,
     Check,
     _channel_identifiers,
     _param_table,
     build_node_params,
+    check_downlink_prereqs,
     check_normalization,
     check_params,
     check_fallback,
@@ -80,7 +83,9 @@ def test_文档与独立推导本身也要对得上():
 
 @pytest.mark.parametrize("field,value,expect", [
     ("hover_thrust", 1.2, "悬停有上余量"),
-    ("heartbeat_hz", 1.0, "心跳 ≥2 Hz"),
+    # ☠️ 这里原有 `("heartbeat_hz", 1.0, "心跳 ≥2 Hz")` —— 心跳那条流与它的参数随
+    #    ticket 13 §二④（裁定 (a) 收成单频）一起删除，那条检查与它的负控一起走。
+    ("rate_hz", 0.0, "定时器频率"),
     ("tau_s", 0.5, "外推 τ 在合理区间"),
     #: ★ 负 τ 与"太大"是**两个**方向，都要拦：反向外推 = 拿"还没走到"的状态喂控制器。
     ("tau_s", -0.01, "外推 τ 在合理区间"),
@@ -88,7 +93,9 @@ def test_文档与独立推导本身也要对得上():
     #: 差一个端点就会"自检红、节点绿"（本票 2026-10-09 踩过一次），所以要钉住。
     ("tau_s", 0.2, "外推 τ 在合理区间"),
     ("warmup_cycles", 0, "热身拍数 ≥1"),
-    ("status_timeout_s", 0.2, "状态时限 ≥ 上游一个周期"),
+    #: ☠️ 这一条的**判据本身换过**（ticket 13 §二③）：名字从「状态时限 ≥ 上游一个周期」
+    #:   换成「状态时限 ≥ 闸门源 2 个周期」，理由见下面对应的那条用例。
+    ("status_timeout_s", 0.2, "状态时限 ≥ 闸门源 2 个周期"),
     ("stop_on_armed_drop", False, "两条安全停机都开着"),
     ("stop_on_nav_state_exit", False, "两条安全停机都开着"),
     ("mass", 0.0, "质量为正"),
@@ -229,6 +236,101 @@ def test_故障注入开着会被拦在装桨之前():
     failed = _failing(check_fallback(p))
     assert "故障注入关着" in failed, "开着故障注入还能过自检 ⟹ 装桨前那道闸门形同虚设"
     assert "装桨前必须设回 0" in check_fallback(p)[2].detail, "细节里要写清怎么处置"
+
+
+# ───────────── 下行前置：两个"整条下行静默死掉"的开关（ticket 13 §二⑤bis/⑥）─────────────
+
+def _tmp_repo_with_snapshot(tmp_path: Path, body: str) -> Path:
+    """造一个只带飞控参数快照的假仓库根（本组只从仓库里读这一个文件）。"""
+    (tmp_path / "docs" / "assets").mkdir(parents=True)
+    (tmp_path / "docs" / "assets" / "z0.params").write_text(body, encoding="utf-8")
+    return tmp_path
+
+
+def _tmp_mavros_config(tmp_path: Path, body: str, launch: bool = True) -> Path:
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    p = tmp_path / "px4_config.yaml"
+    p.write_text(body, encoding="utf-8")
+    if launch:
+        (tmp_path / "px4.launch").write_text("config_yaml: px4_config.yaml\n", encoding="utf-8")
+    return p
+
+
+def test_下行前置那组默认全绿():
+    """正控：真实仓库 + 装好的 mavros 下这一组本来就绿，负控才说明问题。"""
+    checks = check_downlink_prereqs(REPO)
+    assert all(c.ok for c in checks), _failing(checks)
+    assert len(checks) == 3, f"这一组应当是 3 条，实际 {len(checks)}"
+
+
+def test_飞控没开_MAV_FWDEXTSP_要被抓在装桨之前(tmp_path: Path):
+    """★ `MAV_FWDEXTSP = 0` ⟹ `SET_ATTITUDE_TARGET` 整条被飞控丢掉，而**飞控侧没有日志**。
+
+    这个数**不在我们仓库里**，所以负控只能造一份快照来喂 —— 造的时候刻意走**按名字查**那条路
+    （把这一行挪到别处、再夹几行别的参数），顺带钉住"不按行号查"这件事。
+    """
+    for value, ok in (("1", True), ("0", False)):
+        repo = _tmp_repo_with_snapshot(
+            tmp_path / f"v{value}", "# 头\n1\t1\tMAV_2_CONFIG\t0\t6\n"
+                                   f"1\t1\t{FCU_FWDEXTSP}\t{value}\t6\n1\t1\tMAV_HASH_CHK_EN\t1\t6\n")
+        checks = check_downlink_prereqs(repo)
+        got = [c for c in checks if c.name.startswith(FCU_FWDEXTSP)]
+        assert got and got[0].ok is ok, f"MAV_FWDEXTSP={value} 的判定反了：{got[0] if got else None}"
+    repo = _tmp_repo_with_snapshot(tmp_path / "zero", "# 头\n1\t1\tMAV_2_CONFIG\t0\t6\n")
+    got = [c for c in check_downlink_prereqs(repo) if c.name.startswith(FCU_FWDEXTSP)]
+    assert got and not got[0].ok, "快照里根本没有这个参数，却判过了（『找不到』不是『通过』）"
+
+
+def test_快照缺失算失败而不是跳过(tmp_path: Path):
+    """★ 与"仓库根找不到"同一条纪律：这一条守的是静默掉帧，**没有跳过这一档**。"""
+    got = [c for c in check_downlink_prereqs(tmp_path) if c.name.startswith(FCU_FWDEXTSP)]
+    assert got and not got[0].ok, "快照找不到却判过 ⟹ 这条检查在没有证据时给了绿灯"
+    assert "验不了" in got[0].detail
+
+
+def test_thrust_scaling_不是_1_要被抓在装桨之前(tmp_path: Path):
+    """三种错法各喂一次（ticket 13 §二② 新发现的硬前置）：
+
+    · 缺这一项 ⟹ mavros 收到 `thrust != 0` 的帧**整帧丢**（角速率也一起丢）；
+    · `0` ⟹ 帧不丢但推力恒 0（掉高度）；
+    · `1.0` ⟹ 才是我们要的口径。
+    """
+    cases = {"未设": ("/**/setpoint_raw:\n  ros__parameters:\n    position_sent: 0.0\n", False),
+             "零": ("/**/setpoint_raw:\n  ros__parameters:\n    thrust_scaling: 0.0\n", False),
+             "一": ("/**/setpoint_raw:\n  ros__parameters:\n    thrust_scaling: 1.0\n", True),
+             "别的节点": ("/**/setpoint_position:\n  ros__parameters:\n    thrust_scaling: 1.0\n", False)}
+    for label, (body, ok) in cases.items():
+        cfg = _tmp_mavros_config(tmp_path / label, body)
+        got = [c for c in check_downlink_prereqs(REPO, cfg) if c.name.startswith("thrust_scaling")]
+        assert got and got[0].ok is ok, f"{label} 的判定反了：{got[0] if got else None}"
+
+
+def test_参数文件存在但没被_launch_加载也要说一声(tmp_path: Path):
+    """★ "文件里写着 1.0" 与 "mavros 真的用上了这一份" 是两件事（`px4.launch:13` → `node.launch:24`）。"""
+    cfg = _tmp_mavros_config(tmp_path, "/**/setpoint_raw:\n  ros__parameters:\n    thrust_scaling: 1.0\n",
+                             launch=False)
+    got = [c for c in check_downlink_prereqs(REPO, cfg) if c.name == "那份 px4_config.yaml 确实被加载"]
+    assert got and not got[0].ok, "launch 没加载它却判过 ⟹ 那个值可能根本没进 mavros"
+
+
+def test_状态时限收得比闸门源周期还短会被抓到():
+    """★★ 这条负控钉的是 ticket 13 §二③ 那个**恒真**判据（旧值 0.75 vs 1 Hz 的源）。
+
+    ⛔ 写成 `>= 0.5`（旧判据）时它**照样绿** —— 那正是这条检查换过的原因：
+    旧判据在真机上"永远通过、而确实错了"。
+    """
+    for value, ok in ((2.5, True), (0.75, False), (1.5, False)):
+        p = dataclasses.replace(NodeParams(), status_timeout_s=value)
+        got = [c for c in check_params(p) if c.name == "状态时限 ≥ 闸门源 2 个周期"]
+        assert got and got[0].ok is ok, f"status_timeout_s={value} 的判定反了"
+    # ★ 边界：正好等于周期 ⟹ 红（`age > 阈值` 在 1 Hz 下会几乎每拍都成立）
+    p = dataclasses.replace(NodeParams(), status_timeout_s=STATUS_SOURCE_PERIOD_S)
+    got = [c for c in check_params(p) if c.name == "状态时限 ≥ 闸门源 2 个周期"]
+    assert got and not got[0].ok, "阈值恰好等于源周期时不该放行"
+    # ★★ `1.5` 那一档（上面 `(1.5, False)`）钉的是**门槛取 2 个周期**这件事：
+    #    判据若写成 `> period`（只要求"比一个周期大"），1.5 会放行 —— 而它意味着
+    #    源正常丢一拍就被判成丢状态。它是这条用例里**唯一**能区分 `> period`
+    #    与 `>= 2*period` 的那个取值（0.75 / 1.0 在两个判据下都红 ⟹ 有它才不是"随便写都绿"）。
 
 
 # ───────────────────────────── CLI 的边界 ─────────────────────────────

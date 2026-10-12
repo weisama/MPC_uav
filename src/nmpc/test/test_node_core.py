@@ -22,9 +22,9 @@ import numpy as np
 import pytest
 
 from nmpc.model import NX, quat_angle, yaw_quat
-from nmpc.node_core import (ARMING_STATE_ARMED, FALLBACK_HOLD_FRAMES, IGNORE_PX, IGNORE_PY,
+from nmpc.node_core import (FALLBACK_HOLD_FRAMES, IGNORE_PX, IGNORE_PY,
                             IGNORE_PZ, IGNORE_VX, IGNORE_VY, IGNORE_VZ, IGNORE_YAW,
-                            JUMP_DT_FLOOR_S, NAV_STATE_OFFBOARD, REFERENCE_SOURCE_TRAJ,
+                            JUMP_DT_FLOOR_S, MODE_OFFBOARD, REFERENCE_SOURCE_TRAJ,
                             TAU_DEFAULT_S, WARMUP_CYCLES,
                             ControlConfig, FallbackLadder, NodeCore, StopConfig,
                             extrapolate_state, frame_is_finite, hold_feedforward,
@@ -34,7 +34,7 @@ from nmpc.node_core import (ARMING_STATE_ARMED, FALLBACK_HOLD_FRAMES, IGNORE_PX,
                             traj_reference, traj_reference_fields, yaw_from_quat)
 from nmpc.ocp import OcpConfig
 from nmpc.params import DEFAULT as P
-from nmpc.sign_map import Px4RatesSetpoint
+from nmpc.sign_map import MavrosAttitudeTarget
 
 _OCP_CFG = OcpConfig()
 N = _OCP_CFG.N
@@ -104,10 +104,18 @@ class _Velocity:
 
 
 class _Status:
-    def __init__(self, nav_state=NAV_STATE_OFFBOARD, arming_state=ARMING_STATE_ARMED,
-                 pre_flight_checks_pass=True):
-        self.nav_state = int(nav_state)
-        self.arming_state = int(arming_state)
+    """`mavros_msgs/State` 的鸭子类型替身 —— ☠️ **形状换过**（ticket 13 §二③）。
+
+    旧替身抄的是 `px4_msgs/VehicleStatus` 的两个**整数**枚举
+    （`nav_state=NAV_STATE_OFFBOARD`(14) / `arming_state=ARMING_STATE_ARMED`(2)）；
+    现在抄的是 mavros 的一个 **bool**（`armed`）与一个**字符串**（`mode`，见 `MODE_OFFBOARD`）。
+    ⛔ 别为了少改几行而把 `armed` 写成 `True`/`1` 的**整数**：`node_core` 那边是 `bool(...)`，
+    整数 1 照样通过，于是"这个替身是不是真的像 mavros"就没人验了。
+    """
+
+    def __init__(self, armed=True, mode=MODE_OFFBOARD, pre_flight_checks_pass=True):
+        self.armed = bool(armed)
+        self.mode = str(mode)
         self.pre_flight_checks_pass = bool(pre_flight_checks_pass)
 
 
@@ -236,7 +244,9 @@ def test_保持前馈是参考自己的平衡点_也就是解析前馈的定义(
 #   上面那条 `f(x_ref, u_ref) = 0` **无条件**成立 ⟹ 本用例没有存在的理由了。
 #   ★ 新落点的判据在台架上，而且是**专门为它写的一条**
 #   （`test_mpc_node.py::test_垂直偏置加在发出去的指令上_不在代价参考上`）：
-#   那里能同时看到 `u_ref0`（不该含 ΔF）、`u`（求解器输出）、`−thrust_body_z·t_max`（该含 ΔF）三列，
+#   那里能同时看到 `u_ref0`（不该含 ΔF）、`u`（求解器输出）、`thrust·t_max`（该含 ΔF）三列
+#   （☠️ 第三列的名字在 ticket 13 §二② 换过：旧日志里叫 `−thrust_body_z·t_max`，
+#    负号属于那个**字段名**，不是这个量本身），
 #   而且那一场 `df` 从 0 长到几牛顿 ⟹ 断言有鉴别力（正控）；负控里 `df ≡ 0`，加不加都一样。
 #   量法与完整读数：`tools/px4-sitl/probe_u_ref_authority.py` / ticket 20 §10。
 
@@ -300,7 +310,9 @@ def test_重开闸门不重钉锚点():
     assert core.cycle(0.01).anchor == "anchor"
 
     # 关闸：退出 OFFBOARD（这一拍不给初值/参考），期间飞机自己飘到 2 m 外
-    core.on_status(_Status(nav_state=0), at_s=0.1)
+    # ☠️ 旧写法是 `_Status(nav_state=0)`（0 = px4_msgs 的 MANUAL）；现在这一档的名字是
+    #    mavros 的 **字符串** —— 用 `"POSCTL"`（打杆接管的典型落点）而不是随手编一个词。
+    core.on_status(_Status(mode="POSCTL"), at_s=0.1)
     core.on_mocap(_Mocap(position=(2.0, 0.0, 0.0)), at_s=0.1)
     c = core.cycle(0.11)
     assert c.reason == "not_offboard" and c.x_ref is None
@@ -361,29 +373,35 @@ def test_未解锁时不发_解锁后才发():
     """★ 票面验收项「未解锁 / 未在 offboard 时**不发布**」的一半。
 
     ★★ 负断言必须配正控（本仓的纪律）：所以这里在**同一个用例**里先把两个输入喂进去
-       证明它**会**发，再把 `arming_state` 拨回去证明它**立刻**不发 ——
+       证明它**会**发，再把 `armed` 拨回去证明它**立刻**不发 ——
        只断言"没发"的话，"夹具/逻辑根本没工作"与"判据正确"长得一模一样。
     """
     core = _core()
     core.on_mocap(_Mocap(), at_s=0.0)
-    core.on_status(_Status(nav_state=NAV_STATE_OFFBOARD, arming_state=1), at_s=0.0)
+    core.on_status(_Status(mode=MODE_OFFBOARD, armed=False), at_s=0.0)
     assert core.cycle(0.1).reason == "not_armed"
 
-    core.on_status(_Status(nav_state=NAV_STATE_OFFBOARD, arming_state=ARMING_STATE_ARMED),
-                   at_s=0.1)
+    core.on_status(_Status(mode=MODE_OFFBOARD, armed=True), at_s=0.1)
     assert _publishes_after_warmup(core, 0.2)
 
-    core.on_status(_Status(nav_state=NAV_STATE_OFFBOARD, arming_state=1), at_s=0.9)
+    core.on_status(_Status(mode=MODE_OFFBOARD, armed=False), at_s=0.9)
     assert core.cycle(0.95).reason == "not_armed", "解锁掉了必须**当拍**就停"
 
 
 def test_不在_offboard_时不发():
-    """另一半：`nav_state` 一离开 OFFBOARD 就停（打杆接管 / ch6 切模式在节点侧的唯一表现）。"""
+    """另一半：`mode` 一离开 OFFBOARD 就停（打杆接管 / ch6 切模式在节点侧的唯一表现）。
+
+    ☠️ **判据的写法本身换过一次**（ticket 13 §二③）：旧版比的是整数
+    （`nav_state == 14`），现在比的是 mavros 的**字符串** `"OFFBOARD"`。⛔ 所以这里
+    **故意不做**"字符串包含 / 前缀匹配"（`mode.startswith("OFF")`）：mavros 那张表
+    （`uas_stringify.cpp:138`）里的名字是定死的，松匹配会把将来某张表里的
+    `"OFFBOARD_xxx"` 也算通过 —— 那正是"看起来闸门开着"的静默。
+    """
     core = _core()
     core.on_mocap(_Mocap(), at_s=0.0)
-    core.on_status(_Status(nav_state=2), at_s=0.0)          # 2 = POSCTL
+    core.on_status(_Status(mode="POSCTL"), at_s=0.0)
     assert core.cycle(0.1).reason == "not_offboard"
-    core.on_status(_Status(nav_state=NAV_STATE_OFFBOARD), at_s=0.1)
+    core.on_status(_Status(mode=MODE_OFFBOARD), at_s=0.1)
     assert _publishes_after_warmup(core, 0.2)
 
 
@@ -392,7 +410,7 @@ def test_停机条件可以单独关掉():
     core = _core(ControlConfig(stop=StopConfig(stop_on_nav_state_exit=False,
                                                stop_on_armed_drop=False)))
     core.on_mocap(_Mocap(), at_s=0.0)
-    core.on_status(_Status(nav_state=2, arming_state=1), at_s=0.0)
+    core.on_status(_Status(mode="POSCTL", armed=False), at_s=0.0)
     assert _publishes_after_warmup(core, 0.1)
 
 
@@ -404,8 +422,11 @@ def test_动捕静默超时会停_恢复后重新热():
     core.on_mocap(_Mocap(), at_s=0.0)
     assert [core.cycle(0.1).reason, core.cycle(0.2).reason] == ["warmup", "warmup"]
     assert core.cycle(0.3).publish
-    # ★ 状态那条也得保持新鲜，否则先撞上的是 `status_stale`（0.75 s 的阈值比动捕的 0.5 s 长，
+    # ★ 状态那条也得保持新鲜，否则先撞上的是 `status_stale`（2.5 s 的阈值比动捕的 0.5 s 长，
     #   但两者的计时起点不同 ⟹ 不显式给状态，这里测的就不是动捕那条闸门）。
+    #   ☠️ 这个数换过载体（0.75 → 2.5，见 `StopConfig.status_timeout_s`）：取值本身不影响
+    #   本用例（这里用的是默认值、且判的是动捕那条闸门），但留一个**旧数**在注释里就是下一个
+    #   人算错阈值的起点。
     core.on_status(_Status(), at_s=0.85)
     assert core.cycle(0.9).reason == "mocap_stale"          # 0.9 − 0.0 = 0.9 > 0.5
     core.on_mocap(_Mocap(), at_s=0.95)
@@ -413,7 +434,13 @@ def test_动捕静默超时会停_恢复后重新热():
 
 
 def test_状态静默超时会停():
-    """`/fmu/out/vehicle_status` 是 2 Hz ⟹ 0.75 s 的阈值只有 1.5 个周期（见 `StopConfig`）。"""
+    """机制本身：状态那条**只要越过阈值就当拍停**。
+
+    ☠️ 这里**显式**喂 `status_timeout_s=0.75`（而不是取默认值）⟹ 它测的是机制、不是生产阈值；
+    生产阈值由下面 `test_状态源一_hz_阈值必须给够余量` 单独钉住。
+    ⚠️ 顺带记一笔：0.75 这个数在换载体前**就是生产值**（旧闸门源 `/fmu/out/vehicle_status`
+    是 2 Hz ⟹ 1.5 个周期）；现在留在用例里只是"一个比动捕那条更长的阈值"的角色。
+    """
     # ⚠️ 这里刻意用 `warmup_cycles=0`（顺带钉住这个边界：0 = 第一拍就发），
     #    否则下面那两条断言测到的是热身，而不是状态新鲜度那条闸门。
     core = _core(ControlConfig(stop=StopConfig(status_timeout_s=0.75, warmup_cycles=0)))
@@ -425,6 +452,39 @@ def test_状态静默超时会停():
     assert core.cycle(0.7).publish, "0.70 ≤ 0.75：还在阈值内，不该停"
     core.on_mocap(_Mocap(), at_s=0.76)
     assert core.cycle(0.76).reason == "status_stale", "0.76 > 0.75：越过阈值就当拍停"
+
+
+#: **闸门源的周期**（`/mavros/state`，1 Hz）—— ★ 与 `status_timeout_s` 是**两个数**，
+#: 而它们之间那条关系（阈值 > 周期）正是这个参数唯一的物理含义。台架实测见
+#: `docs/control/mpc-node-seam1.md` §11.2 与 Phase 1 的 `control.yaml:120-125`（1.000 Hz）。
+STATE_PERIOD_S = 1.0
+
+
+def test_状态源一_hz_阈值必须给够余量():
+    """★★ **判据：闸门源的阈值必须严格大于它的周期**（ticket 13 §二③ 要求"必须有断言护住"）。
+
+    机理：`status_timeout_s ≤ 周期` ⟹ `age_status_s` 每拍都超 ⟹ 判据**恒真** ⟹ 闸门**永远关着、
+    一帧都不发**。而它的症状是"安静"：没有异常、没有报错，只是什么都不发 ——
+    与"话题名写错"、"节点没起来"在现场完全分不开。
+    ☠️ 换载体那一版就是踩在这上面：阈值 `0.75` 是给 **2 Hz** 的
+    `/fmu/out/vehicle_status` 定的，换到 **1 Hz** 的 `/mavros/state` 之后
+    `0.75 < 1.0` ⟹ 恒真。票面写的是"必须改大，推荐 2.5 s"。
+
+    ★★ **变异测试**（本仓纪律，V 字要在自己身上验一次）：把 `StopConfig.status_timeout_s`
+    的默认值改回 `0.75` ⟹ **本用例必须变红**。改完记得改回去。
+    ⛔ 别把这条写成 `== 2.5`：那只是**钉住一个数**，"为什么是它"没人看得出来；
+    写成"比周期大、且有余量"才是这个参数**能成立**的条件，换频率时它会跟着说话。
+    """
+    default = StopConfig().status_timeout_s
+    assert default > STATE_PERIOD_S, (
+        f"status_timeout_s={default} ≤ 闸门源周期 {STATE_PERIOD_S} s ⟹ 超时判据恒真、"
+        "闸门一直关（症状是「什么都不发」，不是报错）")
+    # ★ 余量：至少 2 个周期。取 1.5 个周期（1.5 s）也能用，但"最多晚 1.5 s 才发现丢状态"
+    #   在起飞/切换模式那一瞬间是会被误读成"飞控不理我"的；2.5 s 与 Phase 1 的
+    #   `state_timeout_s` 同值同理由（`src/control/config/control.yaml:120-125`）。
+    assert default >= 2 * STATE_PERIOD_S, (
+        f"status_timeout_s={default} 只有 {(default / STATE_PERIOD_S):.2f} 个周期："
+        "抖动一下就会误判丢状态，而这条闸门一关就是停发")
 
 
 def test_坏掉的四元数不发_而好的发():
@@ -684,23 +744,32 @@ class _Sol:
 def test_整帧校验认得非有限值():
     """判据 2 的单元面：四个数里**任一个**非有限都算整帧不可发。
 
-    ★★ 用**真帧类型**（`sign_map.Px4RatesSetpoint`）+ `dataclasses.replace` 造坏帧。
+    ★★ 用**真帧类型**（`sign_map.MavrosAttitudeTarget`）+ `dataclasses.replace` 造坏帧。
       本用例原先用 `type("_Sp", (), {...})()` 造替身 —— 那样四个字段全在**类**上，
       `vars(sp) == {}`，于是 `{**vars(sp), field: bad}` 造出的对象**只有那一个字段**，
       四次循环全部走 `frame_is_finite` 的 `except AttributeError` 分支，
       **`math.isfinite` 一次都没被调用过**（换成"只查 `sp.roll`"的假实现，本用例照样全绿）。
       换成真类型之后，"非有限"与"形状不对"这两条才真的是两件事。
+
+    ☠️ **真帧类型换过**（ticket 13 §二②）：以前是这个模块的 `Px4RatesSetpoint`
+    （字段 `roll/pitch/yaw/thrust_body_z`），现在是 mavros 路的 `MavrosAttitudeTarget`
+    （`body_rate_x/y/z` + `thrust`）—— `frame_is_finite` 查的就是这四个新名字，
+    拿旧类型造帧会**一路走 `AttributeError` 分支**（四个字段名全对不上），
+    于是"非有限被拦下"这条断言变成**永远为真**（因为什么都拦）。这正是本用例开头那段
+    ★★ 描述过的同一个坑，只是换了个入口。
     """
-    sp = Px4RatesSetpoint(roll=0.0, pitch=0.0, yaw=0.0, thrust_body_z=-0.6235)
+    sp = MavrosAttitudeTarget(body_rate_x=0.0, body_rate_y=0.0, body_rate_z=0.0, thrust=0.6235)
     assert frame_is_finite(sp)
-    for field in ("roll", "pitch", "yaw", "thrust_body_z"):
+    for field in ("body_rate_x", "body_rate_y", "body_rate_z", "thrust"):
         for bad in (float("nan"), float("inf"), float("-inf")):
             broken = dataclasses.replace(sp, **{field: bad})
-            assert all(hasattr(broken, f) for f in ("roll", "pitch", "yaw", "thrust_body_z")), \
+            assert all(hasattr(broken, f)
+                       for f in ("body_rate_x", "body_rate_y", "body_rate_z", "thrust")), \
                 "★ 四个字段必须都在 —— 缺字段是**另一条**判据（形状不对），会盖住这一条"
             assert not frame_is_finite(broken), f"{field}={bad} 没被整帧校验拦下"
     # 形状不对（少一个字段）⟹ 拒，不猜（这一条才是 AttributeError 那一支）
-    assert not frame_is_finite(SimpleNamespace(roll=0.0, pitch=0.0, yaw=0.0))
+    assert not frame_is_finite(
+        SimpleNamespace(body_rate_x=0.0, body_rate_y=0.0, body_rate_z=0.0))
 
 
 def test_解可用吗_退化与不可用是两件事():
@@ -867,7 +936,11 @@ def _rot(q) -> np.ndarray:
 #:   · `L`：世界系 NED→ENU。NED 的 north=+x、east=+y、down=+z；ENU 的 east=+x、north=+y、up=+z
 #:     ⟹ 把 NED 坐标读成 ENU 坐标就是 `(x, y, z) → (y, x, −z)`。
 #:   · `M`：机体系 FRD→FLU。FRD 的 y 向右、z 向下；FLU 的 y 向左、z 向上 ⟹ `(x, y, z) → (x, −y, −z)`。
-#:     ★ `sign_map` 对**角速率**做的就是 `M`（`roll=ωx, pitch=−ωy, yaw=−ωz`）—— 同一个换标签。
+#:     ★ `sign_map.px4_rates_setpoint`（uXRCE-DDS 那条路）对**角速率**做的就是 `M`
+#:       （`roll=ωx, pitch=−ωy, yaw=−ωz`）—— 同一个换标签。
+#:       ⚠️ 换到 mavros 之后**发出去的那条路不再做 `M`**（`mavros_attitude_target` 一个字都不转，
+#:       取负由 mavros 自己做）：本文件下面那两条对账用例验的是 `M` 这个**换标签的数学**本身
+#:       （以及 `px4_pose_to_enu` 那条读入路径），与"我们发出去时转不转"是两件事。
 L_NED_TO_ENU = np.array([[0.0, 1.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, -1.0]])
 M_FRD_TO_FLU = np.diag([1.0, -1.0, -1.0])
 

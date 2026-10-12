@@ -19,11 +19,20 @@
 | `nmpc/timing.py` | `python3 -m nmpc.timing`：量**最坏**周期耗时（回填 D6） | **无** |
 | `nmpc/offboard_smoke.py` | ticket 05 的最小 offboard 冒烟节点（把 `sign_map` + `commands` 接到话题上） | 有 |
 
-除 `offboard_smoke` 外**都不许** import `rclpy` / `px4_msgs`。理由有二：
+**上表标「无」的那几个模块**（核心层）不许 import ROS，也不许 import 任何**具体消息包**
+（`px4_msgs` / `mavros_msgs` / …）。理由有二：
 
-1. 离线 OCP（ticket 04）与假 PX4 夹具（ticket 06）都要直接拿它们用，不该被拖去起 DDS；
+1. 离线 OCP（ticket 04）与台架夹具（ticket 06 起）都要直接拿它们用，不该被拖去起 DDS；
 2. `test/test_sign_map.py` 与 `test/test_ocp_health.py` 里各有一条断言盯着"`rclpy` 没被带进来" ——
    零依赖**只有靠断言才守得住**。
+
+☠️ **原文是"除 `offboard_smoke` 外都不许 import `rclpy` / `px4_msgs`"（2026-10-12 改）** ——
+那句话**表述本身已经不准**：有 ROS 的不止 `offboard_smoke`，`mpc_node.py` 也是入口脚本、
+同样 import `rclpy` 与消息包，它**从来就在那条约束之外**。**原意不变**（核心层不依赖具体消息包），
+改的只是把"点名两个包 / 点名一个文件"换成"点名那件事、点名那些模块"。
+★ **准确度补一句**（本票发现，账在 [ticket 13](../../.scratch/phase4/issues/13-mavros-downlink-switch.md) 的 Comments）：
+上面那两条断言**只盯 `rclpy` 与 `px4_msgs` 这两个名字**，**没有一条**盯 `mavros_msgs` ⟹
+"不许 import 任何具体消息包"目前是**写在这里的口径**，不是被断言守住的事实。
 
 ★ **`ocp` 与 `sign_map` 的分界不许模糊**：`ocp` 出的 `u` 是 **MPC（模型预测控制）内部的 FLU 量**；
 把它变成 PX4 的 `VehicleRatesSetpoint`（roll 不变 / pitch 取反 / yaw 取反 / `thrust_body` 归一化）
@@ -38,13 +47,22 @@
 
 ## 构建
 
-`px4_msgs` **不在本仓库里**（在下位工作区 `~/px4_msgs_ws`），所以先 source 它：
+`mavros_msgs` **不在本仓库里**（在下位工作区 `~/mavros_ws`，Phase 1 起就在用），所以先 source 它：
 
 ```bash
-source ~/px4_msgs_ws/install/setup.bash   # 仓库外依赖，裸 colcon build 会找不到 px4_msgs
+source ~/mavros_ws/install/setup.bash   # 仓库外依赖，裸 colcon build 会找不到 mavros_msgs
 colcon build --packages-up-to nmpc
 colcon test  --packages-select nmpc && colcon test-result --verbose
 ```
+
+☠️ **这一段 2026-10-12 换过**（ticket 13 §二⑥）。原文是
+"`px4_msgs` 不在本仓库里（在下位工作区 `~/px4_msgs_ws`），所以先 source 它：
+`source ~/px4_msgs_ws/install/setup.bash`"——**构建 `nmpc` 本身已不再需要它**
+（`package.xml` 里那条 `<depend>px4_msgs</depend>` 已撤，见那里的 ☠️）。
+⚠️ **但下面这条测试命令仍要 source `~/px4_msgs_ws`**：`test/test_mpc_node.py` 现在还
+`from px4_msgs.msg import VehicleStatus`（seam 1 的夹具还是假 PX4）⟹ 完整的两行是
+`source ~/mavros_ws/install/setup.bash && source ~/px4_msgs_ws/install/setup.bash`。
+那份夹具的去留归 ticket 13 §四，**它落地之前别把 `~/px4_msgs_ws` 那一行删掉**。
 
 ## 跑一下（SITL 冒烟，详见交付文档）
 

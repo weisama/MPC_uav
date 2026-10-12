@@ -1839,6 +1839,33 @@ def test_掩码常量与_mavros_msgs_逐位相同():
         "默认掩码下这三样该全有效；有交集说明掩码或常量抄错了"
 
 
+def test_下行那条路的两个常量也对着真消息类():
+    """★★ **换载体之后新出现的两个"手抄常量"，各配一条对真类的断言**（ticket 13 §二①③）。
+
+    与上面那条同一纪律（**权威在 msg**），但守的是**另一条消息**：
+
+    | 候选写法 | 权威 | 抄错的症状 |
+    |---|---|---|
+    | `mpc_node.TYPE_MASK_IGNORE_ATTITUDE = 128` | `AttitudeTarget.IGNORE_ATTITUDE` | 掩码写错一位：`orientation` 未被忽略（**填的是默认全零四元数**，飞控可能按它转姿态）或 `IGNORE_THRUST` 被置上（**掉高度**，而话题面上每帧都正常） |
+    | `node_core.MODE_OFFBOARD = "OFFBOARD"` | `State.MODE_PX4_OFFBOARD` | 字符串写错（`"OFFBOARD "` / 大小写）：闸门**永远判"不在 OFFBOARD"**、一帧不发，而日志里那句 `mode='OFFBOARD'` 看着完全正确 |
+
+    ★ 为什么必须**对真消息类**验而不是两边都自己写：那两个常量在 `node_core` 与本文件里
+      都是手抄的（`node_core` 按契约不 import ROS），手抄的错误只会在**这里**露出来。
+    ⚠️ 不起 DUT（纯常量）—— 它守的是协议，而协议的错法是本票里最安静的一种。
+    """
+    from mavros_msgs.msg import AttitudeTarget, State
+
+    from nmpc import mpc_node, node_core
+
+    assert mpc_node.TYPE_MASK_IGNORE_ATTITUDE == AttitudeTarget.IGNORE_ATTITUDE == 128
+    # 另外三位**必须**是 0 的对应关系：我们只用角速率 + 推力 ⟹ 只忽略姿态，
+    # 三个角速率位与推力位都不能置（置了就是把发出去的东西丢掉一半）。
+    for bit in (AttitudeTarget.IGNORE_ROLL_RATE, AttitudeTarget.IGNORE_PITCH_RATE,
+                AttitudeTarget.IGNORE_YAW_RATE, AttitudeTarget.IGNORE_THRUST):
+        assert mpc_node.TYPE_MASK_IGNORE_ATTITUDE & bit == 0, f"掩码不该置 {bit}"
+    assert node_core.MODE_OFFBOARD == State.MODE_PX4_OFFBOARD == "OFFBOARD"
+
+
 def test_轨迹档才订_traj_reference_而默认档一帧都不订():
     """★ 条件订阅的可断言形态（与 A 档"不订动捕"那条同一纪律，ticket 09 的 ★★）。
 

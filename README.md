@@ -17,7 +17,7 @@
 | **分支 / 标签** | `main`（开发主线）· **`v1.0` / `v2.0` / `v3.0` 三个都是**分支**（★ 本仓库的版本名只用作**分支**，别改成标签）**，各自钉在一个阶段收口点上：`v1.0` → `5ff9709`（Phase 1 收口，2026-09-28）· `v2.0` → `175e298`（Phase 2 的票全部 `done`，2026-10-09）· `v3.0` → `cdddeb5`（Phase 3 收口，2026-10-09）—— ⚠️ **同名既当分支又当标签会让 `git rev-parse` 歧义**：2026-10-12 实测，删标签之前 `git push origin v2.0` 直接报 `src refspec v2.0 matches more than one`，连第一个子命令都过不去 |
 | **本版对应提交** | ☠️ **本页无法自引自己的 hash** —— 用 `git rev-parse v3.0` 取 |
 | **飞控固件** | `Minderring/PX4-Autopilot` @ `4a0e65f2` —— v1.14.3 系的 MicoAir 厂商构建，**已在机上、不刷不改** |
-| **`px4_msgs`** | `release/1.14` @ `ffb6e80`（仓库外 `~/refs/px4_msgs`；**Phase 2 起用** —— ⚠️ 现已是**构建期依赖**：`nmpc` 与 `bench` 的 `package.xml` 里各有一条 `<depend>`） |
+| **`px4_msgs`** | `release/1.14` @ `ffb6e80`（仓库外 `~/refs/px4_msgs`；**Phase 2 起用** —— ☠️ 原写"`nmpc` 与 `bench` 的 `package.xml` 里**各**有一条 `<depend>`"，**2026-10-12 只剩 `bench`**：`nmpc` 那条已随下行换到 mavros 撤掉，见 [ticket 13](.scratch/phase4/issues/13-mavros-downlink-switch.md) §二⑥） |
 | **mavros** | **2.15.1 @ `22ae5b7`** —— 源码构建在 `~/mavros_ws`，**不在本仓库**（Phase 1 全靠它） |
 | **ROS 2** | **Humble** |
 | **运行环境** | Ubuntu 22.04.5 LTS · 内核 5.15.185-tegra · aarch64（Jetson Orin NX 8GB） |
@@ -131,10 +131,14 @@
 > ```bash
 > source /opt/ros/humble/setup.bash && cd ~/ros_ws && colcon build
 > ```
-> ⚠️ **裸 `colcon build` 之前要先 source `px4_msgs`** —— 本仓库的 `nmpc` 与 `bench` 都依赖它
-> （两个包的 `package.xml` 里各有 `<depend>px4_msgs</depend>`），而 `px4_msgs` **在仓库外**
-> （下位工作区 `~/px4_msgs_ws`，`release/1.14`）⟹ 完整的一行是
-> `source /opt/ros/humble/setup.bash && source ~/px4_msgs_ws/install/setup.bash && cd ~/ros_ws && colcon build`。
+> ⚠️ **裸 `colcon build` 之前要先 source 两个仓库外的工作区**：
+> `mavros_msgs`（`~/mavros_ws`，`control` / `bringup` / `nmpc` / `bench` 都依赖）
+> 与 `px4_msgs`（`~/px4_msgs_ws`，`release/1.14`，**现在只剩 `bench` 依赖**）——
+> 两者都不在本仓库里 ⟹ 完整的一行是
+> `source /opt/ros/humble/setup.bash && source ~/mavros_ws/install/setup.bash && source ~/px4_msgs_ws/install/setup.bash && cd ~/ros_ws && colcon build`。
+> ☠️ **本段 2026-10-12 改过**（[ticket 13](.scratch/phase4/issues/13-mavros-downlink-switch.md) §二⑥）：
+> 原文说"`nmpc` 与 `bench` 都依赖 `px4_msgs`（两个包的 `package.xml` 里各有 `<depend>px4_msgs</depend>`）"
+> —— `nmpc` 那份已撤（下行从 uXRCE-DDS 换到 mavros），`bench` 那份归该票 §四（要先判 `fake_px4.py` 的去留）。
 > 依赖与运行方式见 [`src/vrpn_listener/VENDORED.md`](src/vrpn_listener/VENDORED.md) §5；
 > `mocap` 与它的测试见 [`src/mocap/README.md`](src/mocap/README.md)（`colcon test --packages-select mocap`）；
 > `traj` 见 [`src/traj/README.md`](src/traj/README.md)（`--packages-up-to traj`，**它的 seam 1 也依赖 `bench`**）；

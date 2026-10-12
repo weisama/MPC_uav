@@ -57,6 +57,22 @@ python3 -m pytest src/nmpc/test/test_mpc_node.py        # 多数用例各起一�
 
 ## 2. 接口面
 
+> ☠️☠️ **本节整节按旧载体（`px4_msgs` / uXRCE-DDS 的 `/fmu/*`）写，2026-10-12 起不再是这样**
+> （[ticket 13](../../.scratch/phase4/issues/13-mavros-downlink-switch.md) §二：下行换到 mavros）。
+> **逐小节点名**，别拿下面任何一张表当现状：
+>
+> | 小节 | 今天的状态 |
+> |---|---|
+> | §2.1 订阅 / 发布表 | ☠️ **两张发布行（`/fmu/in/offboard_control_mode`、`/fmu/in/vehicle_rates_setpoint`）与状态订阅那一行都不再成立**：发布变成一条 `/mavros/setpoint_raw/attitude`，订阅变成 `/mavros/state`，心跳**整条删掉**。新话题名/QoS 的**权威在代码**（`mpc_node.py` 的 `TOPIC_*` 表） |
+> | §2.1 那句"订阅 `/fmu/out/*` 必须显式 `BEST_EFFORT`" | ⚠️ **结论不变**（"QoS 不匹配是**静默**的"）且更重要了，但**具体档位两条路各换了一个**：新发布的那条要**逐项对齐 mavros 的收端** `SensorDataQoS()`（best_effort / depth 5 / volatile；`setpoint_raw.cpp:62`），新订阅的那条要**逐项对齐** `mavros::StateQoS()`（reliable / depth 10 / **transient_local**；`qos.hpp:60-63`）。★ 两个档位**不同**、而且都不是 ROS 默认值；权威在代码（`mpc_node.py` 的 `QOS_PUB_ATT` / `QOS_SUB_MAVROS_STATE`，各带依据） |
+> | §2.2 心跳无条件发 | ☠️ **前提没了**：心跳流已删（§二④ 裁定收成单频），setpoint 自己就是心跳；`heartbeat_always` 参数一并删除 ⟹ 本节那段"不发 setpoint ≠ 松手"的**机制**仍值得读，但**参数面已经不存在** |
+> | §2.3 频率表 | ☠️ 心跳那两行作废；`vehicle_rates_setpoint` 100 Hz 与 RViz 10 Hz 两行仍对（换的是载体，不是频率） |
+> | §2.4 时间戳 | ☠️ **整节作废**：新载体上飞控那个 handler 不读 `time_boot_ms`，`timestamp` 这个字段根本没有对应物（§四 的映射表里明写"删除或标记为不再可测"） |
+>
+> ★ **本节为什么不当场重写成新表**：新话题名/QoS/频率的**逐条证据与映射表是本票 §四 的交付物**
+> （票面原话："映射表本身就是交付物，写进 `mpc-node-seam1.md`"）⟹ 这里只**作废**，不**代写**。
+> ⛔ 也别把这里当成"§2 已经被 §四 改过了"的凭证 —— §四 落地时回来把本节整节换掉。
+
 ### 2.1 订阅 / 发布
 
 | 方向 | 话题 | 类型 | QoS | 依据 |
@@ -331,6 +347,22 @@ ros2 run nmpc preflight_check.py -p mass:=0.82 -p hover_thrust:=0.55   # 与节�
 > 第二次是**本页 §1** 那一批。**没有新增任何 seam 形态** —— 同一条缝隙、同一组用例，
 > 只把 DUT 的**起参数**换成实机冻结档。
 
+> ☠️ **本节被 2026-10-12 的下行换载体部分作废**（[ticket 13](../../.scratch/phase4/issues/13-mavros-downlink-switch.md)
+> §二：`/fmu/*` → mavros）。本节是那次改动**之前**（2026-10-10）的读数，**逐项点名**哪些还站得住：
+>
+> | 本节里的东西 | 今天还能不能照读 |
+> |---|---|
+> | §11.1 冻结档表的**除频率外三行**（悬停油门 / `t_max` / `τ=0.0`） | ✅ 与下行无关，照旧 |
+> | §11.1 频率行的 `heartbeat_hz 50` | ☠️ **参数已删**（§二④ 裁定"收成单频"）。★ 那条**用例名**（`test_实做频率_心跳_50_Hz_setpoint_100_Hz`）与 §11.3 的"心跳频率"行**已标在 §11.3 表里**，改写归 §四 |
+> | §11.1 的**代码落点**三处（`FROZEN_PARAMS` 那三条） | ✅ 与下行无关（§四 也明说冻结档保留） |
+> | §11.2 那条命令 | ☠️ **已就地改**（加了 `~/mavros_ws` 一行，见下） |
+> | §11.3 的读数（`45 passed`）与逐项对照表 | ⚠️ **是旧载体的读数**：`45 passed` 这个数、以及"心跳频率 / 时间戳单位 / 闸门"三行的**用例名**都属于换载体之前。⛔ **不要拿它当"今天也是 45 条全绿"** —— 真实条数与红色数以 `pytest` 退出码为准（同 §7 那条），重跑归 §四 |
+> | §11.4 那条静默（τ 与两条探针） | ✅ 与下行无关 |
+>
+> ★ **为什么不全就地改写**：票面把 seam 1 **用例本身**的改写明确归 §四（"映射表本身就是交付物"）
+> ⟹ 本节只把**读起来像还能照抄的**地方（冻结档表 + 命令）改成与新事实一致，
+> 用例名与读数留给 §四 一次改干净（票面 §四⑤ 点名这两处不许留悬空）。
+
 ### 11.1 冻结档长什么样（= `test_mpc_node.py` 的 `FROZEN_PARAMS`）
 
 出处 [`first-flight-config.md`](first-flight-config.md) **§2**（`N1`–`N5`，逐条带理由与等级）。
@@ -338,7 +370,7 @@ ros2 run nmpc preflight_check.py -p mass:=0.82 -p hover_thrust:=0.55   # 与节�
 
 | 票面点名要"实机参数"的四个量 | 冻结值 | 落在哪 |
 |---|---|---|
-| 频率 | `rate_hz 100` / `heartbeat_hz 50` / `viz_hz 10` | **节点默认**（`mpc_node.py` 的 `_PARAMS` 表） |
+| 频率 | `rate_hz 100` / `viz_hz 10` —— ☠️ **本行 2026-10-12 改过**：原写 `rate_hz 100` / `heartbeat_hz 50` / `viz_hz 10`，`heartbeat_hz` 那个参数**已删**（见下） | **节点默认**（`mpc_node.py` 的 `_PARAMS` 表） |
 | 悬停油门 | `0.1589` | **模型默认**（`src/nmpc/nmpc/params.py` 的 `Z0Params`，2026-09-29 实测回填） |
 | 推力归一化常数 | `t_max = 46.3027 N`（= `m·g / hover_thrust` **导出**） | 同上 |
 | τ | **`0.0`**（不补偿） | ★ **与节点默认 `0.05` 不同** ⟹ 命令行那**唯一**一个 `-p tau_s:=0.0` |
@@ -360,12 +392,19 @@ ros2 run nmpc preflight_check.py -p mass:=0.82 -p hover_thrust:=0.55   # 与节�
 
 ```bash
 source /opt/ros/humble/setup.bash
-source ~/px4_msgs_ws/install/setup.bash
+source ~/mavros_ws/install/setup.bash     # ← ☠️ 2026-10-12 新增（ticket 13 §二⑥）：下行换成 mavros
+source ~/px4_msgs_ws/install/setup.bash   # ← ⚠️ 暂留：seam 1 夹具还 import px4_msgs（去留见 ticket 13 §四）
 source install/setup.bash
 export ACADOS_SOURCE_DIR=$HOME/acados
 export LD_LIBRARY_PATH=$ACADOS_SOURCE_DIR/lib:$LD_LIBRARY_PATH
 python3 -m pytest src/nmpc/test/test_mpc_node.py -q      # 2026-10-10 实测 ≈7m40s（本机 Orin NX）
 ```
+
+☠️ **本条命令 2026-10-12 动过**（[ticket 13](../../.scratch/phase4/issues/13-mavros-downlink-switch.md) §二⑥/⑦）：
+原命令只有 `source ~/px4_msgs_ws/install/setup.bash` 一行。多出来的 `~/mavros_ws` 现在
+**拉的是 `mavros_msgs`**（`nmpc/package.xml` 里已有那条 `<depend>`）；而 `~/px4_msgs_ws` 那一行
+**这会儿还没到能删的时候** —— `test/test_mpc_node.py` 仍 `from px4_msgs.msg import VehicleStatus`，
+要等 §四 把夹具换过去。**§四 落地时回来把这两行核一遍**（票面 §四⑤ 点名了这两处不许留悬空）。
 
 ★ **跑之前先看一眼 `pgrep -af mpc_node`**（本文件开头 ★★ 那条：别人的 DUT 会发在**同一对固定
 话题**上，症状是数字不对而不是报错）。**不要**用 `pytest -n`。
@@ -376,6 +415,10 @@ python3 -m pytest src/nmpc/test/test_mpc_node.py -q      # 2026-10-10 实测 ≈
 
 **`45 passed, 0 failed`（整文件，7m38s）** —— 冻结档下**一条都没红**。
 
+> ☠️ **这一行的读数属于 2026-10-10 那套载体，不是今天的**：下行换到 mavros 之后
+> （2026-10-12，ticket 13 §二）下面这张表里带 ☠️ 的三行**都要改写或作废**，改写归 §四；
+> ⛔ 别把 `45 passed` 抄进任何新文档当现状（**条数与红色现算**，同下面那条"条数不是契约"）。
+
 票面点名的八项断言范围**逐项对得上**（这是"与 Phase 2 的 seam 1 一致"的判据）：
 
 | 票面点名的验收项 | 落在哪条用例 | 冻结档 |
@@ -384,10 +427,10 @@ python3 -m pytest src/nmpc/test/test_mpc_node.py -q      # 2026-10-10 实测 ≈
 | 推力归一化 | `test_位置保持时推力归一化等于悬停油门_角速率近零` | ✅ |
 | NaN **整帧丢弃** | seam 1：`test_求解失败时先保持上一帧_再切安全悬停_且一帧都不带非有限值`（全帧扫描）；seam 2：`test_node_core.py::test_整帧校验认得非有限值` | ✅ |
 | 求解失败兜底 | 同上（`-p inject_solve_fail_after_frames` 注入） | ✅ |
-| 心跳频率 | `test_实做频率_心跳_50_Hz_setpoint_100_Hz` | ✅ |
+| 心跳频率 | ☠️ `test_实做频率_心跳_50_Hz_setpoint_100_Hz` —— **心跳流已删**（§二④ 收成单频）⟹ 这条不在今天的事实里；改写归 §四 | ✅（2026-10-10） |
 | QoS 可通 | `test_接口与_QoS_与票面一致` | ✅ |
-| 时间戳单位 | `test_时间戳是墙钟微秒` | ✅ |
-| 未解锁 / 未在 OFFBOARD 时**不发布** | `test_闸门关闭时只发心跳_一帧_setpoint_都没有`（正控 `test_解锁切_OFFBOARD_之后立刻开始发`） | ✅ |
+| 时间戳单位 | ☠️ `test_时间戳是墙钟微秒` —— 新载体上**没有对应物**（飞控那个 handler 不读 `time_boot_ms`）⟹ 该删或标"不再可测"，**不许留成绿着但不测任何东西**；归 §四 | ✅（2026-10-10） |
+| 未解锁 / 未在 OFFBOARD 时**不发布** | ☠️ `test_闸门关闭时只发心跳_一帧_setpoint_都没有` —— **闸门源换成 `/mavros/state`、心跳流没了**，用例名与判据都要改；归 §四 | ✅（2026-10-10） |
 
 ★ **条数不是契约**（同 §7 那条）：`grep -c '^def test_'` 会随判据增删而变，**判"过没过"看退出码**。
 ★ **对照**：改动**前**（同一台机器、同一晚、τ=0.05 那套）跑出 `43 passed, 1 failed` ——

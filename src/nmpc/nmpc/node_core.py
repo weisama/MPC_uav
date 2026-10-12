@@ -11,10 +11,17 @@
 
 ★★ **两档状态源**（ticket 09 的 A 档）：`state_source` 选**测量从哪里来**，其余逻辑一模一样。
 
+☠️ **2026-10-12（ticket 13 §二⑤）：下表里的 `px4` 档在本阶段已不可用** —— 它读的两条
+`/fmu/out/*` 是 **uXRCE-DDS 专用**的，本票把下行换到 mavros 之后它们就不存在了。
+操作者裁定取 (b)：**判为不可用 + 入口显式拒绝**（`mpc_node._validate` 启动即退），
+⚠️ **不是**静默无数据。本模块这两档的纯逻辑（含 `_measure_px4` 与它的单测）**原样留着** ——
+它们是"我们的约定与 PX4 一致"那件事的现成答案，将来若改成 mavros 的本地位置（那条路要重新
+过一遍"转两次"的坑，见 `docs/reference/px4-interface.md` §5.1）可以直接接着用。
+
 | 档 | 测量 | 用在 |
 |---|---|---|
 | `mocap`（默认） | `/mocap/pose_enu`（**原生 ENU/FLU**） | Phase 2 的 B 档（动捕闭环） |
-| `px4` | `/fmu/out/vehicle_local_position` + `vehicle_attitude`（**NED/FRD**） | A 档（MPC（模型预测控制）读 PX4 自己的状态） |
+| `px4`（☠️ 本阶段启动即拒） | `/fmu/out/vehicle_local_position` + `vehicle_attitude`（**NED/FRD**） | A 档（MPC（模型预测控制）读 PX4 自己的状态） |
 
 A 档的价值**不在"多一条输入"**：它是"**我们的约定与真 PX4 一致**"这个问题第一次被真正回答
 （票面原文）—— 04 只验自洽、06 只验"映射表被实现对了"，只有状态**从 PX4 那头进来**，
@@ -27,8 +34,12 @@ A 档的价值**不在"多一条输入"**：它是"**我们的约定与真 PX4 �
   已 resolved —— **急停 = ch8 高值 = PX4 硬件杀车，程序不读急停通道**，也就是**不存在**
   "软急停通道"。程序侧能观察到的只有两条既有路径（`phase2-implementation.md` §4 S8 那张表）：
   **打杆接管**（RC 一动，PX4 自己离开 OFFBOARD）与 **ch6 模式开关**（切模式）。
-  两者在节点这一侧**长得一样** —— 都表现为 `vehicle_status.nav_state` 不再是 OFFBOARD
+  两者在节点这一侧**长得一样** —— 都表现为"报告的飞行模式不再是 OFFBOARD"
   ⟹ 本模块只认状态，不认通道。
+  ★ 2026-10-12（ticket 13 §二③）：那个"报告"的**载体换了一个** —— 以前是
+  `px4_msgs/VehicleStatus.nav_state`（整数），现在是 `mavros_msgs/State.mode`（**字符串**，
+  `"OFFBOARD"`，见 `MODE_OFFBOARD`）。**判据本身没变**，`stop_on_nav_state_exit` 的语义也没变
+  （名字照旧，改名的代价大于收益，见 `StopConfig` 的说明）。
 
 ★ 本模块还负责**失败路径**（ticket 07 / M5）的三块纯逻辑，各有第一手理由：
   1. **输入合理性**（`stamp_regress` / `pose_jump` / `attitude_jump`）：动捕会给出**不可信但看着正常**
@@ -40,6 +51,13 @@ A 档的价值**不在"多一条输入"**：它是"**我们的约定与真 PX4 �
      是同一件事，所以陈旧命令必须由**我们**主动换掉。
   3. **发布前的整帧有限性校验**（`frame_is_finite`）：PX4 对三个角速率分量有 NaN 回退
      （退回实测角速率），**推力没有** —— 一个 NaN 推力会直达混控器。
+     ☠️ **2026-10-12（ticket 13 §二②）换到 mavros 载体后，这一条的"关卡位置"变了**：
+     发出去的帧现在是 `mavros_msgs/AttitudeTarget`（`body_rate_x/y/z` + `thrust`），
+     而 mavros 会先把 `thrust` 夹进 `[0, 1]`（`setpoint_raw.cpp:313`）—— 按 `std::max` 的定义
+     （`a<b ? b : a`）一个 NaN 会被夹成 **0**（无推力），而**不是**把 NaN 透传下去。
+     ⚠️ 这是**由定义推出、未实测**的一条；但它不改变结论：`frame_is_finite` 照旧在**发布前**
+     拦下这一帧（0 推力也是一条不该发的指令）。写在这是为了让下一个人知道
+     "换载体之后这一道还挡在前面"，而不是"PX4 反正会兜住"。
 """
 
 from __future__ import annotations
@@ -56,7 +74,7 @@ from .params import Z0Params
 __all__ = [
     "TAU_DEFAULT_S", "TAU_MIN_S", "TAU_MAX_S",
     "WARMUP_CYCLES", "FALLBACK_HOLD_FRAMES", "JUMP_DT_FLOOR_S",
-    "ARMING_STATE_ARMED", "NAV_STATE_OFFBOARD",
+    "MODE_OFFBOARD", "STATUS_SOURCE_PERIOD_S",
     "STATE_SOURCE_MOCAP", "STATE_SOURCE_PX4", "STATE_SOURCES", "SAT_TOL_REL",
     "REFERENCE_SOURCE_HOLD", "REFERENCE_SOURCE_TRAJ", "REFERENCE_SOURCES",
     "IGNORE_PX", "IGNORE_PY", "IGNORE_PZ", "IGNORE_VX", "IGNORE_VY", "IGNORE_VZ",
@@ -120,11 +138,34 @@ FALLBACK_HOLD_FRAMES = 10
 #:   飞机无故停发**的假阳性）。取一个 100 Hz 控制周期做下限，等价于"至少按 10 ms 的机动量算"。
 JUMP_DT_FLOOR_S = 0.01
 
-#: PX4 的枚举（`px4_msgs/msg/VehicleStatus.msg` 逐字一致）。
-#: ⚠️ 这里**故意只抄两个**（节点只用这两个）：把整张表抄进来就会有两份枚举，
-#: 而"两份枚举"正是这一类 bug 的温床。
-NAV_STATE_OFFBOARD = 14
-ARMING_STATE_ARMED = 2
+#: ★★ **闸门源换成了 `/mavros/state`**（ticket 13 §二③，2026-10-12）—— 判据是
+#: `armed` 为真**且** `mode == "OFFBOARD"`。
+#: ★ 这个字符串是**第一手核过的**（票面点名"不许猜"，核法与三处出处写进了 ticket 13 的 Comments）：
+#:   mavros `uas_stringify.cpp:224-225` 对 `MAV_AUTOPILOT::PX4` 走 `str_mode_px4(custom_mode)`，
+#:   而 `:138` 那张表里 `MAIN_MODE_OFFBOARD` 的名字就是 `"OFFBOARD"`；同一个字符串还**逐字**
+#:   出现在 `mavros_msgs/msg/State.msg` 的 `MODE_PX4_OFFBOARD = OFFBOARD` 上（消息定义自带）。
+#: ⛔ 本模块的契约是**不 import ROS**（含 `mavros_msgs`）⟹ 这个字符串只能抄一份；
+#:   "抄的那份与 msg 一致"由 `test_mpc_node.py` 对着真 `State` 类断言（权威在 msg）。
+MODE_OFFBOARD = "OFFBOARD"
+
+#: **闸门源（`/mavros/state`）的标称周期 [s]** = 1 Hz ⟹ `1.0`。
+#: ★★ 这个常数**只写一遍**（在**拥有这条闸门语义**的模块里），由 `preflight_check` 与
+#:   `test_node_core.py` 引过去 —— 阈值与周期之间那条关系（**阈值必须 > 周期，且留够余量**）
+#:   是这个参数唯一的物理含义，而这个含义**只在两边用同一个周期时**才成立。
+#: 第一手出处：`/mavros/state` 只在 mavros 收到 MAVLink HEARTBEAT 时发布，那是 PX4 的
+#: **1 Hz 定频**（`sys_status.cpp:962-985`）；z0 上 Phase 1 量过 1.000 Hz
+#: （min 0.998 / max 1.001，`src/control/config/control.yaml:120-125`）。
+#: ☠️ 换载体**之前**这条闸门的源是 `/fmu/out/vehicle_status`（2 Hz ⟹ 旧的 0.75 s 阈值）；
+#:   谁要把这里改成 2.0，先看 `StopConfig.status_timeout_s` 的 ☠️（那是整条账）。
+STATUS_SOURCE_PERIOD_S = 1.0
+
+#: ☠️ **2026-10-12（ticket 13 §二③）：这里原本抄着 PX4 的两个枚举**
+#: （`NAV_STATE_OFFBOARD = 14` / `ARMING_STATE_ARMED = 2`，出处 `px4_msgs/msg/VehicleStatus.msg`），
+#: 闸门用它们判"解锁了没有 / 在不在 OFFBOARD"。换载体后拿到的是 `mavros_msgs/State` 的
+#: `armed`（**bool**）与 `mode`（**字符串**）⟹ 那两句整数比较没有对应写法了（**判据本身不变**：
+#: armed 且 OFFBOARD），**两个常量已无读者，故删除**。
+#: ⛔ 别照旧版把它们加回来：`bench/fake_px4.py:50/:52` 与 `tools/px4-sitl/*` 各有**自己的一份**
+#: （那些文件走的是 uXRCE-DDS 载体，本来就该各自持有自己的枚举）。
 
 #: 状态源的名字（`-p state_source:=…`，见模块 docstring 的两档表）。
 #: ⚠️ 写成一个**封闭集合**：参数层面写错一个字母（`px4_lp` / `PX4`）必须**启动即退**，
@@ -175,13 +216,23 @@ class StopConfig:
 
     ★ 每个 `timeout` 的量级**必须与上游频率匹配**（照抄 Phase 1 的教训）：
       · `/mocap/pose_enu` 实测 ~196 Hz ⟹ 0.5 s 是"明显漏了"的量级
-      · `/fmu/out/vehicle_status` 是 **2 Hz 定频**（`Commander.cpp:1790`）⟹ 0.5 s
-        只有**一个**周期，任意一次抖动都会误判。真 PX4 在这条流上的心跳是 1 s
-        （`COM_OF_LOSS_T`，它自己也会因此退出 OFFBOARD）⟹ 本节点取 **0.6 s** 起，
-        默认 `0.75`：小于 PX4 自己的容忍度，才不会"PX4 觉得还新鲜、我们先停了"。
+      · ☠️ **闸门源换成了 `/mavros/state`（ticket 13 §二③，2026-10-12）⟹ 上面那条
+        "2 Hz 定频、默认 0.75"的账整段作废。** 新事实是第一手的：
+        `/mavros/state` **只在 mavros 收到 MAVLink HEARTBEAT 时发布**，而那是 PX4 的
+        **1 Hz 定频**流（`sys_status.cpp:962-985`；Phase 1 在 z0 上量过 1.000 Hz，
+        min 0.998 / max 1.001 —— `src/control/config/control.yaml:120-125`）。
+        `0.75 < 1.0` ⟹ 「状态超时」这条判据会**恒真**：每秒都在报"飞控失联"、闸门一直关着，
+        而症状是**一帧都不发**（看着像话题名写错了）。
+        **取 2.5 s**（= 2.5 × 下面那个 `STATUS_SOURCE_PERIOD_S`），与 Phase 1 的
+        `state_timeout_s` **同值同理由**（那边同一段注释里点名写了"**不要照抄 px4ctrl 的 0.5 s**"）。
+        ⚠️ 代价要写在明处：解锁 / 切模式（两个方向）**最多晚约 1 s 被检出** ——
+        停机方向上这意味着"离开 OFFBOARD 之后我们还会再发 ≤1 s 的帧"，而那一段时间里
+        PX4 自己那道 OFFBOARD 判据会把它们丢掉（**是别人的一行代码在替我们兜底**，
+        票面 §二④ 对同一件事的保留意见照旧成立：别把"当前无害"当成不写下来的理由）。
       · `vehicle_local_position` / `vehicle_attitude` 实测 **32.5 / 31.6 Hz**（2026-09-28，
         z0 SITL，A 档探针）⟹ 一拍 31 ms，0.5 s = **16 拍**：与动捕那条同一个量级，
-        也远小于 PX4 自己的失效判据。
+        也远小于 PX4 自己的失效判据。☠️ **这两条随 A 档一起停了**（ticket 13 §二⑤），
+        本节留着是因为 `state_source=px4` 的纯逻辑与单测仍在（见模块 docstring 的 ☠️）。
     """
 
     mocap_timeout_s: float = 0.5
@@ -205,8 +256,15 @@ class StopConfig:
     #:   停机条件（离开 OFFBOARD / 掉 armed / 状态源超时）把闸门关上。理由：本节点**不是**
     #:   任务状态机，它不认识"这一趟"是什么；"任务放弃"归 `control`（Phase 1）那一侧。
     traj_stream_gap_s: float = 0.5
-    status_timeout_s: float = 0.75
-    #: 离开 OFFBOARD 就停（打杆接管 / ch6 切模式在节点这一侧的**唯一**表现，见模块 docstring）
+    #: ☠️ **`0.75` 是 uXRCE-DDS 载体的旧值（载体换到 `/mavros/state` 后它恒真）** ——
+    #: 账与出处见类 docstring 的第二条。**2.5** 与 Phase 1 的 `state_timeout_s` 同值。
+    status_timeout_s: float = 2.5
+    #: 离开 OFFBOARD 就停（打杆接管 / ch6 切模式在节点这一侧的**唯一**表现，见模块 docstring）。
+    #: ★ 名字里的 `nav_state` 是 **uXRCE-DDS 载体**的说法（那一刻判的是整数
+    #: `VehicleStatus.nav_state`）。换到 mavros 之后判的是 `State.mode` **字符串**，
+    #: 而**语义完全没变**（"报告的飞行模式不是 OFFBOARD 就停"）⟹ **故意不改名**：
+    #: 这个名字已经进了节点参数表、`preflight_check` 的两条串位断言与三份文档，
+    #: 而改名的收益只是措辞好看一点。语义以本行为准。
     stop_on_nav_state_exit: bool = True
     #: 掉出 armed 就停（含"还没解锁"——那种情况下本来也不该发）
     stop_on_armed_drop: bool = True
@@ -417,16 +475,24 @@ def mocap_stamp_s(msg) -> Optional[float]:
 def frame_is_finite(sp) -> bool:
     """**整帧**有限性校验（票面验收项，第一手理由见模块 docstring 第 3 条）。
 
-    ★ 校验的是会变的那**四个**数：`roll / pitch / yaw / thrust_body_z`。
-      消息里另外两个分量（`thrust_body[0..2]` 的横向两个）是 `mpc_node._rates_msg` 里
-      **写死 0.0 的字面量** —— "全量"这两个字容易被读成"包括那两个 0"，故在此写明。
-    ⚠️ 它与 `sign_map.px4_rates_setpoint` 的入参检查**故意重复**：`sign_map` 守的是
-      "**映射这条路**上的量"（`ω` / `F` / `T_max`），这里守的是"**凡是要写进那一帧的数**"。
+    ★ 校验的是会变的那**四个**数。☠️ **2026-10-12（ticket 13 §二②）这四个数的名字换了**：
+      旧（uXRCE-DDS）：`roll / pitch / yaw / thrust_body_z`；
+      新（mavros）：`body_rate_x / body_rate_y / body_rate_z / thrust`。
+      这一次换名字**不是**改名游戏 —— 两套字段名各自对应**两个不同的物理量口径**
+      （`sign-map.md` §2.2：旧那一套是 FRD/已取负、新这一套是 FLU 原样 + 正号推力）
+      ⟹ 留着旧名字去校验新的帧，守的就是**四个不存在的属性**，而 `AttributeError` 那支
+      会把每一帧都判成"不发"（症状是"闸门永远关着"，比不校验更坏）。
+      ☠️ 同时作废的还有旧版这里的一句附带说明："`thrust_body[0..2]` 的横向两个是写死的 0.0"。
+      `mavros_msgs/AttitudeTarget` **没有**横向推力字段（它只有 `body_rate` 三分量 + `thrust`
+      标量，见那个 msg）⟹ "全量"这句话现在**恰好**就是那四个数，不再有"被读漏的两个 0"。
+    ⚠️ 它与 `sign_map` 那一侧（`px4_rates_setpoint` / `mavros_attitude_target` 共用的
+      `_checked_inputs`）的入参检查**故意重复**：`sign_map` 守的是"**映射这条路**上的量"
+      （`ω` / `F` / `T_max`），这里守的是"**凡是要写进那一帧的数**"。
       判据 2 的字面要求是**发布前**过一遍，而发布点只有一个 —— 这一道跟着那个点走，
       将来谁在帧里加了字段（比如换个话题），它仍然挡在前面。
     """
     try:
-        values = [sp.roll, sp.pitch, sp.yaw, sp.thrust_body_z]
+        values = [sp.body_rate_x, sp.body_rate_y, sp.body_rate_z, sp.thrust]
     except AttributeError:  # pragma: no cover - 形状不对时**拒发**，不猜
         return False
     return all(math.isfinite(float(v)) for v in values)
@@ -738,7 +804,10 @@ class NodeCore:
         self.horizon = int(horizon)
         self.horizon_dt_s = float(horizon_dt_s)
 
-        self.status = None              # 最近一帧 vehicle_status（鸭子类型，不 import px4_msgs）
+        #: 最近一帧闸门源 —— ☠️ **2026-10-12 起是 `mavros_msgs/State`**（ticket 13 §二③），
+        #: 不再是 `px4_msgs/VehicleStatus`。鸭子类型（本模块不 import ROS），
+        #: 只读两个字段：`armed`（bool）与 `mode`（字符串，见 `MODE_OFFBOARD`）。
+        self.status = None
         self.mocap = None               # 最近一帧 /mocap/pose_enu
         #: 最近一帧 `/mocap/velocity_enu`（`geometry_msgs/TwistStamped`，ENU，ticket 15）。
         #: ★ 它是**独立的一条话题**（不是 pose 里的字段）：`mocap` 节点把 `/vrpn/<刚体>/twist`
@@ -1014,11 +1083,20 @@ class NodeCore:
 
         if self.status is None:
             return self._hold("no_status", now_s, age_status, age_state)
-        armed = int(self.status.arming_state) == ARMING_STATE_ARMED
-        nav_state = int(self.status.nav_state)
+        # ★★ 闸门源 = `/mavros/state`（ticket 13 §二③，2026-10-12）。**判据与旧载体逐字同义**，
+        #   只是"报告"的形状从两个整数换成 `armed`（bool）+ `mode`（字符串）：
+        #     · 旧：`arming_state == ARMING_STATE_ARMED`（2）  →  新：`armed is True`
+        #     · 旧：`nav_state == NAV_STATE_OFFBOARD`（14）     →  新：`mode == "OFFBOARD"`
+        #   ⛔ **不许**把 `mode` 当"可能带前缀的松散字符串"去 `in` / `startswith` 匹配：
+        #   mavros 给的是一张**定死**的表（`uas_stringify.cpp:138`，出处见 `MODE_OFFBOARD`），
+        #   而宽松匹配会把 `"AUTO.LOITER"` 这类别的模式也放进来 —— 那是"闸门该关时开着"。
+        #   ★ `armed` 用 `is True` 之前先 `bool(...)`：mavros 给的是 ROS 的 `bool` 字段
+        #   （真身是 Python `bool`），但夹具/回放可能给 numpy 标量 —— 那两种都"真值正确"。
+        armed = bool(self.status.armed)
+        mode = str(self.status.mode)
         if stop.stop_on_armed_drop and not armed:
             return self._hold("not_armed", now_s, age_status, age_state)
-        if stop.stop_on_nav_state_exit and nav_state != NAV_STATE_OFFBOARD:
+        if stop.stop_on_nav_state_exit and mode != MODE_OFFBOARD:
             return self._hold("not_offboard", now_s, age_status, age_state)
         if age_status > stop.status_timeout_s:
             return self._hold("status_stale", now_s, age_status, age_state)

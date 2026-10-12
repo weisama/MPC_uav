@@ -1035,3 +1035,184 @@ JSONL 里 `type_mask=128`、`body_rate_x=+0.1`（**FLU 原样**）、`thrust=0.1
 **全量 `test/` = 266 passed / 0 failed**（除 `test_mpc_node.py` 的 221 条 62.98 s + `test_mpc_node.py` 45 条 455.09 s，
 两块分开跑，避开单次 600 s 上限）。
 ⚠️ 跑之前机器重启过一次（`uptime` 28 min）—— 没有别的会话在用 acados 代码生成缓存，故未隔离 `MPC_CODEGEN_DIR`。
+
+### 2026-10-12 —— 第四轮：`§二` 整节落地（节点换下行 / 依赖与构建 / seam 1 页那两处）
+
+范围：`§二` ①–⑦（含 ⑤bis 那条硬前置与 ⑥ 点名的 `preflight_check` 复核）。
+★ 本节每条都**回 `git diff` 的 hunk 核过**再写（不是照计划抄）—— 计划的措辞与落地的措辞会分叉。
+⛔ **`§四` / `§五` / `§六` 仍未做**，`Status` 因此仍停在 `ready-for-human`。
+
+#### 一、落了什么（逐项对票面）
+
+**`§二①` 话题 / import / QoS** —— [`src/nmpc/nmpc/mpc_node.py`](../../../src/nmpc/nmpc/mpc_node.py)：
+
+| 票面要求 | 落地 | 位置 |
+|---|---|---|
+| `TOPIC_RATES` → `/mavros/setpoint_raw/attitude` | ✓（旧值留在 ☠️ 块里） | `:348-351` |
+| `TOPIC_STATUS` → `/mavros/state` | ✓ | `:340` |
+| `TOPIC_MODE`（心跳）**删掉** | ✓ 常量删除，☠️ 写明"别把话题名留着不用" | `:352-357` |
+| `TOPIC_PX4_POS` / `ATT` 见 ⑤ | 常量**保留**（☠️ 块说明：唯一用处是拒绝话术与参数面），⛔ **不再被任何 `create_subscription` 用** | `:341-346`、`:618-623` |
+| `from px4_msgs.msg import …` → `mavros_msgs` | ✓ 整块替换，☠️ 写明"别把没用的 import 留着以防万一" | `:267-273`、`:259` |
+| QoS **显式选**、对齐收端 | ✓ `QOS_PUB_ATT` = best_effort / depth **5** / volatile（逐项对齐 `SensorDataQoS()`，`setpoint_raw.cpp:62` 用在 `:76-79`）；`QOS_SUB_MAVROS_STATE` = reliable / depth 10 / **transient_local**（对齐 `mavros::StateQoS()`，`qos.hpp:60-63`）。两条**都不是** ROS 默认值，各自在注释里写了为什么 | `:286-315` |
+
+★ **两个 QoS 档位不是同一个**（这是最容易"能通就不管"的地方）：发布那条要贴 mavros 的**收端**，
+订阅那条要贴 mavros 的**发端**（StateQoS 带 `transient_local` ⟹ 节点晚起也能立刻拿到最后一帧 state）。
+
+**`§二②` 消息怎么填**：
+
+| 票面要求 | 落地 |
+|---|---|
+| `type_mask = 128` | `TYPE_MASK_IGNORE_ATTITUDE = 128`，取自消息自己的常量（`AttitudeTarget.IGNORE_ATTITUDE`），`_validate`/测试两处交叉核对 |
+| `body_rate` 填 **FLU 原样**，⛔ 不预转换 | ✓ 调 `sign_map.mavros_attitude_target()`；该函数"什么都不做"就是它的正确实现（docstring 里写明，且 N2 那一档故障注入仍可复现） |
+| `thrust` 填 **`+F/T_max`** | ✓ 同上一处；并在 `_PARAMS` 的 `t_max` 旁留了"归一化常数填错由启动自检拦"的指针 |
+| 具名第二入口（**不是** `path=` 开关） | ✓ `sign_map.mavros_attitude_target()` → `MavrosAttitudeTarget(body_rate_x/y/z, thrust)`，字段名逐字同消息；`Px4RatesSetpoint` 原样保留 |
+
+**`§二③` 闸门源 → `/mavros/state`**：`node_core` 的四种 hold 语义不变，`armed` 由整数枚举改成
+`State.armed`（bool）、`nav_state` 改成 `State.mode`（**字符串**）；`stop_on_nav_state_exit` 重对过
+（`mode != "OFFBOARD"` ⟹ 退）。**超时**：`0.75` → **`2.5`**，且周期不再手抄 ——
+唯一一份写在 `node_core.STATUS_SOURCE_PERIOD_S = 1.0`，节点默认值、自检、单测三处都引它。
+
+**`§二④` 取 (a) 收成单频**：心跳流、`heartbeat_hz` / `heartbeat_always` 两个参数、
+`_PARAMS` 条目、`declare_params` 的读取、抽帧逻辑、`summary()` 的心跳计数、**自检的那条心跳检查**
+一并删除；每处都留 ☠️ 说明"旧值是什么、为什么没了"，⛔ 没有一处是静默删。
+
+**`§二⑤` 取 (b)**：`state_source=px4` **入口即拒**（`REFUSE_PX4_STATE_SOURCE`，话术里点名
+两条 `/fmu/out/*` 是 uXRCE-DDS 专用、并指回 A 级回退是 Phase 1 的 `control` 链）。
+两处拒绝：`_validate`（`:1655`）与 `MpcNode.__init__`（`:618-623`）——
+后者是给"直接构造节点"那条路兜的（夹具 / REPL），缺了它会**静静地按 mocap 档跑起来**。
+⛔ 完全没有实现 (a)（重指 mavros local position）。
+
+**`§二⑤bis` `MAV_FWDEXTSP`**：见下 §四（**今天已留档 = 1**，并进了自检）。
+
+**`§二⑥` 依赖与构建**：
+
+| 票面要求 | 落地 |
+|---|---|
+| 撤掉 `nmpc` 的 `<depend>px4_msgs</depend>`（`:22`）与其 `:19` 注释 | ✓ 两行换成一条 ☠️ 留痕（写明原注释"对 `bench` 仍成立、对本包不再成立"）。`bench` 那一份**一字未动**（归 §四） |
+| `README.md` / `src/nmpc/README.md` 的 source 行 | ✓ 见下面那条 ⚠️ 偏离 |
+| `__init__.py:18` / `README.md:22` 那句"除 `offboard_smoke` 外都不许 import `rclpy`/`px4_msgs`" | ✓ 两处都改成"**上表标「无」的那几个模块**不许 import ROS / 具体消息包"，并把原句用 ☠️ **原样留住**（票面明说⛔ 不许默默删） |
+| 先核 `preflight_check.py` 有没有 `/fmu/*` / `UXRCE_DDS_CFG` 检查 | ✓ 核了，**票面那句猜测是空的**；但核出一条真的 —— 见下 §五 |
+
+⚠️ **一处偏离（有理由，请核）**：票面写的是"source `~/px4_msgs_ws`"→"`~/mavros_ws`"，**我没做成替换**。
+因为今天 `test/test_mpc_node.py` 仍 `from px4_msgs.msg import VehicleStatus`（`§四` 才换夹具）
+⟹ 直接换掉会让**照抄文档的人跑不出 §四 之前的红**。所以两处都是**加一行 `~/mavros_ws`、
+把 `~/px4_msgs_ws` 留成一行并标 ⚠️"暂时还不能删"**，且都写了"§四 落地时回来核这两处"
+（票面 `§四⑤` 点名这两处不许留悬空）。仓库根的完整构造行现在是**三条 source**。
+
+**`§二⑦` seam 1 页那两处**：`docs/control/mpc-node-seam1.md` §11.1 冻结档表的频率行
+（`heartbeat_hz 50` 标 ☠️ 删除）、§11.2 那条命令（加 `~/mavros_ws` 并说明 `~/px4_msgs_ws` 为何还在）。
+★ **我另外多改了两处**（票面没点名，理由与位置如下 —— 若判越权请当场驳）：
+(1) **§2 整节加作废块**：§2.1–§2.4 整节是旧载体（话题表 / 心跳 / 时间戳全在里面），
+不改会让同一页"§2 说 `/fmu/*`、§11 说已换载体"自相矛盾。**只作废、不代写新表**
+（新表的权威在代码，映射表是 §四 的交付物）。
+(2) **§11.3 表里三行**（心跳频率 / 时间戳单位 / 闸门）就地标 ☠️ + 说明该行属于 2026-10-10 的读数，
+并在 §11.3 的 `45 passed` 那句下加一条"别把这个数当现状"的注。**用例名一个字没改**（改写归 §四）。
+
+#### 二、三处静默各落在哪条断言上（本票的核心，逐条对）
+
+| 静默 | 机理 | 今天的断言落在哪 |
+|---|---|---|
+| **N1** 推力反号 | 飞控 `fill_thrust` 会 `thrust_body_array[2] = -thrust`（`mavlink_receiver.cpp:1475`） | `sign_map.mavros_attitude_target()` 的**返回值**：`thrust == +F/T_max`（`test_sign_map.py`，上一轮已落） |
+| **N2** 预转换 | mavros 在 `attitude_cb` 里**自己**做 FLU→FRD ⟹ 我们再做一次 = 不转，roll 不受影响、pitch/yaw **静默反向**，而**飞控最终收到的分毫不变** | 只能落在"**我们发出的那个字段**"上：`body_rate_* == ω 原样`。★ 这条与 `§一①` 那句"§8.5 的落点换了对象"是同一件事（上一轮 Comments 已记） |
+| **N3** 1 Hz 的闸门源 | `/mavros/state` 跟着 MAVLink HEARTBEAT 走 1 Hz，而旧默认 `0.75 < 1.0` ⟹"状态超时"**恒真**、闸门一直关、一帧都不发 | 常量级：`test_node_core.py::test_状态源一_hz_阈值必须给够余量`（本票新增）；自检级：`check_params` 那条"状态时限 ≥ 闸门源 2 个周期"。**§四 的 seam 1 那条用例（起参数改回 0.75 ⟹ 红）仍在 §四** |
+
+#### 三、`"OFFBOARD"` 这个字符串是怎么核的（票面 `§二③` 点名要写进 Comments）
+
+**核法：三份一手源，互相独立**（都在 `~/mavros_ws` 里，2026-10-12 看的）：
+
+1. `mavros/src/lib/uas_stringify.cpp:138` —— PX4 custom mode → 字符串那张表的建表行：
+   `{px4::define_mode(px4::custom_mode::MAIN_MODE_OFFBOARD), "OFFBOARD"}`；
+2. `mavros/src/plugins/sys_status.cpp:926` + `:968` —— `/mavros/state` 的 `mode` 字段就是
+   `uas->str_mode_v10(hb.base_mode, hb.custom_mode)` 的返回值 ⟹ 上表那一行就是**真机上会看到的串**；
+3. `mavros_msgs/msg/State.msg:73` —— `string MODE_PX4_OFFBOARD = OFFBOARD`（消息自带的常量）。
+   ★ 代码里**不手写字符串**，用 `State.MODE_PX4_OFFBOARD`；有一条测试把它与 `node_core.MODE_OFFBOARD`
+   和那条字面量**三边对齐**（`test_mpc_node.py::test_下行那条路的两个常量也对着真消息类`）。
+
+⛔ 票面那条"不许猜"已满足；**仍未做**的是台上 `ros2 topic echo /mavros/state` 的实机复核（要飞控通电）。
+
+#### 四、⑤bis 留档 + 本轮**新造出来**的一个发现：`thrust_scaling`
+
+**① `MAV_FWDEXTSP` 今天 = `1`（留档）**：`docs/assets/z0.params`，**按名字查**（那份文件自己的表头写着
+"行号每次重导出都会变"）⟹ `MAV_FWDEXTSP = 1`。★ 已进自检（`check_downlink_prereqs` 第一条），
+且快照缺失时**算失败而不是跳过**（有负控用例）。⚠️ 快照是导出时刻的值 —— 自检的 detail 里写着
+"实机起飞前请再读一次**现值**"，并给了 live 读法（先 `ros2 param list | grep` 找它挂在哪个节点，
+再 `ros2 param get` —— ⛔ 不硬写节点名）。
+
+**② 新发现：mavros 侧那个 `thrust_scaling` 参数，缺失 / NaN / 0 是三种不同的静默**
+（一手：`mavros/src/plugins/setpoint_raw.cpp`）：
+
+| 情形 | 代码 | 后果 |
+|---|---|---|
+| 参数**缺失**或值为 `NAN`（**声明默认值就是 `NAN`**，`:58-60`） | `auto ignore_thrust = req->thrust != 0.0 && std::isnan(thrust_scaling);`（`:294`） | 只要 `thrust != 0` ⟹ **整帧丢弃**（连 `body_rate` 一起），只打一条 `ERROR_THROTTLE(…, 5000, …)`（`:296-303`） |
+| 值为 **`0.0`** | `thrust = std::min(1.0, std::max(0.0, req->thrust * thrust_scaling))`（`:307-313`） | 推力被**强制归零** ⟹ 掉高度（一条 `WARN_THROTTLE`） |
+| 值为 **`1.0`** | 同上（乘 1） | 我们的语义（"`thrust` 就是 `F/T_max`"） |
+
+★ **本机现值核过**：`~/mavros_ws/install/mavros/share/mavros/launch/px4_config.yaml:104`
+（`/**/setpoint_raw:` → `thrust_scaling: 1.0`），且那份 yaml **确实被加载**
+（`px4.launch:13` 的 `config_yaml` → `node.launch:24` 的 `<param from=… />`）。
+⟹ 进了自检两条（"`thrust_scaling = 1.0`" + "那份 px4_config.yaml 确实被加载"），
+并在 `mpc_node.py` 的模块 docstring 里写成常驻警告（★ 因为它**不是**我们能设的：
+它活在 mavros 那半边）。
+
+#### 五、`§二⑥` 点名的 `preflight_check.py` 复核 —— **结果写在这里（票面要求）**
+
+**票面那句猜测是空的，但核出了一条真的**（两条都用同一搜法，免得"没有"取决于搜法）：
+
+| 票面猜的 / 实有的 | 核实 | 处置 |
+|---|---|---|
+| `/fmu/*` 存在性检查 | **没有**。`grep -n "fmu\|UXRCE\|uxrce" src/nmpc/nmpc/preflight_check.py` ⟹ 零命中；`git show HEAD:` 那一版**也是零命中**（⟹ 不是本轮删掉的，是从没有过） | 无需改 |
+| `UXRCE_DDS_CFG` 检查 | 同上，零命中 | 无需改 |
+| ★ **实有的（票面没猜到）**：`heartbeat_hz ≥ 2 Hz` 检查（HEAD `:129-136`） | 心跳流已删（`§二④`）⟹ 这条检查失去对象 | **删除**，原地留 ☠️ |
+| ★ **实有的（票面没猜到）**：`ok = p.status_timeout_s >= 0.5`，名"状态时限 ≥ 上游一个周期"，理由写在 detail 里（"假 PX4 与真 commander 都是 **2 Hz**"；HEAD `:158-161`） | 换载体后源是 **1 Hz** ⟹ **旧判据在真机上恒绿而恒错**：`0.75`（旧默认）满足 `>= 0.5`，而 `0.75 < 1.0` 让超时判据恒真 | **判据整个换掉**：`>= 2 × STATUS_SOURCE_PERIOD_S`，名字改成"状态时限 ≥ 闸门源 2 个周期" |
+
+★ 换判据时顺手把一处**冗余条件**收掉了：原来是
+`p.status_timeout_s > period and p.status_timeout_s >= 2 * period`，而 `period > 0` 时后半个
+蕴含前半个（前半是死条件）⟹ 现在只留 `>= 2 * period`，**并把两条失败理由分开写**
+（`<= period` ⟹ 恒真；`< 2*period` ⟹ 丢一拍就误判）。这条收紧由**新增的 `1.5` 那一档**钉住：
+它是这条用例里**唯一**能区分 `> period` 与 `>= 2*period` 的取值（`0.75` / `1.0` 在两个判据下都红）。
+
+#### 六、本轮**新造 / 仍然留着**的悬空引用（只登记，除注明外不改）
+
+| 引用处 | 今天的状态 | 归谁 |
+|---|---|---|
+| `src/nmpc/test/test_mpc_node.py`（全文件） | 仍 import `px4_msgs`、仍钉 `/fmu/*`（约 25 条）⟹ **本票此刻是红的，且我**没有**跑它** | `§四③` |
+| `src/bench/bench/fake_mavros.py` | 没有 `/mavros/setpoint_raw/attitude` 那条流 | `§四①` |
+| `src/bench/bench/config.py`、`fake_px4.py`、`bench/package.xml` 的 `px4_msgs` | 未动 | `§四②④` |
+| `tools/px4-sitl/verify_offboard_smoke.py` 全文 + `test_verify_judges.py:123` | 仍按 `/fmu/*` 起 DUT，且场景表传**已删**的 `--timestamp-unit` / 旧名 `--break pitch-sign` ⟹ 今天跑不通 | `§四`（上一轮已登记，状态未变） |
+| `docs/control/ladder-acceptance-criteria.md:64/:127/:183` | 缺 `--t-max` / 写着"默认 11.8 N"（今天为假） | `§五` |
+| **本轮新发现**：`preflight_check.check_signs` / `check_normalization` 的 `impl=` 仍**只**对 `px4_rates_setpoint` 对账 | mavros 那条入口**没有**同等的符号/归一化三方对账 ⟹ 换载体后"对账覆盖了哪条路"这件事**没有断言** | 本票**没改**（它要动 `tools/sign-map/sign_map_core.py`，属另一节的 scope）—— **登记待裁** |
+| **本轮新发现**：核心层"零消息包"那条契约**只盯两个名字** | `test_sign_map.py` / `test_ocp_health.py` / `test_node_core.py` 里那三条断言查的是 `rclpy` / **`px4_msgs`**；**没有一条**查 `mavros_msgs` ⟹ "不许 import 具体消息包"目前是**写在 README 里的口径**，不是被断言守住的事实（已如实写进 `__init__.py` / `README.md` 的对应句） | 本票**没加**（加一条"没鉴别力"的断言不如不加）—— **登记待裁** |
+
+#### 七、测试与套件状态（本轮实测，不是推算）
+
+```bash
+source /opt/ros/humble/setup.bash && source ~/mavros_ws/install/setup.bash \
+  && source ~/px4_msgs_ws/install/setup.bash && source ~/ros_ws/install/setup.bash
+export ACADOS_SOURCE_DIR=$HOME/acados && export LD_LIBRARY_PATH=$ACADOS_SOURCE_DIR/lib:$LD_LIBRARY_PATH
+```
+
+- `colcon build --packages-up-to nmpc` ⟹ **`bench` + `nmpc` 2 包 finished**（
+  ⚠️ `mpc_node.py` 是入口脚本 ⟹ 它改了**必须** build，`node_core.py` 改了不用）；
+- `test_preflight_check` + `test_node_core` + `test_mavros_interface` + `test_params`
+  + `test_sign_map` + `test_commands` ⟹ **199 passed, 0 failed（4.81 s）**；
+- `python3 nmpc/preflight_check.py` ⟹ **`✓ 26 项全部通过`**；
+  ★ **反向也验了**：**不** source `~/mavros_ws` 时是 **`✗ 25 项里 1 项不过`**
+  （`thrust_scaling` 那条**报"验不了"**，不是跳过也不是绿）—— 这是这条检查的**设计行为**，不是缺陷；
+- **变异测试 2 次（都为确认新断言有鉴别力）**：
+
+  | 变异 | 期望 | 结果 |
+  |---|---|---|
+  | `node_core.StopConfig.status_timeout_s` `2.5` → `0.75`（=`§二③` 的那个旧值） | 常量守卫红 | ✅ `1 failed, 67 passed`：`assert 0.75 > 1.0` |
+  | 自检门槛 `>= 2 * period` → `> period` | 新增的 `1.5` 那一档红 | ✅ `1 failed`：`status_timeout_s = 1.5 … ok=True` 而用例要 `False` |
+
+  （都在 `/tmp` 的副本上做，用 `PYTHONPATH` 指向副本 ⟹ **没碰共享工作树**；副本已删。）
+
+⛔ **我没有跑 `test_mpc_node.py`**：它今天必然红（钉在 `/fmu/*` 上），跑了只会产出一个
+"红"的读数而说不出新东西；它的改写属 `§四③`，改完再跑。
+
+#### 八、本轮**没做**的（与票面对齐）
+
+`§四`（夹具 + seam 1 + 那三份驱动）、`§五`（阶梯判据页四行落地）、`§六`（结果放置），
+以及**任何一次上飞机的跑场**。**操作者侧仍待办**（要飞控通电 / 起 mavros，⛔ 车侧动作我不代跑）：
+① `MAV_FWDEXTSP` 的**现值**；② `ros2 topic hz /mavros/state` 实测频率（本文的 1 Hz 是**源码**结论，
+不是本机读数）；③ `ros2 param get` 那条 `thrust_scaling`（launch / 命令行可以覆盖那份 yaml）。

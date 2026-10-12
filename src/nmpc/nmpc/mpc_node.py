@@ -1,12 +1,22 @@
 #!/usr/bin/env python3
-"""Phase 2 的 **MPC（模型预测控制）节点** —— 把 `ocp` + `sign_map` 接到 PX4 的 `/fmu/*` 上。
+"""Phase 2 的 **MPC（模型预测控制）节点** —— 把 `ocp` + `sign_map` 接到**下行载体**上。
 
 层级是 **(C) 级 CTBR**：本节点只发"**总推力 + 机体角速率**"，**姿态环与混控仍留在飞控里**
 （理由与备选见 [`phase2-implementation.md`](../../../docs/control/phase2-implementation.md) §2.1）。
 
+☠️☠️ **2026-10-12（ticket 13 §二）：下行载体从 uXRCE-DDS 的 `/fmu/*` 换成了 mavros**
+（`/mavros/setpoint_raw/attitude` + `/mavros/state`）。这不是"换一个话题名"—— 三处差异
+**全部以静默形式出错**（收得到、不报错、飞机朝错的方向走），票面因此把它单列一节：
+① `thrust` 在两条路上**反号**（旧的 `thrust_body_z` 是负的，新的 `thrust` 是正的）；
+② `body_rate` **不许自己转 FLU→FRD**（mavros 自己会转，转两次 = pitch/yaw 静默反向）；
+③ 闸门源的**上限频率从 2 Hz 掉到 1 Hz** ⟹ 超时阈值必须跟着改。
+逐条账见 [`docs/control/sign-map.md`](../../../docs/control/sign-map.md) §2.2/§2.3 与
+`ticket 13` 的 Comments。**旧的 uXRCE-DDS 载体没有删除，是"不再有节点走它"** ——
+`sign_map.px4_rates_setpoint` 仍是那个纯函数（`preflight_check` 拿它当探针）。
+
 ★ 本文件是**唯一**一处把"求解结果"变成"话题上的一帧"的地方。所以这里只有机械的三件事：
   取一拍的决策（`node_core.NodeCore`）→ 解一次 OCP（`ocp.OfflineOcp`）→ 映射 + 发布
-  （`sign_map.px4_rates_setpoint`）。**判断逻辑不在这个文件里** —— 闸门、外推、参考构造
+  （`sign_map.mavros_attitude_target`）。**判断逻辑不在这个文件里** —— 闸门、外推、参考构造
   都在 `node_core.py`（零 ROS、可单测），符号与归一化在 `sign_map.py`（唯一一份）。
   这样"节点没发"与"节点发错了"才分得开。
 
@@ -16,12 +26,24 @@
 |---|---|---|---|
 | 订阅 | `/mocap/pose_enu`（**ENU/FLU**，B 档；`state_source=mocap` 时才有这一条） | 可靠 / depth 10 | `mocap_rel_pose_node.cpp:110` `QoS(10)` |
 | 订阅 | `/mocap/velocity_enu`（`geometry_msgs/TwistStamped`，**ENU**，B 档；`state_source=mocap` 时才有） | 可靠 / depth 10 | `mocap_rel_pose_node.cpp` 的 `QoS(10)`；★ 速度来源（ticket 15）—— `PoseStamped` 没有 `twist` 字段，`v` 必须走这条独立话题才能进 `x + v·τ` |
-| 订阅 | `/fmu/out/vehicle_local_position` + `/fmu/out/vehicle_attitude`（**NED/FRD**，A 档；`state_source=px4` 时才有这两条） | **BEST_EFFORT** / depth 1 | 发布方实测 best_effort + TRANSIENT_LOCAL（2026-09-28，z0 SITL，A 档探针）⟹ 订阅侧写 RELIABLE 就**一个回调都不进** |
-| 订阅 | `/fmu/out/vehicle_status` | **BEST_EFFORT** / depth 1 | PX4 的 writer 是 best_effort（`utilities.hpp:59-63`）⟹ 订阅侧写 RELIABLE 就**一个回调都不进** |
+| 订阅 | ~~`/fmu/out/vehicle_local_position` + `/fmu/out/vehicle_attitude`（A 档）~~ | — | ☠️ **随载体一起没了**（ticket 13 §二⑤：A 档判为 uXRCE-DDS 专用、入口显式拒绝） |
+| 订阅 | **`/mavros/state`**（`mavros_msgs/State`，闸门源） | 可靠 / depth 10 / **TRANSIENT_LOCAL** | 发布方是 `mavros::StateQoS()`（`qos.hpp:60-63`）⟹ 逐项对齐它，理由见 `QOS_SUB_STATUS` |
+| 订阅 | ~~`/fmu/out/vehicle_status`~~ | — | ☠️ 同上：闸门源换成 `/mavros/state`，见 `TOPIC_STATUS` |
 | 订阅 | `/traj/reference`（`mavros_msgs/PositionTarget`；`reference_source=traj` 时才有这一条） | 可靠 / depth 10 | `traj_node.cpp:108-109` 的 `rclcpp::QoS(10)`（默认 reliable + volatile） |
-| 发布 | `/fmu/in/vehicle_rates_setpoint` | BEST_EFFORT + TRANSIENT_LOCAL / depth 1 | PX4 的 reader 是 best_effort（`utilities.hpp:114-119`）；TRANSIENT_LOCAL 让晚起的 reader 也能拿到最后一帧 |
-| 发布 | `/fmu/in/offboard_control_mode`（`body_rate = True`，其余 False） | 同上 | 同上 |
+| 发布 | **`/mavros/setpoint_raw/attitude`**（`mavros_msgs/AttitudeTarget`，`type_mask = 128`） | **BEST_EFFORT / depth 5 / volatile** | 收端是 `mavros::SensorDataQoS()`（`setpoint_raw.cpp:62`，用在 `:76-79`）⟹ 逐项对齐，理由见 `QOS_PUB_ATT` |
+| 发布 | ~~`/fmu/in/vehicle_rates_setpoint`~~ / ~~`/fmu/in/offboard_control_mode`~~ | — | ☠️ 前者换成了上面那条；**后者整个删掉** —— 换载体后**不需要我们发心跳**：飞控从收到的 `SET_ATTITUDE_TARGET` 自己派生 `OffboardControlMode`（`mavlink_receiver.cpp:1531-1535`）。⚠️ 由此一条**责任转移**：以前"不发"能让我们自己掌握节奏，现在"不发"就等于"心跳也停了"（详细裁决见 §四那段 ★★）。 |
 | 发布 | `/mpc/predicted_path`、`/mpc/reference`（RViz 用，`nav_msgs/Path` / `Marker`） | 默认（可靠） | 本仓自己的观测面，不接飞控 |
+
+★★ **一条本票新发现的硬前置（票面 §二⑤bis 之外的第二条）**：mavros 的 `attitude_cb` 里
+`thrust_scaling` 能**整帧丢掉**我们发的东西，而它是**别人配置文件里的一个数**：
+  · 缺失（= 参数默认 `NAN`，`setpoint_raw.cpp:58`）⟹ **凡 `thrust != 0` 的帧整帧丢**
+    （角速率也一起丢），只打一句 5 s 节流的 ERROR（`:293-303`）；
+  · `0.0` ⟹ 帧不被丢，但被算成 `thrust = clamp(req->thrust × 0) = 0`
+    （`:313`）⟹ **推力恒 0、角速率照旧生效**，症状是掉高度；
+  · 只有 `1.0` 才是我们要的口径（我们交出去的就是归一化推力本身）。
+它现在能工作，靠的是 `px4_config.yaml:104` 写着 `thrust_scaling: 1.0`
+（`px4.launch:13` → `node.launch:24` 载入那一份）—— 即**别人的配置文件**在替我们兜底。
+`preflight_check` 因此多了一条"这一项必须是 1.0"的检查（与 `MAV_FWDEXTSP` 同一批）。
 
 ★★ **两档状态源**（`-p state_source:=mocap|px4`，ticket 09）：两档**只差"测量从哪里来"**，
 **控制器那一条路**（闸门、外推、参考、求解、映射、发布）完全共用。
@@ -35,12 +57,25 @@
 | 档 | 测量 | 话题（**参数可换**） | 用在 |
 |---|---|---|---|
 | `mocap`（默认） | 动捕，**原生 ENU/FLU** | `/mocap/pose_enu`（上游定死，`mocap_rel_pose_node.cpp:110`） | B 档（动捕闭环）—— 默认档，不给参数就**不改变任何现有行为** |
-| `px4` | 飞控自己的估计，**NED/FRD** | `-p px4_position_topic` / `px4_attitude_topic` | A 档（ticket 09）—— 闭环第一次**只用了飞控自己给的东西** |
+| `px4`（☠️ 本阶段启动即拒） | 飞控自己的估计，**NED/FRD** | `-p px4_position_topic` / `px4_attitude_topic` | A 档（ticket 09）—— 闭环第一次**只用了飞控自己给的东西** |
+
+☠️ **2026-10-12（ticket 13 §二⑤）：`px4` 这一档在本阶段不可用，入口显式拒绝。**
+原因：它读的两条 `/fmu/out/*` 是 **uXRCE-DDS 专用**的，本票把下行换到 mavros 之后它们
+**不存在了**。操作者裁定取 **(b)**：判为不可用 + **fail loud**，理由是"本阶段 A 级回退的载体是
+**Phase 1 的 `control` 包整条链**，不是节点内部的 px4 状态源；把一条死路留着不如让它当场喊出来"。
+落地方式：`_validate` 见到 `state_source=px4` **启动即退**并说清原因（见那段 ★★），
+⛔ 而**不是**静默地不给数据、也**不是**顺手把 (a)（改指 mavros 的本地位置）做出来 ——
+那条路要重新过一遍"mavros 会帮你转 ENU→NED / FLU→FRD"的坑（`px4-interface.md` §5.1），
+属另一张票。
+★ `node_core` 那一侧的两档纯逻辑与它的单测**原样留着**（它们是"我们的约定与 PX4 一致"
+那件事的现成答案），所以 `_measure_px4` / `px4_pose_to_enu` 仍在 —— 只是本节点不再订阅那两条话题。
 
 ★ 为什么 A 档**不订阅**动捕（而不是"订阅了但不看"）：票面验收项写着"本档**不使用动捕输入**"，
   而"订阅了但不看"在话题边界上**不可证伪**（DDS 里那条订阅明明白白地在那儿）。
   条件订阅让这条验收项变成一个**黑盒可断言的事实**：
   `state_source=px4` 时 `/mocap/pose_enu` 的 `matched_subscribers() == 0`。
+  ☠️ 这一条断言在**本阶段没有活对象**（那一档起不来）；它作为"将来若重开 A 档"的判据留在
+  文档里，⛔ 别把它读成"现在台架上跑得过"。
 
 ★★ **两档参考源**（`-p reference_source:=hold|traj`，ticket 17）：**与 `state_source` 正交**
 （两个 `if`，不是一个 `else`），两档**只差"目标点从哪里来"**：
@@ -84,23 +119,26 @@
   （ticket 08 第一手），要暴露它得重编一份 —— 所以这条参数化的另一个用处是：
   那个决定可以**推迟到拿到读数之后**再做，而不必先把代码写死。
 
-**发不发**（两张表合成一条规则）：`offboard_control_mode` = **节点活着就发**；
-`vehicle_rates_setpoint` = **只有** armed + OFFBOARD + 状态新鲜（闸门在 `node_core.cycle()`）。
-两者的完整理由见下面那段 ★★。
+**发不发**：现在**只有一条流**了 —— `SET_ATTITUDE_TARGET`（`/mavros/setpoint_raw/attitude`）
+**只有** armed + OFFBOARD + 状态新鲜才发（闸门在 `node_core.cycle()`）。
+☠️ 旧版这里写的是"两张表合成一条规则"（`offboard_control_mode` 心跳无条件 + setpoint 过闸门），
+**那两张表里的第二张已经不存在**（票面 §二④，裁定 (a)）。判决的理由与后果见下面那段 ★★。
 
-★ **时间戳一律微秒**（`msg/*.msg` 逐字写 `(microseconds)`；PX4 侧还会做
-`min(ts − time_offset, hrt)`，见 `offboard_smoke._timestamp` 那份受控实测表）。
-本节点的 `_timestamp()` 与 05 的 stub **同一份实现口径**：`time.time_ns() // 1000`。
+★ **时间戳：交给 mavros**（☠️ 旧文写的是"一律微秒 ⟹ `time.time_ns() // 1000`"）。
+`mavros_msgs/AttitudeTarget.header.stamp` 是 ROS 时间；mavros 自己把它折成 MAVLink 的
+`time_boot_ms`（`setpoint_raw.cpp:327` 的 `get_time_boot_ms(req->header.stamp)`）
+⟹ **"微秒 / `time_offset` / `min(ts, hrt)`"那一整套 uXRCE-DDS 口径的账，现在由 mavros 负责**
+（`offboard_smoke._timestamp` 那份受控实测表记的是**旧载体**的行为，仍是有用的历史依据）。
+本节点因此只做一件事：把 `self.get_clock().now()` 盖进 `header.stamp`（`_stamp()`）。
 
-★ **100 Hz 求解 / 50 Hz 心跳**：D6（控制频率）由 ticket 04 的实测给出 —— 求解器自报
-`time_tot` 最大 3.45–3.58 ms ⟹ 100 Hz 有余量；而**整周期墙钟**曾出现过 54–56 ms 的抢占
-（同一拍自报只有 3.4 ms）⟹ 节点侧必须绑核（见 `--ros-args -p cpu:=…` 与 `timing.py`）。
-心跳按 `rate_hz / heartbeat_hz` 抽帧发（默认 2 抽 1 = 50 Hz）——它只需要 ≥2 Hz
-（`COM_OF_LOSS_T` = 1 s 是 PX4 的判据），发得快是为了让"流断了"这件事在**秒级**就能看出来。
+★ **100 Hz 求解**（☠️ 旧文是"100 Hz 求解 / 50 Hz 心跳"）：D6（控制频率）由 ticket 04 的实测
+给出 —— 求解器自报 `time_tot` 最大 3.45–3.58 ms ⟹ 100 Hz 有余量；而**整周期墙钟**曾出现过
+54–56 ms 的抢占（同一拍自报只有 3.4 ms）⟹ 节点侧必须绑核（见 `--ros-args -p cpu:=…` 与
+`timing.py`）。**心跳那一半没有了**（见下）。
 
-★★ **心跳无条件发，`vehicle_rates_setpoint` 才过闸门** —— 这不是风格，是**进不进得去**
-OFFBOARD 的必要条件（票面验收项「未解锁 / 未在 offboard 时**不发布**」按"不发**指令**"读，
-理由如下，**第一手**）：
+★★ ☠️☠️ **【作废 + 责任转移】旧版这一整段讲的是"心跳无条件发、setpoint 才过闸门"** ——
+**承载它的机制在本票里被删掉了**（票面 §二④，操作者 2026-10-12 裁定取 **(a) 收成单频**）。
+原文**不删**，因为下面"责任转移"那几句只有对着旧机制才读得懂：
 
 ```cpp
 // src/modules/commander/HealthAndArmingChecks/checks/offboardCheck.cpp:40-65（z0 真身 4a0e65f2）
@@ -118,26 +156,37 @@ if (reporter.failsafeFlags().offboard_control_signal_lost && mode_req_offboard_s
 }
 ```
 
-⟹ **OFFBOARD 只有在"心跳已经以 ≥2 Hz 发过、且时间戳落在 `COM_OF_LOSS_T` 之内"时才能被切进去**。
-若节点把心跳也闸在 `nav_state == OFFBOARD` 上，就成了**死锁**：不发心跳 ⟹ PX4 不放行
-OFFBOARD ⟹ 闸门永远不开 ⟹ 永远不发。**真机与 SITL 上都会表现为"这飞机根本进不了 offboard"**。
-（05 的 stub 早就是这么做的：它无条件发两个话题，并显式"心跳先发够 `pre_stream_s` ⟹ 解锁 ⟹
-切模式"——见 `offboard_smoke._tick`。那份经验在本票里被**写成了依据**，不再是习惯。）
+⟹（旧机制下）**OFFBOARD 只有在"心跳已经以 ≥2 Hz 发过、且时间戳落在 `COM_OF_LOSS_T` 之内"
+时才能被切进去**；若把心跳也闸在"已在 OFFBOARD"上就成了**死锁**（不发心跳 ⟹ PX4 不放行
+OFFBOARD ⟹ 闸门永远不开 ⟹ 永远不发），现场表现是"这飞机根本进不了 offboard"。
 
-反向的两条也很重要，同样第一手：
+**换载体之后这件事的性质变了，而且变得对我们不利 —— 这段是本票最该被读到的一段：**
+旧机制下"心跳"是**我们主动发的第二条流**，所以"进得去 OFFBOARD"与"闸门关着时不发指令"
+这两件事可以**同时**成立。新机制下**只有一条流**，而飞控的 `OffboardControlMode`
+**就是从这条流里派生出来的**（`mavlink_receiver.cpp:1531-1535`）⟹
+**"不发"与"不心跳"是同一件事**：闸门一关（未解锁 / 停在 POSCTL），我们连"我在"都不再声明，
+~1 s（`COM_OF_LOSS_T`）之后飞控判 `offboard_control_signal_lost` ⟹ **进不去 OFFBOARD**。
+⚠️ 这不是"退化"，而是**同一套闸门的必然**：闸门本来就是"未解锁不发"，
+而"未解锁时也不需要 OFFBOARD 可运行"。★ 但它把(两件事的顺序)钉死了：
+**必须先解锁、再切 OFFBOARD，然后闸门才开、流才起来** ——
+切模式**不能**反过来靠"节点先发着、飞控看见流就放行"（那正是 05 的 stub 与旧版 `heartbeat_always`
+能做的事，现在**做不到**）。操作者侧的操作顺序因此是本票的一条**运行前提**，
+`preflight_check` 与阶梯判据页（§五）各自留痕。
+（旧文这一段还有一句"`-p heartbeat_always:=false` 是另一档"—— 那个**参数本身已删除**，
+连带 `heartbeat_hz` / `heartbeat_always` 与抽帧逻辑，见 §二④；见 `_PARAMS`。）
 
-- `offboard_control_mode` 的六个布尔位**只在 OFFBOARD 里**才影响 `vehicle_control_mode`
-  （`ModeUtil/control_mode.cpp:115` 起，整个分支挂在 `case NAVIGATION_STATE_OFFBOARD:` 下面）
-  ⟹ 在 POSCTL/MANUAL 里发这个心跳**不会**改变任何一个控制回路的选择，只有一个副作用：
-  把 `offboard_control_signal_lost` 清掉（这正是我们要的）。
+反向的一条同样重要，而且**换载体后依然成立**（旧版对应的另一半是"六个布尔位只在 OFFBOARD 里
+才影响控制回路"）：
+
 - ⚠️ **"不发 setpoint" ≠ "飞机松手"**：`COM_OF_LOSS_T` 那条判据看的是**心跳**，不是 setpoint。
-  所以闸门关掉 `vehicle_rates_setpoint` 之后，只要心跳还在，PX4 会**继续沿用最后一帧命令**
+  所以闸门关掉 setpoint 之后，只要心跳还在，PX4 会**继续沿用最后一帧命令**
   —— 那个结构体订阅不到新消息时**原样留着**上一帧的值（`MulticopterRateControl.cpp:177-184`：
   三个角速率分量还有 `PX4_ISFINITE` 回退，**推力没有**）。
   ★ 这条性质就是下面 ★★★ 那段「兜底阶梯」的**全部理由**。
-  `-p heartbeat_always:=false` 是**另一档**（把心跳一起闸掉 = 交给 PX4 自己的失效保护，
-  它在 `COM_OF_LOSS_T` 之后自己退出 OFFBOARD）；**默认 True**，因为"进不去 OFFBOARD"
-  是当场就飞不了的错。
+  ☠️ **换载体后唯一的差别是"心跳还在"这个前提没了**：闸门一关，~1 s 之后飞控也会丢心跳
+  ⟹ 它不再沿用我们的最后一帧，而是走 `COM_OBL_RC_ACT`（z0 现值 = 0 = Position 模式，
+  `docs/assets/z0.params:288`）。⚠️ **这一段是"停机之后会发生什么"的完整答案**，
+  旧版只讲到"沿用最后一帧"就停了 —— 别照旧版读。
 
 ★★★ **兜底阶梯（ticket 07 / M5）**：`求解不可用 → 保持上一帧可行指令 → 安全悬停`。
 为什么是这样一个阶梯，而不是"一路保持"或"一失败就悬停"（完整推导见
@@ -166,9 +215,16 @@ OFFBOARD ⟹ 闸门永远不开 ⟹ 永远不发。**真机与 SITL 上都会表
 `lbu/ubu`（`F ∈ [0, f_max]`、`ω ∈ ±rate_max`）。所以"它在顶约束"与"它在正常工作"在话题上分得开：顶约束时 `ω` 恰好停在 `rate_max` 上，而不是被谁悄悄按比例缩回去。
 ⚠️ 反过来，若哪天有人在这里加一句 `clip()`，"在顶约束"就再也看不见了。
 
-★ **回退**：Phase 2 是**加一条支路，不是替换** —— 本节点只发 `/fmu/in/*`，**不碰 mavros**，
-  Phase 1 的 `(A)` 级链（`control_node` + mavros）原样可用。切回 = 不启本节点、
-  由 `control_node` 接管（未解锁 / 未 OFFBOARD 时本节点一帧都不发，理由见 `node_core` 的闸门）。
+★ **回退**：Phase 2 是**加一条支路，不是替换**（这一点**没有**被本票改动）——
+  切回 = 不启本节点、由 `control_node` 接管（未解锁 / 未 OFFBOARD 时本节点一帧都不发，
+  理由见 `node_core` 的闸门）。
+  ☠️ 旧版这里写的是"本节点只发 `/fmu/in/*`，**不碰 mavros**"——**这句现在是反的**：
+  ticket 13 把下行换到了 mavros（`/mavros/setpoint_raw/attitude`），本节点与
+  `control_node` 现在**共用同一个 mavros 载体**。
+  ⚠️ 由此多了一条**互斥纪律**：**同一时刻只许一条链在发这一条话题** ——
+  两条链同时在发的话，飞机收到的是**两串交错的 setpoint**（而两边都以为自己在独占），
+  症状是"指令抖动/朝两边拽"，在话题面上两条发布者都正常。
+  切回的操作因此是"**先停本节点，再起 `control_node`**"，⛔ 不是"两条一起跑看看谁赢"。
 """
 
 from __future__ import annotations
@@ -193,11 +249,14 @@ from geometry_msgs.msg import PoseStamped, TwistStamped  # noqa: E402
 #    即一个与可视化毫无关系的报错（本文件第一次跑就是这么炸的）。
 # ★ `/traj/reference` 的类型**复用 Phase 1 的**（ticket 17 的裁定）：`traj` 节点一个字都不用改。
 #   ⚠️ `mavros_msgs` 是**消息定义包**（`CMakeLists.txt` 只调 `rosidl_generate_interfaces`），
-#   不把 mavros 那半边（mavros 节点、插件、`libmavros`）拉进 Phase 2 的环里 ——
-#   Phase 2 走 uXRCE-DDS，与 mavros 是两条并行的下游，互不依赖。
+#   不把 mavros 那半边（mavros 节点、插件、`libmavros`）拉进**构建**依赖里。
+#   ☠️ 旧版这里接着写的是"Phase 2 走 uXRCE-DDS，与 mavros 是两条并行的下游，互不依赖"
+#   —— **ticket 13 之后这句只对了一半**：构建上仍然只依赖消息定义包（这句照旧成立），
+#   但**运行时**本节点已经**接在 mavros 上**了（`/mavros/setpoint_raw/attitude` + `/mavros/state`）
+#   ⟹ "mavros 没起来"现在会直接让本节点一帧都发不出去。
 #   （它 `package.xml` 里那条 `<build_export_depend>libmavconn</build_export_depend>` 是**悬空**的，
 #   详见模块 docstring 的 ★★ 第 ② 条。）
-from mavros_msgs.msg import PositionTarget  # noqa: E402
+from mavros_msgs.msg import AttitudeTarget, PositionTarget, State  # noqa: E402
 from nav_msgs.msg import Path as NavPath  # noqa: E402
 from rclpy.executors import ExternalShutdownException  # noqa: E402
 from rclpy.node import Node  # noqa: E402
@@ -205,10 +264,13 @@ from rclpy.qos import (DurabilityPolicy, HistoryPolicy, QoSProfile,  # noqa: E40
                        ReliabilityPolicy)
 from visualization_msgs.msg import Marker  # noqa: E402
 
-from px4_msgs.msg import (OffboardControlMode, VehicleAttitude,  # noqa: E402
-                          VehicleLocalPosition, VehicleRatesSetpoint,
-                          VehicleStatus)
-
+# ☠️ **这里原本是 `from px4_msgs.msg import OffboardControlMode, VehicleAttitude, …`**
+# （ticket 13 §二①）。换载体后那五个类型一个都不用了：
+#   · 发出去的帧 → `mavros_msgs/AttitudeTarget`；闸门源 → `mavros_msgs/State`；
+#   · `OffboardControlMode`（心跳）**整个删掉**（飞控自己从 `SET_ATTITUDE_TARGET` 派生）；
+#   · `VehicleAttitude` / `VehicleLocalPosition`（A 档那两条）随 A 档一起停用。
+# ⛔ 别把 `px4_msgs` 的 import 留着"以防万一"：票面点名的就是"一个没用到的 import 会让
+#   『已经不用 px4_msgs 了』这件事在依赖清单之外看不出来"（`src/nmpc/package.xml` 已撤掉它）。
 from nmpc import NU, sign_map  # noqa: E402
 from nmpc.node_core import (FALLBACK_HOLD_FRAMES, REFERENCE_SOURCE_TRAJ,  # noqa: E402
                             REFERENCE_SOURCES, STATE_SOURCE_PX4, STATE_SOURCES,
@@ -219,18 +281,38 @@ from nmpc.node_core import (FALLBACK_HOLD_FRAMES, REFERENCE_SOURCE_TRAJ,  # noqa
 from nmpc.ocp import OfflineOcp  # noqa: E402
 from nmpc.params import Z0Params  # noqa: E402
 
-#: PX4 的 `/fmu/out/*` 是 **BEST_EFFORT**（`utilities.hpp:59-63`）⟹ 订阅侧写 RELIABLE
-#: （ROS 2 的默认值）就**一个回调都不进**，而话题照样列得出来。
-#: ★ A 档那两条状态话题（ticket 09）实测也是 best_effort + **TRANSIENT_LOCAL**（发布方
-#: reliability=2 / durability=1，2026-09-28 z0 SITL 探针）：durability 只要**订阅方不强于发布方**
-#: 就兼容，所以本 profile（VOLATILE）直接可用 —— 这一条是**量出来的**，不是推的。
-QOS_SUB_STATUS = QoSProfile(history=HistoryPolicy.KEEP_LAST, depth=1,
-                            reliability=ReliabilityPolicy.BEST_EFFORT)
-#: 发布侧：PX4 的 reader 是 best_effort（`utilities.hpp:114-119`）+ TRANSIENT_LOCAL
-#: 让晚起的 reader 也能拿到最后一帧。这与 05 的 stub 是同一份口径（那边在 SITL 上验过）。
-QOS_PUB_FMU = QoSProfile(history=HistoryPolicy.KEEP_LAST, depth=1,
-                         reliability=ReliabilityPolicy.BEST_EFFORT,
-                         durability=DurabilityPolicy.TRANSIENT_LOCAL)
+#: **闸门源 `/mavros/state` 的订阅侧**。☠️ 旧值（给 `/fmu/out/vehicle_status` 的
+#: `BEST_EFFORT / depth 1`）随载体一起作废 —— 详情与被驳回的"能通就不管"见下。
+#: ★ 发布方是 `mavros::StateQoS()` = `rclcpp::QoS(10).transient_local()`（`qos.hpp:60-63`）
+#: ⟹ **reliable + keep_last 10 + TRANSIENT_LOCAL**。这里**逐项对齐发布方**，三个理由：
+#:   ① **reliable**：1 Hz 的一条控制输入，丢一帧就是"闸门源晚了 1 s"（而它正好是那种
+#:      "晚一秒就报失联"的东西）⟹ 没有理由省这点带宽（uXRCE-DDS 那边是被发布方的
+#:      best_effort **逼**成 best_effort 的，不是选择）；
+#:   ② **depth 10**：与发布方同值（1 Hz 的流，10 帧只是"两秒的余量"，代价为零）；
+#:   ③ **TRANSIENT_LOCAL**：发布方本来就是 latched 语义（"state data that is latched and
+#:      periodically republished"，`qos.hpp` 的注释原文）⟹ 订阅侧声明它，节点**晚起也能
+#:      立刻拿到最后一帧**，不必先等一整个 1 s 周期（"等一秒"在这里等于"闸门晚开一秒"）。
+#: ⚠️ 本 profile 与旧值（`QOS_SUB_STATUS` = best_effort/depth 1，陪 `vehicle_status`）**每一项
+#:   都不同**，所以是**另一个名字**而不是就地改旧值：名字里带 `MAVROS` 之后，
+#:   "这一条是换载体之后的"在读代码时就自证了，不必去翻 git 历史。
+QOS_SUB_MAVROS_STATE = QoSProfile(history=HistoryPolicy.KEEP_LAST, depth=10,
+                                  reliability=ReliabilityPolicy.RELIABLE,
+                                  durability=DurabilityPolicy.TRANSIENT_LOCAL)
+#: **下行 setpoint（`/mavros/setpoint_raw/attitude`）的发布侧**。
+#: ★ 收端是 mavros 的 `setpoint_raw` 插件，它用 `rclcpp::SensorDataQoS()`
+#:   （`setpoint_raw.cpp:62` 建、`:76-79` 用在 `~/attitude` 订阅上）= **best_effort /
+#:   keep_last 5 / volatile**。本 profile **逐项对齐它**（票面点名"不许能通就不管"）：
+#:   · **reliability = best_effort**：订阅方是 best_effort ⟹ 发端写 RELIABLE **一个回调都不进**
+#:     （ROS 2 的兼容性要求是"发端不弱于收端"，这里收端就是弱的那一头）；
+#:   · **depth = 5**：与收端同值（收端慢了就丢最旧的 —— 对 100 Hz 的控制流这是**对的**行为，
+#:     攒着旧帧只会让飞机执行更陈旧的指令）；
+#:   · ☠️ **durability 从 TRANSIENT_LOCAL 改成 volatile**：旧那一条是给 uXRCE-DDS 的 PX4
+#:     reader 准备的（"晚起的 reader 也能拿到最后一帧"），而 mavros 的订阅是 **volatile**
+#:     ⟹ 发端保持 TRANSIENT_LOCAL 也能通（发端更持久是兼容的），但它**在替一个不存在的
+#:     需求兜底**，且会让 profile 与收端看起来"不一样"而没人知道为什么。
+#:     ⚠️ 更实际的一点：这条流**没有"晚起的订阅者"** —— mavros 一直在跑，本节点才是会重启的那个。
+QOS_PUB_ATT = QoSProfile(history=HistoryPolicy.KEEP_LAST, depth=5,
+                         reliability=ReliabilityPolicy.BEST_EFFORT)
 #: `/mocap/pose_enu` 是 `mocap` 节点用 `QoS(10)`（**可靠**）发的
 #: （`mocap_rel_pose_node.cpp:110`，与 `bench/vrpn_source.py` 的 `mocap_qos()` 一致）。
 QOS_MOCAP = QoSProfile(history=HistoryPolicy.KEEP_LAST, depth=10,
@@ -252,18 +334,53 @@ TOPIC_MOCAP_VEL = "/mocap/velocity_enu"
 #: 而话题名换了就等于换了一套几何 —— 那种改动该改代码，不该改启动参数（同 `TOPIC_MOCAP` 的理）。
 #: 只有 `reference_source=traj` 时才订阅（同 `state_source` 的条件订阅纪律）。
 TOPIC_TRAJ_REF = "/traj/reference"
-TOPIC_STATUS = "/fmu/out/vehicle_status"
-#: A 档的状态话题（`state_source=px4`）。★ 默认值是**飞控自己的估计**（票面原文点名要的这两条），
-#: 而它们是可以换的 —— 换话题（真值 / 记录回放）是参数的事，见模块 docstring 的表。
+#: ☠️ **闸门源（2026-10-12 换载体，ticket 13 §二③）**：旧值 `/fmu/out/vehicle_status`。
+#: 新载体是 mavros 的 `/mavros/state`（`mavros_msgs/State`）—— 判据见 `node_core.cycle`
+#: （`armed` 且 `mode == "OFFBOARD"`），**1 Hz 定频**这个频率事实决定了 `status_timeout_s` 取 2.5。
+TOPIC_STATUS = "/mavros/state"
+#: ☠️ **A 档的两条状态话题已停用**（ticket 13 §二⑤：`/fmu/out/*` 是 uXRCE-DDS 专用，
+#: 换载体后不存在）。名字**留在参数表里**（`px4_position_topic` / `px4_attitude_topic`）的唯一
+#: 用处是让 `_validate` 的拒绝信息能指着它们说清楚"这一档为什么起不来"；
+#: ⛔ **它们现在不再被任何 `create_subscription` 使用**。
 TOPIC_PX4_POS = "/fmu/out/vehicle_local_position"
 TOPIC_PX4_ATT = "/fmu/out/vehicle_attitude"
-TOPIC_RATES = "/fmu/in/vehicle_rates_setpoint"
-TOPIC_MODE = "/fmu/in/offboard_control_mode"
+#: ☠️ **下行 setpoint（2026-10-12 换载体，ticket 13 §二①）**：旧值
+#: `/fmu/in/vehicle_rates_setpoint`（`px4_msgs/VehicleRatesSetpoint`）。
+#: 新载体：`mavros_msgs/AttitudeTarget`。★ 字段口径**三处都变了**（推力反号、角速率不再自己
+#: 转 FRD、`type_mask = 128`），账见模块 docstring 的 ☠️☠️ 与 `sign-map.md` §2.2/§2.3。
+TOPIC_RATES = "/mavros/setpoint_raw/attitude"
+#: ☠️ **`TOPIC_MODE`（`/fmu/in/offboard_control_mode`）已删除**（ticket 13 §二①④）：
+#: 换载体后飞控**从收到的 `SET_ATTITUDE_TARGET` 自己派生** `OffboardControlMode`
+#: （`mavlink_receiver.cpp:1531-1535`）⟹ 我们没有第二条要发的东西了。
+#: ⚠️ 别把这条话题名"留着不用"：它的存在会让人以为"心跳还在发"，而**心跳是否在发**
+#: 现在是判断"这飞机能不能进 OFFBOARD"的第一个要查的事实（见模块 docstring 的 ★★）。
 TOPIC_PATH = "/mpc/predicted_path"
 TOPIC_REF = "/mpc/reference"
 
 #: 节点名 = 可执行文件名（`ros2 node list` 里一眼认出来）
 NODE_NAME = "mpc_node"
+
+#: `mavros_msgs/AttitudeTarget.type_mask` 里我们唯一要置的那一位：**忽略 `orientation`**。
+#: ★ 本模块与 `node_core` 的做法一致（那边抄的是 `PositionTarget` 的掩码位）：常量抄一份、
+#:   **权威在 msg**，由 `test_mpc_node.py` 对着真 `AttitudeTarget` 类断言（`== 128`）。
+#: ⚠️ `type_mask` 的语义是「置 1 = **忽略**该字段」——置反了的症状是
+#:   "`orientation` 全 0（= 单位四元数以外的垃圾）+ 角速率照样生效"混在一起；
+#:   而 `IGNORE_THRUST = 64` **绝不能**顺手置上：那一位一旦置 1，我们发的 `thrust` 被忽略、
+#:   飞机按"姿态悬停"飞，症状是**掉高度**（而话题面上每一帧都正常）。
+TYPE_MASK_IGNORE_ATTITUDE = 128
+
+#: A 档被拒时那句话（`_validate` 与 `MpcNode.__init__` **共用同一份**）。
+#: ★ 为什么抽成常量：两处都要说同一件事，而其中一处（`__init__` 的那条守卫）只有**直接构造
+#:   节点**（绕开 `declare_params`）时才会走到 —— 那种路径下如果两句话不一致，
+#:   读日志的人会以为是两个不同的故障。
+REFUSE_PX4_STATE_SOURCE = (
+    "A 档（state_source=px4）在本阶段不可用（ticket 13 §二⑤，操作者 2026-10-12 裁定取 (b)）："
+    "它读的 `/fmu/out/vehicle_local_position` / `/fmu/out/vehicle_attitude` 是 uXRCE-DDS 专用话题，"
+    "下行换到 mavros 载体之后**不存在**了。"
+    "⟹ 本阶段的 A 级回退是 **Phase 1 的 `control` 包整条链**，不是节点内部的 px4 状态源；"
+    "把一条死路留着不如让它当场喊出来。"
+    "（要重开这一档得改指 mavros 的本地位置，那条路要重新过一遍「mavros 会帮你转 ENU→NED / "
+    "FLU→FRD」的坑，见 `docs/reference/px4-interface.md` §5.1 —— 归另一张票，⛔ 本票不做。）")
 
 
 @dataclass
@@ -277,12 +394,16 @@ class NodeParams:
     """
 
     rate_hz: float = 100.0
-    heartbeat_hz: float = 50.0
+    #: 可视化那一路的抽帧频率（与下行无关，`_viz_tick`）。
     viz_hz: float = 10.0
-    #: 心跳**无条件发**（默认）—— ★★ 理由见模块 docstring：心跳是 PX4 放行 OFFBOARD 的前提
-    #: （`offboardCheck.cpp:40-65` + `modeCheck.cpp:126`），把它闸掉就是**进不去 OFFBOARD**。
-    #: 置 False 时心跳与 setpoint 同生死（= 交给 PX4 的 `COM_OF_LOSS_T` 失效保护）。归 ticket 07。
-    heartbeat_always: bool = True
+    #: ☠️ **`heartbeat_hz` / `heartbeat_always` 已删除**（ticket 13 §二④，操作者 2026-10-12
+    #: 裁定取 **(a) 收成单频**）。旧值 `50.0` / `True`，配套的是 `_heartbeat_every` 抽帧 +
+    #: 独立的心跳话题 `/fmu/in/offboard_control_mode`。**两条都没了**：换到 mavros 之后
+    #: 飞控从 `SET_ATTITUDE_TARGET` 自己派生 `OffboardControlMode` ⟹ "心跳"与"setpoint"
+    #: 是**同一条流**，双频设计失去了它的物理对应物。
+    #: ⛔ **别把这两个参数加回来**（哪怕"留着不读"）：它们会让 `_validate` 里那条
+    #: "参数名拼错就退"的纪律失效（名字在表里 ⟹ 写了也接受），而写进去的人会以为
+    #: 自己在控制心跳 —— 那份控制**现在不存在**。整段账（含被驳回的 (b)）见模块 docstring。
     #: 求解用的模型参数（`t_max` 由 `hover_thrust` 导出，**不能**单独给 —— 见 `params.py`）
     mass: float = 0.75
     #: ★ 实测值（满电口径，2026-09-29 ticket 10 回填）—— 与 `params.HOVER_THRUST` **必须同值**，
@@ -315,6 +436,8 @@ class NodeParams:
     ki_z: float = 1.0
     #: ★ **测量从哪里来**（ticket 09）：`mocap`（默认，B 档）或 `px4`（A 档）。
     #: 两档的差别**只在**"测量"这一段，见模块 docstring 的表；校验在 `_validate`。
+    #: ☠️ **`px4` 这一档在本阶段启动即拒**（ticket 13 §二⑤，操作者取 (b)）——
+    #: 它读的 `/fmu/out/*` 是 uXRCE-DDS 专用的，换载体后不存在了。见 `_validate` 的 ★★。
     state_source: str = "mocap"
     #: A 档：PX4 状态话题（默认是飞控自己的估计；换真值/回放只是改这两个参数）
     px4_position_topic: str = TOPIC_PX4_POS
@@ -345,9 +468,15 @@ class NodeParams:
     hold_yaw_deg: float = 0.0
     #: 停机条件（**没有通道号**，理由见 `node_core`）
     mocap_timeout_s: float = 0.5
-    #: A 档：PX4 两条状态消息的龄上限 [s]（各判各的；实测 32.5 / 31.6 Hz ⟹ 0.5 s = 16 拍）
+    #: A 档：PX4 两条状态消息的龄上限 [s]（各判各的；实测 32.5 / 31.6 Hz ⟹ 0.5 s = 16 拍）。
+    #: ☠️ A 档本阶段启动即拒 ⟹ 这一条**取不到活值**（保留是因为 `node_core` 的两档逻辑还在）。
     px4_timeout_s: float = 0.5
-    status_timeout_s: float = 0.75
+    #: ☠️ **闸门源（`/mavros/state`）的龄上限 [s]：旧值 `0.75` 是 uXRCE-DDS 载体的账。**
+    #: 新载体 **1 Hz 定频**（HEARTBEAT 驱动，`sys_status.cpp:962-985`）⟹ `0.75 < 1.0`
+    #: 会让"状态超时"这条判据**恒真**（每秒报失联、闸门一直关、一帧都不发）。
+    #: **2.5 s** = 2.5 个周期，与 Phase 1 的 `state_timeout_s` **同值同理由**。
+    #: 完整推导、代价（检测最多晚 ~1 s）与"为什么不取 1.5"见 `node_core.StopConfig` 的 docstring。
+    status_timeout_s: float = 2.5
     stop_on_nav_state_exit: bool = True
     stop_on_armed_drop: bool = True
     warmup_cycles: int = 5
@@ -398,15 +527,21 @@ class NodeParams:
         return Z0Params(mass=self.mass, hover_thrust=self.hover_thrust)
 
     def describe(self) -> str:
-        return ("rate=%g Hz 心跳=%g Hz viz=%g Hz | ★状态源=%s（%s）"
+        """启动日志里那一行 —— 它同时是"我改了参数但没生效"的**唯一**证据面（见类 docstring）。
+
+        ☠️ 旧版里有 `心跳=%g Hz` 与 `| 心跳%s` 两格：那两格连同它们的参数一起删了
+        （ticket 13 §二④，裁定 (a)）。**不留空位**："心跳"这个词还在日志里出现的话，
+        下一个人会去找那个不存在的机制。
+        """
+        return ("rate=%g Hz viz=%g Hz | ★状态源=%s（%s）"
                 " | ★参考=%s"
                 " | τ=%g s 参考偏移(仅hold档)=%s yaw=%s"
                 " | 模型 mass=%g kg hover_thrust=%g ⇒ T_max=%.4f N"
                 " | 垂直偏置 ki_z=%g N/(m·s)%s"
                 " | 停机(mocap>%g s / px4>%g s / status>%g s / 离开 offboard=%s / 掉 armed=%s)"
-                " | 心跳%s"
+                " | 下行=mavros 单频（无独立心跳，理由见模块 docstring）"
                 " | 兜底：保持 %d 拍 → 安全悬停；位姿合理性上限 %g m/s / %g rad/s"
-                % (self.rate_hz, self.heartbeat_hz, self.viz_hz,
+                % (self.rate_hz, self.viz_hz,
                    self.state_source, self.state_source_desc(),
                    self.reference_source_desc(),
                    self.tau_s,
@@ -416,8 +551,6 @@ class NodeParams:
                    self.ki_z, "（关）" if self.ki_z <= 0.0 else "",
                    self.mocap_timeout_s, self.px4_timeout_s, self.status_timeout_s,
                    self.stop_on_nav_state_exit, self.stop_on_armed_drop,
-                   "无条件发（闸门只管 setpoint）" if self.heartbeat_always
-                   else "与 setpoint 同生死（交给 PX4 的 COM_OF_LOSS_T）",
                    self.fallback_hold_frames, self.mocap_jump_speed_max,
                    self.mocap_jump_rate_max)
                 + ("　⚠️ **故障注入已开**（已发 %d 帧之后每拍都换成坏解）—— 装桨前必须关"
@@ -429,9 +562,13 @@ class NodeParams:
 
         ★ 它是"本档不使用动捕输入"这条验收项在**日志里**的落点：A 档的启动日志里
           不该出现 `/mocap/pose_enu` 这个词，而台架正是这么断言的。
+        ☠️ **2026-10-12（ticket 13 §二⑤）：那条断言在本阶段没有活对象** —— `px4` 档
+          启动即拒，永远不会走到下面那一支。分支**留着**（它描述的是"若这一档可用会订什么"，
+          与 `node_core` 里保留下来的 A 档纯逻辑配对），但在**本节点**里它不可达。
         """
-        if self.state_source == STATE_SOURCE_PX4:
-            return f"PX4 {self.px4_position_topic} + {self.px4_attitude_topic}（NED/FRD）"
+        if self.state_source == STATE_SOURCE_PX4:   # pragma: no cover - `_validate` 已拒
+            return (f"PX4 {self.px4_position_topic} + {self.px4_attitude_topic}"
+                    "（NED/FRD，☠️ 本阶段不可用）")
         return f"{TOPIC_MOCAP} + {TOPIC_MOCAP_VEL}（ENU/FLU）"
 
     def reference_source_desc(self) -> str:
@@ -446,7 +583,11 @@ class NodeParams:
 
 
 class MpcNode(Node):
-    """100 Hz 求解 + 50 Hz 心跳 + 10 Hz RViz 的 (C) 级 CTBR（总推力 + 机体角速率）节点。"""
+    """100 Hz 求解兼发帧 + 10 Hz RViz 的 (C) 级 CTBR（总推力 + 机体角速率）节点。
+
+    ☠️ 旧标题写的是「100 Hz 求解 + **50 Hz 心跳** + 10 Hz RViz」—— 心跳那半句随
+    ticket 13 §二④（裁定 (a) 收成单频）消失：setpoint 自己就是心跳，发帧率 = `rate_hz`。
+    """
 
     def __init__(self, params: NodeParams, ocp: Optional[OfflineOcp] = None):
         super().__init__(NODE_NAME)
@@ -470,36 +611,41 @@ class MpcNode(Node):
         #    两档各自的槽位都在（`node_core` 里），但只有这一档的那条会被填。
         self.sub_mocap = None
         self.sub_mocap_vel = None
-        self.sub_pos = None
-        self.sub_att = None
+        #: ☠️ **A 档那两个槽位（`sub_pos` / `sub_att`）已删除**（ticket 13 §二⑤）：
+        #: 它们订阅的 `/fmu/out/*` 是 uXRCE-DDS 专用的，换载体后不存在 ⟹ 这一档在
+        #: `_validate` 里**启动即退**，永远走不到这里。留着两个恒为 `None` 的属性
+        #: 等于在说"这一档还会订点什么"。
         if params.state_source == STATE_SOURCE_PX4:
-            self.sub_pos = self.create_subscription(
-                VehicleLocalPosition, params.px4_position_topic, self._on_local_position,
-                QOS_SUB_STATUS)
-            self.sub_att = self.create_subscription(
-                VehicleAttitude, params.px4_attitude_topic, self._on_attitude, QOS_SUB_STATUS)
-        else:
-            self.sub_mocap = self.create_subscription(
-                PoseStamped, TOPIC_MOCAP, self._on_mocap, QOS_MOCAP)
-            # ★ 速度是**独立的一条话题**（ticket 15）：`PoseStamped` 里没有 `twist` 字段，
-            #   不能再从位姿那一条取。`mocap` 节点把 `/vrpn/<刚体>/twist` 原样 republish 成
-            #   `/mocap/velocity_enu`（`TwistStamped`，同 frame）⟹ 与 `PoseStamped` 那条
-            #   同样的 QoS（`mocap` 节点用 `QoS(10)` 发，见 QOS_MOCAP 的注释）。
-            #   ⚠️ 两档的分岔仍只有这一处：A 档的速度在 `vehicle_local_position` 里，不订这条。
-            self.sub_mocap_vel = self.create_subscription(
-                TwistStamped, TOPIC_MOCAP_VEL, self._on_mocap_velocity, QOS_MOCAP)
+            # ⚠️ 正常路径下**到不了这里**（`declare_params` → `_validate` 先拒，见那段 ★★）。
+            # 写在这里是因为 `MpcNode(params, ocp)` 也能被**直接构造**（夹具、REPL、将来的
+            # launch 先建节点再校验）⟹ 少了这一行，那条路会静静地按 mocap 档跑起来，
+            # 而"我明明写了 px4"与"它静静地用动捕"在话题面上长得一模一样。
+            raise SystemExit(REFUSE_PX4_STATE_SOURCE)
+        self.sub_mocap = self.create_subscription(
+            PoseStamped, TOPIC_MOCAP, self._on_mocap, QOS_MOCAP)
+        # ★ 速度是**独立的一条话题**（ticket 15）：`PoseStamped` 里没有 `twist` 字段，
+        #   不能再从位姿那一条取。`mocap` 节点把 `/vrpn/<刚体>/twist` 原样 republish 成
+        #   `/mocap/velocity_enu`（`TwistStamped`，同 frame）⟹ 与 `PoseStamped` 那条
+        #   同样的 QoS（`mocap` 节点用 `QoS(10)` 发，见 QOS_MOCAP 的注释）。
+        self.sub_mocap_vel = self.create_subscription(
+            TwistStamped, TOPIC_MOCAP_VEL, self._on_mocap_velocity, QOS_MOCAP)
         # ★ 参考那条（ticket 17）**与状态源正交**，所以是**另一个** `if`，不是上面那个的 `else`
         #   ⟹ "A 档不订阅动捕"那条断言（`matched_subscribers() == 0`）不受影响。
         self.sub_traj_ref = None
         if params.reference_source == REFERENCE_SOURCE_TRAJ:
             self.sub_traj_ref = self.create_subscription(
                 PositionTarget, TOPIC_TRAJ_REF, self._on_traj_reference, QOS_TRAJ_REF)
+        # ★ 闸门源：`/mavros/state`（**换过载体**，见 `TOPIC_STATUS`）。QoS 逐项对齐发布方的
+        #   `mavros::StateQoS()`，理由（尤其 TRANSIENT_LOCAL 那一条）见 `QOS_SUB_MAVROS_STATE`。
         self.sub_status = self.create_subscription(
-            VehicleStatus, TOPIC_STATUS, self._on_status, QOS_SUB_STATUS)
+            State, TOPIC_STATUS, self._on_status, QOS_SUB_MAVROS_STATE)
 
         # —— 下游（飞控）——
-        self.pub_rates = self.create_publisher(VehicleRatesSetpoint, TOPIC_RATES, QOS_PUB_FMU)
-        self.pub_mode = self.create_publisher(OffboardControlMode, TOPIC_MODE, QOS_PUB_FMU)
+        self.pub_rates = self.create_publisher(AttitudeTarget, TOPIC_RATES, QOS_PUB_ATT)
+        # ☠️ 这里原本还有一个 `self.pub_mode`（`/fmu/in/offboard_control_mode` 的心跳）。
+        #    **整个删除**（ticket 13 §二①④）：换载体后飞控从 `SET_ATTITUDE_TARGET` 自己派生
+        #    `OffboardControlMode` ⟹ 我们没有第二条要发的东西。⚠️ 删它的**代价**是
+        #    "不发"与"不心跳"成了一件事，那个后果见模块 docstring 的 ★★。
 
         # —— 观测面（RViz）——
         self.pub_path = self.create_publisher(NavPath, TOPIC_PATH, 10)
@@ -509,7 +655,8 @@ class MpcNode(Node):
         self.ticks = 0
         self.solves = 0
         self.published = 0
-        self.heartbeats = 0
+        # ☠️ 这里原有一个 `self.heartbeats = 0` 计数器（收尾摘要里印"心跳 N 个"）。
+        #    心跳整条没了 ⟹ 计数器一起删（见 `NodeParams` 的 ☠️）。
         self.gated = {}                  # reason → 次数（停机原因统计，进证据）
         self.solve_ms_max = 0.0
         #: 所有**有限**的求解耗时 [ms]（p50 / p99 用）。⚠️ 不设上限地留 —— 这是 SITL/台架上
@@ -554,7 +701,8 @@ class MpcNode(Node):
         # —— 兜底（ticket 07 / M5）——
         # ★ 悬停帧在这里**建一次**：它是常量（悬停推力 + 零角速率），而且**不依赖任何状态**
         #   —— 这正是"状态不可信时它仍然可用"的原因，也是它必须在 `__init__` 就备好的原因。
-        self._hover_sp = sign_map.px4_rates_setpoint((0.0, 0.0, 0.0), self.z0.t_hover, self.z0.t_max)
+        self._hover_sp = sign_map.mavros_attitude_target(
+            (0.0, 0.0, 0.0), self.z0.t_hover, self.z0.t_max)
         self.ladder = FallbackLadder(self.config.fallback_hold_frames)
         #: 「上一帧**可行**指令」（`hold` 档发的就是它，只由正常帧更新）
         self._last_sp = None
@@ -563,27 +711,30 @@ class MpcNode(Node):
         self._last_cycle = None
         self._log = open(params.log_file, "w", encoding="utf-8") if params.log_file else None
 
-        # 心跳抽帧：`rate_hz / heartbeat_hz` 取整（默认 100/50 = 2）
-        self._heartbeat_every = max(1, int(round(params.rate_hz / max(1e-3, params.heartbeat_hz))))
-
+        # ☠️ 这里原有 `self._heartbeat_every = round(rate_hz / heartbeat_hz)`（抽帧发心跳）。
+        #    心跳那条流删掉之后它没有读者了（见 `NodeParams` 的 ☠️）。
         self.get_logger().info(
             f"MPC（模型预测控制）节点启动：{params.describe()}\n"
             f"  OCP：N={self.ocp.config.N} tf={self.ocp.config.tf} s（内部步长 {self.ocp.dt * 1e3:.1f} ms）"
             f"；T_max={self.z0.t_max:.4f} N ⟹ 悬停归一化推力 "
-            f"{self._hover_sp.thrust_body_z:+.4f}"
+            f"{self._hover_sp.thrust:+.4f}"
             f"；CPU 亲和性={self._cpus_allowed()}")
         # ★ **这一行要列全所有的订阅**：它是"本档到底订了什么"在日志里的**唯一**落点，
         #   而 A 档那条验收项（"本档不使用动捕输入"）就是拿它在启动日志里做断言的。
         #   ⚠️ ticket 17 补了 `/traj/reference` 那一路 —— 原先漏了它，于是轨迹档的启动日志
         #   与悬停档**一模一样**，而"参考那条订上了没有"正是轨迹档第一个要回答的问题。
-        subs = [f"{params.state_source_desc()}"
-                f"（{'BEST_EFFORT/depth 1' if params.state_source == STATE_SOURCE_PX4 else '可靠/depth 10'}）",
-                f"{TOPIC_STATUS}（**BEST_EFFORT**/depth 1）"]
+        #   ☠️ 2026-10-12（ticket 13）两处作废：① 状态源那一档的说明从"A 档 = BEST_EFFORT/depth 1"
+        #   改成"只剩 mocap"（A 档起不来）；② `/fmu/out/vehicle_status` 换成了 `/mavros/state`。
+        #   ★ "发布"那一半现在**只有一个话题** —— 心跳没了，而"心跳还在不在发"恰恰是
+        #   "这飞机能不能进 OFFBOARD"的第一个问题 ⟹ 这一行必须把"没有第二条流"这件事**印出来**。
+        subs = [f"{params.state_source_desc()}（可靠/depth 10）",
+                f"{TOPIC_STATUS}（可靠/depth 10 + TRANSIENT_LOCAL）"]
         if params.reference_source == REFERENCE_SOURCE_TRAJ:
             subs.append(f"{TOPIC_TRAJ_REF}（可靠/depth 10）")
         self.get_logger().info(
-            "接口：订阅 %s；发布 %s 与 %s（BEST_EFFORT + TRANSIENT_LOCAL/depth 1）"
-            % (" + ".join(subs), TOPIC_RATES, TOPIC_MODE))
+            "接口：订阅 %s；发布 %s（BEST_EFFORT/depth 5 —— 对齐 mavros 的 SensorDataQoS）"
+            "；★ **没有第二条流**：心跳已随换载体删除（飞控从这条 setpoint 自己派生 "
+            "OffboardControlMode，见模块 docstring）" % (" + ".join(subs), TOPIC_RATES))
         if int(params.inject_solve_fail_after_frames) > 0:
             # ★ 用 **error** 级别、并且把"装桨前必须关"写在同一行：这一档一开，
             #   飞机收到的每一帧都是坏解兜底出来的 —— 它只该在台架/SITL 上出现。
@@ -653,7 +804,12 @@ class MpcNode(Node):
         """`/traj/reference`（ticket 17）—— 掩码/非有限的解析在 `core.on_traj_reference` 里。"""
         self.core.on_traj_reference(msg, self._now_s())
 
-    def _on_status(self, msg: VehicleStatus) -> None:
+    def _on_status(self, msg: State) -> None:
+        """`/mavros/state`（闸门源，☠️ 2026-10-12 换过载体，见 `TOPIC_STATUS`）。
+
+        ★ 这里**只转交**，判据在 `core.cycle()`（读 `msg.armed` / `msg.mode`）——
+          "闸门"这件事只有一个产地，`on_status` 那一侧也是纯存储（`node_core` 的鸭子类型）。
+        """
         self.core.on_status(msg, self._now_s())
 
     def _now_s(self) -> float:
@@ -665,32 +821,37 @@ class MpcNode(Node):
         """
         return time.monotonic()
 
-    def _timestamp(self) -> int:
-        """PX4 要**微秒**。与 05 的 stub 同一份口径（`time.time_ns() // 1000`）。
+    def _stamp(self):
+        """发出去那一帧的 `header.stamp`（ROS 时间）。
 
-        ★ 为什么必须用墙钟而不是 `monotonic`：uXRCE-DDS 的 `time_offset` 是相对**墙钟**同步的，
-          PX4 收到后算 `timestamp − time_offset`。发单调时钟的值会得到一个**巨大的偏移**
-          （本质上与"发错单位"同类），而它的表现是**静默的**（`min()` 把它钳回 `hrt`）。
-          受控实测表见 `offboard_smoke._timestamp` 的 docstring。
+        ☠️ **换载体后这个方法替掉了旧的 `_timestamp()`**（ticket 13 §二①）：
+        旧实现返回 `time.time_ns() // 1000`（**微秒整数**，给 uXRCE-DDS 的
+        `VehicleRatesSetpoint.timestamp`），整套口径（微秒 / `time_offset` /
+        PX4 侧的 `min(ts − time_offset, hrt)`）在换载体之后**由 mavros 负责**
+        （它自己把它折成 MAVLink 的 `time_boot_ms`，`setpoint_raw.cpp:327`）。
+        ⛔ **别在这里手算微秒**：那会得到一个"看起来对"的整数，而 mavros 会把它
+        当成 ROS 时间（纳秒语义）用 —— 差 1000 倍，症状是飞控按陈旧时间戳处理这些帧。
+        ★ 用 `get_clock().now()` 而不是 `time.time_ns()//1000`：ROS 时间在 SITL 回放
+        （`/clock` + `use_sim_time`）下才是"这一拍"的时间，墙钟不是。
         """
-        return time.time_ns() // 1_000
+        return self.get_clock().now().to_msg()
 
     # ─────────────────────────── 一拍 ───────────────────────────
 
     def _tick(self) -> None:
         self.ticks += 1
         now_s = self._now_s()
-        # 一拍一个时间戳，两个话题共用（同一拍的两条消息盖同一个时刻 —— 它们描述同一瞬间的意图）
-        ts = self._timestamp()
-        heartbeat_due = self.ticks % self._heartbeat_every == 0
+        # 这一拍发出去那一帧的时间戳（`header.stamp`，见 `_stamp`）。
+        # ☠️ 旧版这里写着"一拍一个时间戳，**两个话题**共用"—— 现在只有一个话题了（心跳删了）。
+        ts = self._stamp()
 
         cycle = self.core.cycle(now_s)
         self._last_cycle = cycle
 
-        # ① 心跳：**无条件**（默认）。★★ 理由见模块 docstring —— PX4 只在收到它之后才放行
-        #    OFFBOARD（`offboardCheck.cpp` + `modeCheck.cpp:126`），闸掉它就永远进不去。
-        if self.params.heartbeat_always and heartbeat_due:
-            self._publish_mode(ts)
+        # ☠️ **这里原有一段"① 心跳：无条件（默认）"**（`if heartbeat_always and heartbeat_due:
+        # _publish_mode(ts)`）。**整段删除**（ticket 13 §二④，操作者裁定 (a) 收成单频）。
+        # ⚠️ 它的后果不是"少发一条消息"那么轻：飞控的 `OffboardControlMode` 是从
+        # `SET_ATTITUDE_TARGET` **派生**的 ⟹ 闸门关着 = 心跳也没了（见模块 docstring 的 ★★）。
 
         if cycle.x0 is None:
             self._gate_closed(now_s, cycle)
@@ -780,9 +941,8 @@ class MpcNode(Node):
             if report:
                 self.get_logger().error(report)
 
-        if not self.params.heartbeat_always and heartbeat_due:
-            # 另一档：心跳与 setpoint 同生死（`heartbeat_always=False`）
-            self._publish_mode(ts)
+        # ☠️ **这里原有那"另一档" `if not heartbeat_always and heartbeat_due: _publish_mode(ts)`**
+        # —— 连同参数一起删除（ticket 13 §二④）。剩下的**只有这一条发布路径**。
         self._publish_rates(ts, frame, phase, note)
 
     # ─────────────────────────── 这一拍发什么 ───────────────────────────
@@ -832,7 +992,12 @@ class MpcNode(Node):
                                  -self.z0.t_hover, self.z0.f_max - self.z0.t_hover))
 
     def _gate_closed(self, now_s: float, cycle) -> None:
-        """闸门关着的一拍：**不求解也不发 setpoint**（心跳照发，见模块 docstring）。
+        """闸门关着的一拍：**不求解也不发 setpoint**。
+
+        ☠️ 旧版这里跟了一句"（心跳照发，见模块 docstring）"—— **那句现在是错的**，
+        而且**必须**改对：闸门关着时我们**什么都不发**，于是 ~1 s 后飞控也会判心跳丢失
+        （换载体后 setpoint 就是心跳）。这是本票后果最重的一句话，
+        它以前只影响"这一拍发不发指令"，现在还决定"这飞机进不进得去 OFFBOARD"。
 
         ★ 闸门**刚**关上的那一拍立刻打一行日志（不必等 `log_every` 的抽帧）：输入合理性
           那两条判据给出的读数（"位移 100.000 m > 允许 0.200 m"）是调阈值的人第一个要问的数，
@@ -849,7 +1014,8 @@ class MpcNode(Node):
                 f"t={now_s:.2f}s 闸门关闭（{cycle.reason}）：status 龄 {cycle.age_status_s:.2f}s / "
                 f"状态龄 {cycle.age_state_s:.2f}s ⟹ 不发 setpoint"
                 + (f"；{cycle.detail}" if cycle.detail else "")
-                + ("（心跳照发）" if self.params.heartbeat_always else ""))
+                + "（★ 这一档连心跳一起停：换载体后 setpoint 就是心跳，"
+                  "持续超过 COM_OF_LOSS_T 会让飞控拒绝进 OFFBOARD）")
 
     def _normal_frame(self, sol) -> Tuple[Optional[object], Optional[str]]:
         """把这一拍的解变成一个**可发布的帧** → `(帧, None)`，或 `(None, 原因)`。
@@ -858,9 +1024,13 @@ class MpcNode(Node):
 
         ① `solution_usable`：求解器的状态码 / `u` 的形状与有限性（判据 1、判据 2 的解这一半）；
         ② **把垂直外层前馈偏置 `ΔF` 加到发出去的推力上**（ticket 20 的落点，见下）；
-        ③ `sign_map.px4_rates_setpoint`：映射这条路自己的入参检查（非有限 / 负推力）；
+        ③ `sign_map.mavros_attitude_target`：映射这条路自己的入参检查（非有限 / 负推力）；
         ④ `frame_is_finite`：**发布前整帧校验**（判据 2）—— ①②③ 各自只看一部分
            （① 看 `u`、③ 看 `ω`/`F`/`T_max`），而"凡是要写进那一帧的数"只有在这里才说得清。
+        ☠️ ③ 原来是 `sign_map.px4_rates_setpoint`（uXRCE-DDS 路径）。**换的是函数，不是判据** ——
+        两个入口共用同一个 `_checked_inputs`（`sign_map.py`），所以这一道的强度没变；
+        变的是交出去的四个字段名与两个符号（`body_rate_*` FLU 原样 / `thrust` 正号），
+        见 `sign_map.mavros_attitude_target` 的 docstring 与 `sign-map.md` §2.2/§2.3。
 
         ★★ **② 为什么在这儿（ticket 20 裁定，2026-09-29）**：积分作用的落点是**发出去的指令**。
           ☠️ 不是 `u_ref` —— 那条路实测**反号**（`d u[0]/d u_ref[0] = −0.0616 N/N`），
@@ -870,24 +1040,27 @@ class MpcNode(Node):
           ★ 夹 `[0, f_max]`（与 OCP 的 `lbu[0]/ubu[0]` 同界）⟹ 发出去的推力**恒在执行器界内**，
           这就是"夹状态（`ΔF` 的界只管抗饱和）+ 夹输出（这里管不越界）"里后半句的落点。
           ⚠️ 加完之后这一帧**可能**顶界，而日志的 `sat` 列算的是 `sol.u`（求解器给的、未加偏置）
-          ⟹ "**发出去的那条**指令顶没顶界"要读 `−thrust_body_z × t_max`（PX4 机体 z 朝下 ⟹
-          那一位是负的，见 `sign_map.px4_rates_setpoint:73`），别读 `sat`。
+          ⟹ "**发出去的那条**指令顶没顶界"要读 `thrust × t_max`（**正号**，因为发出去的是
+          mavros 口径的 `thrust`；☠️ 旧文这里写的是 `−thrust_body_z × t_max`，那个负号属于
+          uXRCE-DDS 口径，见 `sign_map.px4_rates_setpoint` / `mavros_attitude_target` 的对照），
+          别读 `sat`。
         """
         reason = solution_usable(sol)
         if reason is not None:
             return None, reason
         # ★★ ② 垂直外层前馈偏置的落点：加在**发出去的指令**上，不在 `u_ref` 上（见 docstring）。
         #   算在 `sol.u` 的副本上 ⟹ `self._last_sol` 与日志的 `u` 列仍是**求解器原样输出**，
-        #   "解出来多少"与"发出去多少"在日志里是可分的两列（`u` vs `thrust_body_z`）。
+        #   "解出来多少"与"发出去多少"在日志里是可分的两列（`u` vs `thrust`）。
         u_cmd = np.array(sol.u, dtype=float, copy=True)
         u_cmd[0] = float(np.clip(u_cmd[0] + self._df, 0.0, self.z0.f_max))
         try:
-            sp = sign_map.px4_rates_setpoint(u_cmd[1:], u_cmd[0], self.z0.t_max)
+            sp = sign_map.mavros_attitude_target(u_cmd[1:], u_cmd[0], self.z0.t_max)
         except ValueError as exc:
             return None, f"映射拒绝：{exc}"
         if not frame_is_finite(sp):
-            return None, ("整帧校验不通过：roll/pitch/yaw/thrust_body_z 里有非有限值"
-                          f"（{sp.roll!r} / {sp.pitch!r} / {sp.yaw!r} / {sp.thrust_body_z!r}）")
+            return None, ("整帧校验不通过：body_rate_x/y/z 与 thrust 里有非有限值"
+                          f"（{sp.body_rate_x!r} / {sp.body_rate_y!r} / "
+                          f"{sp.body_rate_z!r} / {sp.thrust!r}）")
         return sp, None
 
     def _fallback_frame(self, phase: str):
@@ -914,35 +1087,34 @@ class MpcNode(Node):
         n = int(self.params.inject_solve_fail_after_frames)
         return n > 0 and self.published >= n
 
-    def _publish_mode(self, ts: int) -> None:
-        """offboard 心跳（`body_rate = True`，其余 False）。**抽帧发** ⟹ 默认 50 Hz。"""
-        msg = OffboardControlMode()
-        msg.timestamp = ts
-        msg.position = False
-        msg.velocity = False
-        msg.acceleration = False
-        msg.attitude = False
-        msg.body_rate = True
-        msg.actuator = False
-        self.pub_mode.publish(msg)
-        self.heartbeats += 1
+    # ☠️ **`_publish_mode()` 已删除**（ticket 13 §二④）：它发的就是 `/fmu/in/offboard_control_mode`
+    # 心跳（`body_rate = True`，其余 False）。换载体后飞控从 `SET_ATTITUDE_TARGET` 自己派生
+    # `OffboardControlMode`（`mavlink_receiver.cpp:1531-1535`）⟹ 这个方法没有存在理由了。
+    # ⚠️ 它的删除**不是**"少发一条消息"：见模块 docstring 的 ★★（责任转移）。
 
-    def _publish_rates(self, ts: int, sp, phase: str = FallbackLadder.NORMAL,
+    def _publish_rates(self, ts, sp, phase: str = FallbackLadder.NORMAL,
                        note: str = "") -> None:
         """发布一帧 setpoint。★ **兜底帧与正常帧走的是同一条路**（同一个话题、同样的字段）。
 
         这**是刻意的**：`hold` 的语义是"内容原样、**时间戳换新**"——于是"它在保持"这件事
-        在话题上可观测（同一个 `roll/pitch/yaw/thrust_body[2]` 连着出现 N 次，而 `timestamp`
+        在话题上可观测（同一组 `body_rate`/`thrust` 连着出现 N 次，而 `header.stamp`
         每次都在前进）。若兜底另走一条"不发"的路，PX4 那边照样在飞，而**我们这边什么都看不见**。
+
+        ☠️ **换载体后这一帧的字段与掩码都变了**（ticket 13 §二②）：
+        `type_mask = 128`（`IGNORE_ATTITUDE`）⟹ `body_rate` 被用、`orientation` 被忽略、
+        **`thrust` 不被忽略**（与旧版 `OffboardControlMode.body_rate = True` 的口径一致）。
+        `orientation` **不填**（掩码说了要忽略它）；`body_rate` 三个分量**填 `sp` 给的 FLU 原样**，
+        `thrust` 填**正号** —— 取负与转 FRD 都在 mavros/飞控那一侧做，理由见
+        `sign_map.mavros_attitude_target` 的 docstring（⛔ 在那里再转一次 = pitch/yaw 静默反向）。
         """
-        msg = VehicleRatesSetpoint()
-        msg.timestamp = ts
-        msg.roll = float(sp.roll)
-        msg.pitch = float(sp.pitch)
-        msg.yaw = float(sp.yaw)
-        msg.thrust_body[0] = 0.0
-        msg.thrust_body[1] = 0.0
-        msg.thrust_body[2] = float(sp.thrust_body_z)
+        msg = AttitudeTarget()
+        msg.header.stamp = ts
+        msg.header.frame_id = ""     # 空 = 无坐标系语义（`AttitudeTarget` 没有 frame 约定）
+        msg.type_mask = TYPE_MASK_IGNORE_ATTITUDE
+        msg.body_rate.x = float(sp.body_rate_x)
+        msg.body_rate.y = float(sp.body_rate_y)
+        msg.body_rate.z = float(sp.body_rate_z)
+        msg.thrust = float(sp.thrust)
         if phase == FallbackLadder.NORMAL:
             self._last_sp = sp        # 「上一帧可行指令」只由正常帧更新（见 `_fallback_frame`）
         self.pub_rates.publish(msg)
@@ -955,19 +1127,21 @@ class MpcNode(Node):
 
         if self.ticks % max(1, self.params.log_every) == 0:
             self.get_logger().info(
-                "t=%.2fs 第 %d 帧 | roll=%+.3f pitch=%+.3f yaw=%+.3f thrust_body[2]=%+.4f"
+                "t=%.2fs 第 %d 帧 | ω=(%+.3f, %+.3f, %+.3f) thrust=%+.4f"
                 " | 解 %d 次、闸门 %s、退化 %d、%s"
-                % (self._now_s(), self.published, msg.roll, msg.pitch, msg.yaw,
-                   msg.thrust_body[2], self.ticks,
+                % (self._now_s(), self.published, msg.body_rate.x, msg.body_rate.y,
+                   msg.body_rate.z, msg.thrust, self.ticks,
                    ",".join(f"{k}×{v}" for k, v in sorted(self.gated.items())) or "无",
                    self.degraded_count, self.ladder.describe()))
 
-    def _log_frame(self, now_ns: int, ts: int, sp, phase: str = FallbackLadder.NORMAL,
+    def _log_frame(self, now_ns: int, ts, sp, phase: str = FallbackLadder.NORMAL,
                    note: str = "") -> None:
         """逐帧 JSONL（取证用）。⚠️ 每个字段都要显式 `float()` / `int()`：
 
-        `thrust_body[2]` 是 ROS 的 **float32**、`nav_state` 是 **uint8**，`json.dumps` 两个都不认
-        —— 而定时器回调里抛异常 = **整个 spin 挂掉**（症状是"节点起来一秒就没了、日志文件是空的"）。
+        ☠️ 旧文这里举的两个例子（`thrust_body[2]` 是 float32、`nav_state` 是 uint8）
+        **两个都随换载体消失了**；同类风险现在落在 `mavros_msgs/AttitudeTarget.thrust`
+        （**float32**）与 `State.mode`（**字符串**）上 —— 前者 `json.dumps` 不认，
+        `json.dumps` 抛异常 = **整个 spin 挂掉**（症状是"节点起来一秒就没了、日志文件是空的"）。
         这条是 05 用一次真事故换来的（`offboard_smoke._tick` 里的同一段）。
 
         ★★ **票面验收项「日志记录 MPC（模型预测控制）内部状态、求解耗时、约束饱和标志，
@@ -982,11 +1156,21 @@ class MpcNode(Node):
         | `ref_anchor` | "这个目标是哪一刻钉的、后来有没有被搬走"（`""` = 常态；见 `node_core._update_anchor`） |
         | `state_source` / `age_*` / `ekf_*` | "这个数是**谁**给的、多旧"（A 档尤其重要，见 `node_core.describe_state`） |
         | `reference_source` / `ref_cb` / `ref_bad` / `ref_age_s` / `ref_frozen` | "**参考**是谁给的、多旧、有没有被冻住"（ticket 17）；`ref_frozen` 为真时 `x_ref0_v` 应当是 0 |
-        | `df` | "那个垂直积分偏置积到了多少"（ticket 20）—— 与**上一拍**的 `u[0]` 一起 `−thrust_body_z·t_max`，就是"它到底有没有加到发出去的指令上"（☠️ **不是同一拍**：见下面 `df` 那一列的 ☠️） |
+        | `df` | "那个垂直积分偏置积到了多少"（ticket 20）—— 与**上一拍**的 `u[0]` 一起 `thrust·t_max`，就是"它到底有没有加到发出去的指令上"（☠️ **不是同一拍**：见下面 `df` 那一列的 ☠️；☠️ 也是**正号**，换载体前的写法是 `−thrust_body_z·t_max`） |
 
-        ⚠️ 一帧里**同时**有 `u`（FLU/ENU 的内部量）与 `roll/pitch/yaw/thrust_body_z`（PX4 的
-        FRD/NED 量）：这不是重复，而是**符号映射的现场** —— 复盘时两边一对照，
+        ⚠️ 一帧里**同时**有 `u`（FLU/ENU 的内部量）与 `body_rate_*` / `thrust`（发出去那一帧的量）：
+        这不是重复，而是**符号映射的现场** —— 复盘时两边一对照，
         "映射写错了"与"模型解错了"就能分开（这正是 `sign-map.md` 要的东西）。
+        ☠️ **2026-10-12（ticket 13 §二②）这一栏的键换了名字**：
+        `roll/pitch/yaw` → `body_rate_x/y/z`（FLU **原样**，不再有取负），
+        `thrust_body_z` → `thrust`（**正号**）。⚠️ 这不只是改名 —— 旧名字带着**相反的符号**，
+        照旧名字去读新日志会得到"推力的符号反了"这个结论，而**反的是名字**。
+        同一节还换了两对：`ts`（**微秒**）→ `stamp_ns`（**纳秒**，单位进了名字），
+        `nav_state`/`arming_state`（两个整数枚举）→ `armed`（bool）/`mode`（字符串）。
+        ⛔ 所以旧日志（uXRCE-DDS 那几场）与新日志**不能按同一套键名混着读**：
+        以换载体那个 commit 为界分开处理，键名本身就是分界。
+        ⚠️ 一对**看起来该改而没改**的键：`age_status_s` / `status_cb` —— 语义没变
+        （都是"闸门来源那一帧有多旧、收了多少帧"），改的只是**来源话题**，别去改它们。
         """
         if self._log is None:
             return
@@ -994,11 +1178,15 @@ class MpcNode(Node):
         sol = self._last_sol
         info = None if sol is None else sol.info
         rec = {
-            "wall_ns": now_ns, "ts": int(ts), "tick": int(self.ticks),
-            "roll": _jnum(None if sp is None else sp.roll),
-            "pitch": _jnum(None if sp is None else sp.pitch),
-            "yaw": _jnum(None if sp is None else sp.yaw),
-            "thrust_body_z": _jnum(None if sp is None else sp.thrust_body_z),
+            #: ☠️ **键名与单位都换了**（ticket 13 §二①）：旧键 `ts` 装的是
+            #: `time.time_ns() // 1000`（**微秒**，uXRCE-DDS 的 `timestamp`）；新键 `stamp_ns`
+            #: 装的是 `header.stamp` 的**纳秒**（ROS 时间）。⛔ 名字里带单位是**故意的**：
+            #: 同一个键名换单位正是"读日志的人拿着旧口径去算、算出一个像是错的数"的经典成因。
+            "wall_ns": now_ns, "stamp_ns": _stamp_ns(ts), "tick": int(self.ticks),
+            "body_rate_x": _jnum(None if sp is None else sp.body_rate_x),
+            "body_rate_y": _jnum(None if sp is None else sp.body_rate_y),
+            "body_rate_z": _jnum(None if sp is None else sp.body_rate_z),
+            "thrust": _jnum(None if sp is None else sp.thrust),
             #: ★ 兜底档位（"normal" / "hold" / "hover" / "warmup"）—— 票面要的"这个事件在飞行
             #: 日志里**可检索**"就是这一列：`grep '"fallback": "hover"'` 能一次捞出全段。
             #: `fallback_note` 是**为什么**（求解器那一行读数 / 映射拒绝的原因）。
@@ -1044,7 +1232,9 @@ class MpcNode(Node):
             #:   曾经有一版让推力那一路随 `ΔF = t_hover + ΔF` 时变，落点搬到指令上之后又变回常量
             #:   ⟹ 拿这一列验证"参考漂没漂"的老断言重新成立（`test_垂直偏置不跟着解爬`）。
             #:   ☠️ 所以**别**在这一列里找 ΔF —— `ΔF` 有自己的一列（见下），而它发出去的样子
-            #:   在 `−thrust_body_z × t_max`（那一列才是"发出去多少"；符号见 `sign_map:73`）。
+            #:   在 `thrust × t_max`（那一列才是"发出去多少"；☠️ 换载体前这个读法是
+            #:   `−thrust_body_z × t_max` —— **负号属于旧字段名**，符号见 `sign_map.py:103`
+            #:   与 `:153` 这两行本身）。
             "u_ref0": None if self._u_ref is None else _jlist(self._u_ref[0]),
             #: ★ 垂直通道的**前馈偏置累积量** `ΔF` [N]（ticket 20）。
             #:   为什么要单独一列、而不是让人拿"发出去的推力 − `t_hover`"去减：
@@ -1053,10 +1243,14 @@ class MpcNode(Node):
             #:   里还有求解器那份 `u[0]`（它每拍都不同）⟹ 那种减法**量不出积分器的状态**。
             #:   直接记状态 ⟹ 复盘时不需要知道任何常数就能读出"积分器积到了多少"。
             #: ☠️ **这一列与"这一帧发出去时用的那个 ΔF"差一拍** —— 别拿同一拍的
-            #:   `−thrust_body_z·t_max − u[0]` 去减它：`_normal_frame` 用的是**上一拍积完**的值，
+            #:   `thrust·t_max − u[0]`（换载体前是 `−thrust_body_z·t_max − u[0]`）去减它：
+            #:   `_normal_frame` 用的是**上一拍积完**的值，
             #:   而 `_integrate_bias_z` 排在 `_normal_frame` **之后**（顺序见 `_tick` 的 ★★）。
-            #:   实测（2026-09-29 台架，`ki_z = 20 N/(m·s)`、`e_z = 0.15 m`、100 Hz）：
-            #:   同一拍相减差 **0.0300 N**，正好 `= ki_z·e_z·Δt` —— 而拿**上一拍**的 `df` 去减，
+            #:   实测（2026-09-29 台架，`ki_z = 20 N/(m·s)`、`e_z = 0.15 m`、100 Hz：
+            #:   同一拍相减差 **0.0300 N**，正好 `= ki_z·e_z·Δt`）—— ☠️ 这次量在**换载体前**
+            #:   （那一版的读数写的是 `−thrust_body_z·t_max`）：差一拍是 `_tick` 里的顺序性质，
+            #:   与载体无关，所以**口径照旧、数值照旧**；但要知道它没有在新载体上重测过。
+            #:   而拿**上一拍**的 `df` 去减，
             #:   残差落到 `1e-4` 以内（那正是 `test_垂直偏置加在发出去的指令上_不在代价参考上`
             #:   的口径）。差一拍这件事是设计（`_integrate_bias_z` 的 docstring 写了为什么排在后面），
             #:   但**从日志上读的人不看到这一行就会量错**。
@@ -1074,8 +1268,14 @@ class MpcNode(Node):
             "age_status_s": round(float(cycle.age_status_s), 4),
             "age_state_s": _jnum(cycle.age_state_s),
             "cycles_since_gate": int(cycle.cycles_since_gate),
-            "nav_state": int(self.core.status.nav_state),
-            "arming_state": int(self.core.status.arming_state),
+            #: ☠️ 旧版这里是 `"nav_state": int(...)` / `"arming_state": int(...)`（两个整数，
+            #: `px4_msgs/VehicleStatus` 的枚举）。换载体后 mavros 给的是 `armed`（**bool**）+
+            #: `mode`（**字符串**，`"OFFBOARD"`）⟹ ⛔ **键名必须一起换**，别把新值塞进旧键名：
+            #: 复盘脚本一条 `rec["nav_state"] == 14` 会在新日志里**永远是 False**（键不存在、
+            #: 或更糟 —— `mode` 塞进 `nav_state` 就变成拿字符串跟 14 比），而"闸门从没绿过"
+            #: 这个结论看起来完全合理。`mode` 是字符串，`_jnum` 那套不适用，原样写。
+            "armed": bool(self.core.status.armed),
+            "mode": str(self.core.status.mode),
             "status_cb": int(self.core.status_frames),
         }
         # ★ 状态源的取证面（谁给的、多旧、PX4 自己怎么说）—— 扁平键，直接并进来。
@@ -1140,11 +1340,16 @@ class MpcNode(Node):
         span = ((self.last_publish_ns - self.first_publish_ns) / 1e9
                 if self.first_publish_ns else 0.0)
         rate = (self.published - 1) / span if span > 0 else float("nan")
-        return ("共发 %d 帧 setpoint（心跳 %d 个，%.0f Hz），跨 %.2fs ⟹ 实际 %.1f Hz；"
+        # ☠️ 旧版这一行是「共发 %d 帧 setpoint（**心跳** %d 个，%.0f Hz）……」，两个数都来自
+        #   已删除的 `self.heartbeats`（ticket 13 §二④，操作者裁定 (a) 收成单频）。
+        #   ⚠️ 不是"删掉一个装饰"：那一对数以前是**唯一**能回答"飞控到底有没有收到流"的东西，
+        #   因为心跳是独立话题、发没发一眼可数。现在 setpoint 自己就是心跳 ⟹ 这个问题的答案
+        #   变成 `published`（与下表 `gated` 里的档位一起看：闸门关着 = 一帧都没发）。
+        return ("共发 %d 帧 setpoint（**单频**：setpoint 自己就是心跳，无独立心跳流），"
+                "跨 %.2fs ⟹ 实际 %.1f Hz；"
                 "定时器 %d 拍、求解 %d 次、%s、退化 %d 拍、拒绝 %d 拍；"
                 "约束饱和：%s；闸门：%s；%s"
-                % (self.published, self.heartbeats, self.heartbeats / span if span > 0 else float("nan"),
-                   span, rate, self.ticks, self.solves, self.solve_ms_desc(),
+                % (self.published, span, rate, self.ticks, self.solves, self.solve_ms_desc(),
                    self.degraded_count, self.rejected,
                    ", ".join(f"{k}×{v}" for k, v in sorted(self.sat_count.items())) or "无",
                    ", ".join(f"{k}×{v}" for k, v in sorted(self.gated.items())) or "无",
@@ -1245,14 +1450,29 @@ def _jlist(arr, nd: int = 6) -> Optional[list]:
     return [_jnum(v, nd) for v in np.asarray(arr, dtype=float).ravel()]
 
 
+def _stamp_ns(ts) -> Optional[int]:
+    """`builtin_interfaces/Time` → **纳秒**整数（`None` ⟹ `None`），只给日志用。
+
+    ☠️ 旧版这里没有这个函数：那时 `ts` 本来就是整数（**微秒**，`_timestamp()` 的产物），
+    直接 `int(ts)` 就行。现在 `ts` 是 ROS 时间消息 ⟹ `int(ts)` 会当场 `TypeError`，
+    而"顺手写个 `int(ts.sec)`"则更糟：**它静默丢掉亚秒**，日志里每帧都停在整秒上，
+    看起来还像一条正常的曲线。键名 `stamp_ns` 里带单位就是防这个（见 `_log_frame`）。
+    """
+    if ts is None:
+        return None
+    return int(ts.sec) * 1_000_000_000 + int(ts.nanosec)
+
+
 # ─────────────────────────── 参数 ───────────────────────────
 
 #: `(参数名, 默认值, 类型)`。★ 默认值全部与 `NodeParams` 的字段一致 —— 两处一起改。
 _PARAMS = (
     ("rate_hz", 100.0, float),
-    ("heartbeat_hz", 50.0, float),
+    # ☠️ 这里原有 `("heartbeat_hz", 50.0, float)` 与 `("heartbeat_always", True, bool)`
+    #    —— ticket 13 §二④（操作者裁定 (a) 收成单频）把两个参数连同抽帧逻辑一起删除。
+    #    ⛔ 别把它们加回来"保持兼容"：留着声明而无人读 = 命令行上 `-p heartbeat_hz:=10`
+    #    会被静默接受（`rclpy` 不报错），于是又出现一个"看起来能调、其实什么也没接"的旋钮。
     ("viz_hz", 10.0, float),
-    ("heartbeat_always", True, bool),
     ("mass", 0.75, float),
     ("hover_thrust", 0.1589, float),
     ("tau_s", 0.05, float),
@@ -1269,7 +1489,10 @@ _PARAMS = (
     ("hold_yaw_deg", 0.0, float),
     ("mocap_timeout_s", 0.5, float),
     ("px4_timeout_s", 0.5, float),
-    ("status_timeout_s", 0.75, float),
+    # ★ 0.75 → 2.5（ticket 13 §二③）：闸门来源从 2 Hz 的 `/fmu/out/vehicle_status` 换成
+    #   **1 Hz** 的 `/mavros/state` ⟹ 0.75 s 会**恒真**（每一拍都判超时，闸门永远关着，
+    #   而且症状是"什么也不发"，不是报错）。见 `StopConfig.status_timeout_s` 的 ☠️。
+    ("status_timeout_s", 2.5, float),
     ("stop_on_nav_state_exit", True, bool),
     ("stop_on_armed_drop", True, bool),
     ("warmup_cycles", 5, int),
@@ -1294,9 +1517,7 @@ def declare_params(node: Node) -> NodeParams:
     get = node.get_parameter
     p = NodeParams(
         rate_hz=get("rate_hz").value,
-        heartbeat_hz=get("heartbeat_hz").value,
         viz_hz=get("viz_hz").value,
-        heartbeat_always=get("heartbeat_always").value,
         mass=get("mass").value,
         hover_thrust=get("hover_thrust").value,
         tau_s=get("tau_s").value,
@@ -1377,7 +1598,7 @@ def _validate(p: NodeParams) -> None:
     与 `offboard_smoke.validate_args` 同一条纪律：`rate_hz=0` 会在 `1.0 / 0` 那行抛，
     而那时**节点已经起来了**（DDS 里也已经有话题了）⟹ 台架会把它读成"节点没发数据"。
     """
-    for name in ("rate_hz", "heartbeat_hz", "viz_hz", "mass", "hover_thrust",
+    for name in ("rate_hz", "viz_hz", "mass", "hover_thrust",
                  "mocap_timeout_s", "px4_timeout_s", "traj_stream_gap_s", "status_timeout_s",
                  # 输入合理性那三条（ticket 07）：非有限会让判据**静默失效**
                  # （`nan > x` 恒假 ⟹ 跳变判据永远不触发，而"永远不触发"看起来像"没有跳变"）。
@@ -1385,10 +1606,11 @@ def _validate(p: NodeParams) -> None:
         val = getattr(p, name)
         if not math.isfinite(val) or val <= 0:
             raise SystemExit(f"参数 {name} 要是正的有限数，收到 {val!r}")
-    if p.heartbeat_hz > p.rate_hz:
-        raise SystemExit(
-            f"heartbeat_hz({p.heartbeat_hz}) 不能大于 rate_hz({p.rate_hz})："
-            "心跳是从求解节拍上抽帧发的（见 `_heartbeat_every`），比它快没有意义。")
+    # ☠️ 这里原有一条「`heartbeat_hz` 不能大于 `rate_hz`」的检查（心跳是从求解节拍上抽帧发的）。
+    #    ticket 13 §二④（操作者裁定 (a) 收成单频）之后**两个量只剩一个**：setpoint 自己就是心跳，
+    #    ⟹ 这条检查与 `heartbeat_hz` / `heartbeat_always` / `_heartbeat_every` 一起删除。
+    #    ⚠️ 它守的那条性质**没有消失**、只是不再需要守：现在"发帧率"与"求解节拍"是同一个数
+    #    （`rate_hz`，`_tick` 里一个定时器），"心跳比节拍快"这件事在结构上无法表达。
     # ★★ `tau_s` **单独判**：它的下界是 **0**，不是"正的"（ticket `phase4/05`，2026-10-09）。
     #   τ = 0 = **不补偿**，是**首飞冻结值**（ticket `phase4/03`：过补偿比不补偿更危险
     #   ⟹ 实飞起始值取 0），所以它**不是**"无意义的参数"。
@@ -1417,10 +1639,24 @@ def _validate(p: NodeParams) -> None:
     if p.state_source not in STATE_SOURCES:
         raise SystemExit(f"state_source={p.state_source!r} 不认识，只能是 {list(STATE_SOURCES)}"
                          "（mocap = 动捕 ENU/FLU；px4 = 飞控自己的 NED/FRD，见模块 docstring）")
-    # 空话题名会让 `create_subscription` 抛在 **`MpcNode.__init__` 里**（那时 DDS 已经起了一半）
-    if p.state_source == STATE_SOURCE_PX4 and not (p.px4_position_topic and p.px4_attitude_topic):
-        raise SystemExit(f"A 档的两条状态话题都不能为空，收到 {p.px4_position_topic!r} / "
-                         f"{p.px4_attitude_topic!r}")
+    # ★★ A 档**整档拒绝**（ticket 13 §二⑤，操作者 2026-10-12 裁定取 (b)：判它本阶段不可用，
+    #    并在**入口处大声拒绝**）。★ 放在 `_validate` 而不是 `MpcNode.__init__`：那里 DDS 已经
+    #    起了一半（`rclpy.init` 过了、节点对象在造），而这句要的是**起来之前**就退。
+    #    ⚠️ `px4_position_topic` / `px4_attitude_topic` 两个参数**保留声明**（同 `state_source`）：
+    #    它们仍在 `_PARAMS` 里、仍被 `_reject_unknown_params` 认，只是现在**没有人读**。
+    #    ⛔ 绝不能改走"把 px4 档悄悄重指到 mavros 的 local position"（那是 §二⑤ 的第 (a) 档，
+    #    操作者明确否掉）：mavros 的 `local_position` 出来后**已经是 ENU**（第一手：
+    #    `~/mavros_ws/src/mavros/mavros/src/plugins/local_position.cpp:157`
+    #    `ftf::transform_frame_ned_enu(pos_ned)`, 且 `:60` 写明 `frame_id` 默认 `"map"`、
+    #    "world-fixed, ENU as per REP-105"），而 A 档的整个语义是"飞控自己的 NED/FRD、
+    #    不过我们的坐标变换" ⟹ 那样接出来的东西**看着在动、其实是两个坐标系混着用**，
+    #    是最坏的一类静默失败（对比 §二② 那三条里 N2 的形状）。
+    if p.state_source == STATE_SOURCE_PX4:
+        raise SystemExit(REFUSE_PX4_STATE_SOURCE)
+    # ☠️ 这里原有一条「A 档的两条状态话题都不能为空」的检查 —— **已被上面那条"A 档整档拒绝"
+    #    取代**（ticket 13 §二⑤，操作者裁定 (b)）：`state_source=px4` 根本走不到这里。
+    #    ⛔ 别为了"保留检查"把它放回来：那会让 `state_source=px4` 又有一个**看起来还能配**
+    #    的入口（话题名都填对了、然后死在别的、更靠后的地方），而我们要的正是**入口处一声响**。
     # ★ 参考源（ticket 17）—— 同样**现在**就拒，不等第一拍。
     if p.reference_source not in REFERENCE_SOURCES:
         raise SystemExit(f"reference_source={p.reference_source!r} 不认识，只能是 "

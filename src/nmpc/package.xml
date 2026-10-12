@@ -16,10 +16,17 @@
   <buildtool_depend>ament_cmake_python</buildtool_depend>
 
   <depend>rclpy</depend>
-  <!-- ★ px4_msgs 不在本仓库里（下位工作区 ~/px4_msgs_ws，release/1.14 @ ffb6e80e）
-       ⟹ 裸 colcon build 前要先 source 那个工作区的 install/setup.bash，
-       见仓库根 README.md 的构建段与 .scratch/phase2/issues/06 的 Comments。 -->
-  <depend>px4_msgs</depend>
+  <!-- ☠️ **这里原本是 `<depend>px4_msgs</depend>`，2026-10-12 撤掉**
+       （ticket 13 §二⑥，通路从 uXRCE-DDS 的 `/fmu/*` 换到 mavros）。
+       原注释写的是"px4_msgs 不在本仓库里（下位工作区 ~/px4_msgs_ws，release/1.14 @ ffb6e80e）
+       ⟹ 裸 colcon build 前要先 source 那个工作区的 install/setup.bash"——那条**对 `bench` 仍然成立**
+       （`src/bench/package.xml` 里那份还留着，那份归 §四），但**对本包不再成立**。
+       ★ 为什么撤得掉：换载体之后本包的**任何** import 都不再有 `px4_msgs`
+       （`mpc_node.py` 的 import 块与 `offboard_smoke.py` 一起换成了 `mavros_msgs`，
+       判据是 `test/test_mavros_interface.py::test_the_px4_msgs_downlink_is_gone_from_the_code`，
+       它按 AST 查 import 而不是整份 grep）。
+       ⚠️ 撤一条 `<depend>` 只是把"构建依赖图里排在它后面"这件事去掉，
+       `~/px4_msgs_ws` **仍需 source**（`bench` 还要它）⟹ 仓库根 README 的构建段没有因此变简单。 -->
   <!-- 节点要收 `/mocap/pose_enu`（`geometry_msgs/PoseStamped`），
        并往 RViz 发 `/mpc/predicted_path`（`nav_msgs/Path`）与 `/mpc/reference`（`Marker`）。 -->
   <depend>geometry_msgs</depend>

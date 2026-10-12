@@ -18,6 +18,7 @@
 | 归一化 | 推力归一化是不是**从模型导出**的（`−F/T_max`、悬停值 = `−hover_thrust`） | 飞机、ROS |
 | 停机条件 | 四个条件**参数化**、且程序里**没有通道号**（`ast` 扫标识符，注释里的引用不算） | 飞机、ROS |
 | 兜底 | 兜底保持拍数可解释、位姿合理性阈值比真机动**宽**、**故障注入关着** | 飞机、ROS |
+| 下行前置 | 换 mavros 载体之后**两个"整条下行静默死掉"的开关**：飞控的 `MAV_FWDEXTSP = 1`、mavros 的 `thrust_scaling = 1.0` | 飞机；前者读仓库里的导出快照，后者要**装了 mavros**（`--mavros-config` 可指定） |
 
 `--solve` 那一档才需要 acados：它把"模型 + 代价 + 符号 + 归一化"合成**一个数** ——
 在悬停点解出来的 `u` 归一化之后必须等于 `−hover_thrust`。
@@ -38,7 +39,8 @@ from typing import Callable, Dict, FrozenSet, List, Optional, Sequence
 if __package__ in (None, ""):  # pragma: no cover - 只在直接执行时走
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from nmpc.node_core import TAU_MAX_S, TAU_MIN_S, StopConfig  # noqa: E402
+from nmpc.node_core import (STATUS_SOURCE_PERIOD_S, TAU_MAX_S, TAU_MIN_S,  # noqa: E402
+                            StopConfig)
 from nmpc.params import G, Z0Params  # noqa: E402
 from nmpc.sign_map import px4_rates_setpoint  # noqa: E402
 
@@ -126,14 +128,19 @@ def check_params(p, z0: Optional[Z0Params] = None) -> List[Check]:
                      f"t_max = {z0.t_max:.3f} N（f_max 低于悬停 ⟹ 规划不出平飞；"
                      f"不小于 t_max ⟹ 两个角色又被合回一个常数了 —— 那是本张修掉的那个错）"))
 
-    ok = p.heartbeat_hz >= 2.0
-    out.append(Check(g, "心跳 ≥2 Hz", ok,
-                     f"heartbeat_hz = {p.heartbeat_hz} Hz（PX4 的 `COM_OF_LOSS_T` 是 1 s；"
-                     f"低于 2 Hz 就可能被判 offboard 信号丢失 ⟹ 进不去 OFFBOARD）"))
-
-    ok = p.rate_hz >= p.heartbeat_hz > 0.0 and p.viz_hz > 0.0
+    # ☠️ 这里原有两条与**独立心跳流**有关的检查：
+    #   · 「心跳 ≥2 Hz」（`heartbeat_hz ≥ 2.0`，理由是 PX4 的 `COM_OF_LOSS_T` = 1 s）；
+    #   · 「定时器频率」里同时报 `rate_hz` / `heartbeat_hz` / `viz_hz`。
+    #   ticket 13 §二④（操作者裁定 (a) 收成单频）把心跳那条流与 `heartbeat_hz` / `heartbeat_always`
+    #   两个参数一起删了 ⟹ **前一条整个删除**（它守的量不存在了）。
+    #   ⚠️ 它原来守的那条性质**没有消失、只是换了主语**：现在"心跳"就是"这一条 setpoint 流"，
+    #   而它的频率就是 `rate_hz`（100 Hz ≫ 1 s 的 `COM_OF_LOSS_T`）⟹ 见下面那条。
+    ok = p.rate_hz > 0.0 and p.viz_hz > 0.0
     out.append(Check(g, "定时器频率", ok,
-                     f"rate = {p.rate_hz} Hz / 心跳 = {p.heartbeat_hz} Hz / viz = {p.viz_hz} Hz"))
+                     f"rate = {p.rate_hz} Hz / viz = {p.viz_hz} Hz"
+                     "（★ 只有这两条定时器：心跳那条流随换载体删除，"
+                     "setpoint 自己就是心跳 ⟹ 它的频率就是 `rate_hz`，"
+                     "远快于 PX4 的 `COM_OF_LOSS_T` = 1 s）"))
 
     # ★★ 下界是 **0**（含），不是"正的"（ticket `phase4/05`，2026-10-09）：
     #   τ = 0 = **不补偿**，是**首飞冻结值**（ticket `phase4/03`：过补偿比不补偿更危险）。
@@ -155,10 +162,26 @@ def check_params(p, z0: Optional[Z0Params] = None) -> List[Check]:
     out.append(Check(g, "停机时限为正", ok,
                      f"mocap > {p.mocap_timeout_s} s / status > {p.status_timeout_s} s"))
 
-    ok = p.status_timeout_s >= 0.5
-    out.append(Check(g, "状态时限 ≥ 上游一个周期", ok,
-                     f"status_timeout_s = {p.status_timeout_s} s（假 PX4 与真 commander 都是 2 Hz "
-                     f"⟹ 短于 0.5 s 会把正常的上游判成静默）"))
+    # ☠️ **这条的判据整个换过**（ticket 13 §二③）：旧判据是 `status_timeout_s >= 0.5`，
+    #   理由是"假 PX4 与真 commander 都是 **2 Hz**"。换载体后真的闸门源是 `/mavros/state`，
+    #   它跟着 PX4 的 MAVLink HEARTBEAT **1 Hz** 走 ⟹ **旧的 0.5 s 判据在真机上恒绿而恒错**：
+    #   `0.75`（旧默认值）也满足 `>= 0.5`，而 `0.75 < 1.0` 会让"状态超时"这条判据**恒真**
+    #   （闸门一直关、一帧都不发）。★ 判据现在是"**阈值 vs 源周期**"这条物理关系本身，
+    #   而不是一个拍出来的下界 —— 周期唯一写一遍在 `node_core.STATUS_SOURCE_PERIOD_S`。
+    period = STATUS_SOURCE_PERIOD_S
+    # ★ 门槛取 **2 个周期**（不是"大于 1 个周期"）：只比一个周期多一点的话，
+    #   源正常地丢一拍就会被判成"状态过期"（抖动误判），而这类误判的症状同样是"不发"。
+    ok = p.status_timeout_s >= 2 * period
+    if ok:
+        why = ""
+    elif p.status_timeout_s <= period:
+        why = ("　⟹ 阈值不大于源周期 ⟹ 超时判据**恒真**、闸门一直关着"
+               "（症状是「一帧都不发」，不是报错）")
+    else:
+        why = "　⟹ 余量不到 2 个周期 ⟹ 源正常丢一拍就会被判成丢状态（抖动误判）"
+    out.append(Check(g, "状态时限 ≥ 闸门源 2 个周期", ok,
+                     f"status_timeout_s = {p.status_timeout_s} s vs 闸门源 `/mavros/state` "
+                     f"周期 {period} s（= {p.status_timeout_s / period:.2f} 个周期）" + why))
 
     ok = bool(p.stop_on_armed_drop) and bool(p.stop_on_nav_state_exit)
     out.append(Check(g, "两条安全停机都开着", ok,
@@ -321,6 +344,143 @@ def _param_table():
     return _PARAMS
 
 
+# ───────────── ⑤ 下行前置：两个"整条下行静默死掉"的开关（ticket 13 §二⑤bis/⑥）─────────────
+#
+# ★ 为什么这两条值得进自检：它们**都不在我们仓库里**，而且失败时**飞控侧不说话**——
+#   话题上照发、`ros2 topic hz` 正常、进程不报错，飞机只是**什么都不做**（甚至掉高度）。
+#   与本文件其它组的区别是：那些组查的是"我们自己的参数对不对"，这两条查的是
+#   **别人的两项配置有没有把我们的下行通道关掉** —— 属于"装桨前必须知道"的事。
+
+#: 飞控参数快照（`docs/assets/z0.params`）里数据行的列序：
+#: `默认值 <TAB> ? <TAB> 参数名 <TAB> 值 <TAB> 类型`（导出件，第一手见文件头的说明段）。
+#: ⚠️ **按名字找，不按行号**：那份文件自己写着"每次重导出，行号都整体平移"。
+FCU_SNAPSHOT_NAME_COL = 2
+FCU_SNAPSHOT_VALUE_COL = 3
+
+#: 收 `SET_ATTITUDE_TARGET` 的硬前置（`mavlink_receiver.cpp:1516-1518` 的
+#: `if (_mavlink->get_forward_externalsp() && …)`；参数定义 `mavlink_params.c:112-121`）。
+FCU_FWDEXTSP = "MAV_FWDEXTSP"
+
+#: mavros 的 `setpoint_raw` 插件里那个缩放（`setpoint_raw.cpp:58` 声明、`:294-313` 使用）。
+MAVROS_THRUST_SCALING = "thrust_scaling"
+
+
+def read_fcu_snapshot(path: Path, name: str) -> Optional[str]:
+    """从飞控参数快照里按**名字**取一个值（找不到 ⟹ `None`，不猜）。
+
+    ★ 用 UTF-8 显式解码 + `split("\\n")`（**不用 `splitlines()`**）：那份文件里夹着
+      `★` 之类的多字节字符，按 latin-1 解再 `splitlines()` 会凭空多切出几行
+      —— 这个坑文件头自己记着（本仓核对时踩过一次）。
+    """
+    for line in path.read_text(encoding="utf-8").split("\n"):
+        if not line or line.startswith("#"):
+            continue
+        cols = line.split("\t")
+        if len(cols) > FCU_SNAPSHOT_VALUE_COL and cols[FCU_SNAPSHOT_NAME_COL] == name:
+            return cols[FCU_SNAPSHOT_VALUE_COL]
+    return None
+
+
+def find_mavros_config() -> Optional[Path]:
+    """找 mavros **装好的**那份 `px4_config.yaml`（`px4.launch` 加载的就是它）。
+
+    ★ 走 ament 索引而不是写死 `~/mavros_ws/install/...`：写死的那条路**只在这台机器上成立**，
+      换一台/换了 install 前缀就静默变成"找不到"（而"找不到"与"配置对"在输出上长得一样）。
+    ⚠️ 这里只找**出厂的那一份**；实机上真正生效的值还可能被 launch/命令行覆盖 ⟹ 详情里写清
+      "实机怎么读真正生效的那个值"。
+    """
+    try:
+        from ament_index_python.packages import (  # noqa: PLC0415
+            get_package_share_directory, PackageNotFoundError)
+    except ImportError:  # pragma: no cover - 没 source mavros 时走这里
+        return None
+    try:
+        share = Path(get_package_share_directory("mavros"))
+    except PackageNotFoundError:  # pragma: no cover
+        return None
+    return share / "launch" / "px4_config.yaml"
+
+
+def read_thrust_scaling(config: Path) -> tuple:
+    """从 mavros 的参数文件里取 `setpoint_raw` 的 `thrust_scaling` ⟹ `(值, 节点匹配式)`。
+
+    ★ 键名是 **`/**/setpoint_raw`** 这种"节点匹配式"（不是写死的完整节点名）：mavros 把每个
+      插件当**一个节点**跑，`/**/` 让同一份 yaml 在任意命名空间下都能匹配上
+      ⟹ 所以这里按**最后一段**匹配 `setpoint_raw`，而不是拿整个字符串比。
+    取不到 ⟹ `(None, "")`（**不猜 1.0**：一个"默认就绿"的检查等于没有检查）。
+    """
+    import yaml  # noqa: PLC0415  （ROS 自带，且本函数只在需要解析时才走）
+
+    data = yaml.safe_load(config.read_text(encoding="utf-8")) or {}
+    for node, block in data.items():
+        if str(node).rsplit("/", 1)[-1] != "setpoint_raw":
+            continue
+        params = (block or {}).get("ros__parameters") or {}
+        if MAVROS_THRUST_SCALING in params:
+            return params[MAVROS_THRUST_SCALING], str(node)
+    return None, ""
+
+
+def check_downlink_prereqs(repo: Optional[Path], config: Optional[Path] = None) -> List[Check]:
+    """换到 mavros 载体之后的两个**硬前置**（ticket 13 §二⑤bis/⑥）。
+
+    | 项 | 是什么 | 失败时现象 |
+    |---|---|---|
+    | `MAV_FWDEXTSP = 1` | **飞控参数**：`SET_ATTITUDE_TARGET` handler 的守卫 | 我们发的每一条 setpoint 被飞控丢掉，**飞控侧没有日志** |
+    | `thrust_scaling = 1.0` | **mavros 参数**（`setpoint_raw` 插件） | 缺失 ⟹ `thrust != 0` 的帧**整帧丢**（只打一句节流 ERROR）；`0` ⟹ 推力恒 0、掉高度 |
+
+    ★ 两者都不是我们的参数 ⟹ 本组**在快档里也跑**（读的是仓库里的快照 + 装好的 mavros 参数文件，
+      都不需要飞机通电）。⛔ **没有"跳过"这一档**：找不到就红，并说清怎么找 ——
+      它们守的是"整条下行静默死掉"，而静默的死法没有别的检测点。
+    """
+    g = "下行前置"
+    out: List[Check] = []
+
+    # ① 飞控参数（读**导出快照**：现场没有别的离线来源）
+    snap = (repo / "docs" / "assets" / "z0.params") if repo is not None else None
+    if snap is None or not snap.is_file():
+        out.append(Check(g, f"{FCU_FWDEXTSP} = 1", False,
+                         f"找不到飞控参数快照（{snap or '仓库根没找到'}）⟹ 这一条**验不了**。"
+                         "它不是「可跳过」的项：值为 0 时整条下行被飞控静默丢掉"))
+    else:
+        value = read_fcu_snapshot(snap, FCU_FWDEXTSP)
+        ok = value == "1"
+        out.append(Check(g, f"{FCU_FWDEXTSP} = 1（飞控参数）", ok,
+                         f"快照里 {FCU_FWDEXTSP} = {value!r}（{snap.name}，按名字查不按行号）"
+                         + ("" if ok else "　⟹ **=0 时 `SET_ATTITUDE_TARGET` 整条被飞控丢掉**"
+                                          "（`mavlink_receiver.cpp:1516-1518`），表现与「话题名"
+                                          "写错」几乎一样")
+                         + "；★ 实机起飞前请再读一次**现值**（快照是导出时的值）："
+                           "QGC 的 Parameters 里搜这个名字，或 `ros2 param list | grep -i "
+                           + FCU_FWDEXTSP + "` 找到它挂在哪个节点上再 `ros2 param get`"))
+
+    # ② mavros 参数（读**装好的**那份 yaml，并核它确实被 launch 加载）
+    cfg = config if config is not None else find_mavros_config()
+    if cfg is None or not cfg.is_file():
+        out.append(Check(g, f"{MAVROS_THRUST_SCALING} = 1.0（mavros 参数）", False,
+                         f"找不到 mavros 的参数文件（{cfg or 'ament 索引里没有 mavros'}）"
+                         "⟹ 这一条**验不了**：没 source mavros（或没装）时请显式 `--mavros-config <路径>`"))
+    else:
+        value, node_key = read_thrust_scaling(cfg)
+        ok = isinstance(value, (int, float)) and not isinstance(value, bool) \
+            and math.isclose(float(value), 1.0, rel_tol=0.0, abs_tol=1e-12)
+        launch = cfg.parent / "px4.launch"
+        loaded = launch.is_file() and cfg.name in launch.read_text(encoding="utf-8")
+        out.append(Check(g, f"{MAVROS_THRUST_SCALING} = 1.0（mavros 参数）", ok,
+                         f"{cfg.name} 里 {node_key or 'setpoint_raw'}.{MAVROS_THRUST_SCALING} = "
+                         f"{value!r}（缺省声明是 `NAN`，`setpoint_raw.cpp:58`）"
+                         + ("" if ok else "　⟹ **缺失 ⟹ `thrust != 0` 的帧整帧被丢**；"
+                                          "**=0 ⟹ 推力恒 0（掉高度）**；只有 1.0 是我们要的口径")
+                         + f"；★ 实机上真正生效的值：mavros 起好后 `ros2 param list | grep "
+                           f"{MAVROS_THRUST_SCALING}` 找到它挂在哪个节点上，再 `ros2 param get`"
+                           "（launch/命令行可以覆盖这份 yaml）"))
+        out.append(Check(g, f"那份 {cfg.name} 确实被加载", loaded,
+                         f"{launch.name} 里写着 {cfg.name}" if loaded
+                         else f"{launch} 里找不到 {cfg.name} ⟹ 上面那个值可能根本没进 mavros"
+                              "（`px4.launch:13` → `node.launch:24` 才是加载路径）"))
+    return out
+
+
 def _looks_like_channel(name: str) -> bool:
     import re  # noqa: PLC0415
 
@@ -454,6 +614,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     ap.add_argument("--solve", action="store_true",
                     help="额外建一次求解器并在悬停点解一次（需要 acados，几十秒）")
     ap.add_argument("--repo", type=Path, default=None, help="仓库根（默认往上找 docs/control/sign-map.md）")
+    ap.add_argument("--mavros-config", type=Path, default=None,
+                    help="mavros 的 `px4_config.yaml`（默认按 ament 索引找装好的那一份）")
     args, rest = ap.parse_known_args(argv)
     overrides, extra = _parse_overrides(rest)
     if extra:
@@ -475,6 +637,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     checks += check_normalization(p.z0_params())
     checks += check_fallback(p, p.z0_params())
     checks += check_stop_conditions(p, sorted(pkg.glob("*.py")))
+    checks += check_downlink_prereqs(repo, args.mavros_config)
     if args.solve:
         checks += check_solver(p.z0_params())
 
