@@ -1286,6 +1286,14 @@ grep -rn 'fmu/in/vehicle_rates_setpoint\|fmu/in/offboard_control_mode' --include
 ```
 
 ⟹ **31 行 / 15 个文件**。
+
+> ☠️ ★★ **2026-10-13 就地更正（这一处是第五轮**我**写坏的，不是别人转述错了）**：
+> **上面印出的那条命令只产出 `31 行 / 14 个文件`** —— 它末尾是 `grep -v '☠️'`（**按行**过滤），
+> 而当时报的 **15 个文件**来自**另一条命令**（`grep -rln … | grep -v '☠️$'`，**按文件**过滤），
+> **那条没印在这里**。两条命令**各自都对**，错的是**把一条的输出配到另一条的读数上**。
+> 差的那一个文件 = 根 `README.md`（唯一命中 `:65`，那行带着一个**无关的 ☠️**，所以按行过滤时被吃掉）。
+> 全文与可复现证据见 **第七轮 §一 的「2026-10-13 就地更正」**（本节以下内容**不受影响**：
+> 31 行 ✓、三类排除 ✓、"候选不是待改" ✓）。
 ⚠️ 这 31 行是**候选**、不是**待改**，至少三类要先排除：
 (a) 描述**别人的仓库**（`open-source-survey.md` / `mpc-roadmap.md` / `code-inventory.md` 里 `px4-mpc` 确实发
 `…rates_setpoint` —— 那是**它**的事实，不是我们的计划）；
@@ -1379,8 +1387,40 @@ grep -rn 'fmu/in/vehicle_rates_setpoint\|fmu/in/offboard_control_mode' --include
 
 | 搜法 | 基线 `6f69add` 读数 |
 |---|---|
-| **原搜法**（第五轮 §四 记的那条：只搜 `vehicle_rates_setpoint` / `offboard_control_mode` 这两个词、只 `--include=*.md`、路径 = `docs/ README.md CONTEXT.md src/nmpc/README.md src/nmpc/nmpc/__init__.py`） | **31 行 / 14 文件**（票面记 31 行 ✓）。★ 票面记的 **15 文件复现不出** —— 多出的那一个正是 `ladder-acceptance-criteria.md`，它的命中来自**并行会话未提交**的 ☠️ 块 ⟹ 票面那个 15 应是当轮**工作树**上的读数 |
+| **原搜法**（第五轮 §四 记的那条：只搜 `vehicle_rates_setpoint` / `offboard_control_mode` 这两个词、只 `--include=*.md`、路径 = `docs/ README.md CONTEXT.md src/nmpc/README.md src/nmpc/nmpc/__init__.py`） | **31 行 / 14 文件**（票面记 31 行 ✓）。☠️ ~~★ 票面记的 **15 文件复现不出** —— 多出的那一个正是 `ladder-acceptance-criteria.md`，它的命中来自**并行会话未提交**的 ☠️ 块 ⟹ 票面那个 15 应是当轮**工作树**上的读数~~ ⟹ **2026-10-13 复核：这句的归因是错的，见下** |
 | **宽搜法**（`/fmu/` ＋ `px4_msgs` ＋ `uXRCE`/`XRCE` ＋ 六个消息类型名） | 在上述范围内数百行 ⟹ **逐条读上下文分类**（见下面第二、三节） |
+
+★★ **2026-10-13 就地更正（两条命令各重跑一遍）**：那句"**15 复现不出 / 多出的是 `ladder-acceptance-criteria.md`**"**两个判断都不对**。
+**先认一半是我这边的**：第五轮那条 Comments 把**按行过滤**命令的输出配上了**按文件过滤**命令的读数，
+而**后者没有印出来**（复现不出来正因为它压根不在那儿 —— 见第五轮 §四 那处 2026-10-13 更正）。
+**再说它那一半**：猜的"多出来的是 `ladder-acceptance-criteria.md`、来自并行会话未提交的 ☠️ 块"**也不是差的那个文件**。
+15 与 14 **不是分歧**，是**同一条管道上过滤器位置不同**造出来的两个数 —— 两个数**各自对自己的命令都是对的**：
+
+| 命令形态 | 过滤作用在 | 读数 |
+|---|---|---|
+| `grep -rln <词> … \| grep -v '☠️$'`（第五轮那条的**文件**形式） | **文件路径** | **15 个文件** |
+| `grep -rn <词> … \| grep -v '☠️'`（**行**形式，本节表格用的） | **行** | **31 行 / 14 个文件** |
+
+差的那一个文件是**根 `README.md`**（**不是** `ladder-acceptance-criteria.md`）：它在基线 `6f69add` 上**恰好只有一处命中** ——
+`README.md:65`（路线表把 `(C) 级` 钉成 `/fmu/in/vehicle_rates_setpoint`），而**同一行**里带着一个
+**与本搜法无关的 ☠️**（「原写"从 fork 构建"，该 fork 与 z0 无关」）⟹ 按**行**过滤时它被吃掉、按**文件**过滤时它留下。
+四条可复现证据（都在基线 `6f69add` 上跑，照抄即可复现上面每一个数）：
+
+```bash
+P='fmu/in/vehicle_rates_setpoint\|fmu/in/offboard_control_mode'
+git grep -l "$P" 6f69add -- docs/ README.md CONTEXT.md src/nmpc/README.md | wc -l   # ⟹ 15（第 15 个 = README.md）
+git grep -n "$P" 6f69add -- docs/ README.md CONTEXT.md src/nmpc/README.md | grep -v '☠️' | wc -l          # ⟹ 31
+git grep -n "$P" 6f69add -- docs/ README.md CONTEXT.md src/nmpc/README.md | grep -v '☠️' | cut -d: -f2 \
+  | sort -u | wc -l                                                                 # ⟹ 14
+git show 6f69add:README.md | grep -c "$P"                                          # ⟹ 1（就是 :65 那行）
+```
+
+★ **这条更正不影响本节的结论**（31 行 ✓、"原搜法有盲区"✓、下面那张 31 行表里的分类 ✓），**只有那一句归因要换**。
+★ 但它有**一处连带**：下面那张 31 行表是照**行**形式建的 ⟹ 它**天然缺了 `README.md:65` 那一行**
+（那一行在第三节"宽搜法补出的 LIVE-C"里被补上了，`README.md | 65（＋弱 43, 69）`）——
+两张表**合起来**才是完整的，别单看 31 行那张就说"已穷尽"。
+⚠️ `ladder-acceptance-criteria.md` **确实**有一条 `/fmu/…`（§1.1 的 B 行 ☠️ 块里，**留着旧列当档**），
+本条更正**不否认**它存在，只否认"它是 15 与 14 之差"这个因果。
 
 ★★ **原搜法有一处盲区**：那条命令里的 `--include=*.md` 把**票面自己点名的** `src/nmpc/nmpc/__init__.py`（`.py`）
 **静默排除** ⟹ 它**从没覆盖过**自己列出的第 5 个目标。★ 补核结论（**不是悬空**）：那句话 `2026-10-12` 已改
