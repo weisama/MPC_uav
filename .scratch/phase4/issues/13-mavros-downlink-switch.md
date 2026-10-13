@@ -1147,12 +1147,27 @@ JSONL 里 `type_mask=128`、`body_rate_x=+0.1`（**FLU 原样**）、`thrust=0.1
 | 值为 **`0.0`** | `thrust = std::min(1.0, std::max(0.0, req->thrust * thrust_scaling))`（`:307-313`） | 推力被**强制归零** ⟹ 掉高度（一条 `WARN_THROTTLE`） |
 | 值为 **`1.0`** | 同上（乘 1） | 我们的语义（"`thrust` 就是 `F/T_max`"） |
 
-★ **本机现值核过**：`~/mavros_ws/install/mavros/share/mavros/launch/px4_config.yaml:104`
+☠️☠️ **本段下面那两条断言，2026-10-13 第六轮实机**全**推翻（逐项点名，详见 Comments §九）**：
+
+1. ☠️ **「那份 yaml 确实被加载」= 假**。插件节点收不到任何 `--params-file`
+   （`plugin.cpp:34-37` 的 `use_global_arguments(false)`；`node.launch:24` 的
+   `<param from=…>` 只挂主节点）⟹ 本票 §二② 里那 27 个 `/**/<插件>:` 块**全是死文本**。
+   实机 `ros2 param get /mavros/setpoint_raw thrust_scaling` = **`nan`**，而 yaml 写着 `1.0`。
+2. ☠️ **「它**不是**我们能设的」= 假**。`ros2 param set` 当场就设上了（已实测，`success=True`）；
+   `node_declare_and_watch_parameter` 会看住它。⛔ 代价：**设不回 `nan`**
+   （CLI 把 `nan` 当字符串，报 "Wrong parameter type"）⟹ 一旦设过，那个进程就固定 1.0。
+
+⟹ 当时进自检的那两条，一条（"`thrust_scaling = 1.0`"）**判据换成读活值**，
+另一条（"那份 px4_config.yaml 确实被加载"）**整个删掉** —— 它守的那个假设本身是假的，
+留着它只会给人"有人看着"的错觉。`mpc_node.py` 模块 docstring 里那段常驻警告**已就地 ☠️**
+（第一句"靠 `px4_config.yaml` 兜底"就是错的）。
+
+~~★ **本机现值核过**：`~/mavros_ws/install/mavros/share/mavros/launch/px4_config.yaml:104`
 （`/**/setpoint_raw:` → `thrust_scaling: 1.0`），且那份 yaml **确实被加载**
 （`px4.launch:13` 的 `config_yaml` → `node.launch:24` 的 `<param from=… />`）。
 ⟹ 进了自检两条（"`thrust_scaling = 1.0`" + "那份 px4_config.yaml 确实被加载"），
 并在 `mpc_node.py` 的模块 docstring 里写成常驻警告（★ 因为它**不是**我们能设的：
-它活在 mavros 那半边）。
+它活在 mavros 那半边）。~~
 
 #### 五、`§二⑥` 点名的 `preflight_check.py` 复核 —— **结果写在这里（票面要求）**
 
@@ -1612,3 +1627,150 @@ git show 6f69add:README.md | grep -c "$P"                                       
 - ⛔ **没起链、没通电、没碰飞机**；本轮的 DUT 全部是**子进程 + 假 mavros**。
 - **`Status` 未切**（操作者要求）：`ready-for-human` 保持原样。
 - ★ 与 `8bbcbeb`（§五 + §六）**不重叠**；与第七轮那份清单**有一处交叉**（上表 #1 / #2，那两条本来就路由到 §四）。
+
+---
+
+### 2026-10-13 —— 第九轮：实机读数**推翻 `§二②` 的"yaml 兜底"** ⟹ 预飞闸门改读活值 + 加起链补丁
+
+**本轮的全部一手材料来自"实物测试前"的检查**：飞控**已通电**（`/dev/ttyTHS1`），操作者授权我起
+bare mavros 做只读探测。⛔ 本轮**没有**解锁 / 起飞 / 切模式 / 向飞控发过任何一帧。
+
+#### 一、三条操作者侧读数（2026-10-13，飞控通电）
+
+| 项 | 怎么读的 | 读数 |
+|---|---|---|
+| `MAV_FWDEXTSP` | `/mavros/param/pull`（912 个参数）后 `ros2 param get /mavros/param MAV_FWDEXTSP` | **`1`**（= 票面要的值） |
+| `/mavros/state` 频率 | `timeout 25 stdbuf -oL -eL ros2 topic hz /mavros/state` | **`1.000 Hz`**（min `0.997` / max `1.003`，样本 ~24 s）⟹ 与 `§二③` 改判据时假设的 **1 Hz** 一致 |
+| `thrust_scaling` | `ros2 param get /mavros/setpoint_raw thrust_scaling` | ★★ **`nan`** —— 见下 |
+
+⚠️ **读数口径**：`/mavros/state` 那一条是**一次性探测**（当场取，不是长期统计）；`nan` 与 `MAV_FWDEXTSP=1`
+是**参数现值**，只要同一次 mavros 进程活着就成立。
+
+#### 二、★★ `nan` 是真的 —— 而 `§二②` 说"有 yaml 兜底"是**错的**
+
+`§二②`（本票 2026-10-12 第四轮写的）原话是「那份 yaml **确实被加载**（`px4.launch:13` 的
+`config_yaml` → `node.launch:24` 的 `<param from=… />`）⟹ 别人的配置文件在替我们兜底」。
+**实机把这个假设打穿了**。根因（第一手，`~/mavros_ws/src/mavros/mavros/src/lib/plugin.cpp:34-37`）：
+
+```cpp
+rclcpp::NodeOptions node_options(options);   // options 是空的
+node_options.use_global_arguments(false);    // ← 进程级 --params-file 就此被挡掉
+node = rclcpp::Node::make_shared(subnode, uas_->get_fully_qualified_name(), node_options);
+```
+
+上游写这行的**本意**只是别让 `-r __node:=` 这类 remap 把插件节点改名 —— 但
+`use_global_arguments(false)` 是**钝器**，把 `--params-file` 一起挡了。而 `node.launch:24` 那份
+`<param from="…px4_config.yaml"/>` 挂在**主节点 `mavros_node`** 上（`mavros_node.cpp:32` 用默认
+NodeOptions）⟹ **只对主节点生效**。
+⟹ `px4_config.yaml` 里 `grep -c '^/\*\*/'` = **27** 个 `/**/<插件>:` 块**全是死文本**。
+
+**证伪过一次的替代假设（别重走）**：我先怀疑是 `/**/` 通配符没匹配上。于是用**精确节点名**
+`/mavros/setpoint_raw:` 单独写一份 params-file 再起一次 ⟹ **仍然是 `nan`** ⟹ 不是通配符的错，
+是插件节点**根本不读任何 params-file**。
+⚠️ **判别"某个插件参数到底吃没吃到 yaml"**：`local_position frame_id=map`、`sys min_voltage=[10.0]`、
+`imu frame_id=base_link`、`setpoint_velocity mav_frame=LOCAL_NED`、`waypoint pull_after_gcs=true`
+这些看着对的，**逐条都是源码声明默认值**，不构成证据。只有"yaml 值 ≠ 声明默认"的那一处
+（`thrust_scaling`）才有鉴别力 —— 这就是为什么只有它被抓出来了。
+
+**后果**：`setpoint_raw.cpp:294` 的 `ignore_thrust = req->thrust != 0.0 && std::isnan(thrust_scaling)`
+⟹ `return`，**整帧丢弃（连 `body_rate` 一起）**，只打一条 5 s 节流的 ERROR。
+我们的 `thrust = F/T_max ≈ 0.1589 ≠ 0` ⟹ **一帧都到不了飞控**（零操纵，且几乎无声）。
+
+#### 三、★★ 旧自检在**链已经死了**的情况下照样给绿灯（**当场复现**）
+
+改之前 `check_downlink_prereqs` 读的是 `px4_config.yaml` 那个**文件**。文件永远在那儿 ⟹
+在 `thrust_scaling = nan` 的同一次会话里跑 `preflight_check`，输出是：
+
+```
+✓ 26 项全部通过。  exit=0
+```
+
+⟹ 这是本仓库最怕的形态：**闸门看的不是活值，是文件**。它与
+`green-predicates-hide-inverted-gains` 同族，但成因是"**量错了对象**"。
+★ 复现方法留在 §13.2 那一节的口径里（起 bare mavros 指一个**不存在的**串口即可，
+见下条）。
+
+#### 四、⛔ 这一条**与飞机通不通电无关** —— 所以它仍然满足本组的纪律
+
+飞控**不通电**、`fcu_url` 指向一个不存在的设备（日志里 `link[1000] open failed`、`connected: false`），
+mavros 照样建出 **64 个插件节点**、`thrust_scaling` 照样读得到（2026-10-13 实测）。
+⟹ 预飞闸门的这一条**只需要 mavros 起着**，不需要飞机在线。
+
+#### 五、处置（本轮改了什么）
+
+| # | 文件 | 改了什么 |
+|---|---|---|
+| 1 | `src/nmpc/nmpc/preflight_check.py` | **删** `find_mavros_config` / `read_thrust_scaling`（读 yaml 那条路）；**加** `read_live_thrust_scaling()`（走 `/mavros/setpoint_raw/get_parameters`）。`check_downlink_prereqs` 那一条**判据换成活值**，名字改成「`thrust_scaling = 1.0`（mavros **活值**）」 |
+| 2 | 同上 | **删掉**「那份 px4_config.yaml 确实被加载」这一条 —— 它守的假设本身是假的，留着只会给人"有人看着"的错觉 ⟹ 这一组 **3 条 → 2 条** |
+| 3 | 同上 | **删** CLI 的 `--mavros-config`（喂的是读 yaml 那条路；现在没有可指的文件了），原地留 ☠️ 说明 |
+| 4 | 同上 | `live_reader=` 注入点（`check_downlink_prereqs` 与 `main`）—— 只为测试，命令行不暴露 |
+| 5 | ★ `src/bringup/scripts/mavros_set_thrust_scaling.py`（**新**，`100755`） | 起链补丁：等插件节点出现 ⟹ 设 `1.0` ⟹ **读回核对**，不是 1.0 就退 1 并打红字 |
+| 6 | `src/bringup/launch/mavros.launch.py` | 把上面那个脚本挂成第 3 个 action（它自己等节点，不需要 delay） |
+| 7 | `src/bringup/CMakeLists.txt` | `install(PROGRAMS scripts/mavros_set_thrust_scaling.py …)` |
+| 8 | `src/nmpc/nmpc/mpc_node.py` | 模块 docstring 里那段常驻警告**就地 ☠️**（"靠 `px4_config.yaml` 兜底"是第一句，就是错的），改成"运行期补一刀 + 自检读活值" |
+| 9 | `src/nmpc/test/test_preflight_check.py` | 负控从"喂 yaml 内容"改成"喂 `live_reader` 的活值"；**新加**「读不到活值算失败而不是跳过」（mavros 没起 / 参数没声明 / 类型不是 double 三种成因）；删掉 yaml 那两个用例 |
+
+★ **第 5 项为什么不是"把 yaml 改对"**：`plugin.cpp` 那个 `use_global_arguments(false)` 是 mavros
+**自己的**行为，我们改不了（改了就是维护一个 mavros 分支）。运行期 `set` 是**已实测可行**的那条：
+`ros2 param set` 成功（`success=True`），且 `node_declare_and_watch_parameter` 会看住它。
+⛔ 代价（操作者要知道）：**设不回 `nan`** —— CLI 把 `nan` 当字符串，报
+`Wrong parameter type, parameter {thrust_scaling} is of type {double}` ⟹ 一旦设过，那个 mavros
+进程就**固定** 1.0；想回到 `nan` 只能重启 mavros。
+
+#### 六、起链补丁的**端到端**实测（2026-10-13）
+
+```
+timeout 40 ros2 launch bringup mavros.launch.py fcu_url:=/dev/ttyUSB99:921600
+…
+[mavros_set_thrust_scaling.py-2] ✓ /mavros/setpoint_raw/thrust_scaling = 1.0（已读回核对）
+[mavros_set_thrust_scaling.py-2] process has finished cleanly [pid …, exit code 0]
+```
+
+⛔ `fcu_url` 指的是一个**不存在的**设备（`/dev/ttyUSB99`）—— **没碰飞机、没碰 `/dev/ttyTHS1`**。
+★ 顺带抓到并修掉一个真 bug：`launch_ros.actions.Node` 起这个脚本时会**自动追加** `--ros-args` ⟹
+第一版用 `parse_args` 当场退 2（`unrecognized arguments: --ros-args`）⟹ 改成 `parse_known_args`。
+（这就是"跑了才知道"的那一类；只看代码是发现不了的。）
+
+#### 七、变异测试（每条新断言都**主动弄坏一次**，确认会红）
+
+| 变异 | 位置 | 红的用例 |
+|---|---|---|
+| MUTANT A：`abs_tol` `1e-12` → `0.6` | `check_downlink_prereqs` 的 `isclose` | `test_thrust_scaling_活值不是_1_要被抓在装桨之前` |
+| MUTANT B：`ok` → 常量 `True` | 同上，`out.append(Check(…))` | `test_thrust_scaling_…` + `test_读不到活值算失败而不是跳过` |
+| MUTANT C：`check_downlink_prereqs(repo, live_reader)` → `check_downlink_prereqs(repo)` | `main()` | `test_默认参数下快档全绿`（⟹ 证明注入点不是死代码） |
+
+三次都是**恰好**那几条红（`2 failed, 32 passed`），还原后 `34 passed`。
+
+#### 八、☠️ 就地作废清单（本轮改的，逐处点名）
+
+1. **本票 `§二②`** 的「那份 yaml **确实被加载**」+「它**不是**我们能设的」—— 两条都 ☠️，
+   原文保留在 ~~删除线~~ 里（就在上面那段，另有逐项点名的说明）。
+2. **`mpc_node.py` 模块 docstring** 的「靠 `px4_config.yaml:104` 兜底 / `px4.launch:13` →
+   `node.launch:24` 载入那一份」—— 就地 ☠️ + 写明新口径。
+3. **`preflight_check.py`** 里 `--mavros-config` 那一项与"那份 yaml 确实被加载"那条检查 ——
+   **删**，原地留 ☠️。
+
+#### 九、⛔ **本轮没做 / 请操作者裁定**（两条，都与 `run/z0.py` 有关）
+
+| # | 事项 | 一手事实 | 建议 |
+|---|---|---|---|
+| (g) | ★ **`run/z0.py` 与 `z0.launch.py` 都绕过了这个补丁** | `z0.py:435` 的 `Action("mavros", …)` 起的是**上游** `ros2 launch mavros px4.launch`；`z0.launch.py:77` 的 `_xml_launch("mavros", "px4.launch")` 同。两者**都不经过** `bringup/mavros.launch.py` ⟹ **补丁不会生效** | 两条路：① 把菜单那一项指到 `ros2 launch bringup mavros.launch.py`；② 或者在菜单里**另加一个动作**跑补丁脚本。⛔ **①会撞红线**：`z0.py:533` 的 `FORBIDDEN_IN_COMMANDS` 与 docstring 第 42 行"它不提供任何『让飞机动』的入口 —— …**改参数**…一个都没有" ⟹ 我不能自己拿主意，**请裁定** |
+| (h) | **环境没配全 ⟹ 11 条 `test_mpc_node` 全红，看起来像代码坏了** | 我第一次跑 `src/nmpc/test` **只设了 `ACADOS_SOURCE_DIR`**，漏了 `LD_LIBRARY_PATH` ⟹ DUT 子进程（`mpc_node.py`）在 `AcadosOcpSolver` 里报 `OSError: libhpipm.so: cannot open shared object file`（`~/acados/lib/libhpipm.so` **存在**）⟹ 前 11 条用例 `BenchTimeout` + `returncode=1`。★ 报错栈落在**夹具**里，**看着像夹具/代码坏了** | ★ **两条都要，且仓库里本来就写着**：[`src/nmpc/README.md:91-92`](../../../src/nmpc/README.md)、[`docs/control/acados-orin-build.md:58-59`](../../../docs/control/acados-orin-build.md)。⛔ **不是文档缺失，是我图快没照它敲**。⟹ **无票面待办**；记在这里只为让下一个人少走这 15 分钟 |
+
+★ **`Status` 保持 `ready-for-human`**（操作者要求；本轮**没有**把它切到 `done`）。
+
+#### 十、本轮的验证读数（2026-10-13，本机 Orin NX 8GB）
+
+| 套件 | 读数 | 口径 |
+|---|---|---|
+| `src/nmpc/test` | **`266 passed, 233 warnings in 479.30s`**（exit 0） | `/opt/ros/humble` + `~/px4_msgs_ws` + `~/mavros_ws` + 本仓 `install/` 四源；且 `ACADOS_SOURCE_DIR=$HOME/acados` **与** `LD_LIBRARY_PATH=$HOME/acados/lib` **两条都设**（漏后者 = 上面 (h) 那条） |
+| `src/bench/test` | **`49 passed in 64.75s`**（exit 0） | 同上 |
+| `run/tests` | **`166 passed in 13.25s`**（exit 0） | 同上 |
+| `src/nmpc/test/test_preflight_check.py`（单文件） | **`34 passed`**（原 34 条里含 2 条 yaml 用例 ⟹ 本轮删 2 加 2，条数不变） | 同上 |
+
+⚠️ 上表是**一次性**读数，只对"这一份工作树 + 这一套环境"成立。`233 warnings` 的构成（当场分类过）：
+**acados_template 的 `deprecated`（`N` / `json_file` / `code_export_directory` / `ext_fun_compile_flags`）
+与 matplotlib `Axes3D` 两类长期噪声，全部落在 `test_ocp_*` 与 import 期** —— **没有一条来自本轮**。
+
+★ **本轮的 3 次变异**见上面第七节；★ **端到端**（起链补丁）见第六节 —— 那一次跑的是**真 mavros**、
+但 `fcu_url` 指一个**不存在的**设备，**没碰飞机**。

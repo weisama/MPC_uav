@@ -22,6 +22,7 @@ from nmpc.node_core import STATUS_SOURCE_PERIOD_S
 from nmpc.params import Z0Params
 from nmpc.preflight_check import (
     FCU_FWDEXTSP,
+    MAVROS_THRUST_SCALING,
     Check,
     _channel_identifiers,
     _param_table,
@@ -43,14 +44,26 @@ def _failing(checks) -> list:
     return [c.name for c in checks if not c.ok]
 
 
+def _live_reader(value, where: str = "/mavros/setpoint_raw 活值（测试注入）"):
+    """造一个 `check_downlink_prereqs` 的 `live_reader` 替身。
+
+    ★ 下行那一条现在读的是**活着的 mavros 节点**（理由见 `read_live_thrust_scaling`
+      的 docstring），而本文件全程**不起 mavros**（见文件头）⟹ 必须注入，
+      否则这一组会随"测试机上 mavros 起没起"而飘。
+    """
+    return lambda: (value, where)
+
+
 # ───────────────────────────── 正控：默认那一套全绿 ─────────────────────────────
 
 def test_默认参数下快档全绿():
     """正控：`main` 的快档（不含 `--solve`）在默认参数下退出码 0。
 
     它同时钉住了"仓库根找得到"这件事 —— 找不到时符号那组会算失败（见下一条用例）。
+    ★ `live_reader` 注入：下行那一条读的是**活节点**，不注入就会随测试机上
+      mavros 起没起而飘（本文件不起任何夹具，见文件头）。
     """
-    assert main([]) == 0
+    assert main([], live_reader=_live_reader(1.0)) == 0
 
 
 def test_能找到仓库根():
@@ -247,20 +260,14 @@ def _tmp_repo_with_snapshot(tmp_path: Path, body: str) -> Path:
     return tmp_path
 
 
-def _tmp_mavros_config(tmp_path: Path, body: str, launch: bool = True) -> Path:
-    tmp_path.mkdir(parents=True, exist_ok=True)
-    p = tmp_path / "px4_config.yaml"
-    p.write_text(body, encoding="utf-8")
-    if launch:
-        (tmp_path / "px4.launch").write_text("config_yaml: px4_config.yaml\n", encoding="utf-8")
-    return p
-
-
 def test_下行前置那组默认全绿():
-    """正控：真实仓库 + 装好的 mavros 下这一组本来就绿，负控才说明问题。"""
-    checks = check_downlink_prereqs(REPO)
+    """正控：两个开关都摆对时这一组全绿，负控才说明问题。
+
+    ★ `live_reader` 注入 1.0 —— 这一组读的是**活着的** mavros 节点。
+    """
+    checks = check_downlink_prereqs(REPO, _live_reader(1.0))
     assert all(c.ok for c in checks), _failing(checks)
-    assert len(checks) == 3, f"这一组应当是 3 条，实际 {len(checks)}"
+    assert len(checks) == 2, f"这一组应当是 2 条，实际 {len(checks)}"
 
 
 def test_飞控没开_MAV_FWDEXTSP_要被抓在装桨之前(tmp_path: Path):
@@ -273,44 +280,62 @@ def test_飞控没开_MAV_FWDEXTSP_要被抓在装桨之前(tmp_path: Path):
         repo = _tmp_repo_with_snapshot(
             tmp_path / f"v{value}", "# 头\n1\t1\tMAV_2_CONFIG\t0\t6\n"
                                    f"1\t1\t{FCU_FWDEXTSP}\t{value}\t6\n1\t1\tMAV_HASH_CHK_EN\t1\t6\n")
-        checks = check_downlink_prereqs(repo)
+        checks = check_downlink_prereqs(repo, _live_reader(1.0))
         got = [c for c in checks if c.name.startswith(FCU_FWDEXTSP)]
         assert got and got[0].ok is ok, f"MAV_FWDEXTSP={value} 的判定反了：{got[0] if got else None}"
     repo = _tmp_repo_with_snapshot(tmp_path / "zero", "# 头\n1\t1\tMAV_2_CONFIG\t0\t6\n")
-    got = [c for c in check_downlink_prereqs(repo) if c.name.startswith(FCU_FWDEXTSP)]
+    got = [c for c in check_downlink_prereqs(repo, _live_reader(1.0))
+           if c.name.startswith(FCU_FWDEXTSP)]
     assert got and not got[0].ok, "快照里根本没有这个参数，却判过了（『找不到』不是『通过』）"
 
 
 def test_快照缺失算失败而不是跳过(tmp_path: Path):
     """★ 与"仓库根找不到"同一条纪律：这一条守的是静默掉帧，**没有跳过这一档**。"""
-    got = [c for c in check_downlink_prereqs(tmp_path) if c.name.startswith(FCU_FWDEXTSP)]
+    got = [c for c in check_downlink_prereqs(tmp_path, _live_reader(1.0))
+           if c.name.startswith(FCU_FWDEXTSP)]
     assert got and not got[0].ok, "快照找不到却判过 ⟹ 这条检查在没有证据时给了绿灯"
     assert "验不了" in got[0].detail
 
 
-def test_thrust_scaling_不是_1_要被抓在装桨之前(tmp_path: Path):
-    """三种错法各喂一次（ticket 13 §二② 新发现的硬前置）：
+def test_thrust_scaling_活值不是_1_要被抓在装桨之前():
+    """★★ 这条是 ticket 13 **第六轮的实机发现**：判据从"读 yaml"改成"读活值"。
 
-    · 缺这一项 ⟹ mavros 收到 `thrust != 0` 的帧**整帧丢**（角速率也一起丢）；
-    · `0` ⟹ 帧不丢但推力恒 0（掉高度）；
-    · `1.0` ⟹ 才是我们要的口径。
+    ☠️ 原稿（§二②）以为 `px4_config.yaml` 里写着 `1.0` 就算数 —— 已推翻。实机：
+    `ros2 param get /mavros/setpoint_raw thrust_scaling` = `nan`（= `setpoint_raw.cpp:58`
+    的声明默认 `NAN`），而同一份 yaml 里写着 `1.0`。根因 `plugin.cpp:34-37`：
+    插件节点建的时候写死 `use_global_arguments(false)` ⟹ 进程级 `--params-file`
+    **到不了插件节点**；`node.launch:24` 那份 `<param from=…>` 只挂在**主节点**上
+    ⟹ 那 27 个 `/**/<插件>:` 块**全是死文本**。
+    `setpoint_raw.cpp:294`：`thrust != 0 && isnan(thrust_scaling)` ⟹ **整帧 `return`**
+    （`body_rate` 一起丢）⟹ 零操纵，只有一句 5 s 节流的 ERROR。
+
+    四档各喂一次：`1.0` ⟹ 我们要的口径；`nan` ⟹ 整帧丢；`0.0` ⟹ 推力恒 0（掉高度）；
+    `0.5` ⟹ **不是错值而是"没人量过"**，同样不许放行（缩放错 = 推力错，静默）。
     """
-    cases = {"未设": ("/**/setpoint_raw:\n  ros__parameters:\n    position_sent: 0.0\n", False),
-             "零": ("/**/setpoint_raw:\n  ros__parameters:\n    thrust_scaling: 0.0\n", False),
-             "一": ("/**/setpoint_raw:\n  ros__parameters:\n    thrust_scaling: 1.0\n", True),
-             "别的节点": ("/**/setpoint_position:\n  ros__parameters:\n    thrust_scaling: 1.0\n", False)}
-    for label, (body, ok) in cases.items():
-        cfg = _tmp_mavros_config(tmp_path / label, body)
-        got = [c for c in check_downlink_prereqs(REPO, cfg) if c.name.startswith("thrust_scaling")]
-        assert got and got[0].ok is ok, f"{label} 的判定反了：{got[0] if got else None}"
+    for value, ok in ((1.0, True), (float("nan"), False), (0.0, False), (0.5, False)):
+        got = [c for c in check_downlink_prereqs(REPO, _live_reader(value))
+               if c.name.startswith(MAVROS_THRUST_SCALING)]
+        assert got and got[0].ok is ok, f"thrust_scaling={value!r} 的判定反了：{got[0] if got else None}"
 
 
-def test_参数文件存在但没被_launch_加载也要说一声(tmp_path: Path):
-    """★ "文件里写着 1.0" 与 "mavros 真的用上了这一份" 是两件事（`px4.launch:13` → `node.launch:24`）。"""
-    cfg = _tmp_mavros_config(tmp_path, "/**/setpoint_raw:\n  ros__parameters:\n    thrust_scaling: 1.0\n",
-                             launch=False)
-    got = [c for c in check_downlink_prereqs(REPO, cfg) if c.name == "那份 px4_config.yaml 确实被加载"]
-    assert got and not got[0].ok, "launch 没加载它却判过 ⟹ 那个值可能根本没进 mavros"
+def test_读不到活值算失败而不是跳过():
+    """★★ 守的正是**我们刚踩过的那个假绿**：老判据读 `px4_config.yaml` 那个**文件**，
+    文件永远在那儿 ⟹ 实机 `thrust_scaling = nan`、整条下行是死的，自检照样
+    `✓ 全部通过, exit 0`（2026-10-13 实测复现）。
+
+    ⟹ 读不到活值的每一种成因都必须**红**，且说明文字要留住：mavros 没起 / 参数没声明 /
+    没 source ROS 环境。**没有"跳过"这一档** —— 这一组守的是静默死法，没有别的检测点。
+    """
+    cases = {
+        "mavros 没起": "/mavros/setpoint_raw 不在** ⟹ mavros 没起（或没起全）",
+        "参数没声明": "/mavros/setpoint_raw 上**没有声明** thrust_scaling 这个参数",
+        "类型不是 double": "/mavros/setpoint_raw 上 thrust_scaling 的类型是 7（不是 double）",
+    }
+    for label, where in cases.items():
+        got = [c for c in check_downlink_prereqs(REPO, _live_reader(None, where))
+               if c.name.startswith(MAVROS_THRUST_SCALING)]
+        assert got and not got[0].ok, f"{label}：读不到活值却判过 ⟹ 又回到「永远打 ✅」"
+        assert where in got[0].detail, f"{label}：说明文字没带上（要能读懂为什么红）"
 
 
 def test_状态时限收得比闸门源周期还短会被抓到():

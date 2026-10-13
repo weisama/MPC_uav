@@ -41,9 +41,17 @@
   · `0.0` ⟹ 帧不被丢，但被算成 `thrust = clamp(req->thrust × 0) = 0`
     （`:313`）⟹ **推力恒 0、角速率照旧生效**，症状是掉高度；
   · 只有 `1.0` 才是我们要的口径（我们交出去的就是归一化推力本身）。
-它现在能工作，靠的是 `px4_config.yaml:104` 写着 `thrust_scaling: 1.0`
-（`px4.launch:13` → `node.launch:24` 载入那一份）—— 即**别人的配置文件**在替我们兜底。
-`preflight_check` 因此多了一条"这一项必须是 1.0"的检查（与 `MAV_FWDEXTSP` 同一批）。
+☠️ **上面那句"靠 `px4_config.yaml:104` 兜底"是错的**（2026-10-13 第六轮实机定的案，票 13 §九）：
+  那份 yaml **根本进不了插件节点** —— `plugin.cpp:34-37` 建插件节点时写死
+  `node_options.use_global_arguments(false)` ⟹ 进程级 `--params-file` 被挡；
+  `node.launch:24` 的 `<param from=…>` 只挂在**主节点**上 ⟹ 那 27 个 `/**/<插件>:` 块
+  **全是死文本**。实机读数：`ros2 param get /mavros/setpoint_raw thrust_scaling` = **`nan`**
+  （= `setpoint_raw.cpp:58` 的声明默认 `NAN`），而同一份 yaml 里写着 `1.0`。
+  ⟹ **没有任何人在替我们兜底**，链起来时它是死的（零操纵，且几乎无声）。
+  现在的口径是**运行期补一刀**：`bringup/scripts/mavros_set_thrust_scaling.py`
+  由 `bringup/launch/mavros.launch.py` 起链时自动跑（设完**读回核对**）。
+  `preflight_check` 那一条也**不再读 yaml**，改成读 `/mavros/setpoint_raw` 的**活值**
+  （读 yaml 会得到假绿 —— 实机复现过：链已死，自检照样 `✓ 全部通过`）。
 
 ★★ **两档状态源**（`-p state_source:=mocap|px4`，ticket 09）：两档**只差"测量从哪里来"**，
 **控制器那一条路**（闸门、外推、参考、求解、映射、发布）完全共用。

@@ -22,6 +22,7 @@ from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
 from launch.launch_description_sources import AnyLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
+from launch_ros.actions import Node
 
 
 def generate_launch_description():
@@ -39,5 +40,18 @@ def generate_launch_description():
                 "fcu_url": LaunchConfiguration("fcu_url"),
                 "gcs_url": LaunchConfiguration("gcs_url"),
             }.items(),
+        ),
+        # ★★ 起链补丁（票 13 第六轮）：`thrust_scaling` 的声明默认是 `NAN`，而
+        #    `px4_config.yaml` 里那个 `/**/setpoint_raw:` 块**进不了插件节点**
+        #    （`plugin.cpp:35` 的 `use_global_arguments(false)`）⟹ 必须运行期补一刀。
+        #    ⛔ 这一步**不是**"让飞机动"的入口：它只改 mavros 自己的缩放系数，
+        #      不解锁 / 不起飞 / 不切模式 / 不发帧（`run/z0.py` 的动作表也**故意**不合入它）。
+        #    ⚠️ 它自己会等插件节点出现（`--timeout`），失败时**只打红字、不拦 launch**：
+        #      真正的闸门是 `nmpc/preflight_check.py` 的下行前置那一条（读**活值**）。
+        Node(
+            package="bringup",
+            executable="mavros_set_thrust_scaling.py",
+            output="screen",
+            arguments=["--timeout", "30.0"],
         ),
     ])
