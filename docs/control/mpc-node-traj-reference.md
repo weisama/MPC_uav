@@ -35,6 +35,11 @@
 2. `mavros_msgs` 是**消息定义包**（`CMakeLists.txt` 只调 `rosidl_generate_interfaces`，
    全文件没有 `find_package(mavros)` / `libmavros` / 插件）⟹
    "会把 mavros 拉进 Phase 2 的运行环"这个担心不成立（Phase 2 走 uXRCE-DDS，与 mavros 是两条并行下游）。
+   ☠️ **2026-10-13（票 13 收口轮）：上面这个括注今天整个反过来。** Phase 2 **不走 uXRCE-DDS 了**，
+   它的 (C) 级下行就走在 **mavros** 上（`/mavros/setpoint_raw/attitude` + `/mavros/state`，见
+   [`13`](../../.scratch/phase4/issues/13-mavros-downlink-switch.md) / [`px4-interface.md`](../reference/px4-interface.md) §4.3）。
+   ⚠️ 但**这一条结论本身仍成立**（甚至更强）：`mavros_msgs` 是纯**消息定义包**，
+   引它**不等于**把 mavros 节点拉进运行环 —— 下面那段 `package.xml:34` 的悬空 `libmavconn` 也照旧。
    ⚠️ **一处要说准**（2026-09-30 第一手）：它的 `package.xml:34` 里有一条
    `<build_export_depend>libmavconn</build_export_depend>`，而它自己的构建**从不使用**
    （全仓没有 `find_package(libmavconn)`；本机 Humble 里 `/opt/ros/humble/share/libmavconn`

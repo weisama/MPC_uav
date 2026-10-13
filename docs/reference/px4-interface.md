@@ -80,7 +80,7 @@ PX4 官方 Offboard 文档明确列出每种 setpoint 需要什么估计：
 |---|---|---|---|
 | position / velocity / acceleration | **需要** position & velocity | `TrajectorySetpoint` | ❌ (A) 方案，不用 |
 | attitude | **none** | `VehicleAttitudeSetpoint` | ⚠️ (B) 方案备选 |
-| **body_rate** | **none** | **`VehicleRatesSetpoint`** | ✅ **(C) 方案** |
+| **body_rate** | **none** | **`VehicleRatesSetpoint`** ☠️ **2026-10-13：这一格是"PX4 那边的消息类型"，不是本项目的载体——本项目经 mavros 发 `AttitudeTarget`（`body_rate` + `thrust`），见 §4.3 / §5.1** | ✅ **(C) 方案** |
 | thrust_and_torque | **none** | `VehicleThrustSetpoint` + `VehicleTorqueSetpoint` | — |
 | direct_actuator | **none** | `ActuatorMotors` / `ActuatorServos` | ⚠️ (D) 方案，第二阶段 |
 
@@ -92,10 +92,10 @@ PX4 官方 Offboard 文档明确列出每种 setpoint 需要什么估计：
 
 | 消息 | 关键字段 | 备注 |
 |---|---|---|
-| `OffboardControlMode` | 5 个 bool：`position` / `velocity` / `acceleration` / `attitude` / `body_rate` / `thrust_and_torque` / `direct_actuator` | **心跳**，见 3.3 |
+| `OffboardControlMode` | 5 个 bool：`position` / `velocity` / `acceleration` / `attitude` / `body_rate` / `thrust_and_torque` / `direct_actuator` | **心跳**，见 3.3 —— ☠️ **2026-10-13：这条心跳本项目不再自己发**（换 mavros 后 setpoint 自己就是心跳，`SET_ATTITUDE_TARGET` 会被飞控派生成 `OffboardControlMode`），见 §3.3 / §4.3 |
 | `TrajectorySetpoint` | `position[3]`, `velocity[3]`, `acceleration[3]`, `jerk[3]`, `yaw`, `yawspeed` | ⚠️ **没有 `thrust` 字段** |
 | `VehicleAttitudeSetpoint` | `q_d[4]`（四元数）, **`thrust_body[3]`** | (B) 方案 |
-| `VehicleRatesSetpoint` | **`roll`/`pitch`/`yaw` (rad/s)**, **`thrust`** | ✅ (C) 方案 |
+| `VehicleRatesSetpoint` | **`roll`/`pitch`/`yaw` (rad/s)**, **`thrust`** | ✅ (C) 方案 —— ☠️ **2026-10-13：本项目不再经这条路发**（uXRCE-DDS 已废）。今天对应的是 `AttitudeTarget` 的 **`body_rate` + `thrust`**，见 §4.3 / §5.1；**方案不变**（我们仍只到角速率） |
 | `VehicleThrustSetpoint` | `xyz[3]` | |
 | `VehicleTorqueSetpoint` | `xyz[3]` | |
 | `ActuatorMotors` | `control[12]`（归一化） | (D) 方案 |
@@ -105,6 +105,14 @@ PX4 官方 Offboard 文档明确列出每种 setpoint 需要什么估计：
 1. **心跳必须持续。**
    `OffboardControlMode` 必须以 **≥ 2 Hz** 持续发布，**且在切换进 Offboard 模式前已持续 ≥ 1 s**。断掉就会退出 Offboard。
 
+   > ☠️ **2026-10-13（票 13 收口轮）**：**"必须自己发心跳"这条对它自己仍然成立，但主语换了** ——
+   > 本项目换到 mavros 后**不再自己发 `OffboardControlMode`**（那条流整条删除），
+   > 维持 OFFBOARD 需求的是**我们持续发的 setpoint 本身**（`/mavros/setpoint_raw/attitude`，
+   > 飞控从 `SET_ATTITUDE_TARGET` 自己派生 `OffboardControlMode`，`mavlink_receiver.cpp:1531-1535`）。
+   > ⚠️ **责任转移**：以前"停发 setpoint"与"停发心跳"是两件事，现在**是一件事** ——
+   > 我们停发 = 心跳也停 = 飞控退出 OFFBOARD。这条差异有安全含义，见
+   > [`13`](../../.scratch/phase4/issues/13-mavros-downlink-switch.md) §二④ 与 `mpc_node.py` 的 ★★ 段。
+
 2. **★ 推力是 `[-1, 1]` 归一化，不是 `0–1`。**
    这一点极其容易搞错：
    - 范围是 **`[-1, 1]`**（负数 = 反向推力）
@@ -113,6 +121,13 @@ PX4 官方 Offboard 文档明确列出每种 setpoint 需要什么估计：
    - **不是**牛顿
 
    > 数值约定错了，模型预测控制算得再对，飞机也不会飞。**这是实测前必须写在纸上的一条。**
+   >
+   > ☠️ **2026-10-13（票 13 收口轮）—— 这条讲的是飞控**收到**的值，别倒推成"我们该发负数"**：
+   > 在本项目今天的载体（mavros `/mavros/setpoint_raw/attitude`）上，**我们交出去的是正号的归一化推力
+   > `0…1`**（`thrust = F / T_max`），那个负号由**飞控侧** `fill_thrust`（`mavlink_receiver.cpp:1475` 的
+   > `thrust_body_array[2] = -thrust`）加上 —— mavros **不转** `thrust`。一手：`src/nmpc/nmpc/sign_map.py`
+   > 的 `mavros_attitude_target` docstring ＋ 本文 §5.1 那张表。⟹ **`[-1,1]` 与 `0…1` 说的是同一条链上的两站**；
+   > 把 `[-1,1]` 拿到"我们发出的字段"上去套，就是本票点名要挡的那类静默错。
 
 ### 3.4 ⚠️ `(D)` 方案的安全代价
 
@@ -237,6 +252,11 @@ v1.14.3 / v1.15.0 / v1.16.0 / fork `5ba2e91f` / `px4_msgs` 逐棵树查过，**�
 
 > ⚠️ **本项目最容易出错的地方**：`VehicleRatesSetpoint` 的 `roll`/`pitch`/`yaw` 是 **FRD 机体系角速率**。如果模型预测控制内部用的是 FLU 或者从 ENU 动捕数据推姿态，**横滚和偏航的符号会错**。
 >
+> ☠️ **2026-10-13（票 13 收口轮）**：换到 mavros 后**这条陷阱仍然在，但换了执行者** ——
+> FLU→FRD 那一转**由 mavros 做**（`setpoint_raw.cpp:323-324`），**我们该交 FLU 原样**；
+> 我们若"顺手"再转一次就是**转两次 = 不转**（症状：**只有 pitch/yaw 静默反向**，roll 不受影响）。
+> 详见下面 §5.1 那条 ★★（N2 的存档处）。
+>
 > **建议**：在文档里**用文字写死符号约定**（不只用公式），并在实飞前用一个"打正杆看飞机往哪边滚"的测试确认。这是用户已有经验里的老坑。
 
 ### 5.1 ★★ `mavros` 在哪些话题上帮你转、往哪个方向转（已读源码）
@@ -280,7 +300,7 @@ if (last_transform_stamp == stamp) { /* dropped */ return; }
 | VRPN 网络传输 | ~ms | — |
 | **动捕→IMU 相对延迟** | **实测 50 ms** | 用户 `25.06.28_PX4_log.md` |
 | `EKF2_EV_DELAY` 设置 | **50.0 ms** | `z0.params` ✅ 与实测吻合 |
-| uXRCE-DDS 传输 | ~1 ms | — |
+| ~~uXRCE-DDS 传输~~ **mavros 传输** ☠️ **2026-10-13（票 13 收口轮）：载体从 uXRCE-DDS 换成 mavros；这一格 `~1 ms` 是旧载体上估的，今天未重测** | ~1 ms | — |
 | PX4 角速率环 | 1 kHz → **1 ms** | — |
 | **模型预测控制求解** | **≤ 10 ms 预算**（100 Hz）；★ **实测纯求解 max `3.58 ms`** | `phase2-implementation.md` §5 的 P3 行 / D6（2026-09-28） |
 | **动捕时间戳抖动** | ✅ **~2–5 ms** | ★ 已更正，见下 |

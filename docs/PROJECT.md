@@ -211,6 +211,12 @@
 
 ### 3.1 三层结构
 
+> ☠️ **2026-10-13（票 13 收口轮）：本节架构图原按旧载体画，已就地改。** 原图控制链路那三条箭头文字是
+> `uXRCE-DDS` / `/fmu/in/vehicle_rates_setpoint` / `/fmu/in/offboard_control_mode (≥2 Hz)` —— **三样今天都不对**：
+> (C) 级下行**全走 mavros**（`/mavros/setpoint_raw/attitude`，`body_rate` + 标量 `thrust`），
+> 那条独立心跳流**已整条删除**（mavros 的 setpoint 自己就是心跳）。定案与起因见
+> [`reference/px4-interface.md`](reference/px4-interface.md) §4.3。
+
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │  动捕层（Nokov）                                              │
@@ -228,9 +234,9 @@
 │ vision_pose/   │  │  · 求解器：acados 生成的 C 代码             │
 │ pose           │  │  · 输出：ω_des (rad/s) + T_des             │
 │ → VISION_      │  └──────────────┬───────────────────────────┘
-│ POSITION_      │                 │ uXRCE-DDS
-│ ESTIMATE       │                 │ /fmu/in/vehicle_rates_setpoint
-│ → EKF2 融合    │                 │ /fmu/in/offboard_control_mode (≥2 Hz)
+│ POSITION_      │                 │ mavros
+│ ESTIMATE       │                 │ /mavros/setpoint_raw/attitude
+│ → EKF2 融合    │                 │ (body_rate + thrust)
 └───────┬────────┘                 │
         │                          │
         ▼                          ▼
@@ -253,7 +259,7 @@ PX4 官方 Offboard 文档明确标注了每种 setpoint 所需的**状态估计
 |---|---|---|
 | position / velocity / acceleration | **需要** position/velocity | `TrajectorySetpoint` |
 | attitude | **none** | `VehicleAttitudeSetpoint` |
-| **body_rate** | **none** | **`VehicleRatesSetpoint`** ← 本项目方案 |
+| **body_rate** | **none** | **`VehicleRatesSetpoint`** ← ★ 本项目方案（☠️ **2026-10-13**：本项目**今天的载体**是 mavros 的 `/mavros/setpoint_raw/attitude`，PX4 收到后落到**同一个** body_rate setpoint ⟹ 本表「所需估计 = none」这一格**不变**，变的只是我们**怎么发**。见 [`reference/px4-interface.md`](reference/px4-interface.md) §4.3） |
 | thrust_and_torque | **none** | `VehicleThrustSetpoint` + `VehicleTorqueSetpoint` |
 | direct motors | **none** | `ActuatorMotors` |
 
@@ -266,13 +272,19 @@ PX4 官方 Offboard 文档明确标注了每种 setpoint 所需的**状态估计
 | 链路 | 方案 | 理由 |
 |---|---|---|
 | **动捕 → PX4** | **mavros**（`/mavros/vision_pose/pose` → `VISION_POSITION_ESTIMATE` → EKF2） | 已在旧机上跑通，有 50 ms 延迟实测数据、EKF2 调参经验全部可复用 |
-| **模型预测控制 → PX4** | **uXRCE-DDS**（`/fmu/in/vehicle_rates_setpoint`） | 有现成蓝本 [`DISCOWER/px4-mpc`](https://github.com/DISCOWER/px4-mpc) 可直接对照，省掉自己设计接口 |
+| **模型预测控制 → PX4** | **mavros**（`/mavros/setpoint_raw/attitude`：`body_rate` + 标量 `thrust`）<br>☠️ **2026-10-13**：原写"**uXRCE-DDS**（`/fmu/in/vehicle_rates_setpoint`）"，**今天为假** —— 那条链在 z0 上根本通不了（无空闲串口 + `UXRCE_DDS_CFG = 0`），见 [`reference/px4-interface.md`](reference/px4-interface.md) §4.3 | ☠️ 原理由「有现成蓝本 `DISCOWER/px4-mpc` 可直接对照，省掉自己设计接口」**随载体一并作废** —— mavros 这条路**没有现成蓝本**，接口是自己定的（票 13 §二） |
+
+> ☠️ **2026-10-13（票 13 收口轮）：下面两段整段作废 —— "混合"不再是定案。** 定案 = **(C) 级下行全走 mavros**，
+> **不起 uXRCE-DDS Agent** ⟹ "mavros 与 uXRCE-DDS Agent 各占一个 UART"这个前提不存在了；
+> "只在新的一条链路上冒险"也失去对象（所谓"新链路"就是 Phase 1 已在跑的 mavros）。
+> 起因（z0 上**没有空闲串口**能分给 XRCE）见 [`reference/px4-interface.md`](reference/px4-interface.md) §4.3。原文留存如下：
 
 **为什么"混合"而不是统一**：mavros 与 uXRCE-DDS Agent 是两个独立进程，各连 PX4 的**不同 UART 口**，在同一个 ROS2 图里共存无冲突。**只在新的一条链路上冒险，另一条保持不变**，出问题时能快速二分定位。
 
 **前提**：NxtPX4v2 需要两个空闲 UART。它有 7 路，`MAV_0 → TELEM1(UART?)`、`MAV_1 → TELEM2(UART4)`，`TELEM4/UART8` 空着。**前提成立。**
 
-> ⚠️ 备选：全走 mavros（用 `setpoint_raw/attitude` 的 `body_rate` 字段）。如果觉得"单一中间件"比"少写代码"更重要，选这条。**这仍是开放决策。**
+> ⚠️ 备选：全走 mavros（用 `setpoint_raw/attitude` 的 `body_rate` 字段）。如果觉得"单一中间件"比"少写代码"更重要，选这条。~~**这仍是开放决策。**~~
+> <br>☠️ **2026-10-13：这条"备选"就是今天的定案** —— (C) 级下行**已经全走 mavros**（不是偏好，是 z0 上 XRCE 根本通不了）。**"仍是开放决策"作废。** 见 [`reference/px4-interface.md`](reference/px4-interface.md) §4.3。
 
 ### 3.4 运行环境
 
@@ -280,7 +292,7 @@ PX4 官方 Offboard 文档明确标注了每种 setpoint 所需的**状态估计
 
 | 组件 | 运行环境 |
 |---|---|
-| 模型预测控制节点、mavros、uXRCE-DDS Agent | **ROS2 Humble 原生**（宿主 Ubuntu 22.04） |
+| 模型预测控制节点、mavros（☠️ **2026-10-13**：原写"、uXRCE-DDS Agent" —— **没有它了**，见 [`reference/px4-interface.md`](reference/px4-interface.md) §4.3） | **ROS2 Humble 原生**（宿主 Ubuntu 22.04） |
 | acados | **宿主原生编译**（aarch64），`ACADOS_SOURCE_DIR` + `LD_LIBRARY_PATH` |
 | PX4 SITL 仿真 | 已有的 humble 容器（`osrf/ros:humble-desktop-full` + PX4 1.13.3 + gazebo-classic） |
 | noetic 容器 | **仅**用于确实没有 ROS2 版本的 ROS1 包 |
@@ -301,7 +313,7 @@ PX4 官方 Offboard 文档明确标注了每种 setpoint 所需的**状态估计
 |---|---|---|---|
 | **(A)** | 位置/速度（`TrajectorySetpoint`） | 完整内环 | ❌ **模型预测控制被 PX4 位置环抹掉，做了等于没做** |
 | **(B)** | 姿态 + 推力（`VehicleAttitudeSetpoint`） | 角速率环 | ⚠️ 姿态环带宽与模型预测控制预测会打架；四元数 setpoint 的 yaw 处理麻烦 |
-| **(C)** ★ | **角速率 + 推力（`VehicleRatesSetpoint`）** | **仅 1 kHz rate loop** | ✅ **推荐** |
+| **(C)** ★ | **角速率 + 推力**（`VehicleRatesSetpoint`）<br>☠️ **2026-10-13**：本项目今天经 mavros 的 `AttitudeTarget` 发这同一组量 —— **方案不变，消息载体变了** | **仅 1 kHz rate loop** | ✅ **推荐** |
 | **(D)** | 电机指令（`ActuatorMotors`） | 无（绕过控制分配） | ⚠️ 第二阶段的终点，**但会禁用 PX4 的 `control_allocator` 与安全网** |
 
 > ⚠️ 纠正一个常见误解：**(B) 不能用 `TrajectorySetpoint` 实现**——该消息**根本没有 thrust 字段**（只有 position/velocity/acceleration/jerk/yaw/yawspeed）。**(B) 的正确消息是 `VehicleAttitudeSetpoint`。**
@@ -320,10 +332,12 @@ PX4 官方 Offboard 文档明确标注了每种 setpoint 所需的**状态估计
 ### 4.3 C → D 的三步演进（每步保留前一步的模型与接口）
 
 ```
-步骤 1:  (C)                          模型预测控制(ω_des, T_des) ──uXRCE-DDS──▶ PX4 rate loop ──DShot──▶ 电机
+步骤 1:  (C)                          模型预测控制(ω_des, T_des) ──mavros──▶ PX4 rate loop ──DShot──▶ 电机
 步骤 2:  (C) + INDI                   模型预测控制(ω_des, T_des) ─────────────▶ INDI ────────▶ PX4 rate loop ──▶ 电机
 步骤 3:  (D)                          模型预测控制(ω_des, T_des) ─────────────▶ INDI ────────────────────▶ 电机
 ```
+
+☠️ **2026-10-13**：步骤 1 那条箭头原写 `──uXRCE-DDS──▶`，**已就地改** —— (C) 级下行走 **mavros**（见 [`reference/px4-interface.md`](reference/px4-interface.md) §4.3）。
 
 **为什么 INDI 是这个项目的自然选择**：
 
@@ -389,7 +403,7 @@ PX4 官方 Offboard 文档明确标注了每种 setpoint 所需的**状态估计
 | `EKF2_GPS_CTRL = 7` | GPS 融合仍开启，室内动捕飞行通常应设 **0** |
 | `MPC_THR_HOVER = 0.5` | 疑为 PX4 默认值，非实测 |
 | `COM_RC_IN_MODE = 3` | 含义需对着 PX4 1.14 文档核实（影响遥控器能否接管） |
-| `UXRCE_DDS_CFG = 0` | uXRCE-DDS 当前**禁用** —— 走 `(C)` 方案时必须改 |
+| `UXRCE_DDS_CFG = 0` | uXRCE-DDS **禁用**。☠️ **2026-10-13**：原写"走 `(C)` 方案时**必须改**" —— **作废**：(C) 级下行改走 mavros 后这个参数**保持 `0`**，⛔ 不用去动它（见 [`reference/px4-interface.md`](reference/px4-interface.md) §4.3） |
 
 > ★ **2026-09-22 人裁定**：上表 8 条待处理项里**现在就改 3 条** —— `EKF2_GPS_CTRL = 0`、`SYS_HAS_GPS = 0`、
 > `MPC_XY_VEL_MAX = 2.0`；其余分别留到**系统辨识 / 推力标定 / 尺子量 / 飞行阶段**。
@@ -431,7 +445,7 @@ PX4 官方 Offboard 文档明确标注了每种 setpoint 所需的**状态估计
 | **1** | **z0 动捕定点** | 移植旧机的动捕链路到 z0：VRPN 驱动 → `/mavros/vision_pose/pose` → EKF2；~~重标 `EKF2_EV_POS_*` 外参~~（★ **2026-10-09 改判**：外参落在 **`mocap` 节点**的 `body_to_imu_*`，飞控该参数**保持 `0`** —— 见 O4）；重调 `EKF2_EVP_NOISE` | z0 能用动捕自主定点悬停 | 动捕场地 + 网段打通（见第 7 节） |
 | **2** | **系统辨识** | 用 `thrust_calibrate.py` 测推力曲线；辨识 kt/kq/惯量；测推力在不同电压下的漂移 | 得到完整的建模参数表（替换 2.3 里的 ❌ 项） | 里程碑 1 |
 | **3** | **仿真闭环** | 先在 Python/CasADi 对自写模型验模型预测控制数学；再进 PX4 SITL 验接口与闭环 | SITL 里轨迹跟踪不发散 | 里程碑 0 |
-| **4** | **实机 `(C)` 闭环** | 模型预测控制 → `VehicleRatesSetpoint` → PX4 rate loop，动捕定位 | 实机完成给定轨迹跟踪 | 里程碑 1、2、3 |
+| **4** | **实机 `(C)` 闭环** | 模型预测控制 → ~~`VehicleRatesSetpoint`~~ **`/mavros/setpoint_raw/attitude`**（☠️ **2026-10-13** 换载体）→ PX4 rate loop，动捕定位 | 实机完成给定轨迹跟踪 | 里程碑 1、2、3 |
 | **5** | **INDI 内环** | 用 INDI 替代 PX4 rate loop（步骤 2） | 跟踪精度优于步骤 1 | 里程碑 4 |
 | **6** | **基线对比与论文** | 与 PID 基线（`px4ctrl`）对比，出数据 | 论文素材 | 里程碑 4/5 |
 | **7**（可选） | **(D) 电机直发** | INDI 直接输出电机指令，绕过 `control_allocator` | — | 里程碑 5 |
@@ -467,7 +481,7 @@ PX4 官方 Offboard 文档明确标注了每种 setpoint 所需的**状态估计
 | **O3** | **`CA_ROTORx_PX/PY` 实际值是多少？** 🔶 **一半已答（2026-09-21 对账）**：**飞控真身读到的就是 `±0.15`** —— 所以"文件是不是过时"这个问题**结了**。但**"实测这台飞机的真实几何"仍未做**。★ **2026-09-22 裁定：`CA_ROTOR*` 不改**（分配器按几何自身范数归一化，均匀缩放会被完全约掉 ⟹ 改了没效果），真正要它的是 **(D) 方案**与力矩饱和估算 | 控制分配的几何基础 |
 | **O4** | 动捕刚体 → IMU 偏移（外参） | ★★ **2026-10-09 落点改了：做在 `mocap` 节点里，不是写飞控参数。** 节点侧 `body_to_imu_x/y/z = 0/0/−0.080` m（机体系 FLU，按该帧姿态旋转）⟹ **飞控 `EKF2_EV_POS_X/Y/Z` 保持 `0/0/0`，且这个 `0` 现在是「正确的」**（由构造保证），⛔ 别两边都做（偏移双计）。**z 这一半不用尺子也能拿**：飞机停在地面那场（`bag/1_static`，2026-09-29）的动捕**原始 z = `+0.10850 m`** 给的是**飞控侧**该填的值 `≈ −0.0885 m`（FRD、z 向下为正），与节点侧落的 80 mm 差 8.5 mm（来源：「离地 20 mm」是估的）—— **两个数都留着**。⚠️ 前提「动捕 z=0 即地面」**待验**，且这是**每场次现读**的数（09-21 那次 `+0.0883`）。**xy 仍未做**（现按零处理）。详见 [`phase4/01`](../.scratch/phase4/issues/01-geometry-and-extrinsics.md) 的「★★ 落地」 |
 | **O5** | `MPC_THR_HOVER` 是默认值还是实测值？ | ★ **一半已答（2026-09-21 对账）**：真身就是 `0.5`，**且 `0.5` 恰好是 PX4 出厂默认值** ⟹ 看不出来被改过。★ **2026-09-22 裁定：留到推力标定**（里程碑 2，与 `THR_MDL_FAC` 一并定）；它决定 **MPC（模型预测控制）** 的线性化工作点对不对 |
-| **O6** | ~~**通信中间件最终选"混合"还是"全 mavros"？**~~ ✅ **已定（分阶段）**：**Phase 1 全走 mavros2**（`/mavros/vision_pose/pose` + `/mavros/setpoint_raw/local`），**完全不碰 uXRCE-DDS**（`UXRCE_DDS_CFG` 都不用改）；**uXRCE-DDS 推迟到 Phase 2** 引入模型预测控制时再上。理由：每个阶段只引入一个新变量 —— Phase 1 验动捕链路（中间件零新增），Phase 2 才引入新中间件（此时动捕已验证）。同时避开 `px4_msgs` 版本不匹配的静默失败陷阱 | 见 3.3 与本项目 Phase 1 决策记录 |
+| **O6** | ~~**通信中间件最终选"混合"还是"全 mavros"？**~~ ✅ **已定（分阶段）**：**Phase 1 全走 mavros2**（`/mavros/vision_pose/pose` + `/mavros/setpoint_raw/local`），**完全不碰 uXRCE-DDS**（`UXRCE_DDS_CFG` 都不用改）；~~**uXRCE-DDS 推迟到 Phase 2** 引入模型预测控制时再上。~~ ☠️ **2026-10-13 更新（票 13）：这一步没有发生** —— Phase 2 引入模型预测控制时**也没上 uXRCE-DDS**，(C) 级下行改走 **mavros**（`/mavros/setpoint_raw/attitude`；定案与起因见 [`reference/px4-interface.md`](reference/px4-interface.md) §4.3）。⟹ O6 的**最终答案是"全 mavros"**，⛔ 不是"混合"；`UXRCE_DDS_CFG` 一直是 `0`、今后也不用改。理由：每个阶段只引入一个新变量 —— Phase 1 验动捕链路（中间件零新增），Phase 2 才引入新中间件（此时动捕已验证）。同时避开 `px4_msgs` 版本不匹配的静默失败陷阱 | 见 3.3 与本项目 Phase 1 决策记录 |
 | **O7** | 里程碑 5（INDI）是第一版就做，还是留到第二阶段？ | 影响模型复杂度 |
 | **O8** | `EKF2_GPS_CTRL = 7` 是否需要改成 0？ | ✅ **已关闭** —— 2026-09-22 裁定改，**2026-09-23 已写入并读回确认**（`EKF2_GPS_CTRL = 0` + `SYS_HAS_GPS = 0`）。命令与读回见 [`reference/params-changes.md`](reference/params-changes.md) **§I.1** |
 

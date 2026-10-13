@@ -17,6 +17,29 @@
 
 ---
 
+> ☠️ **2026-10-13（票 13 收口轮）：本页凡是把 (C) 级下行载体写成 `/fmu/*` / uXRCE-DDS 的地方，载体已换。**
+> **(C) 级下行今天走 mavros 的 `/mavros/setpoint_raw/attitude`**（`body_rate` + 标量 `thrust`），闸门读 `/mavros/state`；
+> 那条独立心跳 `/fmu/in/offboard_control_mode` **已整条删除**（mavros 的 setpoint 自己就是心跳）；`UXRCE_DDS_CFG` 保持 `0`、**不再需要**。
+> 定案与起因见 [`../reference/px4-interface.md`](../reference/px4-interface.md) §4.3。
+>
+> ★★ **比话题名更要紧的一条 —— 本页的判据面**：§0 第 4 条 ＋ §2.3 / §2.4 / §2.5 / §2.6 / §3.1 末 / §3.2 那一整族
+> 「**今天 (C) 级那一半全都做不了**」，**理由是"XRCE 在 z0 上通不了 ⟹ (C) 级下行不存在"** ——
+> **换载体后这个理由没有了**。⟹ 那一族的**裁定必须重做**（(C) 级链今天起不起得来、能走哪几条演练）。
+> ⚠️ 且至少 §2.3 / §2.1 不对称① **方向可能反过来**（旧载体里心跳是独立流，可单独停；换到 mavros 后
+> **setpoint 自己就是心跳**）。
+>
+> ⛔ **本轮只"点出来"，不"拿主意"**：本页是 ticket [`phase4/08`](../../.scratch/phase4/issues/08-safety-paths-and-fallback-drill.md)
+> 的产物，那族结论的归属在票 08 与操作者，**不在票 13**。本轮只做两件事：① 就地标出**载体**变了；
+> ② 在此点明**判据的理由已消失 / 可能反转**。逐处点名见下。
+>
+> **载体作废清单（逐处点名）**：`:56`（§1 表 (C) 级下行话题）、`:63`（两条链两端差异里的 `MicroXRCEAgent`）、
+> `:110`（§2.0 汇总表 `UXRCE_DDS_CFG` 那行的理由）、`:143`（§2.1 不对称①的心跳话题）、
+> `:246-250`（§2.3 的"停发 setpoint 触发不了这条"）、`:258-259`（§2.3 今天能不能做）、`:284`（§2.4 同）、
+> `:307-311`（§2.5 的"今天做不了"整段）、`:324-326`（§2.6 末）、`:340`（§3.1 第 3 步的命令）、
+> `:349` / `:352`（§3.1 今天能不能做 ＋ 收尾）、`:366` / `:372-373`（§3.1 ⚠️ 里的 `MicroXRCEAgent`）、
+> `:382-384`（§3.2 的"都发 `/fmu/in/vehicle_rates_setpoint`"）、`:435`（§5 末的 `UXRCE_DDS_CFG` 归属）。
+> （⚠️ 行号是**插入本块之前** 2026-10-13 工作树的行号；本块插在页首 ⟹ 下方**整页行号已整体平移**。以**引文**为准，别以行号为准。）
+
 ## 0. 这一页怎么读
 
 **四条口径，按重要性排**：
@@ -53,14 +76,14 @@
 | | 下行话题 | 谁在发 | 起法 | 今天 |
 |---|---|---|---|---|
 | **(A) 级**（Phase 1） | `/mavros/setpoint_raw/local` | `control`（参考由 `traj` 给） | `run/z0.py up` / [`operation_manual.md`](../../operation_manual.md) §3 | ✅ 成立 |
-| **(C) 级**（本阶段） | `/fmu/in/vehicle_rates_setpoint` | `mpc_node` | 成员表见 [`mpc-node-seam1.md`](mpc-node-seam1.md) §12.1 | ⛔ **不成立**（§12.3①） |
+| **(C) 级**（本阶段） | ☠️ **`/mavros/setpoint_raw/attitude`**（原写 `/fmu/in/vehicle_rates_setpoint` —— 2026-10-13 换载体） | `mpc_node` | 成员表见 [`mpc-node-seam1.md`](mpc-node-seam1.md) §12.1 | ⛔ **不成立**（§12.3①）· ☠️ **理由已失效**（见页首） |
 
 **话题不同，但两条都喂 PX4 的 OFFBOARD ⟹ 同时跑 = 两个驾驶员。**
 ⟹ **任何一条演练开始之前，先确认另一条不在发 setpoint**（判据见 §3.1 第 1 步）。
 
 **两条链共用一条前缀**（这一点决定了切换的代价，第一手 §12.1 的成员表）：
 `mavros` / `vrpn_listener` / `mocap` 三者**两条链都要**；
-**只有两端不同** —— (A) 级多 `traj` + `control`，(C) 级多 `MicroXRCEAgent` + `mpc_node`。
+**只有两端不同** —— (A) 级多 `traj` + `control`，(C) 级多 ~~`MicroXRCEAgent`~~ + `mpc_node`（☠️ **2026-10-13**：换载体后 **`MicroXRCEAgent` 不再需要**，见页首）。
 
 ★ **"谁在发"怎么判 —— 两个读数窗口各有盲点（2026-10-12 实测）**：
 
@@ -139,7 +162,11 @@ if (h.rc_sticks_moving && g.armed) {return Degrade::kRcOverride;}
   就停发 setpoint（`StopConfig.stop_on_nav_state_exit`，`src/nmpc/nmpc/node_core.py`）。
   它**没有** `VehicleCommand` 发布器、**不发**任何模式命令（§12.2）。
   ⚠️ **两处必须知道的不对称**（都是第一手的代码事实，别当成实机读数）：
-  1. **心跳照发**：`heartbeat_always` 默认 `True` ⟹ 闸门关了以后
+  1. ☠️ **2026-10-13：这一条整条作废，且方向可能反了（见页首块）。** 原文是**旧载体**的事实 ——
+     那时心跳是**独立**的一条流（可单独停、闸门关了也照发）。换到 mavros 后 **setpoint 自己就是心跳**、
+     独立心跳流**已删除** ⟹ **"话题还有帧但没有指令"这个不对称没有了**。⚠️ 但**别反过来**照读"没帧 = 没发"：
+     新载体下这一条的判据**待重做**。以下原文留存（⛔ 别按它执行）：
+     **心跳照发**：`heartbeat_always` 默认 `True` ⟹ 闸门关了以后
      `/fmu/in/offboard_control_mode` **一帧不少**，停的只有 `/fmu/in/vehicle_rates_setpoint`
      （`src/nmpc/nmpc/mpc_node.py` 的 `_tick` ①）。⟹ **拿"话题还有帧"当"还在发指令"会读错**。
   2. **"不发 setpoint" ≠ "飞机松手"**：`COM_OF_LOSS_T` 那条判据看的是**心跳**，
@@ -243,6 +270,9 @@ ros2 topic echo /mavros/rc/in     # 看 channels[8]（ch9，0-based）
   `offboardCheck.cpp:40-65` + `modeCheck.cpp:126-134`（z0 真身 `4a0e65f2`，第一手）；
   取舍的现场表述在 [`params-changes.md`](../reference/params-changes.md) §H.7 与
   [`operation_manual.md`](../../operation_manual.md) §1.2 末段。
+- ☠️ **2026-10-13：这一条的方向可能反了 —— 见页首块。** 原文说"'停发 setpoint'触发不了这条"，
+  那是**旧载体**的事实（那时 setpoint 与心跳是**两条流**）；换到 mavros 后 **setpoint 自己就是心跳**
+  ⟹ "停发 setpoint 触发不了 `COM_OF_LOSS_T`"**可能已为假**。⚠️ 判据**待重做**，⛔ 本票不改判。以下原文留存：
 - ⚠️ **"停发 setpoint" 触发不了这条**：默认档心跳无条件发（§2.1 的不对称 ①）
   ⟹ 只闸 setpoint 的话，PX4 会**一直沿用最后一帧命令**
   （[`mpc-node-fallback.md`](mpc-node-fallback.md) §1.1，`MulticopterRateControl.cpp:177-184`）。
@@ -304,6 +334,10 @@ ros2 run nmpc mpc_node.py --ros-args -p tau_s:=0.0 -p inject_solve_fail_after_fr
 
 **留什么证据**：注入参数原文（含 N）+ 逐帧 JSONL 的 `fallback` 列那一段 + 收尾摘要。
 
+☠️ **2026-10-13：下面这一段的理由已随换载体消失 —— 见页首块。** 原文的因果链是"XRCE 通不了 ⟹
+节点发出的指令到不了 PX4 ⟹ 闸门永远不开、一帧不发"。换到 mavros 后那条下行话题**已经不存在**
+（改发 `/mavros/setpoint_raw/attitude`）⟹ **这条"做不了"的理由不再成立**；§2.5 今天到底做不做得了，
+**判据待重做**（⛔ 本票不改判）。以下原文留存：
 ⛔ **今天做不了**（第一手，2026-10-10 核）：`UXRCE_DDS_CFG` = `0` 且**没有任何串口分给它**
 （`MAV_0_CONFIG`/`MAV_1_CONFIG`/`MAV_2_CONFIG` 的现状见
 [`params-changes.md`](../reference/params-changes.md) §E1）⟹
@@ -337,7 +371,7 @@ ros2 run nmpc mpc_node.py --ros-args -p tau_s:=0.0 -p inject_solve_fail_after_fr
 |---|---|---|---|
 | 1 | 确认 (A) 链此刻**不在发** | `run/z0.py check`（[`run/README.md`](../../run/README.md) 菜单 **2= 起链核对（只读，约 5 s）**） | `/control/state` 没有在跑的任务态；`/mavros/setpoint_raw/local` 不是我们的帧 |
 | 2 | 停 (C) 级的**发指令那一个** | `mpc_node` 是**前台**进程 ⟹ 在它那个终端 `Ctrl-C`（会打一行收尾摘要）；终端不在了见下面的 ⚠️ | 进程真的退了（不是"终端关了"） |
-| 3 | 确认 (C) 链**停了** | `ros2 topic hz /fmu/in/vehicle_rates_setpoint` | **没有帧**。⚠️ 心跳 `/fmu/in/offboard_control_mode` **同时**没了 —— 那才是 PX4 的判据（§2.3）⟹ 它会在 `COM_OF_LOSS_T` = `1.0` s 后自己退出 OFFBOARD |
+| 3 | 确认 (C) 链**停了** | ☠️ `ros2 topic hz /mavros/setpoint_raw/attitude`（2026-10-13 换载体；**原写** `/fmu/in/vehicle_rates_setpoint`，那条今天没有） | **没有帧**。☠️ **2026-10-13**：原写"心跳 `/fmu/in/offboard_control_mode` **同时**没了 —— 那才是 PX4 的判据" —— 换到 mavros 后**独立心跳流已删除**，**setpoint 本身就是 PX4 的判据** ⟹ 这一格要重读（判据待重做，见页首）。它仍会在 `COM_OF_LOSS_T` = `1.0` s 后自己退出 OFFBOARD |
 | 4 | 起 (A) 级的**两端** | `run/z0.py up`（菜单 **9= 一键启动全部（选轨迹 → 按开始键）**，= `run/up.sh`）；⚠️ 它**也会去起 mavros**，已经有一个在跑时会先问一句 —— 只补缺的两端就用 `run/z0.py traj` / `run/z0.py control`（各自前台） | 见第 5 步（它才是判据） |
 | 5 | **确认 (A) 链真的回来了** | `run/z0.py check`（菜单 **2= 起链核对（只读，约 5 s）**） | `/mavros/state` 的 `connected/armed/mode` + **`/control/state` 的原文** + 每个话题有没有帧/多少 Hz。起始态是 `MANUAL/INIT`，守卫齐了是 `MANUAL/STANDBY`（出处：[`operation_manual.md`](../../operation_manual.md) §5.1 那张核对表的 `/control/state` 行 ＋ 菜单 **7= 起 control（单独）** 那一行）；**落地上锁之后**自己回 `MANUAL/STANDBY`（同页 §7 第 1 条） |
 
@@ -363,13 +397,16 @@ ros2 run nmpc mpc_node.py --ros-args -p tau_s:=0.0 -p inject_solve_fail_after_fr
 
 - **`run/down.sh` 不认 (C) 链**：它的白名单 `DOWN_TARGETS`（`run/z0.py`）只有
   `mavros` / `vrpn` / `mocap` / `traj` / `control` / `bringup` **六条** ——
-  **没有 `mpc_node`，也没有 `MicroXRCEAgent`**。⟹ 节点是在别的终端/别的会话起的、
+  **没有 `mpc_node`，也没有 `MicroXRCEAgent`**（☠️ **2026-10-13**：后者**换载体后不再需要**，
+  但这一条的结论**不受影响** —— 它要说的正是"`down.sh` 的白名单里**没有 `mpc_node`**"）。⟹ 节点是在别的终端/别的会话起的、
   那个终端已经不在了的话，`down.sh` **帮不上忙**，只能按名字找：
   `pgrep -af mpc_node`，然后照 `run/down.sh` 的**同一套顺序**
   **先 SIGINT ⟹ 超时才 SIGTERM ⟹ 再 SIGKILL**。
   ⚠️ 而按名字扫会**连带别人会话的同类进程**（`run/down.sh` 自己那句警告同源）⟹
   敲之前先看一眼命令行。
-- **`MicroXRCEAgent` 可以留着**：它是 `/fmu/*` 的桥，**自己不产生任何指令**
+- **`MicroXRCEAgent` 可以留着**：☠️ **2026-10-13**：换载体后**根本不用起它了**（(C) 级下行改走 mavros，
+  `/fmu/*` 那条桥没有了）—— 这一条的**功能**（"留着也好、停它也不影响 (A) 链"）因此**成了空话**，
+  但⛔ **不影响"它不是回退的一部分"这个结论**。原文是：它是 `/fmu/*` 的桥，**自己不产生任何指令**
   ⟹ 留着不影响 (A) 链。要停只是省资源，**但它不是回退的一部分**。
 
 ### 3.2 (A) → (C) —— 上场路径（**今天不成立**）
@@ -379,7 +416,9 @@ ros2 run nmpc mpc_node.py --ros-args -p tau_s:=0.0 -p inject_solve_fail_after_fr
 
 - **谁解锁、谁切 OFFBOARD 没有归属**。`offboard_smoke.py` **本身就是**一条完整的
   「心跳 ≥1 s ⟹ 解锁 ⟹ 切 OFFBOARD」实现（`:289` / `:294`，publisher 在 `:112`），
-  但它与 `mpc_node` **都发 `/fmu/in/vehicle_rates_setpoint`** ⟹ 不能"用一个拉起、再交给另一个"。
+  但它与 `mpc_node` ☠️ **都发同一条下行话题**（2026-10-13 换载体前是 `/fmu/in/vehicle_rates_setpoint`，
+  今天是 `/mavros/setpoint_raw/attitude`）⟹ 不能"用一个拉起、再交给另一个"。
+  ★ **结论不受换载体影响** —— 冲突的根因是"两个进程发同一条流"，与流叫什么名字无关。
 - ⛔ **整条 (C) 级下行今天不存在**（§2.5 的同一处事实）⟹ §3.2 的步骤**现在写出来也只是草案**。
   本页**不编**：等 §12.3①② 有归属之后再补这一段。
 

@@ -134,6 +134,13 @@
 > ✅ **一条对我们有利的巧合**：Phase 2/3 真正要发的 `VehicleRatesSetpoint` **恰好是逐字节相同的**。
 > 但**周围的配套消息**（`OffboardControlMode` —— offboard 心跳必需！、`VehicleStatus`、`VehicleLocalPosition`）
 > **全是破坏性的**。所以**不能用** release/1.14。
+>
+> ☠️ **2026-10-13（票 13 收口轮）：上面这条"巧合"今天不再涉及 (C) 级下行** ——
+> 模型预测控制节点 2026-10-12 起走 **mavros 的 `/mavros/setpoint_raw/attitude`**（`mavros_msgs`，
+> 不经 `px4_msgs`），心跳那条流也整条删了（[`px4-interface.md`](px4-interface.md) §4.3）。
+> ⚠️ **但下面那句结论"不能用 release/1.14"照旧成立，且今天只服务于另一批对象**：
+> `src/bench` 的假 PX4 夹具（`fake_px4.py` 发 `/fmu/*`）与 `tools/px4-sitl/` 那条链**仍然 import `px4_msgs`**
+> ⟹ 版本对齐这件事**没有随载体一起消失**，只是它不再是"我们要发的那条链"的前提。
 
 ⚠️ **`px4_msgs` 那边没有版本号机制能救你**：`release/1.14` 与 fork **都没有** `msg/versioned/`、
 `*_v1.msg` 或任何版本标记（该机制 **v1.16 才有**）。两边必须**原始 `.msg` 文本一致**，而它们不一致。
@@ -240,6 +247,11 @@ DDS 话题名**完全一样**（`/fmu/in/offboard_control_mode`、`/fmu/out/vehi
 
 > 结果见 §2.5(d)：**第 2 项**（拿厂商分支源码直接看）成了关键；第 1 项（读参数表）
 > **没用上** —— 在没读参数表之前就定案了。第 3 项（uXRCE-DDS）留给 Phase 2。
+>
+> ☠️ **2026-10-13（票 13 收口轮）**：那句"第 3 项（uXRCE-DDS）留给 Phase 2"**不会发生了** ——
+> (C) 级下行 2026-10-12 定成走 **mavros**（[`px4-interface.md`](px4-interface.md) §4.3），
+> 不搭 uXRCE-DDS ⟹ 下面第 3 条那个"最硬"的判别手段**没有启用**（第 2 条一直够用）。
+> ⛔ 下面 1/2/3 三条**原文留存**，它们是当时那张决策表的如实记录。
 
 1. **用 MAVLink 读飞控的完整参数表**，与 [`docs/assets/z0.params`](../assets/z0.params) 对照。
    该文件头自标「尚未在 z0 的飞控上核实」—— 这一步能同时**第一手核实 `MAV_1_CONFIG` /

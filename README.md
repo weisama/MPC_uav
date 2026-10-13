@@ -40,7 +40,7 @@
 | **飞控** | MicoAir **NxtPX4v2**（PX4 1.14.x，⚠️ 板名 ≠ 固件目标名，见"关键约束"） |
 | **机载电脑** | Jetson Orin NX 8GB —— ★ **本仓库就在它上面**（`~/ros_ws`），文档里的"现场"指这台 |
 | **定位** | **Nokov 动捕** → VRPN → `/mavros/vision_pose/pose` → EKF2（**室内飞行，不用 GPS**） |
-| **中间件** | ROS 2 Humble + mavros2 —— Phase 1 **完全不碰 uXRCE-DDS**，Phase 2 才引入 |
+| **中间件** | ROS 2 Humble + **mavros2**（★ 全阶段唯一的机载链路）—— ☠️ **2026-10-13（票 13 收口轮）**：原写"Phase 1 **完全不碰 uXRCE-DDS**，Phase 2 才引入"，**Phase 2 也没引入**：模型预测控制节点出的是 `/mavros/setpoint_raw/attitude`（`body_rate.x/y/z` + 标量 `thrust`），闸门读 `/mavros/state`；uXRCE-DDS 在本项目**已整条不必要**（`UXRCE_DDS_CFG` 保持 `0`） |
 | **工作区形态** | ROS 2 工作区，★ **colcon 根 = 仓库根**（不是 `src/`）；6 个包见下面目录树 |
 | **目标** | 让 **模型预测控制接管飞控内置 PID**；分四阶段，**每阶段只引入一个新变量** |
 | **issue tracker** | **`.scratch/<phase>/issues/*.md`** —— 本地 markdown，**随 git 入库**，**不用 GitHub Issues**（规则见 [`docs/agents/issue-tracker.md`](docs/agents/issue-tracker.md)） |
@@ -62,11 +62,11 @@
 | 阶段 | 做什么 | 控制接口 | 状态 |
 |---|---|---|---|
 | **Phase 1** | **offboard 位置定点飞行** —— 用动捕让 z0 稳定悬停并跟踪简单轨迹，**PX4 跑全部内环 PID** | **(A) 级**：`/mavros/setpoint_raw/local`（位置 + yaw） | 🟨 **代码与台架测试已就绪** + **2026-09-28 真机自由飞一次成**（定点定高 + 各按键 + 三条轨迹，**目测一切正常、数值未量** ⟹ ticket 09 收 `done`）· **阶梯 1–3 级（拆桨 / 系绳 20 cm / 系绳悬停 30 s）未做** —— ★ 2026-09-28 操作者裁定**不再补做**（自由飞已覆盖其风险；**是裁定不是做过了**，那几级的读数仍然是空的）· **台架清单 T1–T8 仍待整跑一遍** —— ★ 别读成"一条都没做"：**T1 与 T4 的读数已于 2026-10-10 回填**（T2 的三个 Δ 仍缺，T3/T5/T6 的真 PX4 那半仍空）；逐项以 [`bench-runbook.md`](docs/control/bench-runbook.md) 各表的「记录」列 + 各票的未勾框为准 · [`spec`](.scratch/phase1/spec.md) `ready-for-agent` |
-| **Phase 2** | **MPC（模型预测控制）接管 PID —— SITL 验证**：MPC（模型预测控制）输出角速率 + 推力，PX4 只跑角速率环；被控对象**从上游 v1.14.3 构建的 z0 同构机**（**不是 `gz_x500`**；☠️ 原写"从 fork 构建"，该 fork 与 z0 无关） | **(C) 级**：`/fmu/in/vehicle_rates_setpoint` | 🟨 **进行中** —— MPC（模型预测控制）节点 + acados + SITL 同构机都已落地，**闭环跑得起来**；⚠️ **还没收口**（★ 本格原写"seam 3 的判据未跑满；A/B 两档读数须重跑" —— **2026-10-09 起已过期**：被控对象已按真机实测重搭（[phase3/04](.scratch/phase3/issues/04-rebuild-sitl-plant-to-measured-baseline.md)），B 档已重跑、**seam 3 四条判据都有结论**（[phase2/11](.scratch/phase2/issues/11-sitl-tier-b-seam3.md)）；剩下的已知量只有 A 档那列 `thrust_from_motors()`（`verify_tier_a_hover.py:791`），**改不动、裁定不补**，`thrust±30` 两档的「总推力 N」仍错（**倍率不抄**，见 [phase3/06](.scratch/phase3/issues/06-fly-t0-seam3-four-criteria.md) §四.2 的 6 号裁定））。★ **本格不抄读数**（抄了就会过期）—— 进度以 [`spec`](.scratch/phase2/spec.md) 与 `.scratch/phase2/issues/` 里各票的 `Status:` 行为准 |
+| **Phase 2** | **MPC（模型预测控制）接管 PID —— SITL 验证**：MPC（模型预测控制）输出角速率 + 推力，PX4 只跑角速率环；被控对象**从上游 v1.14.3 构建的 z0 同构机**（**不是 `gz_x500`**；☠️ 原写"从 fork 构建"，该 fork 与 z0 无关） | **(C) 级**：角速率 + 推力 · ☠️ **2026-10-13**：原写 " `/fmu/in/vehicle_rates_setpoint` "（uXRCE-DDS 时代的载体）；现在是 **mavros 的 `/mavros/setpoint_raw/attitude`**，见[票 13](.scratch/phase4/issues/13-mavros-downlink-switch.md) | 🟨 **进行中** —— MPC（模型预测控制）节点 + acados + SITL 同构机都已落地，**闭环跑得起来**；⚠️ **还没收口**（★ 本格原写"seam 3 的判据未跑满；A/B 两档读数须重跑" —— **2026-10-09 起已过期**：被控对象已按真机实测重搭（[phase3/04](.scratch/phase3/issues/04-rebuild-sitl-plant-to-measured-baseline.md)），B 档已重跑、**seam 3 四条判据都有结论**（[phase2/11](.scratch/phase2/issues/11-sitl-tier-b-seam3.md)）；剩下的已知量只有 A 档那列 `thrust_from_motors()`（`verify_tier_a_hover.py:791`），**改不动、裁定不补**，`thrust±30` 两档的「总推力 N」仍错（**倍率不抄**，见 [phase3/06](.scratch/phase3/issues/06-fly-t0-seam3-four-criteria.md) §四.2 的 6 号裁定））。★ **本格不抄读数**（抄了就会过期）—— 进度以 [`spec`](.scratch/phase2/spec.md) 与 `.scratch/phase2/issues/` 里各票的 `Status:` 行为准 |
 | **Phase 3** | **整理 Phase 2 的产出 + 收尾它没做完的票**：把入口层与 `docs/` 裁到读得完，并结掉 Phase 2 未结的票（它们是 Phase 4 的前置）—— **不改控制律**，实机飞行不在这里 | ——（**不引入新的控制接口**） | 📋 **进度以 [`spec`](.scratch/phase3/spec.md) 与 `.scratch/phase3/issues/` 各票的 `Status:` 行为准** |
 | **Phase 4** | **模型预测控制上实机**：四项前置测量（☠️ ~~+ 一次固件重编~~ —— **2026-10-09 操作者裁定不重刷固件，沿用现行这套固件与参数**；**是"裁定收、不做了"，无实测证据作锚**），然后拆桨 → 系绳 → 自由飞四级阶梯 | 同 Phase 2（**(C) 级**） | 🟨 **进行中**（2026-10-09 起已开工，已有多张票收口、**仍有未结票**）· [`spec`](.scratch/phase4/spec.md) `ready-for-human` · ★ 票数**现算、不抄**（命令见 [`CLAUDE.md`](CLAUDE.md)） |
 
-**指导思想：每个阶段只引入一个新变量**（★ **Phase 3 是例外** —— 它不引入新变量，只把前面摊开的产出收敛、把 Phase 2 的账结清）。Phase 1 全走 mavros2（**完全不碰 uXRCE-DDS**），把"动捕链路 + 状态机 + offboard"先跑通；Phase 2 再加模型预测控制 + acados + uXRCE-DDS，**但只在 SITL 里验证，不碰飞机**；Phase 4 才上实机，且**先在离地之前把每个能摔机的未知量量出来**。
+**指导思想：每个阶段只引入一个新变量**（★ **Phase 3 是例外** —— 它不引入新变量，只把前面摊开的产出收敛、把 Phase 2 的账结清）。Phase 1 全走 mavros2（**完全不碰 uXRCE-DDS**），把"动捕链路 + 状态机 + offboard"先跑通；Phase 2 再加模型预测控制 + acados（☠️ **2026-10-13**：原写"**+ uXRCE-DDS**"—— 该链路已废，下行改走 mavros，见[票 13](.scratch/phase4/issues/13-mavros-downlink-switch.md)），**但只在 SITL 里验证，不碰飞机**；Phase 4 才上实机，且**先在离地之前把每个能摔机的未知量量出来**。
 
 ---
 
@@ -121,7 +121,8 @@
     ├── vrpn_listener/                ✅ 动捕链路，vendored 原样 —— 读它的 VENDORED.md，**别读它的 README.md**
     ├── mocap/                        ✅ 相对位姿（两阶段原点 + 仅归零 yaw）→ `/mavros/vision_pose/pose` → EKF2
     ├── traj/                         ✅ 参考轨迹（三条解析轨迹，50 Hz，**相对轨迹原点**；不发 setpoint）
-    ├── bench/                        ✅ 台架夹具（**测试基础设施，不是飞行代码**）：假 mavros + **假 PX4（`/fmu/*`，Phase 2）** + 脚本化动捕 + 假 traj + 故障注入
+    ├── bench/                        ✅ 台架夹具（**测试基础设施，不是飞行代码**）：假 mavros + **假 PX4（`/fmu/*`）** + 脚本化动捕 + 假 traj + 故障注入
+    │                                 ⚠️ **2026-10-13（票 13 收口轮）**：假 PX4 **只服务 `tools/px4-sitl/` 那条 SITL 链**了，**不再服务模型预测控制节点** —— (C) 级下行换成了假 mavros 上的 `/mavros/setpoint_raw/attitude`。桩没删（`import bench` 会带进它，删不掉），就地登记在 `src/bench/bench/fake_px4.py` 文件头与 `config.py` 的 `[px4]` 块；去留判定见 [票 13](.scratch/phase4/issues/13-mavros-downlink-switch.md) §四④ 与第八轮 Comments (d)
     ├── control/                      ✅ 自主飞行控制节点（ticket 05/06/08/09：起飞 → 悬停判稳 → **等开始键** → 跟踪轨迹 → 自动降落；**2026-09-28 真机自由飞一次成**，阶梯 1–3 级待做）
     ├── nmpc/                         ✅ Phase 2 的 MPC（模型预测控制）节点：`(C)` 级 CTBR（只发总推力 + 机体角速率）+ 零 ROS 的 OCP 与符号映射 + **装桨前的静态自检**（`ros2 run nmpc preflight_check.py`）
     └── bringup/                      ✅ launch + 操作台（ticket 09）：`z0.launch.py` 一键起 mocap+traj+control(+mavros)、`fly.py` 选轨迹看状态
@@ -138,7 +139,8 @@
 > `source /opt/ros/humble/setup.bash && source ~/mavros_ws/install/setup.bash && source ~/px4_msgs_ws/install/setup.bash && cd ~/ros_ws && colcon build`。
 > ☠️ **本段 2026-10-12 改过**（[ticket 13](.scratch/phase4/issues/13-mavros-downlink-switch.md) §二⑥）：
 > 原文说"`nmpc` 与 `bench` 都依赖 `px4_msgs`（两个包的 `package.xml` 里各有 `<depend>px4_msgs</depend>`）"
-> —— `nmpc` 那份已撤（下行从 uXRCE-DDS 换到 mavros），`bench` 那份归该票 §四（要先判 `fake_px4.py` 的去留）。
+> —— `nmpc` 那份已撤（下行从 uXRCE-DDS 换到 mavros）；`bench` 那份**已判：保留**（[票 13](.scratch/phase4/issues/13-mavros-downlink-switch.md) §四④ / 第八轮 Comments (d)）
+> —— 理由不是"还有 DUT 说 `px4_msgs`"，而是 `import bench` 会经 `scenario.py` 模块级带进 `fake_px4.py`，且 `tools/px4-sitl/` 那条链仍在用它。
 > 依赖与运行方式见 [`src/vrpn_listener/VENDORED.md`](src/vrpn_listener/VENDORED.md) §5；
 > `mocap` 与它的测试见 [`src/mocap/README.md`](src/mocap/README.md)（`colcon test --packages-select mocap`）；
 > `traj` 见 [`src/traj/README.md`](src/traj/README.md)（`--packages-up-to traj`，**它的 seam 1 也依赖 `bench`**）；

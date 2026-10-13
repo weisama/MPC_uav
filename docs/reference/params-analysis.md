@@ -459,6 +459,14 @@ ADC(uint32_t base_address = SYSTEM_ADC_BASE, uint32_t channels = ADC_CHANNELS, b
 
 ### 3.8 ⚠️ `UXRCE_DDS_CFG = 0` —— uXRCE-DDS **当前是禁用**的
 
+> ☠️ **2026-10-13（票 13 收口轮）：本节"对项目的影响"整条作废 —— 那个必须改的参数，定案是不改。**
+> 本节的**事实**读得对（`:462` 的 `UXRCE_DDS_CFG = 0`、`:464` 的链路走 MAVLink），
+> 但由此推出的动作**反了**：`(C)` 级下行改走 **mavros**（操作者 2026-10-12 定案），
+> 所以 **`UXRCE_DDS_CFG` 保持 `0` 才是定案**；`:467` 那句「**必须改这个参数**」与
+> `:469` 的「这条路要自己从零配」**今天都没有对象**。定案见
+> [`px4-interface.md`](px4-interface.md) §4.3 / [`13`](../../.scratch/phase4/issues/13-mavros-downlink-switch.md)。
+> ⛔ 原文留存（按旧前提读）：
+
 **事实**：`UXRCE_DDS_CFG = 0`（Disabled），全文件只有这 1 条 `UXRCE_` 参数。
 
 **含义**：z0 的机载电脑链路走的是 **MAVLink**（`MAV_1_CONFIG = 102` / `MAV_1_MODE = 2` = TELEM2 / Onboard），**不是 uXRCE-DDS**
@@ -757,6 +765,14 @@ PARAM_DEFINE_INT32(COM_RC_IN_MODE, 3);
 
 #### (f) ⚠️ uXRCE-DDS 无串口可用（Phase 2/3 的实际障碍）
 
+> ☠️ **2026-10-13（票 13 收口轮）：不再是障碍 —— 它反而成了定案的依据。**
+> 本节下面那三行**事实**（`UXRCE_DDS_CFG = 0` / `MAV_2_CONFIG = 0` / `MAV_0`｜`MAV_1` 的分配）
+> 一手读得都对，而且**正是它们**让操作者在 2026-10-12 把 (C) 级下行定成 **mavros**：
+> 没有任何空闲串口 ⟹ uXRCE-DDS **不是"待解决"而是"做不到"**。
+> ⟹ 本节结论「**Phase 2 落地时必须先解决的实际问题**」**今天不成立**（那个问题被绕开了，不是被解决了）。
+> 定案见 [`px4-interface.md`](px4-interface.md) §4.3；⚠️ 归属：本节的**重写**属本页作者，
+> 本轮只按票 13 §一④ 的口径**就地留痕**。
+
 `UXRCE_DDS_CFG = 0`（禁用）、`MAV_2_CONFIG = 0`（无第三个 MAVLink 口）、
 `MAV_0_CONFIG = 101`（TELEM1）、`MAV_1_CONFIG = 102`（TELEM2，Onboard = mavros 在用）。
 
@@ -906,4 +922,4 @@ diff <(grep -v '^#' z0.params | sort) <(grep -v '^#' /path/to/z0-export.params |
 | 6 | 量出 `EKF2_EV_POS_X/Y/Z` 外参 | 尺子量刚体原点→IMU | ★★ | 🔶 **2026-10-09 落点在节点侧**：外参由 `mocap` 节点的 `body_to_imu_*` 承担（z = 80 mm，xy 仍按零），飞控**保持 `0/0/0`** ⟹ 本条**不再回填飞控** —— §I 第 7 条 / §3.6 节首 |
 | 7 | 实测悬停油门，回填 `MPC_THR_HOVER` | `thrust_calibrate.py` 或 Autotune | ★★ | ⬜ **未做** —— §I 第 5 条；`THR_MDL_FAC` 一并定 |
 | 8 | 决定 `EKF2_GPS_CTRL` 是否设 0 | 看是否需要 GPS 场景 | ★ | ★ **已裁定：现在就改 `0`**（09-22，§I 第 1 条），**待写入** |
-| 9 | 打开 uXRCE-DDS（`UXRCE_DDS_CFG`） | 见 [`px4-interface.md`](px4-interface.md) | ★★（走 `(C)` 方案时） | ⬜ **Phase 2**（`params-changes.md` §E1） |
+| 9 | ~~打开 uXRCE-DDS（`UXRCE_DDS_CFG`）~~ ☠️ **2026-10-13（票 13 收口轮）：这一条取消 —— 不做，而不是没做** | 见 [`px4-interface.md`](px4-interface.md) | ~~★★（走 `(C)` 方案时）~~ | ⛔ **不适用**：`(C)` 方案**没变**，但它的载体 2026-10-12 定成 **mavros** ⟹ `UXRCE_DDS_CFG` **保持 `0` 是定案**（`params-changes.md` §E1 的旧前提随之作废）。 |

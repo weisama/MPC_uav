@@ -40,6 +40,15 @@
 
 指令面两档相同：`VehicleRatesSetpoint`（机体系推力 + 三轴角速率）⟹ **PX4 保留角速率环与混控**。
 
+> ☠️ **2026-10-13（票 13 收口轮）**（[`13`](../../.scratch/phase4/issues/13-mavros-downlink-switch.md)、
+> [`px4-interface.md`](../reference/px4-interface.md) §4.3）：
+> **这一行两处都要改**（⛔ **原文留存，本轮只点出，不改本页结论**）——
+> ① 指令面现在是 **mavros 的 `/mavros/setpoint_raw/attitude`**（`body_rate.x/y/z` + 标量 `thrust`），
+> 不是 `VehicleRatesSetpoint`；**"我们只到角速率、PX4 保留角速率环与混控"这半句不变**（方案没变，载体变了）。
+> ② 上面 §1.1 表的 **A 档那一整列（含 `:37` 的状态源 `/fmu/out/*`）今天没有活对象** ——
+> 操作者 2026-10-12 裁定 A 档（`state_source=px4`）判为 uXRCE-DDS 专用、入口显式拒绝（票 13 §二⑤）。
+> 本页是 **B 档**（`state_source=mocap`）的页，B 档本身照旧；只有"两档相同"这句里的 A 档半边塌了。
+
 ### 1.2 为什么状态的 ENU 约定在这一档会咬人
 
 `state_source=mocap` 走的是 `/mocap/pose_enu`，**ENU / FLU（z 向上为正）**；A 档走的是 PX4 话题，

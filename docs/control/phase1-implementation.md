@@ -16,14 +16,14 @@
 | # | 决策 | 结论 | 依据 |
 |---|---|---|---|
 | H1 | 控制层级 | **`(A)` 位置 + yaw** | 用户"先 offboard 控制飞控内置 PID 定点飞行" |
-| H2 | 中间件 | **全 mavros2，不碰 uXRCE-DDS** | 用户 Q7；uXRCE-DDS 推迟到 Phase 2 |
+| H2 | 中间件 | **全 mavros2，不碰 uXRCE-DDS** | 用户 Q7；uXRCE-DDS 推迟到 Phase 2 ☠️ **2026-10-13**：**推迟了、最终没上**（(C) 级下行至今全走 mavros） |
 | H3 | 动捕数据源 | **`vrpn_listener.zip`（`Huan-qun/Sim2real-UAV-Params-`）** | 用户 Q9：「这是经过实机验证的」，**vendored 原样复用** |
 | H4 | 动捕原点 | **未起飞时静止帧为原点**；姿态**仅归零 yaw** | 用户 Q16 / Q21(b) |
 | H5 | 参考轨迹 | **脚本启动后输入数字选择**：①起飞 1 m 悬停 ②边长 1 m 正方形 ③半径 0.5 m 八字<br>★ 2026-10-08 操作者裁定③的 8 字放大到 **1 m**（原本的 2 倍），见 §5.2 | 用户 Q15 |
 | H6 | SITL | **跳过**（Phase 1 无 MPC（模型预测控制），实机试错代价可接受） | 用户 Q8(b)；Phase 2 **不跳** |
 | H7 | 固件 | **留在 PX4 1.14.3 系（真身 = `Minderring/PX4-Autopilot` @ `4a0e65f2`），不刷固件** ✅ 2026-09-21 已飞控实测确认（`flight_sw_version = 1.14.3`） | 用户 Q12 + [`refs-manifest.md`](../reference/refs-manifest.md) §2.5(d) |
 
-**★ 指导思想：Phase 1 只引入一个新变量（动捕 + offboard 链路），把模型预测控制 / acados / uXRCE-DDS 全部推迟。**
+**★ 指导思想：Phase 1 只引入一个新变量（动捕 + offboard 链路），把模型预测控制 / acados / uXRCE-DDS 全部推迟。** ☠️ **2026-10-13**：其中 **uXRCE-DDS 最终没有引入**（另两个引入了；(C) 级下行改走 mavros）。
 Phase 2 的所有新东西**追加**在这套骨架上，**不推翻**它 —— 见 [`phase2-implementation.md`](phase2-implementation.md) §3.4。
 
 ---
@@ -371,7 +371,7 @@ if (last_transform_stamp == stamp) { /* dropped */ return; }
 
 ### 3.6 ⚠️ 推力数值范围（Phase 2 用，现在先写下来）
 
-`VehicleRatesSetpoint.thrust` 与 `AttitudeTarget.thrust` 都是 **`[-1, 1]` 归一化**，**不是 `0–1`**、**不是牛顿**、**不是"相对悬停"**。
+`VehicleRatesSetpoint.thrust` 与 `AttitudeTarget.thrust` 都是 **`[-1, 1]` 归一化**，**不是 `0–1`**、**不是牛顿**、**不是"相对悬停"**。<br>☠️ **2026-10-13 核出冲突（本行待订正）**：这半句**对 `AttitudeTarget` 是错的** —— 票 13 §二 的映射表（[`mpc-node-seam1.md`](mpc-node-seam1.md) §N1 与 [`sign-map.md`](sign-map.md) §2.2）逐字写着：`VehicleRatesSetpoint.thrust_body_z` 才是**负号**（`[-1, 0]`），而 **`AttitudeTarget.thrust` 是正号的 `0…1` 归一化**（`sign_map.mavros_attitude_target` 交出去的就是**正号**推力，一手见 `src/nmpc/nmpc/sign_map.py` 模块 docstring）。⟹ **这一行归这份文档订正**，⛔ 本轮只点出、不改数。
 
 **数值约定错了，模型预测控制算得再对，飞机也不会飞。** 见 [`px4-interface.md`](../reference/px4-interface.md) 3.3。
 
@@ -379,7 +379,7 @@ if (last_transform_stamp == stamp) { /* dropped */ return; }
 
 **旧说法**（`.scratch/phase1/spec.md` 的「消息时间戳」段）："所有发往 PX4 的消息使用**微秒**时间戳"。
 
-**这条只对 Phase 2 的 uXRCE-DDS 路径成立**（`px4_msgs` 的 `*Setpoint.timestamp` 确实是微秒 `uint64`）。
+**这条只对 Phase 2 的 uXRCE-DDS 路径成立**（`px4_msgs` 的 `*Setpoint.timestamp` 确实是微秒 `uint64`）。<br>☠️ **2026-10-13**：Phase 2 **没走** uXRCE-DDS（(C) 级下行改走 mavros，见 [`../reference/px4-interface.md`](../reference/px4-interface.md) §4.3）⟹ **这条今天没有适用对象**（⚠️ 但"Phase 1 不是微秒"那个更正本身照旧成立）。
 Phase 1 走的是 mavros，**不存在"微秒"这一层**：
 
 1. **mavros 出向**：`PositionTarget.header.stamp`（ROS2 `builtin_interfaces/Time`）被换算成 MAVLink 的
@@ -1280,8 +1280,8 @@ IGNORE_VX|IGNORE_VY|IGNORE_VZ|IGNORE_AFX|IGNORE_AFY|IGNORE_AFZ|IGNORE_YAW_RATE
 
 | 新增 | 内容 |
 |---|---|
-| 中间件 | 全 mavros2 → **mavros2 + uXRCE-DDS**（各连不同串口，不冲突） |
-| 控制输出 | `/mavros/setpoint_raw/local` → **`/fmu/in/vehicle_rates_setpoint`**（`(C)` 级） |
+| 中间件 | 全 mavros2 → ~~**mavros2 + uXRCE-DDS**（各连不同串口，不冲突）~~ ☠️ **2026-10-13**：**没有这一步** —— Phase 2 落地时 uXRCE-DDS **没上**，(C) 级下行**仍走 mavros**（见 [`../reference/px4-interface.md`](../reference/px4-interface.md) §4.3） |
+| 控制输出 | `/mavros/setpoint_raw/local` → ☠️ **`/mavros/setpoint_raw/attitude`**（`(C)` 级；2026-10-13 换载体，原写 `/fmu/in/vehicle_rates_setpoint`） |
 | 状态输入 | `/mavros/local_position/*` → **`/mocap/pose_enu`**（★ 此时才依赖动捕原点） |
 | 求解器 | 无 → **acados**（`SQP_RTI` + HPIPM） |
 | 代码骨架 | 无 → 🔶 **`px4-mpc`** |

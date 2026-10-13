@@ -379,8 +379,13 @@ thrust_body[2] = F_z_FRD / T_max = −F / T_max        ∈ [−1, 0]（向上推
    （这样离线 OCP 与假 PX4 夹具都能直接用，不需要起节点）。
    落在 Phase 2 的 MPC（模型预测控制）节点包内，**包名由 ticket 06 决定** —— 本票不替它定包结构。
    ★ **2026-10-12 补上"它的输出投喂给谁"**（两条通路并存后这件事不再显然）：
-   非测试代码里 `px4_rates_setpoint` 的调用点是 `nmpc/mpc_node.py`（填 `VehicleRatesSetpoint`）
-   与 `nmpc/preflight_check.py`（拿它当**默认实现**做符号 / 归一化的探针）—— 两处都还在 px4_msgs 路径上。
+   ☠️ **2026-10-13 更正（票 13 §四 落地后的现读值，⛔ 上面那半句今天为假）**：
+   非测试代码里 `px4_rates_setpoint` 的调用点**只剩 `nmpc/preflight_check.py` 一处**
+   （`:45` import；`:195` / `:226` 的**默认实现**形参、`:562` 的探针调用），它拿它做符号 / 归一化探针。
+   `nmpc/mpc_node.py` 已在票 13 §二 换到**另一个入口** `sign_map.mavros_attitude_target`
+   （现读值：`:712` 的悬停 setpoint 与 `:1065` 的主下发路径）。原文留存（⛔ 按旧载体读）：
+   ~~非测试代码里 `px4_rates_setpoint` 的调用点是 `nmpc/mpc_node.py`（填 `VehicleRatesSetpoint`）
+   与 `nmpc/preflight_check.py`（拿它当**默认实现**做符号 / 归一化的探针）—— 两处都还在 px4_msgs 路径上。~~
    `nmpc/offboard_smoke.py` 在 2026-10-12 换到了 mavros 路径
    （[`13`](../../.scratch/phase4/issues/13-mavros-downlink-switch.md) §三），它调的是**同一个模块的另一个入口**
    `mavros_attitude_target`（同为纯函数、同一个模块、**没有任何 ROS 依赖**）。

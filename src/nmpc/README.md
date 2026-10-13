@@ -11,7 +11,7 @@
 
 | 模块 | 干什么 | 有没有 ROS |
 |---|---|---|
-| `nmpc/sign_map.py` | ★ FLU → PX4 `VehicleRatesSetpoint` 的**唯一一份**实现 | **无** |
+| `nmpc/sign_map.py` | ★ FLU → 下行字段的**唯一一份**实现。☠️ **2026-10-13（票 13 收口轮）**：原写"→ PX4 `VehicleRatesSetpoint`"，**只写了两条路里的一条**；今天有**两个具名入口**：`px4_rates_setpoint`（→ `VehicleRatesSetpoint`，uXRCE-DDS 那条**已废**）与 `mavros_attitude_target`（→ `AttitudeTarget` 的 `body_rate` + `thrust`，**今天在用的那条**，`/mavros/setpoint_raw/attitude`）。口径以 [`nmpc/__init__.py`](nmpc/__init__.py) `:10` 为准 | **无** |
 | `nmpc/commands.py` | 参数化指令程序：时间 → `[推力, 角速率]`，无模型 / 无代价 / 无约束 | **无** |
 | `nmpc/params.py` | z0 的模型参数（实测值 / 占位值分栏写明） | **无** |
 | `nmpc/model.py` | 10 状态四旋翼模型（`ω` 不作状态）＋ 四元数工具 | **无** |
@@ -35,9 +35,15 @@
 "不许 import 任何具体消息包"目前是**写在这里的口径**，不是被断言守住的事实。
 
 ★ **`ocp` 与 `sign_map` 的分界不许模糊**：`ocp` 出的 `u` 是 **MPC（模型预测控制）内部的 FLU 量**；
-把它变成 PX4 的 `VehicleRatesSetpoint`（roll 不变 / pitch 取反 / yaw 取反 / `thrust_body` 归一化）
-是 `sign_map` 的事。`ocp.py` 里**没有一行**涉及 `roll`/`pitch`/`yaw`/`thrust_body` —— 混在一起，
+把它变成下行字段是 `sign_map` 的事。`ocp.py` 里**没有一行**涉及那些字段名 —— 混在一起，
 "符号错了"和"模型解错了"就再也分不开了。
+
+☠️ **2026-10-13（票 13 收口轮）**：上面那个括注（"`VehicleRatesSetpoint`（roll 不变 / pitch 取反 / yaw 取反 /
+`thrust_body` 归一化）"）**只描述了已废的那条路**。今天在用的是 `mavros_attitude_target`，
+它**一个字都不转**（FLU 原样交出去，`body_rate` 的 FLU→FRD 由 mavros 做），
+归一化写成 **`thrust = F / T_max`（正号 `0…1`，负号由飞控加）**。
+⟹ **两条路的字段名与符号规则不同**，细节见 [`docs/control/sign-map.md`](../../docs/control/sign-map.md) §2.2 / §2.3
+与 [`mpc-node-seam1.md`](../../docs/control/mpc-node-seam1.md) §N1。⛔ 别把这两套规则混着读。
 
 ## ★ 数值权威不在本包里
 

@@ -60,7 +60,7 @@
 | **Offboard 模式** | PX4 的一种飞行模式，控制指令由机载电脑（而非遥控器）给出。 |
 | **外环 / 内环** | 外环处理位置与姿态，带宽低；内环处理角速率，带宽高。本项目 **模型预测控制在外环（100 Hz），PX4 角速率环在内环（1 kHz）**。 |
 | **CTBR** | **Collective Thrust + Body Rate**。控制器输出"总推力 + 机体三轴角速率期望值"的形式。**是 `agilicious` 与 `px4-mpc` 共同采用的下发口径**，也是本项目 `(C)` 方案的形式。 |
-| **`(C)` 方案** | 本项目对"模型预测控制输出形态"的编号，指 **模型预测控制 → `VehicleRatesSetpoint`（ω + 推力）→ PX4 角速率环**。编号 `(A)(B)(C)(D)` 的定义见 `docs/control/mpc-roadmap.md`。 |
+| **`(C)` 方案** | 本项目对"模型预测控制输出形态"的编号：**模型预测控制输出「角速率 + 推力」，PX4 只跑角速率环 + 混控**。编号 `(A)(B)(C)(D)` 的定义见 [`docs/control/mpc-roadmap.md`](docs/control/mpc-roadmap.md)。<br>☠️ **2026-10-13（票 13 收口轮）**：原写"→ `VehicleRatesSetpoint`（ω + 推力）→" —— 那是**消息类型**，不是方案的定义，而且**已不是本项目的载体**（实机走 **mavros 的 `/mavros/setpoint_raw/attitude`**：`body_rate.x/y/z` + 标量 `thrust`；`VehicleRatesSetpoint` / uXRCE-DDS 那条路自 2026-10-13 起废）。⟹ **方案没变，载体变了**；引用本词条时"`(C)`"= **输出形态**，⛔ 别当成某条具体话题。 |
 | **INDI** | **Incremental Nonlinear Dynamic Inversion**，增量式非线性动态逆。**不依赖精确模型**的内环控制方法（用当前角加速度与操纵效能矩阵做增量更新），可替代 PID 做角速率跟踪。 |
 | **几何控制 (geometric control)** | 在 SO(3) 流形上直接设计姿态控制的非线性方法。是 `agilicious` 的控制器之一。 |
 | **NMPC** | 非线性模型预测控制（区别于线性模型预测控制）。 |
@@ -111,7 +111,7 @@
 | **外部位姿 (external vision, EV)** | 由机外系统（动捕/VIO）提供的位姿，经 MAVLink 送入飞控。 |
 | **`VISION_POSITION_ESTIMATE`** | 唯一能被 **EKF2** 使用的动捕位姿消息之一（另一个是 `MAV_FRAME_LOCAL_FRD` 的 `ODOMETRY`）。 |
 | **`ATT_POS_MOCAP`** | 另一条动捕消息，**只对 LPE 有效，EKF2 不使用**。网上大量教程误用它。 |
-| **uXRCE-DDS** | PX4 v1.14+ 的默认 ROS2 中间件。话题前缀 `/fmu/in/...` 与 `/fmu/out/...`。 |
+| **uXRCE-DDS** | PX4 v1.14+ 的默认 ROS2 中间件。话题前缀 `/fmu/in/...` 与 `/fmu/out/...`。☠️ **2026-10-13（票 13 收口轮）：本项目已不用它** —— z0 上这条链不通（`UXRCE_DDS_CFG = 0` + 无空闲串口可分），(C) 级下行 2026-10-12 定成走 **mavros**。本词条此后只用于读**别人**的文档 / 代码。见 [`px4-interface.md`](docs/reference/px4-interface.md) §4.3。 |
 | **mavros** | MAVLink 的 ROS 封装。ROS1/ROS2 均有。本项目动捕链路使用它。 |
 | **`px4_ros_com`** | PX4 旧版 ROS2 桥（FastRTPS），**v1.14 起已废弃**，现仅作为示例保留。 |
 

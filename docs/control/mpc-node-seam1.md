@@ -11,7 +11,10 @@
 1. **`seam 1` = "话题上出现了什么"。** 本层的断言只看外部可观测的东西（话题、QoS、时间戳、
    进程退出码），**不 import 节点的类、不读它的成员**。代价：几条验收项在这一层**量不了**
    （§5、§3 各有一条），那几条写成"为什么量不了"的一手结论，**不写成恒绿的假测试**。
-2. **心跳（`offboard_control_mode`）必须无条件发。** 票面那条"未解锁 / 未在 offboard 时
+2. ☠️ **2026-10-13（票 13 收口轮）：这一条已作废 —— 心跳那条流 2026-10-12 整条删掉了**（票 13 §二①④）。
+   换到 mavros 后 **setpoint 自己就是心跳**（mavros 的 `setpoint_raw` 插件替我们维持 OFFBOARD 需求），
+   没有独立的 `offboard_control_mode` 可发 ⟹ 原文描述的"把心跳也闸掉 = 死锁"那个场景**不存在了**。
+   原文留存（⛔ 按旧载体读）：**心跳（`offboard_control_mode`）必须无条件发。** 票面那条"未解锁 / 未在 offboard 时
    **不发布**"读的是**不发指令（setpoint）**；把心跳也闸掉就是**死锁**：不发心跳 ⟹ 进不去
    OFFBOARD ⟹ 闸门永不开。依据见 §2.2（源码路径 + 行号）。
 3. **饱和必须表现为"打满"**（`|pitch|` 顶在 `PITCH_RATE_MAX` 上），节点里**刻意没有 `clip()`**
@@ -293,7 +296,7 @@ ros2 run nmpc preflight_check.py -p mass:=0.82 -p hover_thrust:=0.55   # 与节�
 
 ## 8. 台架纪律（**都是踩过的**）
 
-1. **别并发跑、别把 DUT 落在后台。** DUT 的话题名是**全固定**的（`/fmu/in/*`），ROS 域默认 73 也是
+1. **别并发跑、别把 DUT 落在后台。** DUT 的话题名是**全固定**的（☠️ **2026-10-13（票 13 收口轮）：原来是 `/fmu/in/*`，现在是 mavros 侧那几条 —— `/mavros/setpoint_raw/attitude` + `/mavros/state`；"话题名固定"这条性质没变**），ROS 域默认 73 也是
    固定的 ⟹ 任何一个"上次没杀干净的 `mpc_node`"都会和用例**同时**往同两条话题上发（症状：帧数对不上/
    频率翻倍），还共用 `$MPC_CODEGEN_DIR`（两个进程同时判"要重新生成"会撞出与代码无关的
    `RuntimeError: Rendering of model.in.h failed!`）。收工前 `pgrep -af mpc_node` 看一眼；

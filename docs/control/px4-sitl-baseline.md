@@ -114,6 +114,14 @@ FAILED! The following message types were not found in one of the repositories:
 
 ★ **类型名解析得出来**，说明 `px4_msgs` 与 PX4 侧对得上（不只是"话题名撞上了"）。
 
+> ☠️ **2026-10-13（票 13 收口轮）**：上面那段转录**一个字不改**（它是当时那次 SITL 的一手留痕），
+> 但里面 `:111` 的脚注「**← Phase 2 靠它**」**今天为假** —— (C) 级下行改走
+> **`/mavros/setpoint_raw/attitude`**（[`13`](../../.scratch/phase4/issues/13-mavros-downlink-switch.md)、
+> [`px4-interface.md`](../reference/px4-interface.md) §4.3）；`/fmu/in/vehicle_rates_setpoint` 那条路已废。
+> 同一段里 `:110` 的 `offboard_control_mode`（"心跳"）也**整条删除**了（换载体后 setpoint 自己就是心跳）。
+> ⚠️ 顺带说清：**`px4_msgs` 这个包本身仍然要用**（`src/bench` 的假 PX4 夹具照旧 import 它，
+> 那是刻意的双载体），死的是"用它当 (C) 级下行载体"这件事。
+
 再加一条**数据真的在流**的证据（用显式 `BEST_EFFORT` 订阅，这本身就是 `phase2-implementation.md`
 §6.4 那个坑的现场演示）：
 
@@ -201,6 +209,13 @@ python3 tools/px4-sitl/check_msg_compat.py \
 `colcon build` 在 **`~/px4_msgs_ws`**，**不是本仓库**。`~/px4_msgs_ws` 是**下位工作区**：
 Phase 2 的节点（在本仓库的 `src/`，colcon 根 = 仓库根）用到 `px4_msgs` 时，
 **先 source `~/px4_msgs_ws/install/setup.bash` 再在本仓库 `colcon build`**。
+
+> ☠️ **2026-10-13（票 13 收口轮）**：上面这条**操作步骤仍然有效**（`src/bench` 照旧 import `px4_msgs`；
+> 现读值：`src/bench/bench/fake_px4.py:46`、`src/bench/test/test_fake_px4_selftest.py:18`），
+> 但**括注里那个前提今天不成立了** —— `src/nmpc` 已经**一个 `px4_msgs` 的 import 都没有**
+> （`mpc_node.py` 现读值：`from mavros_msgs.msg import AttitudeTarget, PositionTarget, State`，`:267`；
+> `git grep -n '^\s*\(from\|import\)\s\+px4_msgs' -- src/` 今天只命中 `src/bench` 那两处）。
+> ⛔ 别再把"Phase 2 的节点用到 `px4_msgs`"当成 source 顺序的理由 —— 真正的理由现在是**夹具**。
 
 > ⚠️ **这个落点是本张取的默认、可由 [ticket 06](../../.scratch/phase2/issues/06-mpc-node-fake-px4-fixture.md) 改口径**：
 > 也可以把 `px4_msgs` 作为包放进本仓库工作区。之所以不放：`px4_msgs` 是上游大包，

@@ -134,6 +134,12 @@ constexpr double TIME_KEEP_C          = 3.0;   // 上述两条须保持 3 s
 z0 的 Phase 2/3 走 uXRCE-DDS（`VehicleRatesSetpoint`），**不复用这条路径**，但**`type_mask` 这个
 「同一消息、掩码切换语义」的设计值得借鉴**。
 
+> ☠️ **2026-10-13（票 13 收口轮）：上面这两句今天整个反过来。** z0 的 Phase 2 **不再走 uXRCE-DDS**，
+> 它的 (C) 级下行**就是走表里这一条**：`AttitudeTarget` + `type_mask = 128`（`IGNORE_ATTITUDE`）= 只给 `body_rate`，
+> 也就是 `publish_bodyrate_ctrl` 那一行（[`13`](../../.scratch/phase4/issues/13-mavros-downlink-switch.md)、
+> [`px4-interface.md`](px4-interface.md) §4.3）。⟹ 不是"借鉴这个设计"，而是**就是它**。
+> ⚠️ 本页 §3 那张表本身（消息、掩码、哪一级）**逐项仍然正确**，作废的只是"z0 不复用它"这句。
+
 ---
 
 ## 4. ★ 三处死代码 / 陷阱（第一手确认）

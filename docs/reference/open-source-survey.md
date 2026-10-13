@@ -670,6 +670,10 @@ MC_ROLLRATE_K 0.35  MC_PITCHRATE_K 0.4  MC_YAWRATE_K 1.2  MC_YAWRATE_MAX 360
    **⟹ 缺陷描述对上游 `boards/hkust/nxt-dual` 成立（上游 v1.16.0 才修），对 z0 不适用（已修好）** —— 不是"运气好没中招"。见 §9.5。
 
 3. **✅ 架构解耦是对的。** `(C)` 级 `VehicleRatesSetpoint` 在 PX4 文档里标注"**所需状态估计：none**"——模型预测控制链路完全不依赖飞控定位，与"动捕→EKF2"安全网链路可**独立调试、独立失败**。agilicious 的 `guard` 模块用同样思路（独立 pipeline + 3D 边界）做了三年。见 §2 与 [`px4-interface.md`](px4-interface.md) 3.1。
+   ☠️ **2026-10-13（票 13 收口轮）**：这条结论**一个字都不变**（"none"这一格是本项目最重要的架构洞察）。
+   只有一处措辞要跟上载体：**"`(C)` 级"指的是输出形态（角速率 + 推力），不是某个消息名** ——
+   本项目 2026-10-12 起的载体是 mavros 的 `/mavros/setpoint_raw/attitude`（`AttitudeTarget`），
+   `VehicleRatesSetpoint` 只是 PX4 那边的同类消息（[`px4-interface.md`](px4-interface.md) §4.3）。
 
 ### 10.4 下一步
 

@@ -29,7 +29,7 @@
 |---|---|---|---|---|
 | **(A)** | 位置 / 速度 | **整个内环**（姿态 + 角速率） | `TrajectorySetpoint` | ✅ 需要 |
 | **(B)** | 姿态 + 推力 | 角速率环 | `VehicleAttitudeSetpoint` | ❌ 不需要 |
-| **(C)** ★ | **角速率 + 推力** | **仅角速率环** | `VehicleRatesSetpoint` | ❌ 不需要 |
+| **(C)** ★ | **角速率 + 推力** | **仅角速率环** | `VehicleRatesSetpoint`<br>☠️ **2026-10-13**：本项目今天经 mavros 的 `AttitudeTarget` 发**同一组量**（`body_rate` + 标量 `thrust`）—— **这一格是"消息类型"，不是方案的定义** | ❌ 不需要 |
 | **(D)** | 电机指令 | **无**（绕过控制分配） | `ActuatorMotors` | ❌ 不需要 |
 
 ### 1.1 逐项评估
@@ -120,7 +120,7 @@ PX4 官方 Offboard 文档明确标注：**attitude / body_rate / thrust_and_tor
 
 ```
 步骤 1 ─────────────────────────────────────────────────────────
-   模型预测控制 ──ω_des, T_des──uXRCE-DDS──▶ PX4 角速率环 ──DShot──▶ 电机
+   模型预测控制 ──ω_des, T_des──mavros──▶ PX4 角速率环 ──DShot──▶ 电机
    ✅ 改动最小，最快能飞
    ⚠️ 内环是 PX4 的 PID，带宽与模型不匹配
 
@@ -134,6 +134,8 @@ PX4 官方 Offboard 文档明确标注：**attitude / body_rate / thrust_and_tor
    ✅ 完全掌握执行机构
    ⚠️ 失去 PX4 的分配器与安全网
 ```
+
+☠️ **2026-10-13**：上面步骤 1 那条箭头原写 `──uXRCE-DDS──▶`，**已就地改成 `──mavros──▶`**（(C) 级下行今天走 `/mavros/setpoint_raw/attitude`；见 [`../reference/px4-interface.md`](../reference/px4-interface.md) §4.3）。
 
 ### 3.1 为什么 INDI 是这个项目的自然选择
 
@@ -294,7 +296,7 @@ nlp   = SQP_RTI           ← 实时迭代：每周期只做一次 SQP，延迟�
 >
 > - **第 2 问作废**：本项目 **MPC（模型预测控制）内部世界系就是 ENU**，状态源直接取 `/mocap/pose_enu`，
 >   **输入侧零转换**。原文的"交换 x/y 并翻转 z"是 **ENU→NED** 的做法 —— 那是我们**不做**的那一步。
-> - **第 1 问要分两侧**：`ω_des` **在本项目内部是 FLU**；推进 `VehicleRatesSetpoint` 的
+> - **第 1 问要分两侧**：`ω_des` **在本项目内部是 FLU**；推进 ☠️ **下行消息**（2026-10-13：今天经 mavros 的 `AttitudeTarget`，原写 `VehicleRatesSetpoint`）的
 >   `roll/pitch/yaw` 时才是 **FRD**。两侧之间只有符号翻转（`sign-map.md` §2），不是同一组数。
 > - **第 3 问仍然对，但它说的是 PX4 那一侧**：FRD 下推力朝上为 **−z**，
 >   归一化后 `thrust_body[2] ∈ [−1, 0]` —— 与 `sign-map.md` §2/§6 同义。
@@ -303,7 +305,7 @@ nlp   = SQP_RTI           ← 实时迭代：每周期只做一次 SQP，延迟�
 
 | 坐标系 | 约定 | 用在哪 |
 |---|---|---|
-| **PX4 机体系** | **FRD**：x 前 / y 右 / **z 下** | `VehicleRatesSetpoint` 的 roll/pitch/yaw |
+| **PX4 机体系** | **FRD**：x 前 / y 右 / **z 下** | ☠️ **下行消息**的 roll/pitch/yaw（2026-10-13：今天经 mavros 的 `AttitudeTarget`，原写 `VehicleRatesSetpoint`） |
 | **PX4 世界系** | **NED**：北-东-**地** | PX4 状态话题 |
 | **ROS / 动捕** | **ENU**：东-北-**天** | `PoseStamped`、mavros vision_pose |
 | **MPC（模型预测控制）内部** | **ENU / FLU**（[phase2-implementation.md](phase2-implementation.md) §3.2 决议） | 模型预测控制的状态、`ω`、推力 `F` —— **与上面三行都不同** |
@@ -324,7 +326,7 @@ nlp   = SQP_RTI           ← 实时迭代：每周期只做一次 SQP，延迟�
 | 环节 | 预算 |
 |---|---|
 | 模型预测控制求解（目标） | **≤ 10 ms**（100 Hz） |
-| uXRCE-DDS 传输 | ~1 ms |
+| ~~uXRCE-DDS 传输~~ **mavros/DDS 传输** ☠️ **2026-10-13**：载体换 mavros，**这个数未重测**（原值按 uXRCE-DDS 记） | ~1 ms |
 | PX4 角速率环 | 1 ms（1 kHz） |
 | **动捕链路延迟** | **50 ms（实测）** ← 主要矛盾 |
 | **动捕时间戳抖动** | ✅ **~2–5 ms**（可忽略） |
@@ -384,7 +386,7 @@ nlp   = SQP_RTI           ← 实时迭代：每周期只做一次 SQP，延迟�
 | **D1** | `(A)/(B)/(C)/(D)` 选哪个 | **(C)** | 四条论据是否成立；是否接受"MPC 不碰混控" |
 | **D2** | `(D)` 何时做 | **第二阶段**，`(C)+INDI` 稳定之后 | 是否能接受失去 PX4 安全网 |
 | **D3** | INDI 是否第一版就做 | **否**，作为步骤 2 | `Sun2022` 的 78 % 提升是否值得提前投入 |
-| **D4** | 中间件：混合 vs 全 mavros | **混合**（uXRCE-DDS 发指令 + mavros 收动捕） | 是否能接受两个中间件 |
+| **D4** | 中间件：混合 vs 全 mavros | ☠️ **2026-10-13 结掉：全 mavros**（原写"**混合**（uXRCE-DDS 发指令 + mavros 收动捕）"）—— uXRCE-DDS **最终没上**，见 [`../reference/px4-interface.md`](../reference/px4-interface.md) §4.3 | 是否能接受两个中间件 |
 | **D5** | `T_max` 取值 | ✅ **已定：按电池（11.8 N 保守端）** | 已定；是否换高 C 电池见 [`phase2-implementation.md`](phase2-implementation.md) §9 O6 |
 | **D6** | 模型预测控制频率 | **100 Hz** | 取决于 Jetson 实测的最坏耗时 |
 | **D7** | 模型预测控制内部世界系用什么 | ✅ **已定：ENU/FLU**（**改本表的原倾向**） | 依据 = `Sun2022` §III.A + `Foehn2022` §D.1 的坐标系，见 [`phase2-implementation.md`](phase2-implementation.md) §3.2 |

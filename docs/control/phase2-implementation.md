@@ -16,9 +16,9 @@
 
 ## 0. 先读这一段：Phase 2 的三个"一句话"
 
-1. **Phase 2 = 模型预测控制输出「角速率 + 推力」，PX4 只跑角速率环 + 混控。** 消息是 `/fmu/in/vehicle_rates_setpoint`（uXRCE-DDS），**不是** mavros。这是 `(C)` 级。
+1. **Phase 2 = 模型预测控制输出「角速率 + 推力」，PX4 只跑角速率环 + 混控。** 这是 `(C)` 级。<br>☠️ **2026-10-13（票 13 收口轮）：本句原文是"消息是 `/fmu/in/vehicle_rates_setpoint`（uXRCE-DDS），**不是** mavros" —— 这半句**今天整个反过来**：`(C)` 级下行走的**就是 mavros**（`/mavros/setpoint_raw/attitude`，`body_rate` + 标量 `thrust`），**不是** uXRCE-DDS。** 定义不变、载体变了；定案与起因见 [`../reference/px4-interface.md`](../reference/px4-interface.md) §4.3。
 2. **代码骨架取 [`DISCOWER/px4-mpc`](https://github.com/DISCOWER/px4-mpc)**（BSD 3-Clause，可自由改）。但它是为 x500 写的，有 **6 处必须改**（§2.5），其中 2 处改错会直接摔机。
-3. **Phase 2 引入 4 个新东西**：acados 求解器、uXRCE-DDS 中间件、模型预测控制节点、`px4_msgs` 版本绑定。**它们在 SITL 里全部跑通之前，实机一行都不许上。**
+3. **Phase 2 引入 4 个新东西**：acados 求解器、~~uXRCE-DDS 中间件~~、模型预测控制节点、`px4_msgs` 版本绑定。**它们在 SITL 里全部跑通之前，实机一行都不许上。**<br>☠️ **2026-10-13**：第 2 个（uXRCE-DDS 中间件）**最终没有引入**（(C) 级下行改走 mavros，见 [`../reference/px4-interface.md`](../reference/px4-interface.md) §4.3）⟹ 这份清单实为 **3 个**。
 
 ---
 
@@ -27,7 +27,7 @@
 | # | 决策 | 结论 | 依据 |
 |---|---|---|---|
 | G1 | 控制层级 | **`(C)` 角速率 + 推力** | roadmap §2 四条论据 |
-| G2 | 中间件 | **混合**：mavros2 收动捕 / uXRCE-DDS 发指令 | 用户 Q7：「Phase 1 全走 mavros2，uXRCE-DDS 推迟到 Phase 2」 |
+| G2 | 中间件 | ☠️ **2026-10-13 改判：全 mavros**（原写"**混合**：mavros2 收动捕 / uXRCE-DDS 发指令"）—— uXRCE-DDS **最终没上**，见 [`../reference/px4-interface.md`](../reference/px4-interface.md) §4.3 | 用户 Q7：「Phase 1 全走 mavros2，uXRCE-DDS 推迟到 Phase 2」☠️ **推迟到了，最终没上** |
 | G3 | 模型预测控制状态输入 | **动捕直出**（不经 EKF2） | 用户 Q9 + roadmap D8；延迟更低 |
 | G4 | 求解器 | **acados** + `SQP_RTI` + `PARTIAL_CONDENSING_HPIPM` | roadmap §4.5，与 px4-mpc 一致 |
 | G5 | 代码骨架 | **`DISCOWER/px4-mpc`**（复制改造，不引依赖） | 第一手读过三个核心文件，见 §2 |
@@ -232,7 +232,7 @@ if status != 0:
     raise Exception(f'acados returned status {status}.')
 ```
 
-在 SITL 里这是好习惯；**在天上这是让节点崩掉**。节点一崩，`OffboardControlMode` 心跳停发 → PX4 触发 offboard 丢失失效保护。**必须有兜底**：求解失败时保持上一帧的可行指令（或切到悬停推力 + 零角速率），并计数上报。
+在 SITL 里这是好习惯；**在天上这是让节点崩掉**。节点一崩，~~`OffboardControlMode` 心跳~~ **下行 setpoint**停发 → PX4 触发 offboard 丢失失效保护。☠️ **2026-10-13**：换到 mavros 后**没有独立心跳流了**（**setpoint 自己就是心跳**）⟹ 机理换了名字、结论不变（见 [`../reference/px4-interface.md`](../reference/px4-interface.md) §4.3）。**必须有兜底**：求解失败时保持上一帧的可行指令（或切到悬停推力 + 零角速率），并计数上报。
 
 #### 坑 3 ★ NaN 会**穿透推力通道**
 
@@ -311,6 +311,8 @@ ubu = np.array([+Fmax,     wmax,       wmax,      +0.5*wmax])
 
 > ✅ **落地状态（2026-09-28，ticket 06 —— 节点侧 M7–M9）** —— 逐条的**落地位置 + 一手依据**：
 >
+> ☠️ **2026-10-13（票 13 收口轮）**：下表 **M7 / M8 两行里的闸门话题 `/fmu/out/vehicle_status` 已作废** —— 今天 `TOPIC_STATUS` = **`/mavros/state`**（票 13 §二③），节点也不再发任何 `/fmu/in/*`；行号随之整体平移，⛔ 别照抄。见 [`../reference/px4-interface.md`](../reference/px4-interface.md) §4.3。
+>
 > | 编号 | 落地位置 | 一手依据 |
 > |---|---|---|
 > | **M7** | `mpc_node.py:284-287` 只订阅 `/mocap/pose_enu`（`geometry_msgs/PoseStamped`）+ `/fmu/out/vehicle_status`；状态由 `node_core.pose_to_state` 直接组装，**没有一行坐标系转换** | `/mocap/pose_enu` 是 `mocap_rel_pose_node.cpp:110` 用 `QoS(10)` 发的 **ENU/FLU**（节点里的引文见 `mpc_node.py:155-158`）⟹ §2.3(a) 那段手写 NED→ENU 四元数变换**整段删掉**。测试：`test_mpc_node.py::test_接口与_QoS_与票面一致`（夹具的动捕源上有订阅者）、`test_node_core.py::test_pose_to_state_不做任何坐标系转换` |
@@ -351,7 +353,7 @@ ubu = np.array([+Fmax,     wmax,       wmax,      +0.5*wmax])
 |---|---|---|
 | `skew_symmetric(q)`、`v_dot_q`、`q_to_rot_mat` | `models/multirotor_rate_model.py` | 四元数工具，是对的，省去自己推导 |
 | OCP 装配骨架（`AcadosOcp` → `NONLINEAR_LS` → `SQP_RTI` → ERK 4/3） | `controllers/multirotor_rate_mpc.py` | 与 roadmap §4.5 完全一致 |
-| `OffboardControlMode` 心跳（`body_rate=True`，其余 False，50 Hz） | `mpc_quadrotor.py` | 照抄 |
+| ☠️ ~~`OffboardControlMode` 心跳（`body_rate=True`，其余 False，50 Hz）~~ **已删除**（2026-10-13，票 13 §二①：换到 mavros 后**不需要我们发心跳**） | `mpc_quadrotor.py` | ⛔ 这一行**今天无从"照抄"** |
 | QoS 设置：pub `BEST_EFFORT + TRANSIENT_LOCAL + depth 1`，sub `BEST_EFFORT + VOLATILE + depth 1` | `mpc_quadrotor.py` | ⚠️ **用默认 RELIABLE QoS 会静默收不到 PX4 话题** —— 见 §6.4 |
 | 预测轨迹 `Path` + 参考点 `Marker` 发布 | `mpc_quadrotor.py` | RViz 里肉眼验证模型预测控制是否发疯，实飞前极有用 |
 
@@ -366,7 +368,7 @@ ubu = np.array([+Fmax,     wmax,       wmax,      +0.5*wmax])
 | **D1** | `(A)/(B)/(C)/(D)` | ✅ **已定** | **`(C)`** —— 见 G1 |
 | **D2** | `(D)` 何时做 | ✅ **已定** | `(C)+INDI` 稳定之后，本项目范围外 |
 | **D3** | INDI 是否第一版就做 | ✅ **已定** | **否**，作为步骤 2（G8） |
-| **D4** | 中间件 | ✅ **已定** | **混合**：uXRCE-DDS 发指令 + mavros2 收动捕（G2） |
+| **D4** | 中间件 | ✅ **已定** | ☠️ **2026-10-13 改判：全 mavros**（原写"**混合**：uXRCE-DDS 发指令 + mavros2 收动捕（G2）"）—— 见 G2 与 [`../reference/px4-interface.md`](../reference/px4-interface.md) §4.3 |
 | **D5** | `T_max` 取值 | ✅ **2026-09-29 解耦后已定**：原裁定「**按电池**（11.8 N）」**保留**，但只作用于 **`F` 上限这一个角色**（`Z0Params.f_max`）；**归一化**那侧改由 P1 的实测值导出（`m·g/hover_thrust` = 46.3 N，满电口径）。★ 两者共用一个常数的时代结束（那时回填会把 `F` 上限抬到 46.3 N）。⚠️ 电池"瓶颈"的实质是**可持续电流**（15 A），不是推力归一化 —— 见 §3.3.3 与 §3.3.4 的两层表 |
 | **D6** | 模型预测控制频率 | ✅ **已定：100 Hz** | ✅ **2026-09-28 实测**（ticket 04，[`offline-ocp.md`](offline-ocp.md) §5、`python3 -m nmpc.timing --runs 1000 --cpu 4`）：**纯求解 max 3.58 ms**（三轮 3.447 / 3.584 / 3.447，取最大）、整周期 median 3.9 / p99 4.7 ms ⟹ 保 100 Hz（余量 2.8×）。⚠️ **判定只覆盖"求解器"那一列**：整周期墙钟出现过 **1/1000 次的 52–56 ms 抢占**（同拍求解只用 3.4 ms），**它越过了本行"最坏 >20 ms"那条线** —— 保留 100 Hz 是"差值是被调度出去而非求解开销"的**有理由的例外，不是满足了判据**。要真闭环在 100 Hz 上，节点侧得绑核/定优先级（归 ticket 06/07）。原验收线（≤10 ms 保 100 Hz；10–20 ms 降 50 Hz；>20 ms 停下优化）**继续作为复测判据**。★ **闭环复测（2026-09-28，ticket 09，z0 同构 SITL 真 PX4）**：空机稳态最坏 **3.995 ms** ⟹ **100 Hz 复现**（冷启动 15.956 ms 落在 `warmup` 闸门里，有专门判据盯着）；⚠️ **同一份二进制、机上多跑几个进程**时稳态最坏就变成 **11.297 ms**（⟹ 50 Hz 档）⟹ 这条判据**带"机上别跑别的东西"这个前提**，Phase 4 定实机频率必须把 Jetson 上还跑着什么算进去。另：逐拍间隔最坏的 82–93 ms 与上面那条"1/1000 次 52–56 ms 抢占"**同源**（同拍求解只用 3–4 ms）。数字与判据见 [`tier-a-sitl-hover.md`](tier-a-sitl-hover.md) §5 |
 | **D7** | 模型预测控制内部世界系 | ✅ **已定** | **ENU/FLU**（世界 z 朝上 + 机体 x 前 / z 沿推力）—— **用户选定「参考论文里的坐标系」，两篇论文一致**，见 §3.2 |
@@ -596,7 +598,7 @@ Mooch 15 A），同一张表的结论**完全不同**：
 ⚠️ **两点必须说清楚（否则上面那张表会被误用）**：
 
 1. **`MPC_TILTMAX_AIR` 不在本项目的通路上。** 它是 PX4 **位置控制器**的参数（缩写撞脸，
-   与模型预测控制无关）。本项目的节点发的是 `offboard_control_mode.body_rate = True`（`mpc_node.py`），
+   与模型预测控制无关）。☠️ **2026-10-13**：本句原文写"本项目的节点发的是 `offboard_control_mode.body_rate = True`（`mpc_node.py`）"—— **换到 mavros 后那条心跳流已删**（票 13 §二①），今天走 `/mavros/setpoint_raw/attitude` 的 `body_rate` 字段，PX4 侧同样只置 `flag_control_rates_enabled` **⟹ 本条结论不变**。原文留存：本项目的节点发的是 `offboard_control_mode.body_rate = True`（`mpc_node.py`），
    按 `commander/ModeUtil/control_mode.cpp:144-146` 只置 `flag_control_rates_enabled`，
    于是 `:169-175` 把 `flag_multicopter_position_control_enabled` 判为 **false**
    ⟹ **位置控制器（含它的倾角限幅）根本不参与**。所以 45° 这个数**不代表**模型预测控制被限制在 45°。
@@ -745,11 +747,13 @@ Mooch 15 A），同一张表的结论**完全不同**：
            符号映射（权威：sign-map.md §2）⟹ roll / pitch / yaw / thrust_body[2]
                         │
                         ▼
-              /fmu/in/vehicle_rates_setpoint  (uXRCE-DDS)  +  /fmu/in/offboard_control_mode
+              /mavros/setpoint_raw/attitude  (body_rate + thrust)
                         │
                         ▼
                      PX4 角速率环 (1 kHz) ──> 混控 ──> 电机
 ```
+
+☠️ **2026-10-13**：上面那张图里那行**原写** `/fmu/in/vehicle_rates_setpoint  (uXRCE-DDS)  +  /fmu/in/offboard_control_mode`，**已就地改成 mavros 那条**。(C) 级下行 = `/mavros/setpoint_raw/attitude`（`body_rate` + 标量 `thrust`），独立心跳流**已删除**（见 [`../reference/px4-interface.md`](../reference/px4-interface.md) §4.3）。
 
 **注意 Phase 2 是「加一条支路」，不是「替换」**：mavros2 那条链（`vision_pose` → EKF2 → `setpoint_raw/local`）
 **保持原样不动**，随时可以切回 Phase 1 的 `(A)` 级。
@@ -1262,7 +1266,7 @@ S1 环境 ──> S2 acados ──> S3 离线 OCP ──> S4 节点 ──> S5 S
 | `THR_MDL_FAC` 曲线**不涉及悬停推力**（只改「归一化推力 ↔ 电机信号」的形状，端点不动） | 同上 `src/lib/mixer_module/functions/FunctionMotors.hpp:77-101`：`rel_thrust = factor*x² + (1-factor)*x`，`x=1 → 1`；定义在 `src/lib/mixer_module/motor_params.c:73`（默认 `0.0f`） |
 | **`_hover_thrust` 在「加速度 → 推力」里只是个增益**，稳态推力由积分器逼到 `m·g` ⟹ 读数反映被控对象、不反映该参数 | PX4 `v1.14.3` `src/modules/mc_pos_control/PositionControl/PositionControl.cpp:210`：`collective_thrust = _acc_sp(2) * (_hover_thrust / CONSTANTS_ONE_G) - _hover_thrust;`；积分项 `:87`（累积）/`:143`（限幅 ±g） |
 | `MPC_USE_HTE = 1` 时位置控制器用的是 HTE ⟹ 它**不是独立口径**（且仅 `hte.valid` 时生效） | 同上 `src/modules/mc_pos_control/MulticopterPositionControl.cpp:361-368`：`if (_param_mpc_use_hte.get()) { ... if (hte.valid) { _control.updateHoverThrust(hte.hover_thrust); } }` |
-| 我们发 `body_rate` ⟹ PX4 **位置控制器（含倾角限幅）不在通路上** | `src/nmpc/nmpc/mpc_node.py` 设 `offboard_control_mode.body_rate = True`（其余 False）；PX4 `src/modules/commander/ModeUtil/control_mode.cpp:144-146`（`body_rate` ⟹ 只置 `flag_control_rates_enabled`）+ `:169-175`（只有 altitude/climb_rate/position/velocity/acceleration 之一才置 `flag_multicopter_position_control_enabled`）|
+| 我们发 `body_rate` ⟹ PX4 **位置控制器（含倾角限幅）不在通路上** | ☠️ **2026-10-13（票 13 收口轮）：结论不变，引证换了一处** —— 原来引的是 `mpc_node.py` 设 `offboard_control_mode.body_rate = True`，**那条流今天已删**；现在对应的是 `AttitudeTarget` 的 `type_mask = 128`（`IGNORE_ATTITUDE` ⟹ 只给 `body_rate`）。飞控侧那两条**照旧**：PX4 `src/modules/commander/ModeUtil/control_mode.cpp:144-146`（`body_rate` ⟹ 只置 `flag_control_rates_enabled`）+ `:169-175`（只有 altitude/climb_rate/position/velocity/acceleration 之一才置 `flag_multicopter_position_control_enabled`）|
 | 角速率有 NaN 回退、推力没有 | 同上，`PX4_ISFINITE(...)` 只出现在三行角速率上 |
 | `MC_BAT_SCALE_EN` 默认 **0（关闭）** | PX4 `v1.14.3` `src/modules/mc_rate_control/mc_rate_control_params.c`，`PARAM_DEFINE_INT32(MC_BAT_SCALE_EN, 0);` |
 | `gz_x500` 在 v1.14.3 存在 | `git ls-tree v1.14.3:ROMFS/px4fmu_common/init.d-posix/airframes` → `4001_gz_x500`（★ 但**存在 ≠ 本机可用**，见 §S1） |

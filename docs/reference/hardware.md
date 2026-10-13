@@ -70,7 +70,10 @@
 **对本项目的意义**：
 
 - **无磁罗盘** → 室内动捕飞行反而**更干净**（少一个噪声源、不用磁标定），但也意味着**yaw 必须靠动捕或外部参考**。
-- **7 路 UART 是关键**：本项目要同时接 遥控器接收机 + mavros 链路 + uXRCE-DDS 链路，`z0.params` 只用了 TELEM1/TELEM2，**有余量**（见 [`px4-interface.md`](px4-interface.md) 4.3）。
+- **7 路 UART 是关键**：本项目要同时接 遥控器接收机 + mavros 链路 ~~+ uXRCE-DDS 链路~~，`z0.params` 只用了 TELEM1/TELEM2，**有余量**（见 [`px4-interface.md`](px4-interface.md) 4.3）。
+  ☠️ **2026-10-13（票 13 收口轮）**：**uXRCE-DDS 那条链不接了** —— (C) 级下行 2026-10-12 定成走 **mavros**
+  （同一根 TELEM2/Onboard 串口，不额外占口）。⟹ 需要的 UART 数**比原来写的少一路**；
+  "有余量"这个结论不变（更宽了）。定案见 [`px4-interface.md`](px4-interface.md) §4.3。
 - **无以太网** → 机载电脑与飞控只能走串口（921600），不能走网口。
 
 ---

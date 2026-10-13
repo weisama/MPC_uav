@@ -17,6 +17,17 @@
 > 该条对比的前提已不存在。本页需要**在重搭后的机型上重飞**才能给出新读数（属 A 档重跑，不在 `04` 的范围内；
 > `04` 只做"标作废"，见 `04` 的验收项 4）。
 
+> ☠️ **2026-10-13（票 13 收口轮）：本页的载体与入口**（[`13`](../../.scratch/phase4/issues/13-mavros-downlink-switch.md)、
+> [`px4-interface.md`](../reference/px4-interface.md) §4.3）：
+> ① **指令面不再是 `VehicleRatesSetpoint`** —— (C) 级下行改走 mavros 的 `/mavros/setpoint_raw/attitude`
+> （`body_rate.x/y/z` + 标量 `thrust`；**方案不变**：我们仍只到角速率，舵机/电机分配还是 PX4 的）。
+> ② **更重的一条：A 档这一档在本阶段启动即拒。** 它读的 `/fmu/out/vehicle_local_position` +
+> `/fmu/out/vehicle_attitude` 随 uXRCE-DDS 一起没了；操作者 2026-10-12 裁定取 **(b) 判为 uXRCE-DDS 专用、
+> 本阶段不可用**，并在入口加显式拒绝（`mpc_node._validate`，`state_source=px4` 启动即退）。
+> ⟹ 本页描述的 `-p state_source:=px4` 那次运行，**按今天的代码起不来**；§1.1 表里"状态源 / 指令面"两行
+> 都已经是历史。⛔ **本页的读数与结论一个字不改**（它们是那次飞行的实测留痕，见上面那个基线块）；
+> 本页要不要按新载体重写 / 归档，**归 ticket 09 与操作者**，本轮的活儿只是**点出来**。
+
 对应票面验收项：[`../../.scratch/phase2/issues/09-sitl-tier-a-closed-loop.md`](../../.scratch/phase2/issues/09-sitl-tier-a-closed-loop.md)。
 
 ---

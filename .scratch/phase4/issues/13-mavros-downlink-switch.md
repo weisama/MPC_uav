@@ -1800,3 +1800,119 @@ timeout 40 ros2 launch bringup mavros.launch.py fcu_url:=/dev/ttyUSB99:921600
 **验证读数**：`run/tests` **`166 passed in 13.30s`**（改之前同一条命令是 `4 failed, 162 passed`
 —— 那 4 条正是上面说"逼出来的"那几条 + 一条写死命令的负控）。`src/nmpc/test` 与 `src/bench/test`
 本轮**没受影响**（这两处改动不在这两套的覆盖里），沿用第十节那份读数。
+
+---
+
+### 2026-10-13 —— 第十轮：`§一④` 清单里的**活文档回填**（那 ~20 个文件；**纯文档，零代码**）
+
+**这一轮为什么能做**：第七轮把 `§一④` 登记出来的 LIVE-C 行逐条分类后写明「**归属是操作者的裁定**，
+本轮只登记、不自行 promote」（`§七·五`）。**2026-10-13 操作者一句「现在改并收口」把归属裁给了本票**
+⟹ 第七轮 `§七·五` 那句"待裁定"**已解**，行随之落地。
+
+#### 一、统一口径（本轮 22 个文件都照这一条写）
+
+- **就地 ☠️ + 原文留存**，⛔ **不静默删**。标记串统一为 `☠️ **2026-10-13（票 13 收口轮）**`。
+- 指向**权威定案块** [`docs/reference/px4-interface.md`](../../../docs/reference/px4-interface.md) `§4.3`
+  （链接按各文件的相对位置换算），而不是各自复述一遍结论。
+- ★ **"方案没变、载体变了"这句话要在每一处写出来** —— 这批文档里绝大多数把 `(C)`
+  错钉在**消息名/话题名**上，而 `(C)` 的定义是**输出形态**（角速率 + 推力）。
+  只写"话题换了"会让人以为控制结构也换了。
+
+#### 二、改了什么（22 个文件，逐处点名 —— 排序就是可见性）
+
+| # | 文件 | ☠️ 处数 | 那一处的原文是 | 改后口径（要点） |
+|---|---|---|---|---|
+| 1 | `docs/control/safety-paths-drill.md` | **页级块 + 11** | `§1` 表 `(C)` 行、`MicroXRCEAgent`、"心跳一帧不少"、`ros2 topic hz` 命令块、`§3.2`"都发 `/fmu/in/vehicle_rates_setpoint`" | ★ 见下面 **§三** —— 这一页的处理方式与其余 21 个文件**不同** |
+| 2 | `docs/PROJECT.md` | 11 | 架构图标签、`body_rate → VehicleRatesSetpoint` 表、链路理由段、依赖表、(A)–(D) 方案表、`C→D` 演进图、里程碑 4、O6 | 全走 mavros；`UXRCE_DDS_CFG` **保持 `0`**；O6 结掉 |
+| 3 | `docs/reference/px4-interface.md` | 7 | **`§3.1/§3.2/§3.3`**（票面 `§一③` 落了 `§4.2/§4.3/§8`、**没落 `§3`**）＋弱 `§5`/`§6` | `§3.1` 的 `body_rate` 行、`§3.2` 的 `OffboardControlMode`/`VehicleRatesSetpoint` 两行、`§3.3` 心跳条 ＋ **`§3.3 条 2`（推力 `[-1,1]`）** 各就地 ☠️ |
+| 4 | `docs/control/mpc-node-seam1.md` | 16 | `§0 第 2 条`"心跳必须无条件发"、`§8 第 1 条`"话题名 `/fmu/in/*`" | 心跳那条流已删（setpoint 自己就是心跳）；话题名换 mavros 侧两条 |
+| 5 | `docs/control/phase2-implementation.md` | 10 | `§0` 那句"消息是 `/fmu/in/vehicle_rates_setpoint`（uXRCE-DDS），**不是** mavros"、"引入 4 个新东西"、G2/D4、架构图、`§5` 心跳机理、M7/M8 落地块、`§≈1269` 的 `body_rate` 引证 | ★ 其中 `§0` 那句是**原文最强的一处反向断言**（"**不是** mavros"）⟹ ☠️ 里明写"这半句今天整个反过来" |
+| 6 | `docs/control/phase1-implementation.md` | 6 | 附录表"中间件：mavros2 **+ uXRCE-DDS**"、H2 行、指导思想 | 没有 uXRCE-DDS 这一步 |
+| 7 | `docs/control/mpc-roadmap.md` | 6 | (A)–(D) 表钉 `VehicleRatesSetpoint`、`──uXRCE-DDS──▶` 演进图、`§9 D4` 待决、时延表那格 | 全 mavros；时延那格**未重测**（与 `px4-interface.md §6` 同一口径） |
+| 8 | `docs/control/sign-map.md` | 1＋**订正** | `§≈382`"非测试代码里 `px4_rates_setpoint` 的调用点是 `mpc_node.py` + `preflight_check.py`" | ★ 见下面 **§四(3)** —— 这处是**本轮唯一改了断言真伪**的地方 |
+| 9 | `docs/control/px4-sitl-baseline.md` | 2 | SITL `ros2 topic list` 转录后的"← Phase 2 靠它"脚注；"Phase 2 的节点用到 `px4_msgs` 时…" | 转录**一个字不改**；两条脚注/前提作废，并把"`px4_msgs` 今天只由 `src/bench` 与 `tools/px4-sitl` 用"写进去 |
+| 10 | `docs/control/tier-a-sitl-hover.md` | 1 块 | `§1.1` 的"状态源 `/fmu/out/*`" + "指令面 `VehicleRatesSetpoint`" | ★ 见下面 **§四(1)** |
+| 11 | `docs/control/tier-b-sitl-seam3.md` | 1 | `§1.1`"指令面两档相同：`VehicleRatesSetpoint`" | 指令面换 mavros；**A 档那半列塌了**（B 档本身照旧） |
+| 12 | `docs/control/mpc-node-traj-reference.md` | 1 | "（Phase 2 走 uXRCE-DDS，与 mavros 是两条并行下游）" | ★ 这句**今天整个反过来**：Phase 2 的 (C) 级**就走在 mavros 上**；但该条的**结论**（引 `mavros_msgs` ≠ 拉进 mavros 节点）**更强地成立** |
+| 13 | `docs/reference/params-analysis.md` | 3 | `§3.8`"必须改 `UXRCE_DDS_CFG`"、`§(f)`"Phase 2/3 的实际障碍"、`§…` 清单第 9 条 | 保持 `0` 是定案；`§(f)` 那三行事实**升级成了定案的依据** |
+| 14 | `docs/reference/params-changes.md` | 1 块 | `§E` 的 `E1`（`UXRCE_DDS_CFG` 建议"需开启"）＋ `E2` | `E1` 的建议值与阻塞**整条作废**；`E2` 那条已更正的线索**照旧成立**（只是无人再主张它反驳的对象） |
+| 15 | `docs/reference/refs-manifest.md` | 2 | "Phase 2/3 真正要发的 `VehicleRatesSetpoint` 恰好逐字节相同"；"(c) 第 3 项 uXRCE-DDS 留给 Phase 2" | ★ 见下面 **§四(4)** —— **不在** `§一④` 清单里，是本轮**宽搜法多出来的** |
+| 16 | `docs/reference/code-inventory.md` | 2 | `§A.3`"它发布 `/fmu/in/vehicle_rates_setpoint` —— 与本项目 (C) 方案完全一致"；"引入 uXRCE-DDS + acados + MPC 是三个新变量" | 分成"**方案一致 / 载体不一致**"两半读；新变量 3 → 2 |
+| 17 | `docs/reference/xi35-fsm.md` | 1 | "z0 的 Phase 2/3 走 uXRCE-DDS（`VehicleRatesSetpoint`），**不复用**这条路径" | ★ 与 12 同族，而且更硬：z0 **就是走**这张表里的 `publish_bodyrate_ctrl`（`type_mask = 128`）|
+| 18 | `docs/reference/hardware.md` | 1 | "要同时接 … + mavros 链路 + **uXRCE-DDS 链路**" | 那条链不接了（少占一路 UART） |
+| 19 | `docs/reference/open-source-survey.md` | 1 | `§10.3 第 3 条`"(C) 级 `VehicleRatesSetpoint` … 所需状态估计 none" | **结论一字不变**；只补"`(C)` 指输出形态" |
+| 20 | `src/nmpc/README.md` | 2 | 表里"`sign_map.py` = FLU → PX4 `VehicleRatesSetpoint` 的**唯一一份**实现"；"把它变成 PX4 的 `VehicleRatesSetpoint`" | ★ 见下面 **§四(2)** —— 与 `src/nmpc/nmpc/__init__.py:10` 的口径对齐 |
+| 21 | `CONTEXT.md` | 1 | 术语表 `uXRCE-DDS` 词条 | 加"本项目已不用它" |
+| 22 | `README.md` | 4 | 中间件行、Phase 2 `(C)` 级格、指导思想、"假 PX4（`/fmu/*`，Phase 2）"、依赖那段 | ★ 最后两处（`src/bench` 的去留）把**第八轮 (d) 的结论**（保留、只服务 SITL 链）回填进去 |
+
+#### 三、`safety-paths-drill.md`（**票 08 的产物**）为什么单独说
+
+**它不是"改几句话题名"能收的。** 该页成篇的判据建立在**一个今天已经不存在的前提**上
+（"XRCE 在 z0 上通不了 ⟹ (C) 级下行**不存在** ⟹ 那族判据今天做不了"）。换载体后**这个理由没有了**
+⟹ 那族判据要**重做一遍**，而**归属在票 08 与操作者**，不在本票。
+
+所以本轮对它是「**只点出来、不拿主意**」：
+
+- 页首加**页级 ☠️ 作废块**，明写本节以下**一律按旧载体读**；
+- 给出**逐处行号清单**（`§0 第 4 条 ＋ §2.1/§2.3/§2.4/§2.5/§2.6/§3.1 末/§3.2` 那一族）；
+- ★★ **比"话题名过时"更严重的一档**：换 mavros 后 **setpoint 自己就是心跳**
+  ⟹ `§2.3`（"停发 setpoint 触发不了这条"）与 `§2.1 不对称①` 的**方向可能反过来**。这一条**必须重判**，
+  因为"停发"从"只停指令"变成了"**连 OFFBOARD 需求一起停**"（票 `§二④` 的责任转移，见 `mpc_node.py` 的 ★★ 段）；
+- ⛔ **本轮没有替票 08 改任何一条判据的结论**。
+
+#### 四、★ 与票面 / 上一轮不同的地方（四处；每处都可被当场驳回）
+
+1. **`tier-a-sitl-hover.md`：不只是"指令面话题过时"。** `§一④` 清单把它归成 LIVE-C（`VehicleRatesSetpoint` 那半句），
+   但核代码后发现**更重的一条**：该页描述的 `-p state_source:=px4` 那次运行，**按今天的代码起不来** ——
+   `§二⑤` 已按操作者裁定取 **(b)**，`mpc_node._validate` 对 `state_source=px4` **启动即退**（`mpc_node.py:385-391`）。
+   ⟹ 该页 `§1.1` 的"状态源"与"指令面"**两行都已是历史**。本轮的 ☠️ 块**两条都写了**，并把
+   "本页要不要按新载体重写 / 归档"**交回 ticket 09 与操作者**（⛔ 一个字没删）。
+
+2. **`src/nmpc/README.md` 与 `__init__.py` 的口径不一致已就地补齐**（第七轮 `§七·四(2)` 登记的那条）：
+   README 只写了 `px4_msgs` 那一条路、`mavros_attitude_target` 一字未提。现在两处口径一致
+   （两个具名入口），并以 `__init__.py:10` 为准。
+
+3. **`sign-map.md §≈382` 那处"今天为假"已就地订正**（第七轮 `§七·四(1)` 登记的那条）：
+   原文说 `px4_rates_setpoint` 的调用点是 `mpc_node.py` + `preflight_check.py`，
+   而 `§二` 落地后 `mpc_node.py` 已改调 `mavros_attitude_target`。
+   **本轮现读值**（`git grep -n 'px4_rates_setpoint\|mavros_attitude_target' -- src/nmpc/nmpc/`）：
+   - 非测试代码里 `px4_rates_setpoint` 只剩 `preflight_check.py` —— `:45`(import) / `:195` / `:226`（默认实现形参）/ `:562`（探针调用）；
+   - `mpc_node.py` 两处都换成了 `mavros_attitude_target` —— **`:712`**（悬停 setpoint）与 **`:1065`**（主下发路径）。
+   ★ **改的是"调用点"这个事实，不是任何数值** —— 数值权威仍在 `sign-map.md §2` 那张表。
+
+4. **我的宽搜法比 `§一④` 的原搜法多命中 3 处**（原搜法只搜两个话题名，见 `§七·一` 的自述）：
+   `docs/reference/refs-manifest.md:134`（"Phase 2/3 真正要发的 `VehicleRatesSetpoint` 逐字节相同"）、
+   同文件 `:242`（"(c) 第 3 项 uXRCE-DDS 留给 Phase 2"）、`docs/control/mpc-node-seam1.md:299`
+   （"话题名全固定（`/fmu/in/*`）"）、`docs/control/phase2-implementation.md` 的 `body_rate` 引证行。
+   ⛔ **这不是"票面漏项"**，是 `§七·一` 自己写的那个口径（"「没有 X」取决于搜法"）的又一个实例 ——
+   **换宽搜法，缺席就变成了 3 处命中**。已一并就地 ☠️。
+
+#### 五、⛔ 范围外（**本轮没动**，且理由要写下来，免得下次有人"顺手"）
+
+| 没动的 | 为什么 |
+|---|---|
+| `src/bench/**`（`fake_px4.py` / `config.py` / `fake_mavros.py` / 其 `README`） | **刻意的双载体** —— `fake_px4` 服务的正是"另一条路"，见第八轮 (d) |
+| `tools/px4-sitl/**`（含 `MicroXRCEAgent` / `/fmu/*` / `px4_msgs` 的全部用法） | **SITL 那条链今天仍然走 uXRCE-DDS**，这是**事实**、不是过时；改它 = 改一条活着的链 |
+| `docs/assets/z0.params`、`tools/px4-sitl/evidence/*.log`、`docs/assets/drill/*.log` | **一手数据/原始抓屏** —— 一个字都不许动 |
+| `PROJECT.md:330/434`、`mpc-roadmap.md:111`、`open-source-survey.md:439`、`refs-manifest.md:140` | 描述**别人仓库**（`DISCOWER/px4-mpc` / fork 的 `dds_topics.yaml`）—— 票面 `§七·二` 已排除 |
+| `phase2-implementation.md:873-880`、`px4-sitl-baseline.md:110`、`sitl-offboard-smoke.md:29/119`、`px4-interface.md:151/152/172`、`mpc-node-seam1.md:83/84`（另有 `:481`/`:609`）、`ladder-acceptance-criteria.md:124` | 票面分类为 `HISTORY` / `DEAD`（已被就地或块级 ☠️ 覆盖）/ `ARCHIVED` / 已在 ☠️ 块内——**重复标记只会稀释可见性** |
+| `sign-map.md:91/110` | 票面分类为 `成果`（本票 `§一①` 自己新写的两条路对照表）—— **非悬空** |
+| `mpc-node-fallback.md` 全页 | 讲的是 **PX4 内部**收到最后一帧后的行为，与载体无关；结论今天照旧 |
+| `mismatch-sweep.md:661`、`tier-b-sitl-seam3.md:112-134/599` 里的 `/fmu/out/*` | 同 `tools/px4-sitl` —— **SITL 那条链的现场**，不是 (C) 级下行 |
+
+#### 六、验证读数（2026-10-13，本机 Orin NX 8GB）
+
+| 套件 | 读数 | 口径 |
+|---|---|---|
+| `run/tests`（含 `test_safety_paths_drill.py` 那 10 条文档守卫） | **`166 passed in 13.52s`** | 四源 + `ACADOS_SOURCE_DIR` + `LD_LIBRARY_PATH` 两条都设 |
+| `tools/` | **`449 passed in 134.92s`** | 同上 |
+| `src/nmpc` + `src/bench` | **`315 passed in 539.61s`** | 同上（与第九轮 `§十` 的 266 + 49 对得上） |
+
+⚠️ **这几条守卫只覆盖"禁裸词 MPC / 相对链接落盘 / 表格读数 / 现场命令形状"** —— 它们**不检查**文档里
+那句"载体是 mavros"**对不对**。⟹ 本轮那一大片 ☠️ **是断言，不是验证过的**；
+它靠的是 `git grep` 的现读值（上面 `§四(3)` 那种）＋ `px4-interface.md §4.3` 的定案块。
+
+#### 七、`Status`
+
+⛔ **本轮不动 `Status`** —— 票面 `§五` 末句自己写着「**本票的 `Status` 只能由操作者切**」。
+本轮做完了 `§一④` 这一节，**"要不要切 `done`、以及切的是哪一种 `done`"由操作者当场说**。
