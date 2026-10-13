@@ -296,8 +296,27 @@ python3 -m pytest run/tests/test_z0_check_live.py -q
 ⚠️ **要一次跑整个 `run/tests/`，必须先 source**（上面那两行）。没 source 时
 `test_z0_check_live.py` 会在**模块级** `importorskip` 上跳掉，而 pytest 6.2.5 在那种情形下
 **连这一整个目录的其余用例一起收集不到**（第一手：未 source 跑 `pytest run/tests -q` ⟹
-`1 skipped`、0 例；source 后同样一条命令 ⟹ **`142 passed`**）——
+`1 skipped`、0 例；source 后同样一条命令 ⟹ 全过）——
 ★ 所以"跑整个目录是绿的"这句**只有在 source 过的环境里才成立**，未 source 时那是**空收集**，不是绿。
+
+★★ **空收集长什么样、退出码是多少**（2026-10-13 实测补记，★ 这是这一节的**唯一口径出处**）：
+
+| 情形 | 屏幕 | 退出码 |
+|---|---|---|
+| 未 source，整目录 | **`1 skipped in 0.14s`**（★ 不出现任何"没跑"的字样） | **`5`** |
+| 未 source，`--ignore=run/tests/test_z0_check_live.py` | `161 passed` | `0` |
+| 未 source，单独点名任一其它文件 | 照常跑 | `0` |
+
+⟹ **退出码是 `5`，不是 `0`**（pytest 的 `ExitCode.NO_TESTS_COLLECTED`）。
+⚠️ 这一条与另外两处旧记录**不一致**（[`phase3/spec.md`](../.scratch/phase3/spec.md)、
+[`phase2/26`](../.scratch/phase2/issues/26-recording-six-scenes-and-the-rewrite-path.md) 当时写的是"退出码仍是 0"）——
+**那两处已在 2026-10-13 就地更正并指向本节**；而且这不是四舍五入的出入，是**结论方向不同**：
+非零 ⟹ **自动化管道拦得住**（`&&` / CI 会停在 5），真正会栽的是**读摘要的人** ——
+`1 skipped` 长得像"这儿没事"，不像"161 条凭空没了"。
+复现（仓库外、两个文件、与本仓库内容无关）：目录跑 `= 5`、`--ignore` 掉那个 `importorskip` 文件 `= 0`。
+
+★ **上面那个 `passed` 个数是快照、别照抄**：它随票增长（2026-10-08 记的是 `142 passed`，
+2026-10-13 现算 **`166 passed in 13.20s`**）。要一个能引的数就现跑，别从这页里抄。
 
 ★ `test_rec.py` 有一条自己盯自己的纪律：**所有会起进程 / 发信号 / 写仓库的路径都被指到 tmp 上**
 （`rec.BAG_ROOT`、`rec.STATE_FILE`、`rec.find_recorders`、`rec.process_alive`）。这不是洁癖 ——

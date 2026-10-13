@@ -118,7 +118,7 @@ Phase 2 干了很久，产出摊得很开：27 张票、20 来份 `docs/`、几�
 
 1. **入口层自足**：只按入口层的指针走，能落到"当前阶段 spec + 未结票列表"，**路径全部是活的**（没有断链）。
 2. **每一处删除都有去向**：抽检 `☠️` 压缩过的每一节，节首必须能回答"被谁推翻 / 搬到哪"（Solution 甲·3）。
-3. **文档守卫全绿**：`python3 -m pytest run/tests/test_operation_manual.py -q` 等按文件跑（★ **别一次跑 `run/tests/` 整个目录** —— `test_z0_check_live.py` 的模块级 `importorskip` 会让其余文件一条都不收集而退出码仍是 0，见 [ticket 26](../phase2/issues/26-recording-six-scenes-and-the-rewrite-path.md) 的同名记录）。
+3. **文档守卫全绿**：`python3 -m pytest run/tests/test_operation_manual.py -q` 等按文件跑（★ **别一次跑 `run/tests/` 整个目录** —— `test_z0_check_live.py` 的模块级 `importorskip` 会让其余文件一条都不收集，见 [ticket 26](../phase2/issues/26-recording-six-scenes-and-the-rewrite-path.md) 的同名记录）。☠️ **2026-10-13 实测更正**：这一句原来还跟着"**退出码仍是 0**"——**那半个数写反了，实测是 `5`**（pytest 的 `ExitCode.NO_TESTS_COLLECTED`）。方向不同、不是四舍五入：非零 ⟹ **自动化拦得住**，会栽的是**读摘要的人**（`1 skipped` 长得像"这儿没事"）。口径与复现以 [`run/README.md`](../../run/README.md) 的「测试」节为准。
 
 ### 乙 —— 收尾的判据
 
