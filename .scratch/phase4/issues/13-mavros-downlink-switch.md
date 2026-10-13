@@ -1754,7 +1754,7 @@ timeout 40 ros2 launch bringup mavros.launch.py fcu_url:=/dev/ttyUSB99:921600
 
 | # | 事项 | 一手事实 | 建议 |
 |---|---|---|---|
-| (g) | ★ **`run/z0.py` 与 `z0.launch.py` 都绕过了这个补丁** | `z0.py:435` 的 `Action("mavros", …)` 起的是**上游** `ros2 launch mavros px4.launch`；`z0.launch.py:77` 的 `_xml_launch("mavros", "px4.launch")` 同。两者**都不经过** `bringup/mavros.launch.py` ⟹ **补丁不会生效** | 两条路：① 把菜单那一项指到 `ros2 launch bringup mavros.launch.py`；② 或者在菜单里**另加一个动作**跑补丁脚本。⛔ **①会撞红线**：`z0.py:533` 的 `FORBIDDEN_IN_COMMANDS` 与 docstring 第 42 行"它不提供任何『让飞机动』的入口 —— …**改参数**…一个都没有" ⟹ 我不能自己拿主意，**请裁定** |
+| (g) | ★ **`run/z0.py` 与 `z0.launch.py` 都绕过了这个补丁** | `z0.py:435` 的 `Action("mavros", …)` 起的是**上游** `ros2 launch mavros px4.launch`；`z0.launch.py:77` 的 `_xml_launch("mavros", "px4.launch")` 同。两者**都不经过** `bringup/mavros.launch.py` ⟹ **补丁不会生效** | ★ **2026-10-13 操作者裁定：菜单指向 bringup 包装** ⟹ **已落地**，见下面「十一」 |
 | (h) | **环境没配全 ⟹ 11 条 `test_mpc_node` 全红，看起来像代码坏了** | 我第一次跑 `src/nmpc/test` **只设了 `ACADOS_SOURCE_DIR`**，漏了 `LD_LIBRARY_PATH` ⟹ DUT 子进程（`mpc_node.py`）在 `AcadosOcpSolver` 里报 `OSError: libhpipm.so: cannot open shared object file`（`~/acados/lib/libhpipm.so` **存在**）⟹ 前 11 条用例 `BenchTimeout` + `returncode=1`。★ 报错栈落在**夹具**里，**看着像夹具/代码坏了** | ★ **两条都要，且仓库里本来就写着**：[`src/nmpc/README.md:91-92`](../../../src/nmpc/README.md)、[`docs/control/acados-orin-build.md:58-59`](../../../docs/control/acados-orin-build.md)。⛔ **不是文档缺失，是我图快没照它敲**。⟹ **无票面待办**；记在这里只为让下一个人少走这 15 分钟 |
 
 ★ **`Status` 保持 `ready-for-human`**（操作者要求；本轮**没有**把它切到 `done`）。
@@ -1776,3 +1776,27 @@ timeout 40 ros2 launch bringup mavros.launch.py fcu_url:=/dev/ttyUSB99:921600
 
 ★ **本轮的 3 次变异**见上面第七节；★ **端到端**（起链补丁）见第六节 —— 那一次跑的是**真 mavros**、
 但 `fcu_url` 指一个**不存在的**设备，**没碰飞机**。
+
+#### 十一、§九(g) 的裁定与落地（2026-10-13，操作者裁定：**菜单指向 bringup 包装**）
+
+**改了四处 + 一处口径澄清**（这一轮**只**动这几处）：
+
+| # | 文件 | 改动 |
+|---|---|---|
+| 1 | `run/z0.py` | `Action("mavros", …)` 的命令 `ros2 launch mavros px4.launch …` → **`ros2 launch bringup mavros.launch.py …`** |
+| 2 | `run/z0.py` | 文件头那条安全承诺**就地加一段口径澄清**（原文**没删**）：菜单里**仍然没有**"让飞机动"的入口，但第 1 项起链时会顺手把 **mavros 自己的** `thrust_scaling` 设成 1.0 ⟹ 改的是**缩放系数**（不是飞控参数、不发帧、不动模式），且**是链路能工作的前提** ⟹ 归"起链"不归"改参数"。★ 并写明**这个边界是操作者裁的，不是自解释的**，⛔ 别改回上游命令 |
+| 3 | `run/z0.py` | `DOWN_TARGETS` 里 mavros 那条 `pgrep` 模式改成**同时认新旧两种写法** + 裸 `mavros_node`（只留新的会让"按老命令起的那条"清不掉，串口一直占着） |
+| 4 | `src/bringup/launch/z0.launch.py` | `use_mavros` 那条从 `_xml_launch("mavros", "px4.launch")` 改成 `_py_launch("bringup", "mavros.launch.py")`；★ 保留了一句 `get_package_share_directory("mavros")` **当探针**，为的是那条"找不到 mavros 包"的友好提示（`mavros` 装在另一个工作空间，本包刻意不写依赖） |
+| 5 | `run/tests/test_z0_menu.py` | 一条用例里**故意写死**的那条命令跟着更新（★ 写死是有意的：它是安全相关的命令，改它就该红一次） |
+| 6 | `operation_manual.md` §3.2 / `docs/control/bench-runbook.md` ① / `docs/reference/mocap-setup.md`（"下次启动时带上"那一块） | 三处现场命令跟着改，各留一段 ☠️ 说明**照着旧命令敲 = 悄没声地把整条下行关掉**，并给自核命令 `ros2 param get /mavros/setpoint_raw thrust_scaling`（应当是 `1.0`） |
+
+⚠️ **不是"顺手改" —— 是测试逼出来的**：`run/tests/test_operation_manual.py` 的
+`test_文档里的启动命令都来自动作表` / `test_起链那几条命令的顺序与_UP_CHAIN_一致` **要求文档命令 = `ACTIONS`**，
+改菜单不改文档 ⟹ 那两条当场红（本节第一版就是这样发现的）。
+⛔ **没动**的是**归档转写**：`docs/reference/mocap-setup.md:838` 那条带 `ttyTHS3` 的是 2026-09-21
+**上游那台机器**的实测记录（是"当时跑了什么"的存档，不是现场规程）⟹ 改了反而毁证据。
+`docs/control/mpc-node-seam1.md:506` 那张表里也留着一处旧命令，它是**已 ☠️ 的历史对照**，同样不动。
+
+**验证读数**：`run/tests` **`166 passed in 13.30s`**（改之前同一条命令是 `4 failed, 162 passed`
+—— 那 4 条正是上面说"逼出来的"那几条 + 一条写死命令的负控）。`src/nmpc/test` 与 `src/bench/test`
+本轮**没受影响**（这两处改动不在这两套的覆盖里），沿用第十节那份读数。

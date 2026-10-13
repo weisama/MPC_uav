@@ -74,7 +74,17 @@ def _setup(context):
     # ① mavros（可选，默认不起）
     if flag("use_mavros"):
         try:
-            mavros = _xml_launch("mavros", "px4.launch")
+            # ★★ 2026-10-13（票 13 第九轮）：**改指本仓的 `mavros.launch.py`，不再直接 include
+            #   上游 `px4.launch`**。理由是那条路**绕开了起链补丁**：上游 `px4.launch` 把
+            #   `config_yaml` 写死，而 `plugin.cpp:35` 的 `use_global_arguments(false)` 让那份 yaml
+            #   到不了插件节点 ⟹ `thrust_scaling` 停在声明默认 `NAN` ⟹ 凡 `thrust != 0` 的 setpoint
+            #   **被 mavros 整帧丢掉**（连 `body_rate` 一起），症状是**零操纵且几乎无声**。
+            #   `bringup/launch/mavros.launch.py` 里多挂了 `mavros_set_thrust_scaling.py`
+            #   把那一刀补上（设完**读回核对**）。
+            # ⚠️ 这一句 `get_package_share_directory("mavros")` 是**探针**，保留它是为了那条
+            #   "找不到 mavros 包"的友好提示 —— mavros 装在另一个工作空间，本包刻意不写依赖。
+            get_package_share_directory("mavros")
+            mavros = _py_launch("bringup", "mavros.launch.py")
         except PackageNotFoundError:
             mavros = None
         if mavros is None:

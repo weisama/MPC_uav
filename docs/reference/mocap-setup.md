@@ -329,7 +329,7 @@ QGC 侧更硬的旁证（Analyze → **MAVLink Console** 里敲）：
 ros2 param set /mavros_router gcs_urls "['udp-b://0.0.0.0:14555@:14550']"
 
 # ② 下次启动时带上（热加的参数**不持久**，重启即失）
-ros2 launch mavros px4.launch \
+ros2 launch bringup mavros.launch.py \
   fcu_url:=/dev/ttyTHS1:921600 \
   gcs_url:="udp-b://0.0.0.0:14555@:14550"
 ```

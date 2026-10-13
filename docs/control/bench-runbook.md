@@ -132,7 +132,14 @@ ticket 06 时期本张还没有解锁路径，于是有个参数 `own_arming` �
 
 ```bash
 source /opt/ros/humble/setup.bash && source ~/mavros_ws/install/setup.bash && source ~/ros_ws/install/setup.bash
-ros2 launch mavros px4.launch fcu_url:=/dev/ttyTHS1:921600   # ① 串口定案见 ticket 13/14
+ros2 launch bringup mavros.launch.py fcu_url:=/dev/ttyTHS1:921600   # ① 串口定案见 ticket 13/14
+# ☠️ 2026-10-13（票 13 第九轮）：**这一行从 `ros2 launch mavros px4.launch …` 改过来的**。
+#   上游 `px4.launch` 把 `config_yaml` 写死，而 `plugin.cpp:35` 的 `use_global_arguments(false)`
+#   让那份 yaml **到不了插件节点** ⟹ `thrust_scaling` 停在声明默认 `NAN` ⟹ 凡 `thrust != 0`
+#   的 setpoint **被 mavros 整帧丢掉**（连 `body_rate` 一起）—— 零操纵，且只打一句 5 s 节流的 ERROR。
+#   本仓那条包装多挂了一个 `mavros_set_thrust_scaling.py`（设完**读回核对**）。
+#   ⛔ **照着旧命令敲 = 悄没声地把整条下行关掉**；起完可以这样核：1.0 才是对的
+#      `ros2 param get /mavros/setpoint_raw thrust_scaling`
 ros2 topic hz /mavros/state                                  #    1 Hz 是**正常**的
 ros2 launch vrpn_listener sync_entity_state.launch           # ② 刚体名与 mocap.yaml 对齐
 ros2 topic hz /vrpn/<刚体>/pose                              #    ~200 Hz

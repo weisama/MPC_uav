@@ -40,6 +40,14 @@
    · ★ 两条**都不代做"起飞"**：选轨迹是在让出去的前台里敲 1/2/3，起飞是**遥控器开始键**。
 
 ★★ **它不提供任何"让飞机动"的入口 —— 解锁 / 起飞 / 切模式 / 改参数 / 发帧，一个都没有。**
+   ★ **2026-10-13 的一处口径澄清（票 13 第九轮，操作者裁定）**：菜单里**现在仍然没有**这一类入口，
+   但第 1 项「起 mavros」从今天起走**本仓的** `bringup/launch/mavros.launch.py`，而那一条
+   **在起链时会顺手把 mavros 自己的 `thrust_scaling` 设成 `1.0`**
+   （`plugin.cpp:35` 的 `use_global_arguments(false)` 让 `px4_config.yaml` 到不了插件节点 ⟹
+   不补这一刀整条下行是死的：`thrust != 0` 的帧被**整帧丢掉**、零操纵、几乎无声）。
+   ⟹ 它改的是 **mavros 的一个缩放系数**（不是飞控参数、不发帧、不动模式），
+   且**是链路能工作的前提** ⟹ 归在"起链"里，不归在"改参数"里。**这个边界是操作者裁的，不是自解释的。**
+   ⛔ 因此**不要**再把这条命令改回上游 `px4.launch`（改回去 = 悄没声地把下行关掉）。
    两条理由写在仓库里，不是洁癖：`z0.launch.py` 的「本包**不给**"程序起飞"的入口，因为它会绕开
    "开始键之前不发控制指令"这条防线」、`bench-runbook.md` 的「起完之后**还差两步**（刻意不自动化）」。
    ⟹ 台架上的 `/control/takeoff` 照旧手打（`bench-runbook.md` T4 有原文），本脚本只提一句"在哪"。
@@ -432,7 +440,7 @@ ACTIONS: Tuple[Action, ...] = (
     Action("check", "起链核对（只读，约 5 s）", None,
            "每个话题有没有帧、多少 Hz；state 的 connected/armed/mode",
            read_only=True),
-    Action("mavros", "起 mavros", f"ros2 launch mavros px4.launch fcu_url:={FCU_URL}",
+    Action("mavros", "起 mavros", f"ros2 launch bringup mavros.launch.py fcu_url:={FCU_URL}",
            "★ 它**独占**串口；`/mavros/state` **1 Hz 是正常的**；另开终端 `ros2 topic hz /mavros/state` 核对",
            warn_serial=True,
            optionals=(OptionalArg(
@@ -1175,8 +1183,12 @@ class DownTarget:
 #:   它拉起来的 mocap / traj / control 三个节点由**各自那三行**兜住 ⟹ 这一条故意不写自己的可执行名
 #:   （写 `z0.launch.py` 也只是重复匹同一个进程）。其余五行都是"命令 + 可执行名"两个人。
 DOWN_TARGETS: Tuple[DownTarget, ...] = (
+    #: ★ 2026-10-13：起链改走本仓的 `bringup mavros.launch.py`（见文件头那条口径澄清），
+    #: 所以模式**必须同时认这两条**：新写法（带包名 `bringup`）与旧的上游写法
+    #: （现场可能仍有终端按老 runbook 起的）—— 再加裸的 `mavros_node`。
+    #: ⛔ 别只留新的：那会让"按老命令起的那条"清不掉，串口一直占着。
     DownTarget("mavros", "mavros（独占串口）",
-               r"ros2 launch mavros |(/| )mavros_node( |$)"),
+               r"ros2 launch bringup mavros.launch.py|ros2 launch mavros |(/| )mavros_node( |$)"),
     DownTarget("vrpn", "vrpn_listener（动捕数据源）",
                r"ros2 launch vrpn_listener |(/| )vrpn_listener( |$)"),
     DownTarget("mocap", "mocap（相对位姿）",

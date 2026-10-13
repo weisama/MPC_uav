@@ -266,7 +266,11 @@ vrpn_listener → mocap），**到 `mocap` 为止** —— ★ **不起 `traj`/`
 
 ```bash
 source /opt/ros/humble/setup.bash && source ~/mavros_ws/install/setup.bash && source ~/ros_ws/install/setup.bash
-ros2 launch mavros px4.launch fcu_url:=/dev/ttyTHS1:921600 gcs_url:=udp-b://0.0.0.0:14555@:14550
+ros2 launch bringup mavros.launch.py fcu_url:=/dev/ttyTHS1:921600 gcs_url:=udp-b://0.0.0.0:14555@:14550
+# ☠️ 2026-10-13（票 13 第九轮）：这一行从 `ros2 launch mavros px4.launch …` 改过来的。
+#   上游那条路**绕开起链补丁** ⟹ `thrust_scaling` 停在声明默认 `NAN` ⟹ 凡 `thrust != 0` 的
+#   setpoint 被 mavros **整帧丢掉**（零操纵、几乎无声）。详见 `docs/control/bench-runbook.md` ①。
+#   起完自核：`ros2 param get /mavros/setpoint_raw thrust_scaling` 应当是 `1.0`
 ros2 launch vrpn_listener sync_entity_state.launch
 ros2 launch mocap mocap.launch.py
 ros2 launch traj traj.launch.py

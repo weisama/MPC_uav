@@ -284,7 +284,10 @@ def test_答_y_之后命令尾巴真的进了_bash_c(capsys, monkeypatch):
     monkeypatch.setattr(z0, "ask_confirm", lambda _q: True)
     monkeypatch.setattr(z0, "run_foreground", lambda cmd: seen.append(cmd) or 0)
     assert z0.launch_action(z0.ACTION_BY_KEY["mavros"]) == 0
-    assert seen == [f"ros2 launch mavros px4.launch fcu_url:={z0.FCU_URL} gcs_url:={z0.GCS_URL}"]
+    # ★ 这一行**故意写成字面量**（不从 `ACTION_BY_KEY` 取）：它是安全相关的那条命令，
+    #   改它就该让这条用例红一次。2026-10-13（票 13 第九轮）从上游 `px4.launch` 改指
+    #   本仓的 `mavros.launch.py` —— 理由见 `z0.py` 文件头那条口径澄清。
+    assert seen == [f"ros2 launch bringup mavros.launch.py fcu_url:={z0.FCU_URL} gcs_url:={z0.GCS_URL}"]
 
 
 def test_可选参数的值也受安全不变式扫查():
