@@ -38,6 +38,14 @@ DEFAULTS: Dict[str, Any] = {
         # ticket 16：EKF2 位置失效的载体（MAVLink ESTIMATOR_STATUS）。
         "estimator_status": "/mavros/estimator_status",
         "setpoint": "/mavros/setpoint_raw/local",
+        # ★ ticket 13 §四② 新增：Phase 4 的 **(C) 级下行**改走 mavros 的
+        #   `AttitudeTarget`（`/mavros/setpoint_raw/attitude`），不再走 uXRCE-DDS 的
+        #   `/fmu/in/vehicle_rates_setpoint`。两条**不是同一个流**：
+        #   · `setpoint` = Phase 1 `control` 的 `/mavros/setpoint_raw/local`（`PositionTarget`）
+        #   · `attitude` = Phase 4 `mpc_node` 的这条（`AttitudeTarget`，含 body_rate + thrust）
+        #   ⛔ 别为了"省一个键"把两条合并 —— `Scenario.setpoint_rate_hz` 读的是前者，
+        #      合并会让"Phase 4 下行的频率"这个读数悄悄指向 Phase 1 的流。
+        "attitude": "/mavros/setpoint_raw/attitude",
         "set_mode": "/mavros/set_mode",
         "arming": "/mavros/cmd/arming",
     },
@@ -76,6 +84,13 @@ DEFAULTS: Dict[str, Any] = {
         "px4": False,
     },
     # 假 PX4 的初始状态与话题名（`bench/fake_px4.py` 的 `OUT_TOPICS` / `IN_TOPICS`）。
+    # ☠️ 2026-10-13（ticket 13 §四④）：**`fake_px4.py` 现在没有 DUT 了** ——
+    #   `mpc_node` 在 §二 换了下行（`/fmu/*` → mavros），`test_mpc_node.py` 也随之换了载体。
+    #   本仓库**仅存**的消费者是 `scenario.py` 的 `px4=True` 分支（Phase 4 的"回退"验收项）
+    #   与 `fake_px4.py` 自己的 selftest。⟹ 整块 `[px4]` 连同 `fake_px4.py`、`package.xml`
+    #   的 `px4_msgs` <depend>（`src/bench/package.xml:27`）一起**归入待裁**（见票 13 §四④），
+    #   ⛔ 本轮不删：删它会连带打挂 `scenario.py`（不在本轮可动文件内）与 selftest。
+    #   ⚠️ 在那之前，别把这里的 `/fmu/*` 当成"Phase 4 还在用的东西"。
     "px4": {
         # 假 PX4 报的 armed / nav_state。默认 **未解锁 + POSCTL** —— 真机上"上电后、
         # 切 OFFBOARD 之前"的样子；要测"未解锁不发"这类判据就必须从这里开始。

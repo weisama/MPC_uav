@@ -1,5 +1,13 @@
 """假 PX4（uXRCE-DDS 那一半）—— seam 1 里 Phase 2 的"外部世界"。
 
+☠️☠️ 2026-10-13（ticket 13 §四④）：**本文件现在没有 DUT**。
+   `mpc_node` 在票 13 §二 换了下行（`/fmu/*` → `/mavros/setpoint_raw/attitude`），
+   `test_mpc_node.py` 也随之换了载体 ⟹ 本仓库里**再没有**任何被测节点会连上 `/fmu/*`。
+   仅存的消费者是 `scenario.py` 的 `px4=True` 分支（Phase 4 的"回退"验收项）与本文件自己的
+   selftest。**保留但不代表它在测任何东西**：谁要再引用它，先确认那边真有个 DUT。
+   它的命运（连同 `package.xml` 的 `px4_msgs` <depend> 与 `config.py` 的 `DEFAULTS["px4"]`）
+   **归入待裁**，见票 13 §四④。
+
 ★ 与 `fake_mavros.py` 的分工：那个假的是 **mavros**（`/mavros/*`），这个假的是 **PX4 自己**
   暴露给 uXRCE-DDS 的 `/fmu/*` 接口（Phase 2 走的是这条路，不经 mavros）。
   两者**可以同时存在**（Phase 1 的 `(A)` 链与 Phase 2 的 `(C)` 链并行，见

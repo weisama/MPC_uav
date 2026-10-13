@@ -14,15 +14,34 @@
    | `/mavros/battery` | **发布** `SensorDataQoS()`（**best_effort**） | `sys_status.cpp` |
    | `/mavros/rc/in` | **发布** 默认 `10`（可靠） | `rc_io.cpp` |
    | `/mavros/estimator_status` | **发布** `QoS(10).transient_local()`（可靠 + 瞬态本地） | `sys_status.cpp` 用 `mavros::StateQoS()` |
-   | `/mavros/setpoint_raw/local` | **订阅** `SensorDataQoS()`（best_effort） | `setpoint_raw.cpp` |
+   | `/mavros/setpoint_raw/local` | **订阅** `SensorDataQoS()`（best_effort） | `setpoint_raw.cpp:62` |
+   | `/mavros/setpoint_raw/attitude` | **订阅** `SensorDataQoS()`（best_effort） | `setpoint_raw.cpp:62`（★ ticket 13 §四① 新增的那条流） |
+   ★ `setpoint_raw/attitude` 这一行是 ticket 13 加的：(C) 级 `mpc_node` 的下行从
+     `/fmu/in/vehicle_rates_setpoint` 换成了它。**用真的那个 QoS 是刻意的** ——
+     夹具若图省事用默认（reliable），"DUT 发端 QoS 写错 ⟹ 永不匹配"这一类静默失效
+     在 seam 1 上就**永远不会出现**（DUT 若写 best_effort、收端写 reliable，DDS 不兼容、
+     不报错、只是收不到），而那正是本 seam 要挡的东西。
    ★ `estimator_status` 这一行是 ticket 16 加的：DUT 侧**故意用易失订阅**（见 `px4_interface.cpp`
      里那段 ★★）—— 易失订阅与瞬态本地发布方**兼容**（durability 只要求 offered ≥ requested），
      所以夹具照抄真 mavros 的发布方 QoS 才是对的：要让"DUT 会不会被历史回放喂饱计数"
      这件事在 seam 1 上**真的能被复现**，夹具就不能替它把 QoS 降级。
 
-   为什么必须一致：QoS 不兼容的两个端点**不报错**，只是永远不匹配 ⟹ 表现为"节点没数据"，
-   而日志、`ros2 topic list`、`ros2 topic hz` 全都看不出原因。
+   为什么必须一致：QoS 不兼容的两个端点**不报错**，只是永远不匹配 ⟹ 表现为"节点没数据"。
    本文件用 `bench/__init__.py` 里那两个工厂函数把这件事写成代码（并被 `test_bench_selftest.py` 盯着）。
+
+   ☠️ **上面"日志里看不出原因"这半句 2026-10-13 被第一手推翻了一半**（ticket 13 §四现场，
+     本机 Humble + rmw_fastrtps，四格矩阵见 `attitude_publishers` 的 ⚠️⚠️）：
+     **不兼容的那一格，两端各自的 rmw 都会打一条 WARN**，字符串长这样 ——
+       `New subscription discovered on topic <T>, requesting incompatible QoS.
+        No messages will be sent to it. Last incompatible policy: RELIABILITY`
+     （订阅侧那条是 `New publisher discovered … offering incompatible QoS.
+      No messages will be received from it.`）
+     ⟹ **失配不是完全静默的**：它落在**进程自己的日志**里（于是也会落到 `dut_log()` 里）。
+     ★ 但"有条 WARN 就够了吗"的答案是**不够**：① 它只在**发现**那一刻打一次，
+       查历史日志时容易漏；② `ros2 topic list` / `hz` 确实照样看不出；
+       ③ 本仓的 DUT 日志是**断言用的证据**，一条 WARN 不是判据。
+     ⟹ 结论不变（夹具照抄真 QoS、用例直接读 profile），但**别再把"日志完全看不出原因"
+       当成理由** —— 那句话会让人以为"没有 WARN 就说明 QoS 是对的"。
 
 ★ 运行方式：只被 `Scenario` 创建，不要单独跑（它没有 main）。
 """
@@ -36,7 +55,7 @@ from dataclasses import dataclass
 from typing import Dict, List, Optional, Sequence
 
 from geometry_msgs.msg import PoseStamped, TwistStamped
-from mavros_msgs.msg import EstimatorStatus, PositionTarget, RCIn, State
+from mavros_msgs.msg import AttitudeTarget, EstimatorStatus, PositionTarget, RCIn, State
 from mavros_msgs.srv import CommandBool, SetMode
 from rclpy.node import Node
 from rclpy.qos import (
@@ -72,6 +91,32 @@ def mavros_default_qos() -> QoSProfile:
     return QoSProfile(depth=10, reliability=ReliabilityPolicy.RELIABLE)
 
 
+def _qos_accepts(offered: QoSProfile, requested: QoSProfile) -> bool:
+    """**发布方提供的** QoS 能不能满足**订阅方要求的** QoS（DDS 的 RxO 规则）。
+
+    ★ 为什么夹具要自带一份这个判据：ROS 2 的"两个端点接上了没有"**没有 API 能直接读**
+      （rclpy 的 `Subscription` 没有 `get_publisher_count`；见 `attitude_publishers` 的 ☠️），
+      而 `Node.get_publishers_info_by_topic` 读的是**发现库**、**不做 QoS 过滤**
+      （第一手反例写在那条 docstring 的 ⚠️⚠️ 里）。⟹ 要判"接得上"只能自己按 RxO 算。
+
+    ★ 规则只有**两条**方向性约束（`offered ≥ requested`）：
+      · reliability：订阅要 `RELIABLE` ⟹ 发布方也必须是 `RELIABLE`
+        （发布方 `RELIABLE`、订阅方 `BEST_EFFORT` **是兼容的** —— 反直觉，但这正是
+         "夹具收端是 best_effort ⟹ DUT 发 reliable 照样接上"的由来）；
+      · durability：订阅要 `TRANSIENT_LOCAL` ⟹ 发布方也必须是 `TRANSIENT_LOCAL`
+        （反过来：瞬态本地的发布方 + volatile 的订阅方**兼容**，见模块 docstring 那段 ★）。
+    ⚠️ `history` / `depth` **不参与**兼容性判定 —— 而且在本套栈的发现信息里
+      `history` 回来是 `UNKNOWN`、`depth` 恒为 0，想判也判不了。
+    """
+    if (requested.reliability == ReliabilityPolicy.RELIABLE
+            and offered.reliability != ReliabilityPolicy.RELIABLE):
+        return False
+    if (requested.durability == DurabilityPolicy.TRANSIENT_LOCAL
+            and offered.durability != DurabilityPolicy.TRANSIENT_LOCAL):
+        return False
+    return True
+
+
 # ───────────────────────────── 记录下来的东西 ─────────────────────────────
 
 @dataclass
@@ -98,6 +143,61 @@ class ModeRequest:
 class ArmingRequest:
     at_s: float
     value: bool
+
+
+@dataclass
+class AttitudeSetpoint:
+    """DUT 发到 `/mavros/setpoint_raw/attitude` 的一帧（ticket 13 §四① 新增的那条流）。
+
+    ★★ **本票的关键设计**：(C) 级 CTBR 的下行换成 `mavros_msgs/AttitudeTarget` 之后，
+      "符号/归一化"这一类错误（N1 推力反号、N2 多转一次 FLU→FRD）**只有在断言落在
+      "我们发出的那个字段值"上时才抓得到**。若断言落在"飞控最终收到的物理方向"上，
+      两次取负看起来和正确的一模一样（见 [判据全绿也可能是机理反了] 那一族）。
+      ⟹ 这条记录必须把 DUT 填进去的**原值**逐条留下来，`type_mask` / `body_rate` 三分量 /
+      `thrust` / `header.stamp` 一个都不能漏 —— 判据就落在它们上面。
+
+    ⚠️ `msg` 是 rclpy 在回调里**反序列化出来的新对象**（每次回调一个）⟹ 留着它不会随
+      后续帧变；但**不要**把它当"可变缓冲"就地改（那会污染这条记录）。
+    """
+    at_s: float
+    msg: AttitudeTarget
+
+    # ── 直接读"发出去的那几个字段"的便捷属性（判据全落在这一层）──
+    @property
+    def type_mask(self) -> int:
+        #: ★ 必须是 `128`（`IGNORE_ATTITUDE`）。⛔ `IGNORE_THRUST = 64` 不许被置上：
+        #:   置了就是"我们发的 thrust 被忽略" ⟹ 掉高度（而话题面上每一帧都正常）。
+        return int(self.msg.type_mask)
+
+    @property
+    def body_rate(self) -> tuple:
+        """`(x, y, z)` —— **FLU 原样**（我们**不**在这里取负；取负由 mavros 做，见 N2）。"""
+        return (float(self.msg.body_rate.x), float(self.msg.body_rate.y),
+                float(self.msg.body_rate.z))
+
+    @property
+    def thrust(self) -> float:
+        """归一化推力，**正号**（`F / t_max`；取负由飞控的 `fill_thrust` 做，见 N1）。"""
+        return float(self.msg.thrust)
+
+    @property
+    def stamp_ns(self):
+        """`header.stamp` → 纳秒（`None` 表示没填）。★ 新载体上飞控**不读**它，见 §13。"""
+        ts = self.msg.header.stamp
+        return int(ts.sec) * 1_000_000_000 + int(ts.nanosec)
+
+
+@dataclass
+class StateFrame:
+    """夹具**自己发出去**的一帧 `/mavros/state`（ticket 13 §四③ 的"起机屏障"要用）。
+
+    ★ 为什么需要记它：心跳那条流删掉之后（§二④），DUT **在解锁 + OFFBOARD 之前什么都不发**
+      ⟹ 旧版那种"收到第一帧心跳 ⟹ 节点起来了"的屏障没有了。而"夹具把 armed/OFFBOARD 注入
+      下去了没有"必须有个可等的读数（否则只能 `sleep` 猜，那是抖动的来源）。
+      ⚠️ 它记的是**夹具发出去的**，不是 DUT 收到的 —— 与旧版 `FakePx4.status_frames` 同一语义。
+    """
+    at_s: float
+    msg: State
 
 
 # ───────────────────────────── 主类 ─────────────────────────────
@@ -154,6 +254,10 @@ class FakeMavros:
             "battery": "/mavros/battery",
             "estimator_status": "/mavros/estimator_status",
             "setpoint": "/mavros/setpoint_raw/local",
+            # ★ ticket 13 §四①：**(C) 级 CTBR 的新下行**（`mavros_msgs/AttitudeTarget`）。
+            #   与上面那条 `setpoint_raw/local`（Phase 1 的 `control` 用的）**并存** ——
+            #   两条话题是两个不同的消费者，夹具两条都要收。
+            "attitude": "/mavros/setpoint_raw/attitude",
             "set_mode": "/mavros/set_mode",
             "arming": "/mavros/cmd/arming",
         }
@@ -207,6 +311,13 @@ class FakeMavros:
 
         # —— 记录 ——
         self.setpoints: List[Setpoint] = []
+        #: ★ ticket 13 §四①：`/mavros/setpoint_raw/attitude` 上收到的帧（(C) 级的新下行）。
+        #: ⚠️ 与 `setpoints`（`/mavros/setpoint_raw/local`，Phase 1 的 `control` 用的）
+        #: **分开两条列表** —— 两条话题的发布者可能同时在场（两条链并存），混在一起就分不清
+        #: 哪一帧是谁发的了。
+        self.attitude_setpoints: List[AttitudeSetpoint] = []
+        #: 夹具发出去的 `/mavros/state` 帧（"armed/OFFBOARD 注入下去了没有"的屏障，见 `StateFrame`）。
+        self.state_frames: List[StateFrame] = []
         self.mode_requests: List[ModeRequest] = []
         self.arming_requests: List[ArmingRequest] = []
         self._lock = threading.Lock()
@@ -238,6 +349,10 @@ class FakeMavros:
         # —— 下游（mavros 是订阅方，QoS 用 SensorDataQoS ⟹ 发布可靠一方也能匹配）——
         self._setpoint_sub = node.create_subscription(
             PositionTarget, t["setpoint"], self._on_setpoint, mavros_sensor_qos())
+        # ★ ticket 13 §四①：新下行（`AttitudeTarget`）。QoS **必须**用真的那个
+        #   `SensorDataQoS()`（best_effort / keep_last 5 / volatile）—— 见模块 docstring。
+        self._attitude_sub = node.create_subscription(
+            AttitudeTarget, t["attitude"], self._on_attitude_setpoint, mavros_sensor_qos())
 
         # —— 服务（真 mavros 用 `rclcpp::ServicesQoS()`：可靠 / volatile / depth 10）——
         self._set_mode_srv = None
@@ -304,6 +419,8 @@ class FakeMavros:
         msg.mode = ""
         msg.system_status = 0   # MAV_STATE::UNINIT（`enum_value(MAV_STATE::UNINIT)`）
         self._state_pub.publish(msg)
+        with self._lock:
+            self.state_frames.append(StateFrame(at_s=self.t(), msg=msg))
 
     def _stamp(self):
         return self.node.get_clock().now().to_msg()
@@ -323,6 +440,8 @@ class FakeMavros:
         msg.mode = self.mode
         msg.system_status = 3  # MAV_STATE_STANDBY
         self._state_pub.publish(msg)
+        with self._lock:
+            self.state_frames.append(StateFrame(at_s=self.t(), msg=msg))
 
     def _pub_pose(self) -> None:
         x, y, z = self.position
@@ -427,6 +546,16 @@ class FakeMavros:
     def _on_setpoint(self, msg: PositionTarget) -> None:
         with self._lock:
             self.setpoints.append(Setpoint(at_s=self.t(), msg=msg))
+
+    def _on_attitude_setpoint(self, msg: AttitudeTarget) -> None:
+        """`/mavros/setpoint_raw/attitude` 的回调 —— **原样记下我们发出去的每个字段**。
+
+        ★ 这里**不做任何解释/换算**（不取负、不归一化、不判对错）：记录层的职责是"抄下来"，
+          判据层（`test_mpc_node.py`）才拿它去比。把解释揉进来会让"记录"与"判据"共用同一个
+          可能出错的假设 —— 那正是 N1/N2 这类符号错误能静默通过的原因。
+        """
+        with self._lock:
+            self.attitude_setpoints.append(AttitudeSetpoint(at_s=self.t(), msg=msg))
 
     def _on_set_mode(self, request, response):
         policy = self._set_mode_policy
@@ -616,6 +745,99 @@ class FakeMavros:
         with self._lock:
             return [s for s in self.setpoints if from_s <= s.at_s <= to_s]
 
+    def attitude_setpoints_between(self, from_s: float, to_s: float) -> List[AttitudeSetpoint]:
+        """窗口内的 `/mavros/setpoint_raw/attitude` 帧（判"闸门关着时零帧"要用它）。"""
+        with self._lock:
+            return [s for s in self.attitude_setpoints if from_s <= s.at_s <= to_s]
+
+    def attitude_rate_hz(self, from_s: Optional[float] = None,
+                         to_s: Optional[float] = None) -> float:
+        """某段窗口内实测的**下行 setpoint 频率**。
+
+        ★ 与 `Scenario.setpoint_rate_hz` 同一条纪律（**只在窗口上算平均，别断言相邻两帧的间隔**：
+          rcl 的定时器是从回调开始时刻重新计时的，回调偶尔超时就会立刻补跑）。这里自带一份
+          是因为新下行走的是**另一条话题**，而 `Scenario.setpoint_rate_hz` 读的是
+          `/mavros/setpoint_raw/local` 那条（Phase 1 的 `control` 的）—— 两者不是一个流。
+        """
+        with self._lock:
+            sps = list(self.attitude_setpoints)
+        if not sps:
+            return 0.0
+        t_from = sps[0].at_s if from_s is None else from_s
+        t_to = sps[-1].at_s if to_s is None else to_s
+        n = sum(1 for s in sps if t_from <= s.at_s <= t_to)
+        span = t_to - t_from
+        return (n / span) if span > 0 else 0.0
+
+    def attitude_publishers(self) -> int:
+        """`/mavros/setpoint_raw/attitude` 上**与本夹具的收端能接上的** DUT 发布者有几个。
+
+        ★ 这是**发布方向**上的那面镜子（`matched_subscribers` 是订阅方向的）。
+
+        ☠️☠️ **2026-10-13（ticket 13 §四 现场）这里原来写的是 `self._attitude_sub
+        .get_publisher_count()`** —— **rclpy 的 `Subscription` 根本没有这个方法**
+        （`AttributeError`，第一手；`get_subscription_count()` 只长在 `Publisher` 上）。
+        已按"读发现信息 + 自己判兼容"重写。★ 但重写的同时**必须**把下面这段话说对，
+        因为旧注释里的因果是**反的**（见下一条 ⚠️）。
+
+        ⚠️ **它测不出 DUT 把 QoS 写错**，这是 DDS 的 RxO 规则决定的：本夹具的收端是
+          `SensorDataQoS()` = best_effort + volatile，而兼容性只要求 **offered ≥ requested**
+          ⟹ DUT 发 reliable（ROS 2 的默认！）或 transient_local **照样兼容、照样接上**，
+          这个数依然是 1。判"DUT 写没写对"只能靠 `attitude_publisher_qos()` **直接读**
+          （那一对分工写在它的 docstring 里）。
+          ⟹ 这个数的实际用途是**负面的那半**：为 0 就说明"这条话题上没有能接上的发布者" ——
+            话题名写错 / DUT 没起 / DUT 因参数被拒**当场退出** 全都长这样，而 `ros2 topic list`
+            看不出区别。
+
+        ⚠️⚠️ **`Node.get_publishers_info_by_topic` 读的是发现库，它不做 QoS 过滤**
+          （第一手，2026-10-13，本机 Humble + rmw_fastrtps，四格全跑）：
+
+          | 发布方提供 | 订阅方要求 | 实收帧数 | `get_publishers_info_by_topic` |
+          |---|---|---|---|
+          | RELIABLE | RELIABLE | 100 | 1 |
+          | RELIABLE | BEST_EFFORT | **100** | 1 |
+          | BEST_EFFORT | RELIABLE | **0** | **1** |
+          | BEST_EFFORT | BEST_EFFORT | 100 | 1 |
+
+          ⟹ 两件事一起钉死了：① RxO 就是 `offered ≥ requested`（第 2 行 100 帧，
+          即"best_effort 收端接得住 reliable 发端"）；② **不兼容的那一格（第 3 行）
+          发现库里照样有 1 条** ⟹ "有几个发布者"与"有几个**接得上**"是两个数，
+          后者必须自己算（`_qos_accepts`）。
+          ☠️ **第一版探针把这两条都测错了**：它没调 `rclpy.spin_once`，回调从不执行
+          ⟹ **四格全是 0 帧**，于是"RELIABLE 发 → BEST_EFFORT 收 = 0 帧"被误读成
+          "这两个不兼容"。⚠️ 教训：**判"收没收到"之前先确认回调真的会跑** ——
+          一个恒为 0 的计数器看起来既像"不兼容"也像"没 spin"。
+          ⚠️ 顺带同一手实测把它 README 里那两条钉死了：发现信息里 `history` 回来是
+            `UNKNOWN(3)`、`depth` **恒为 0**（与发布方实际写的值无关）⟹ 兼容判定里
+            只能用 `reliability` / `durability` 两项。
+        """
+        mine = self._attitude_sub.qos_profile
+        return sum(1 for info in self.node.get_publishers_info_by_topic(self.topics["attitude"])
+                   if _qos_accepts(offered=info.qos_profile, requested=mine))
+
+    def attitude_sub_qos(self) -> QoSProfile:
+        """夹具**自己**在 `/mavros/setpoint_raw/attitude` 上的订阅 QoS（给"照抄真 mavros"那条断言）。
+
+        ★ 它读的是**夹具的** profile（不是 DUT 的）⟹ 属于 seam 1 允许的"读夹具"范围。
+          ⛔ 谁把它改成默认 QoS，"DUT 发端 QoS 写错 ⟹ 永不匹配"这一类静默失效在 seam 1 上
+          就再也不会出现（见模块 docstring 的那段 ★）。
+        """
+        return self._attitude_sub.qos_profile
+
+    def attitude_publisher_qos(self) -> Optional[QoSProfile]:
+        """DUT 在 `/mavros/setpoint_raw/attitude` 上**发布方实际提供的** QoS（读不到返回 None）。
+
+        ★ 与 `attitude_publishers()` 分工不同：那个数"接上了几个"，这个读"接上来的那一方报的是什么"。
+          两者**都要**：`== 1` 只说明"兼容"，而 best_effort 与 reliable 对 `SensorDataQoS()`
+          的收端**都兼容**（offered ≥ requested）⟹ 单看 `== 1` 分不出 DUT 写没写对。
+        ⚠️ 只能对 `reliability` / `durability` 下断言：本套栈（Humble + rmw_fastrtps）的发现信息里
+          `history` 回来是 `UNKNOWN`、`depth` **恒为 0**，与发布者实际写的值无关
+          （第一手与反例见 `fake_px4.publisher_qos` 的 ⚠️⚠️ 与 `test_fake_px4_selftest` 那条）。
+        ⚠️ 依赖 DDS 发现：DUT 还没发布过时返回 None，断言前先等 `attitude_publishers() >= 1`。
+        """
+        infos = self.node.get_publishers_info_by_topic(self.topics["attitude"])
+        return infos[0].qos_profile if infos else None
+
     # ─────────────────── 人看的证据 ───────────────────
 
     def evidence(self) -> str:
@@ -635,6 +857,26 @@ class FakeMavros:
             f"- `/mavros/cmd/arming` 调用：{len(self.arming_requests)} 次"
             + (f"（{', '.join(f'{r.value}@{r.at_s:.2f}s' for r in self.arming_requests)}）"
                if self.arming_requests else ""),
+            # ★ ticket 13 §四① 起：Phase 4 的下行改走 `/mavros/setpoint_raw/attitude` ⟹ 记录要打进证据。
+            #   没有这几行时，"我们到底发了什么 body_rate/thrust"只能靠读 DUT 日志猜 —— 而
+            #   **N2（body_rate 方向被 mavros 再翻一次）**只有在看着**我们发出去的原值**时才抓得到。
+            f"- `/mavros/setpoint_raw/attitude` 帧：{len(self.attitude_setpoints)} 帧"
+            + (f"，首帧 {self.attitude_setpoints[0].at_s:.2f} s"
+               f"，末帧 {self.attitude_setpoints[-1].at_s:.2f} s"
+               if self.attitude_setpoints else "（**一帧都没有**）"),
+            *(
+                [
+                    f"  - 末帧原值：type_mask={self.attitude_setpoints[-1].type_mask}"
+                    f" body_rate(x,y,z)={tuple(round(v, 6) for v in self.attitude_setpoints[-1].body_rate)}"
+                    f" thrust={self.attitude_setpoints[-1].thrust:.6f}"
+                    f" stamp_ns={self.attitude_setpoints[-1].stamp_ns}",
+                ]
+                if self.attitude_setpoints else []
+            ),
+            f"- `/mavros/setpoint_raw/attitude` 上**接得上**的 DUT 发布者："
+            f"{self.attitude_publishers()}"
+            f"（★ 为 0 而 DUT 日志说'在发' ⟹ 要么话题名不对、要么它根本没建发布者；"
+            f"⛔ 别读成'QoS 不兼容' —— 本夹具的收端是最弱的一档，见 `attitude_publishers` 的 ⚠️）",
             f"- 匹配到的 DUT 订阅者："
             + ", ".join(f"{k}={self.matched_subscribers(k)}" for k in self._pubs),
             f"- 当前状态：connected={self.connected} armed={self.armed} mode={self.mode}"

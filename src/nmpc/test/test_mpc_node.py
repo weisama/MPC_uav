@@ -1,4 +1,4 @@
-"""seam 1（**话题上）的集成测试 —— 起真的 DUT 子进程 + 假 PX4 夹具（ticket 06）。
+"""seam 1（**话题上）的集成测试 —— 起真的 DUT 子进程 + 假 mavros 夹具（ticket 06 / 13）。
 
 层次与另外两组测试的分工（别混）：
 
@@ -6,7 +6,14 @@
 |---|---|---|
 | `test_node_core.py` | 闸门/外推/参考（纯逻辑，零 ROS） | 不起 |
 | `test_ocp_*.py` | `(状态, 参考) → u`（零 ROS 的求解器） | 不起 |
-| **本文件** | **"话题上出现了什么"** —— QoS、心跳、闸门、符号、单位 | **起**（子进程） |
+| **本文件** | **"话题上出现了什么"** —— QoS、闸门、符号、单位 | **起**（子进程） |
+
+★★ **载体在 ticket 13 §二 换过**：下行从 uXRCE-DDS 的 `/fmu/*`（`px4_msgs`）换成
+  **mavros** 的 `/mavros/setpoint_raw/attitude`（`mavros_msgs/AttitudeTarget`），
+  闸门源从 `/fmu/out/vehicle_status` 换成 `/mavros/state`。
+  ⚠️ **换载体连带着三处静默符号**（本票的三条 N）：`thrust` 变**正号**、`body_rate` 要
+  **FLU 原样**（mavros 自己转 FRD ⟹ 我们预先取负 = 转两次 ⟹ pitch/yaw 静默反向）、
+  闸门源的**频率**变成 1 Hz。本文件是**唯一**能在台架上把这三条逐条证伪的地方。
 
 ★★ 本文件里所有的断言都**只看外部可观测的东西**（话题、QoS、时间戳、进程退出码），
   不 import 节点的类、不读它的成员 —— 这是 seam 1 的定义（`.scratch/phase1/spec.md`）。
@@ -16,14 +23,24 @@
 ★ 外部依赖（缺了会**静默**地变成"夹具什么都没测到"，见 `scenario.py` 的 `_resolve_dut`）：
   · `nmpc` 包已 `colcon build` 且 `install/setup.bash` 已 source（`lib/nmpc/mpc_node.py` 要在）
   · `bench` 包已装（夹具本身）
-  · `px4_msgs` 工作区已 source
+  · **`~/mavros_ws` 已 source**（`mavros_msgs` 从这里来）；
+    ☠️ **`~/px4_msgs_ws` **仍然**必须 source** —— 这条在 §四 里写错过一次，第一手（2026-10-13，
+      `--collect-only` 当场炸）修正：
+        `ModuleNotFoundError: No module named 'px4_msgs'` ← `import bench` 时抛出，
+        而不是某条用例失败。链条是 `bench/__init__.py` → `scenario.py:38` 的
+        **模块级** `from .fake_px4 import FakePx4` → `fake_px4.py:46` 的 `px4_msgs.msg`。
+      ⟹ "A 档被拒 ⟹ 不再需要 `px4_msgs`"这句话**对 DUT 成立、对夹具不成立**：
+        夹具仍然 import 它（`fake_px4.py` 归入待裁，见票 13 §四④ / `config.py` 的 ☠️）。
+      ⚠️ 教训的形态值得记：**"某个依赖不再被用"是一个关于 import 图的断言，
+        不是一个关于用法的断言** —— 判它要跑一次 `--collect-only`，别推理。
+        症状还很毒：**收集期就炸**，所以看起来像"测试环境坏了"而不是"我删错了什么"。
   · acados：**DUT 子进程**要 `ACADOS_SOURCE_DIR`/`LD_LIBRARY_PATH`（`_dut_env()` 会补上
     `~/acados` 这一档默认值）；本进程要 import `nmpc` 也走同一条路。
 
 ★★ **别并发跑，也别把 DUT 落在后台**（第一手，2026-09-28）：DUT 的话题名是**全固定**的
-  （`/fmu/in/*`），ROS 域默认 73 也是全固定 —— 于是任何一个"上一次没杀干净的 mpc_node"
-  都会和本文件的用例**同时**往同两条话题上发，夹具的记录里就混进了别人的帧
-  （症状是"帧数对不上/频率翻倍"，而断言本身照样绿或红得莫名其妙）。
+  （`/mavros/setpoint_raw/attitude`），ROS 域默认 73 也是全固定 —— 于是任何一个
+  "上一次没杀干净的 mpc_node"都会和本文件的用例**同时**往同一条话题上发，
+  夹具的记录里就混进了别人的帧（症状是"帧数对不上/频率翻倍"，而断言本身照样绿或红得莫名其妙）。
   同一时刻它们还共用 `$MPC_CODEGEN_DIR` 那个目录（560 KB 的生成代码）——
   两个进程同时判"要重新生成"会撞在一起，报一个与代码无关的
   `RuntimeError: Rendering of model.in.h failed!`（`t_renderer` 退出码非 0）。
@@ -31,12 +48,11 @@
 
 ★★ **`pgrep -af mpc_node` 会把「别人的」DUT 一起列出来**（第一手，2026-09-28）：
   这个仓库里常有两个会话同时干活，其中一个正在跑 `pytest test -q`，它的 DUT 与我的
-  **同一对固定话题**上发帧。看到的症状**不是**报错，而是**数字不对**：
-  一条本该 `pitch = +0.5572` 的用例量出了 `pitch = −0.0000, thrust_body_z = −0.6235`
+  **同一条固定话题**上发帧。看到的症状**不是**报错，而是**数字不对**：
+  一条本该 `body_rate_y = +0.5572` 的用例量出了 `body_rate_y = −0.0000, thrust = +0.169`
   —— 那是**默认配置（mocap 档、`hold_offset = 0`）那个 DUT 的悬停帧**混了进来。
-  ⚠️ **认这个症状要看 `pitch = −0.0000`（≈ 零角速率），别认 `thrust_body_z` 那个数**：
-  它是**旧归一化**下的悬停帧读数，2026-09-29 回填 `hover_thrust` 后悬停帧变成 ≈ −0.169
-  （`t_hover/t_max`）⟹ 拿 −0.6235 当指纹会认不出来。
+  ⚠️ **认这个症状要看 `body_rate_y ≈ 0`（≈ 零角速率），别认 `thrust` 那个数**：
+  悬停帧的 `thrust ≈ t_hover/t_max ≈ 0.169` 是个**处处都在**的常态值，拿它当指纹认不出来。
   ⟹ 判据：`ps -o ppid= -p <pid>` 看它的父进程 ——
     · 父进程是**活着的** `pytest` ⟹ 那是别人的工作，**别杀**，等它跑完（或换个时间再量）；
     · 父进程是 1（孤儿）⟹ 才是上头说的"上一次没杀干净"，该收掉。
@@ -51,14 +67,12 @@ from pathlib import Path
 
 import numpy as np
 import pytest
-from px4_msgs.msg import VehicleStatus
-from rclpy.qos import DurabilityPolicy, ReliabilityPolicy
+from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
 
 from bench import Scenario
-from bench.fake_px4 import NAV_STATE_OFFBOARD
-from bench.timeline import (mocap_pose_jump, mocap_stamp_rewind, px4_arm, px4_nav_state,
-                            px4_state_silence, px4_status_silence)
-from nmpc.params import PITCH_RATE_MAX, ROLL_RATE_MAX, Z0Params
+from bench.timeline import (mocap_pose_jump, mocap_stamp_rewind, silence_for,
+                            state_change)
+from nmpc.params import PITCH_RATE_MAX, Z0Params
 
 #: session 级的 ROS 上下文（在 `test/conftest.py` 里）—— 本模块的每条用例都要起 DUT
 pytestmark = pytest.mark.usefixtures("ros_context")
@@ -107,7 +121,7 @@ FROZEN_PARAMS: dict = {"tau_s": 0.0}
 
 
 def _scenario(start_dut: "bool | None" = None, **params) -> Scenario:
-    """一个场景：假 PX4 + 脚本化动捕 + 真的 DUT 子进程。
+    """一个场景：假 mavros + 脚本化动捕 + 真的 DUT 子进程。
 
     ★★ **DUT 一律按首飞冻结档起**（`FROZEN_PARAMS`，见上）—— 这是 ticket `phase4/07` 的落点：
       本文件从 Phase 4 起就是「**实机档**的 seam 1」，而不再是"Phase 2 的默认档"。
@@ -117,30 +131,63 @@ def _scenario(start_dut: "bool | None" = None, **params) -> Scenario:
       摘出来转发。混进 `params` 的话 DUT 会以"未知参数"启动失败，而 `mpc_node` 的参数白名单
       恰好会把这件事**变成一条清楚的报错**（rclpy 自己不会因为多一个参数报错，所以它选择主动拒）。
       ⚠️ 第一手（2026-09-30）：写成 `**params` 一把抓时，`start_dut=False` 就是这样暴露的。
+
+    ☠️ **2026-10-13（ticket 13 §四③）这里原本写的是 `px4=True`** —— 那是"再起一份
+      `fake_px4`"的开关。换载体之后 DUT 的下行/闸门源全在 `/mavros/*` 上 ⟹ 起 `fake_px4`
+      只是白起一份没人看的"外部世界"。现在**不起它**，DUT 面对的就是**假 mavros 那个世界**
+      （`FakeMavros` 由 `Scenario` **无条件**创建，见 `scenario.py`）。
+      ⚠️ 票面 §四③ 想要的是"**新增一个 mavros 档位**"（而不是像这样把 `px4=True` 去掉）——
+      那要动 `scenario.py` 的 `Scenario.__init__` 签名，而它**不在本轮的改动范围**里 ⟹
+      本轮以"不起 `fake_px4`"达成同一效果，**已在票 13 Comments 里登记**为待收口项。
     """
-    return Scenario(dut=DUT, px4=True, mocap=True, params={**FROZEN_PARAMS, **params},
+    return Scenario(dut=DUT, mocap=True, params={**FROZEN_PARAMS, **params},
                     start_dut=start_dut, dut_env=_dut_env())
 
 
 def _wait_dut_up(sc: Scenario, timeout_s: float = STARTUP_S) -> None:
-    """等 DUT **真的起来了**：判据是夹具**收到了第一帧心跳**，而不是"发布者被发现"。
+    """等 DUT **真的起来了**：判据是 **DUT 订上了 `/mavros/state`**，而不是"发布者被发现"。
 
     ★★ 第一手（2026-09-28，本机）：**发布者被发现远早于节点初始化完成**。
-      实测 `matched_publishers("mode")` 在 ~8 s 就 ≥ 1，而那一刻节点还在 `OfflineOcp()`
+      实测"匹配上发布者"在 ~8 s 就成立，而那一刻节点还在 `OfflineOcp()`
       里面（代码生成 + 编 C；同一个进程启动要 ~8 s，见 `STARTUP_S` 的说明），启动日志还
       压在 rcutils 的缓冲里没进管道。此时给它发 SIGINT 的症状是：
       **日志只剩开头那行 matplotlib 警告（373 字符）、`returncode == 0`、没有 traceback**
       —— 看上去像"收尾摘要没打出来"，其实节点压根没走到收尾路径（SIGINT 落在 `__init__`
       里就退出了）。这条判据不成立时，`test_SIGINT_*` 会红，而其余用例照样绿。
-    ★ 心跳由 50 Hz 定时器发、`__init__` 全跑完才有第一帧 ⟹ 判据天然排在"初始化完成"之后；
-      且**与日志缓冲无关**（帧走 DDS，不走 stdout），这正是它比"匹配上发布者"可靠的地方。
-    ★ 用 `Scenario.wait_for`（而不是 `sc.px4.wait_for_publishers`）是为了**失败时拿到证据**：
+
+    ☠️ **判据在 ticket 13 §二④ 换过**：原来靠"夹具收到第一帧**心跳**"
+      （`/fmu/in/offboard_control_mode`）。心跳那条流**整个删掉了**（飞控从收到的
+      `SET_ATTITUDE_TARGET` 自己派生 `OfflineControlMode`）⟹ 现在唯一的"节点活着的黑盒证据"
+      是它**订上了闸门源**。
+    ★ 为什么这个判据仍然有效（不是退化成"发布者被发现"那个坏判据）：`mpc_node.__init__`
+      里 `OfflineOcp(...)`（慢，代码生成 + 编 C）**排在**建订阅**之前** ⟹ 订阅第一次被
+      夹具看见，天然在"代码生成编完"之后；而且**与日志缓冲无关**（发现走 DDS，不走 stdout）。
+
+    ☠️☠️ **但它**不**等于"节点已经在跑了" —— 2026-10-13 实测（本机，一次探针跑到
+      `t=+8.174 s` 判据成立，随后逐条记下 DUT 的 `/rosout`）：
+        · `+8.330 s`（判据成立后 **156 ms**）DUT 才打出第一条启动 info；
+        · `+8.341 s`（**167 ms**）才跑出**第一拍** `_tick`（那条"闸门关闭（not_armed）"）。
+      对照 `mpc_node.__init__` 的顺序：`create_timer`（`:747`）**排在**建订阅（`:640`）**之后**，
+      而 `rclpy.spin()` 又在 `__init__` 之后 ⟹ **判据成立时进程可能还在 `__init__` 里**。
+      此时给它发 SIGINT 的症状与"发布者被发现"那个坏判据**一模一样**：
+      **日志只剩开头那行 matplotlib 警告、`returncode == 0`、没有 traceback，也没有收尾摘要**
+      —— 因为 `main()` 的 `finally` 里那句 `print(f"[mpc_node] 收尾…")` 前面有一道
+      `if node is not None`，而 `node = MpcNode(params)` 还没返回（第一手：这一条让
+      `test_SIGINT_*` 独立跑也稳定红，见它的 ★★）。
+      ⟹ **纪律**：`_wait_dut_up` 只回答"DUT 的图起来了没有"。谁在它返回后**立刻**
+        杀进程 / **立刻**读图（`attitude_publishers()` 之类），必须**再等一个"定时器跑过
+        至少一拍"的证据** —— 最容易拿到的那个就是**解锁后的一帧 setpoint**
+        （`_tick` 只可能 `create_timer` 返回之后才跑 ⟹ 它同时证明了 `__init__` 返回了、
+        `spin()` 进去了）。本文件其余用例都在等帧或 `hold(≥1 s)`，只有 `test_SIGINT_*`
+        原本是"拿到就杀"，所以只有它会踩。
+
+    ★ 用 `Scenario.wait_for`（而不是别的等待）是为了**失败时拿到证据**：
       `BenchTimeout` 会带上 DUT 的日志尾部 —— "参数名写错、节点启动即退"与"QoS 不兼容、
       永不匹配"在断言里长得一样，但根因完全不同（`scenario.py` 的 `wait_for_subscribers`
       里写着同一条教训）。
     """
-    sc.wait_for(lambda: len(sc.px4.published_frames("mode")) >= 1, timeout_s=timeout_s,
-                message="DUT 起来之后没在 /fmu/in/offboard_control_mode 上发出第一帧心跳")
+    sc.wait_for(lambda: sc.fake.matched_subscribers("state") >= 1, timeout_s=timeout_s,
+                message="DUT 起来之后没订上 /mavros/state（闸门源，换了载体）")
 
 
 def _读日志(path: Path) -> list:
@@ -157,17 +204,19 @@ def _读日志(path: Path) -> list:
 def _发出去的推力(r: dict, z0: Z0Params) -> float:
     """一帧日志 → **真正发出去的那个推力** [N]（ticket 20 的落点判据要读它）。
 
-    `thrust_body_z = −F / t_max`（[`sign_map.py:73`](../nmpc/sign_map.py#L73)，PX4 机体 z 朝下
-    ⟹ 那一位是负的）⟹ 反解要**带负号**。⚠️ 2026-09-29 本张第一版在散文里写成 `thrust_body_z·t_max`
-    （漏了负号），三处一起错 —— 所以这个反解**只在函数里写一遍**，用例不许自己再写。
+    `thrust = F / t_max`（[`sign_map.py`](../nmpc/sign_map.py) 的 `mavros_attitude_target`）
+    ⟹ 反解**不带负号**。☠️ **2026-10-13（ticket 13 §二②）这里原来是 `−thrust_body_z × t_max`**
+    （uXRCE-DDS 口径下 `thrust_body_z` 是负的）—— 换载体后键名与符号一起换了：
+    `thrust_body_z`（负）→ `thrust`（**正**）。⛔ 照旧名字/旧符号去读新日志会得到
+    "推力的符号反了"这个结论，而**反的是名字**。反解只在这里写一遍，用例不许自己再写。
 
     ★ 为什么落点判据非它不可：`u` 是**求解器原样输出**、`df` 是**积分器状态**，两者都不含"加没加上"
       这个信息；只有这一列是"写进那一帧的数"。
-    ★ 容差 `abs=1e-4`：`thrust_body_z` 与 `u` 都各自四舍五入到 6 位小数，而 `F = −thrust_body_z·t_max`
+    ★ 容差 `abs=1e-4`：`thrust` 与 `u` 都各自四舍五入到 6 位小数，而 `F = thrust × t_max`
       把 `1e-6` 放大成 `t_max·1e-6`（默认口径 `t_max ≈ 46.3` ⟹ ~5e-5），加上 `u[0]` 那 `1e-6`
       ⟹ 比 1e-4 更紧会偶发假红。**这一档由调用方给**（见下面两个用它的用例）。
     """
-    return -float(r["thrust_body_z"]) * z0.t_max
+    return float(r["thrust"]) * z0.t_max
 
 
 def _该发出去的推力(r: dict, z0: Z0Params, df_used: float) -> float:
@@ -187,49 +236,138 @@ def _该发出去的推力(r: dict, z0: Z0Params, df_used: float) -> float:
 def _arm_and_offboard(sc: Scenario) -> None:
     """注入"已解锁 + 已切 OFFBOARD"—— 走 `Timeline`（夹具**唯一**那条注入面）。
 
-    ★ 为什么排进 `timeline` 而不是直接 `sc.px4.set_armed(...)`：票面那条验收项要的是
+    ☠️ **2026-10-13（ticket 13 §二③/§四）相比旧版变了三处**：
+      · 注入面从 `px4_arm` / `px4_nav_state`（改 `fake_px4` 的 `/fmu/out/vehicle_status`）
+        换成 `state_change`（改 `fake_mavros` 的 `/mavros/state` 的 `armed` + `mode`）；
+      · 判据从"状态帧上的整数枚举"换成"`state_frames` 末帧的 `armed`/`mode` 字符串"；
+      · **等待不再是毫秒级**：`/mavros/state` 是 **1 Hz 定频**（`sys_status.cpp:962-985`），
+        `set_state` 只改字段、要等下一拍定时器才发出去 ⟹ 最多等约 1 s。这就是换载体后
+        "解锁上升沿最多晚 1 s"那个真问题的来源（§二③ 把 `status_timeout_s` 从 0.75 提到 2.5
+        正是为了它）；超时给 5 s 留足余量。
+
+    ★ 为什么排进 `timeline` 而不是直接 `sc.fake.set_state(...)`：票面那条验收项要的是
       "**能按指定时刻注入故障**（为 07 准备好）"。"直接调 setter"是"立刻注入"，
       对 07 那种"跑 3 s 之后让这一拍求解失败"用不上；而排进 timeline 之后，
       **同一套写法**既能在 `t=0` 注入、也能在 `t=+3.0` 注入（`wait_for` / `advance_to`
       在等待期间照常触发事件，见 `Scenario.wait_for` 的 docstring）。
-    ★ 两条注入面都会**即刻**发一帧（不等 2 Hz 的定频），所以下面这个等待是毫秒级的。
     """
-    sc.timeline.extend(px4_arm(sc.px4, sc.t(), armed=True))
-    sc.timeline.extend(px4_nav_state(sc.px4, sc.t(), NAV_STATE_OFFBOARD))
-    sc.wait_for(lambda: sc.px4.status_frames and
-                int(sc.px4.status_frames[-1].msg.arming_state) == VehicleStatus.ARMING_STATE_ARMED
-                and int(sc.px4.status_frames[-1].msg.nav_state) == NAV_STATE_OFFBOARD,
-                timeout_s=5.0, message="夹具注入的 armed/OFFBOARD 没落到状态帧上")
+    sc.timeline.extend(state_change(sc.fake, sc.t(), armed=True, mode="OFFBOARD"))
+    sc.wait_for(lambda: bool(sc.fake.state_frames)
+                and bool(sc.fake.state_frames[-1].msg.armed)
+                and str(sc.fake.state_frames[-1].msg.mode) == "OFFBOARD",
+                timeout_s=5.0, message="夹具注入的 armed/OFFBOARD 没落到 /mavros/state 上")
+
+
+# ─────────────────── 新载体（mavros 下行）的取记录助手 ───────────────────
+#
+# ☠️ **2026-10-13（ticket 13 §四③）**：这一组助手顶替旧的 `sc.px4.published_frames("rates")` /
+#   `frames_between("rates", …)` / `rate_hz("rates", …)`（那些读的是 `/fmu/in/vehicle_rates_setpoint`）。
+#   新下行是 `/mavros/setpoint_raw/attitude`，夹具侧由 `FakeMavros.attitude_*` 记录。
+#   ★ 为什么是**另一条话题**、不能复用 `sc.setpoints()`：`sc.setpoints()` 读的是 Phase 1
+#     `control` 的 `/mavros/setpoint_raw/local`（`PositionTarget`），**不是这一条流**
+#     （理由见 `config.py` 里 `topics["attitude"]` 的 ★）。
+
+def _sp_frames(sc: Scenario) -> list:
+    """至今为止收到的下行帧（`AttitudeSetpoint` 列表，按到达顺序）。"""
+    return list(sc.fake.attitude_setpoints)
+
+
+def _sp_between(sc: Scenario, from_s: float, to_s: float) -> list:
+    """某窗口内的下行帧（判"闸门关着时零帧"用它，与旧的 `frames_between("rates")` 同义）。"""
+    return sc.fake.attitude_setpoints_between(from_s, to_s)
+
+
+def _sp_rate_hz(sc: Scenario, from_s: float, to_s: float) -> float:
+    """某窗口内实测的下行频率（与旧的 `rate_hz("rates", …)` 同义）。"""
+    return sc.fake.attitude_rate_hz(from_s=from_s, to_s=to_s)
 
 
 # ───────────────────────────── 接口：话题名 + QoS ─────────────────────────────
 
 def test_接口与_QoS_与票面一致():
-    """票面验收项：订阅两条、发布两条，QoS 逐个字段对。
+    """票面验收项：下行接上 mavros 的 `/mavros/setpoint_raw/attitude`，闸门源订 `/mavros/state`，
+    QoS 逐个字段对。
 
-    ★ 三条断言各自盯的东西（错了会长什么样）：
-      · **发布方 QoS**：夹具自己的订阅是 `VOLATILE`（照抄 PX4 的 reader），与 DUT 发
-        `TRANSIENT_LOCAL` **兼容** ⟹ 在"收得到吗"上永远看不出来，只能读发布方 info。
-        ⚠️ 只能对 `reliability` / `durability` 下断言：`depth` 在这套栈的发现信息里恒为 0
+    ☠️ **2026-10-13（ticket 13 §四③）这条整体换过载体**：旧版读的是 `/fmu/*` 的两个发布方
+      （`rates` / `mode`）。换载体后 DUT 在 mavros 那条话题上是**发布方**、在 `/mavros/state`
+      上是**订阅方** ⟹ 断言的**方向也换了**。
+
+    ★ 每条断言盯的东西（错了会长什么样）：
+      · **夹具自己的订阅 QoS**（读夹具的 profile，属 seam 1 允许的"读夹具"）：必须是**真 mavros
+        那一档**（best_effort / volatile）。⛔ 若谁"图省事"把它改成默认的可靠订阅，
+        它会比真 mavros 更**严**：DUT 发 best_effort 时两边不兼容 ⟹ 它一帧都收不到 ⟹
+        本用例会在 `wait_for` 上先炸（报"下行一条都没发出来"，**指错方向**），
+        而且下面的负控也失去了对照（两个订阅者变成同一档）。
+        ★ 换句话说：夹具的收端**必须是全篇最弱的那一档**，"QoS 写错"才拦得住 ——
+        见 `fake_mavros.attitude_publishers` 的 ⚠️⚠️ 四格矩阵。
+      · **下行真的接上了**：`attitude_publishers() == 1`。
+        ☠️☠️ **这一条 2026-10-13 改过口径**：原文写它是"QoS 不匹配就收不到"的**正向判据** ——
+        **反了**。兼容性只要求 `offered ≥ requested`，而夹具的收端是最弱的 best_effort
+        ⟹ DUT 发 reliable（ROS 2 默认）或 transient_local **照样兼容**，这个数仍然是 1。
+        ⟹ 它现在只证"**话题上有发布者**"（话题名写错 / DUT 没起 / 被参数拒了当场退 全都长这样），
+        **QoS 写没写对由 ③ 直接读 profile 判**（第一手四格矩阵见 `fake_mavros
+        .attitude_publishers` 的 ⚠️⚠️）。
+        ⚠️ 顺带：本套栈上**不兼容会在两端各打一条 rmw WARN**
+        （`… requesting incompatible QoS. No messages will be sent to it. Last incompatible
+        policy: RELIABILITY`）⟹ "QoS 失配完全静默"也是**过强的说法**；但那条 WARN 只在
+        发现那一刻打一次，不是判据。
+      · **负控**：在同一话题上再挂一个 **RELIABLE** 订阅者。DUT 发的是 best_effort，
+        `offered(best_effort) < requested(reliable)` ⟹ **不兼容** ⟹ 它一帧都收不到。
+        它把上一条从"随便挂个订阅者都能数到 1"里摘出来（同一份话题、同一段时间，一个收得到、
+        一个收不到，差别只在 QoS）。
+      · **DUT 的发布方 QoS**：读 DUT 那条话题的发布方 info，reliability/durability 必须是
+        best_effort/volatile。⚠️ 只能对这两项下断言：`depth` 在本套栈的发现信息里恒为 0
         （见 `test_fake_px4_selftest.py::test_发现信息里读不回来的那两项_history_与_depth`）。
-      · **订阅 `vehicle_status` 的 QoS**：这一项**不用读 info** —— PX4 的 writer 是
-        BEST_EFFORT，DUT 若写成 RELIABLE（= ROS 2 的默认值！）就**一个回调都不进**、也
-        **不会报错**，唯一的症状是 `matched_subscribers` 数不到它。 ⟹ `== 1` 就是那条判据。
-      · **动捕那条话题**：`mocap` 节点用 `QoS(10)` 可靠发；DUT 若写 best_effort 同样永不匹配。
+      · **闸门源那条订阅**：`/mavros/state` 的 writer 是 RELIABLE + TRANSIENT_LOCAL，
+        DUT 订上了 ⟹ `matched_subscribers("state") == 1`。
+      · **动捕两条**：`mocap` 节点用 `QoS(10)` 可靠发；DUT 若写 best_effort 同样永不匹配。
     """
+    from mavros_msgs.msg import AttitudeTarget
+
     with _scenario() as sc:
         _wait_dut_up(sc)
+        _arm_and_offboard(sc)
+        sc.wait_for(lambda: len(_sp_frames(sc)) >= 3, timeout_s=10.0,
+                    message="解锁后下行一条都没发出来 ⟹ 没有帧可用来判 QoS")
 
-        for key in ("rates", "mode"):
-            q = sc.px4.publisher_qos(key)
-            assert q is not None, f"拿不到 {key} 的发布方 QoS"
-            assert q.reliability == ReliabilityPolicy.BEST_EFFORT, \
-                f"{key} 的 reliability 是 {q.reliability!r} —— PX4 的 reader 是 best_effort"
-            assert q.durability == DurabilityPolicy.TRANSIENT_LOCAL, \
-                f"{key} 的 durability 是 {q.durability!r} —— 票面要求 TRANSIENT_LOCAL"
+        # ① 夹具手上那个订阅就是真 mavros 的那一档（守着下一条的"红得了"）
+        q = sc.fake.attitude_sub_qos()
+        assert q.reliability == ReliabilityPolicy.BEST_EFFORT, \
+            f"夹具在 attitude 上的订阅 reliability 是 {q.reliability!r} —— 该照抄 SensorDataQoS()"
+        assert q.durability == DurabilityPolicy.VOLATILE, \
+            f"夹具的 durability 是 {q.durability!r} —— SensorDataQoS() 是 volatile"
 
-        assert sc.px4.matched_subscribers("status") == 1, \
-            "DUT 没接上 /fmu/out/vehicle_status（QoS 写错就永不匹配，且不报错）"
+        # ② 下行接上了（★ 不是 QoS 判据：夹具收端是 best_effort ⟹ 来者不拒，见 docstring 的 ☠️☠️）
+        assert sc.fake.attitude_publishers() == 1, \
+            ("/mavros/setpoint_raw/attitude 上没有**能接上**的 DUT 发布者 ⟹ 话题名写错 / "
+             "DUT 没起 / 被参数拒了当场退出，三者在这个数上长得一模一样"
+             "（⛔ 别读成'发端 QoS 与 SensorDataQoS() 不兼容'：兼容规则是 offered ≥ requested，"
+             "而夹具收端是最弱的 best_effort，接得住 reliable —— 见 `fake_mavros` 的四格矩阵）")
+
+        # ③ 负控：RELIABLE 订阅者收不到 best_effort 的发布（纯 QoS 差异）
+        wrong = []
+        _sub = sc.node.create_subscription(
+            AttitudeTarget, sc.fake.topics["attitude"], wrong.append,
+            QoSProfile(depth=10, reliability=ReliabilityPolicy.RELIABLE))
+        assert _sub is not None, "订阅对象要留着引用"
+        sc.hold(1.0)
+        assert wrong == [], \
+            (f"一个 RELIABLE 订阅者收到了 {len(wrong)} 帧 best_effort 的下行 ⟹ 这条负控失效了；"
+             "check: DUT 现在发的是不是 RELIABLE（那与本条不冲突，但接口就与票面不符）")
+
+        # ④ DUT 的发布方 QoS
+        q = sc.fake.attitude_publisher_qos()
+        assert q is not None, "拿不到 DUT 在 attitude 上的发布方 QoS（发现还没跑完？）"
+        assert q.reliability == ReliabilityPolicy.BEST_EFFORT, \
+            f"DUT 发布方的 reliability 是 {q.reliability!r} —— 票面要求 best_effort（SensorDataQoS）"
+        assert q.durability == DurabilityPolicy.VOLATILE, \
+            f"DUT 发布方的 durability 是 {q.durability!r} —— 票面要求 volatile"
+
+        # ⑤ 闸门源：DUT 订上了 /mavros/state（QoS 写错就永不匹配，且不报错）
+        assert sc.fake.matched_subscribers("state") == 1, \
+            "DUT 没接上 /mavros/state（QoS 写错就永不匹配，且不报错）"
+
+        # ⑥ 动捕两条（状态源仍是默认的 mocap 档）
         assert sc.mocap_source.matched_subscribers() >= 1, \
             "DUT 没接上 /mocap/pose_enu（票面要求订 **ENU** 那条，不是 NED）"
         # ★ 速度是**独立的一条话题**（ticket 15）⟹ 位姿订上了**不等于**速度也订上了，
@@ -240,92 +378,125 @@ def test_接口与_QoS_与票面一致():
 
 # ───────────────────────────── 闸门：谁在发、谁不发 ─────────────────────────────
 
-def test_闸门关闭时只发心跳_一帧_setpoint_都没有():
-    """票面验收项「未解锁 / 未在 offboard 时**不发布**」+「心跳 ≥2 Hz」。
+def test_未解锁时一帧_setpoint_都没有():
+    """票面验收项「未解锁 / 未在 offboard 时**不发布**」。
 
-    ★★ 这里的读法是"不发**指令**"：`offboard_control_mode` 必须**无条件**发 —— 它是 PX4
-      放行 OFFBOARD 的**前提**（`offboardCheck.cpp:40-65` 每轮先置
-      `offboard_control_signal_lost = true`，只有收到新鲜的心跳才清零；
-      `modeCheck.cpp:126-134` 在该标志为真时把 OFFBOARD 从"可运行"里删掉）。
-      把心跳也闸在 `nav_state == OFFBOARD` 上就是**死锁**：不发心跳 ⟹ 进不去 OFFBOARD
-      ⟹ 闸门永不开。真机上表现为"这飞机根本进不了 offboard"（理由与引文见 `mpc_node.py` 的 docstring）。
-
-    ⇒ 所以这一条是**两条方向相反的断言合在一起**：心跳**在流**（正控：证明节点活着、
-      动捕与状态都新鲜），而 setpoint **一帧都没有**（负断言）。
+    ☠️ **2026-10-13（ticket 13 §二④④/§四）这条的"心跳"那一半删掉了**：旧版是
+      「心跳**在流**（≥2 Hz）+ setpoint **一帧都没有**」两条反向断言。换载体后
+      心跳那条流**整个删掉了** —— 飞控从收到的 `SET_ATTITUDE_TARGET` 自己派生
+      `OfflineControlMode`，我们没有第二条要发的东西（§二④ 取 (a) 收成单频）。
+      ⚠️ **代价**：现在"不发指令"与"不发心跳"是**同一件事**（见 `mpc_node._gate_closed`
+      的 ☠️）—— 闸门关着超过 `COM_OF_LOSS_T` 会让飞控拒绝进 OFFBOARD，这是票面
+      「换载体后后果最重的一句话」。
+    ★ 正控改由"节点活着 + 订上闸门源"承担（`_wait_dut_up`）：心跳没了之后，
+      "没发"和"节点没起来"不再有第三条流可以分开 ⟹ 那条等待就是这个用例的正控。
     """
     with _scenario() as sc:
         _wait_dut_up(sc)
-        sc.hold(0.5)                     # 先跑一段，让心跳频率的窗口有数据
-        t_from = sc.t()
-        sc.hold(2.0)
+        sc.hold(2.5)                     # 未解锁状态下跑一段（闸门源 1 Hz，跑够几拍）
 
-        modes = sc.px4.frames_between("mode", t_from, sc.t())
-        assert len(modes) >= 4, f"{sc.t() - t_from:.1f} s 里只发了 {len(modes)} 个心跳（要 ≥2 Hz）"
-        rate = sc.px4.rate_hz("mode", from_s=t_from, to_s=sc.t())
-        assert rate >= 2.0, f"心跳只有 {rate:.2f} Hz，PX4 的 COM_OF_LOSS_T 是 1 s"
-        for f in modes:
-            m = f.msg
-            assert m.body_rate is True, "心跳的 body_rate 必须是 True（(C) 级 CTBR 的接缝）"
-            assert not any((m.position, m.velocity, m.acceleration, m.attitude, m.actuator)), \
-                f"心跳里除 body_rate 外还有别的位为真：{m}"
-
-        assert sc.px4.published_frames("rates") == [], \
-            "还没解锁就发了 vehicle_rates_setpoint（闸门没关严）"
+        assert _sp_frames(sc) == [], \
+            "还没解锁就发了 /mavros/setpoint_raw/attitude（闸门没关严）"
+        assert sc.dut_alive(), "未解锁这一段里 DUT 退出了"
 
         # 闸门关着的原因要能被读到 —— 失败时"为什么没发"是第一个要回答的问题
         log = sc.dut_log()
         assert "闸门关闭" in log, f"DUT 没把闸门原因打进日志（日志尾：{log[-400:]!r}）"
+        assert "not_armed" in log, \
+            f"闸门关着的理由不是 not_armed（日志尾：{log[-400:]!r}）—— 默认状态是未解锁"
 
 
 def test_解锁切_OFFBOARD_之后立刻开始发():
-    """闸门的**正控**：注入 armed + OFFBOARD 之后必须出现 setpoint。
+    """闸门的**正控**：注入 armed + OFFBOARD 之后必须出现下行帧。
 
     ★ 与上一条配对读 —— 只断言"解锁后有"无法区分"闸门根本没关"。
-    ★ 阈值给 10 s 是刻意的：这是**事件驱动**的（夹具注入即刻发状态，节点 100 Hz 在跑），
-      正常在 0.1 s 内就该出现；给宽只是不让 CI 抖动变成假红。
+    ★ 阈值给 10 s 是刻意的：`/mavros/state` 是 **1 Hz 定频**（`set_state` 要等下一拍定时器
+      才发出去），加上 `warmup_cycles` 热身拍（100 Hz 下 50 ms）⟹ 正常一两秒内出现；
+      给宽只是不让 CI 抖动变成假红。
     """
     with _scenario() as sc:
         _wait_dut_up(sc)
-        sc.hold(0.5)
-        assert sc.px4.published_frames("rates") == [], "正控的前提：此刻本来就不该有 setpoint"
+        sc.hold(1.5)
+        assert _sp_frames(sc) == [], "正控的前提：此刻本来就不该有 setpoint"
 
         _arm_and_offboard(sc)
-        sc.wait_for(lambda: sc.px4.published_frames("rates"), timeout_s=10.0,
+        sc.wait_for(lambda: _sp_frames(sc), timeout_s=10.0,
                     message="解锁 + OFFBOARD 之后 10 s 内一帧 setpoint 都没发出来")
         assert sc.dut_alive(), "DUT 在发布之前就退出了"
 
 
-def test_状态静默超过阈值之后_停发_setpoint_但心跳照发():
+def test_闸门源静默超过阈值之后停发_恢复之后重开():
     """**按指定时刻注入故障**（票面那条验收项的实做）+ 停机条件在话题层被钉住。
 
-    ★ 这条是 `px4_status_silence` 存在的理由，也是 07 要的接缝：故障**排在时刻上**
-      （`t0 + 0.2`），不是"跑完再说"。窗口取 `status_timeout_s`（默认 0.75 s）之后
-      再留 0.25 s 余量，且窗口内**两种帧分开数**：
-      · setpoint **一帧都不能有** —— 状态龄超阈值 ⟹ `Cycle.publish=False`；
-      · 心跳**照旧 50 Hz** —— 这正是票面读法的那条（§2.2）：不发热身/心跳会把 OFFBOARD 死锁。
+    ☠️ **2026-10-13（ticket 13 §二③/§四）这条整体换过载体，且"心跳照发"那半删掉了**：
+      · 静默面从 `px4_status_silence`（`/fmu/out/vehicle_status`）换成 `silence_for(fake, 'state')`；
+      · 阈值从 **0.75 s 提到 2.5 s**（§二③ 的裁定）—— `/mavros/state` 只在收到 MAVLink
+        HEARTBEAT 时发布、**1 Hz 定频**，而 `0.75 < 1.0` ⟹ `status_stale` 会**恒真**；
+      · **"心跳照发"那一半没有了**（心跳流已删）⟹ 窗口内只剩"setpoint 一帧都不能有"。
+
+    ★ 故障**排在时刻上**（`t0 + 0.2`），不是"跑完再说"—— 这是 07 要的接缝。
+    ★ 静默时长取 **4.0 s**，明显大于 2.5 s 的阈值（同 `px4_status_silence` 那条纪律：
+      时长要**明显大于**阈值，否则跨不过闸门、用例白跑）。
     ★ 恢复之后再断言"又开始发" —— 否则"节点自己死了"和"闸门关着"在断言里长得一样。
     """
     with _scenario() as sc:
         _wait_dut_up(sc)
         _arm_and_offboard(sc)
-        sc.wait_for(lambda: sc.px4.published_frames("rates"), timeout_s=10.0,
-                    message="正控没成立：解锁前就不发，解锁后也没发")
+        sc.wait_for(lambda: _sp_frames(sc), timeout_s=10.0,
+                    message="正控没成立：解锁后一帧都没发")
 
         t0 = sc.t()
-        sc.timeline.extend(px4_status_silence(sc.px4, t0 + 0.2, duration_s=3.0))
+        sc.timeline.extend(silence_for(sc.fake, "state", at_s=t0 + 0.2, duration_s=4.0))
 
-        # 静默 1.2 s 之后看 1.3 s 的窗口：阈值 0.75 s 早已越过，仍在静默期内。
-        sc.advance_to(t0 + 2.5)
-        n_sp = len(sc.px4.frames_between("rates", t0 + 1.2, t0 + 2.5))
-        n_hb = len(sc.px4.frames_between("mode", t0 + 1.2, t0 + 2.5))
+        # 静默 3.5 s 之后看窗口 [t0+3.3, t0+4.2]：阈值 2.5 s 早已越过，仍在静默期内
+        # （静默到 t0+4.2 结束）。
+        sc.advance_to(t0 + 4.2)
+        n_sp = len(_sp_between(sc, t0 + 3.3, t0 + 4.2))
         assert n_sp == 0, f"状态龄超过 status_timeout_s 之后还在发 setpoint（{n_sp} 帧）"
-        assert n_hb > 50, f"静默期间心跳掉了（{n_hb} 帧 / 1.3 s，期望 ~65）"
         assert sc.dut_alive(), "DUT 在静默期间退出了"
+        assert "status_stale" in sc.dut_log(), \
+            f"停发的理由不是 status_stale（日志尾：{sc.dut_log()[-500:]!r}）"
 
         # 恢复：状态重新流动 ⟹ 闸门重开（先重新热身 `warmup_cycles` 拍，100 Hz 下 50 ms）
-        sc.advance_to(t0 + 6.5)
-        n_after = len(sc.px4.frames_between("rates", t0 + 4.5, t0 + 6.5))
+        sc.advance_to(t0 + 9.0)
+        n_after = len(_sp_between(sc, t0 + 7.0, t0 + 9.0))
         assert n_after > 0, "状态恢复之后没有重新开始发 setpoint（闸门没重开）"
+
+
+def test_闸门源超时阈值_2_5_下正常跑不报_stale_而_0_75_下会():
+    """★★ **票面 §二③ 点名要的变异测试**（"把参数改回 `0.75` ⟹ 必须变红"）——
+    这条把**变异本身**写成用例的第二半，于是它永远在守着，不靠人记得手改一次。
+
+    ★ 机理（票面原话）：`/mavros/state` **1 Hz 定频**，而 `status_timeout_s = 0.75 < 1.0`
+      ⟹ 每一拍之间状态龄必然越过 0.75 ⟹ `status_stale` **恒真**、每秒报"飞控失联"并停发。
+      2.5 s 是 §二③ 的裁定值（与 Phase 1 同值同理由）。
+    ★ **为什么这条断言有鉴别力**：它不是"停发了没有"（两档都会停），而是
+      **"健康的 1 Hz 流下会不会报失联"** —— 0.75 会因为"两帧之间空窗 1 s > 0.75"而
+      **在每个周期都报一次**，2.5 则一次都不报。改回 0.75 会让**第一半**变红。
+    ★ 第二半不是"为了让红"而写的假用例：它**正是**变异测试要证明的那个事实
+      （"0.75 下真的会报"），所以留在文件里，下次谁改这个阈值，两边一起说话。
+
+    ⚠️ 只用**一个**健康场景跑两档、中间不注入任何故障：读的就是"健康流会不会误报"。
+    """
+    def run(timeout_s: float) -> str:
+        with _scenario(status_timeout_s=timeout_s) as sc:
+            _wait_dut_up(sc)
+            _arm_and_offboard(sc)
+            sc.wait_for(lambda: _sp_frames(sc), timeout_s=10.0,
+                        message="正控没成立：解锁后一帧都没发")
+            sc.hold(4.0)                 # 跑够 ≥4 个 state 周期，让 0.75 档暴露
+            return sc.dut_log()
+
+    log_ok = run(2.5)
+    assert "status_stale" not in log_ok, \
+        ("默认 status_timeout_s（2.5）下，健康的 1 Hz 闸门源被误判成失联 ⟹ "
+         f"阈值改太小了（§二③：0.75 < 1.0 会恒真）。日志尾：{log_ok[-500:]!r}")
+
+    log_bad = run(0.75)
+    assert "status_stale" in log_bad, \
+        ("把阈值改回 0.75 之后竟然**没有**报 status_stale ⟹ 这条变异测试没有鉴别力:"
+         "要么闸门源不是 1 Hz、要么这条判据已经和它脱钩了。"
+         f"日志尾：{log_bad[-500:]!r}")
 
 
 # ───────────────────────────── 参数：拼错就拒，标准参数放行 ─────────────────────────────
@@ -340,9 +511,9 @@ def test_拼错的参数当场拒_而_use_sim_time_放行():
         而 09/11 用 launch 起这个节点时带着它是常态 ⟹ 症状会是"节点起不来"，报错却指向参数名。
     ★ 拒绝那半**排在代码生成之前**，所以它毫秒级退出（实测：日志里只有开头那行 matplotlib 警告）。
 
-    ★★ "放行"那半的判据**不能**用"收到第一帧心跳"（`_wait_dut_up`）—— 这是第一手踩到的：
+    ★★ "放行"那半的判据**不能**用"等到 DUT 订上闸门源"（`_wait_dut_up`）—— 这是第一手踩到的：
       `use_sim_time=true` 而**没有任何节点发 `/clock`** 时，rclpy 的时钟冻在 0，
-      50 Hz / 100 Hz 定时器**一次都不触发** ⟹ 节点活着、启动日志全打出来了、**一帧都不发**，
+      100 Hz 定时器**一次都不触发** ⟹ 节点活着、启动日志全打出来了、**一帧都不发**，
       看起来与"节点没起来"一模一样（第一次写这条时等了 120 s 才等到 BenchTimeout）。
       所以判据取"启动那行日志 + 进程还在"：那行是在 `declare_params` **之后**打的，
       参数被接受才有它；而 `未知参数` 这条字符串一旦出现就是被拒了。
@@ -378,8 +549,8 @@ def test_tau_取_0_起得来_而负的与过大的仍然当场拒():
     ⚠️ 最后一个坏值取 **`0.2` 本身**（不是 `0.21`）：本票第一版节点侧写的是 `<= 0.2`，
       与 `preflight_check` 的 `< 0.2` 差**一个端点** ⟹ `τ = 0.2` 会"自检红、节点绿"。
       只有把端点喂进去才拦得住这种漂移 —— `0.21` 在两个口径下都会红，**看不见**这件事。
-    ★ 正控那半的判据是"启动日志 + 进程还在"，**不是**"收到第一帧心跳"（同 `use_sim_time`
-      那条的理由：心跳要等 `OfflineOcp` 建完，~8 s）。这里要判的只是**参数校验那一关**；
+    ★ 正控那半的判据是"启动日志 + 进程还在"，**不是**`_wait_dut_up`（同 `use_sim_time`
+      那条的理由：订阅要等 `OfflineOcp` 建完，~8 s）。这里要判的只是**参数校验那一关**；
       "真的跑起来并发了帧"由 τ 的配对差分用例（负控那一路现在就是 `τ = 0`）覆盖。
     ★ 拒绝那两半都**排在代码生成之前**，所以毫秒级退出，不必等 `STARTUP_S`。
     """
@@ -405,13 +576,22 @@ def test_tau_取_0_起得来_而负的与过大的仍然当场拒():
 
 
 # ───────────────────────────── 符号 + 推力归一化 ─────────────────────────────
+#
+# ☠️ **2026-10-13（ticket 13 §四③）本节的断言对象换过**：旧版断言落在
+#   `VehicleRatesSetpoint` 的 `roll/pitch/yaw/thrust_body[2]`（PX4 的 FRD/NED 口径）。
+#   新载体 `AttitudeTarget` 的三个字段是 **FLU 原样**（`body_rate.x/y/z`）、推力是**正号**
+#   （`thrust`）—— ⟹ 同一个物理指令，**发布出去的字段的符号可能整根反过来**。
+#   ⚠️ 这正是本票三条静默失效里的 **N1（推力正负）** 与 **N2（body_rate 转两次）**：
+#   拿旧字段名去读新日志会得到"符号反了"这个结论，而**反的是名字**。
+#   ★ 专测 N2 的用例见 `test_N2_...`（就在本节末尾）。
 
 def test_位置保持时推力归一化等于悬停油门_角速率近零():
     """票面验收项「推力归一化**从模型导出**」（M2 的结论：不再硬编码 `1/T_max`）。
 
-    ★ 判据是一个**恒等式**：`thrust_body[2] = −F/t_max`（`t_max` = **归一化**常数，不是 `F` 上限），
-      而位置保持的稳态 `F ≈ t_hover` ⟹ `thrust_body[2] ≈ −t_hover/t_max`。期望值**从模型算出来**
-      （`Z0Params`），不写死 0.6235 —— 写死的话"改了质量、忘了改这里"就永远发现不了。
+    ★ 判据是一个**恒等式**：`thrust = F/t_max`（`t_max` = **归一化**常数，不是 `F` 上限；
+      ☠️ 换载体前是 `thrust_body[2] = −F/t_max`，那个负号属于旧字段名。现在 `thrust` 是**正号**，
+      取负在飞控/mavros 那一侧），而位置保持的稳态 `F ≈ t_hover` ⟹ `thrust ≈ +t_hover/t_max`。
+      期望值**从模型算出来**（`Z0Params`），不写死 0.169 —— 写死的话"改了质量、忘了改这里"就永远发现不了。
 
     ⚠️ 容差**按牛顿定义、再除以 `t_max`**（2026-09-29 订正）：它原来是归一化的 `0.06`，那是
       照着**旧归一化**（`t_max = 11.8 N`）量的第 0 次迭代点量级（出厂点 `F = 7.81 N` ⟹
@@ -419,6 +599,8 @@ def test_位置保持时推力归一化等于悬停油门_角速率近零():
       偏差**折到归一化上只剩 1/3.9 ⟹ 还写 `0.06` 就是**比它本该管的事松 3.9 倍**（"假绿"）。
       不是"随手给的"：RTI 的单次迭代 + 参考点就是测量点本身，稳态判据只能用带宽容差
       （求解器输出永远要容差断言，见 `test_ocp_*.py`）。
+    ★ 顺手把 `type_mask` 与 `IGNORE_THRUST` 那两位钉住：`IGNORE_THRUST` 一旦被置上，
+      **掉高度**而话题面上每帧都正常（票面 §二② 的 N1 那一族）。
     """
     #: 稳态推力与悬停值的允许偏差 [N]。归一化余量 = 本值 / `t_max`。
     #: **这个数不是新挑的**：旧阈值是归一化的 `0.06`，按旧归一化常数 `t_max = 11.8003 N`
@@ -428,29 +610,34 @@ def test_位置保持时推力归一化等于悬停油门_角速率近零():
     with _scenario() as sc:
         _wait_dut_up(sc)
         _arm_and_offboard(sc)
-        sc.wait_for(lambda: len(sc.px4.published_frames("rates")) >= 10, timeout_s=10.0,
+        sc.wait_for(lambda: len(_sp_frames(sc)) >= 10, timeout_s=10.0,
                     message="解锁后没攒到 10 帧 setpoint")
 
         z0 = Z0Params()
-        expected = -z0.t_hover / z0.t_max
+        expected = +z0.t_hover / z0.t_max          # ☠️ 正号（旧版这里是 −t_hover/t_max）
         tol = HOVER_NORM_TOL_N / z0.t_max
-        f = sc.px4.published_frames("rates")[-1].msg
-        assert abs(float(f.thrust_body[2]) - expected) < tol, \
-            f"位置保持的归一化推力 {float(f.thrust_body[2]):+.4f}，模型导出的悬停值是 " \
-            f"{expected:+.4f}（允许差 {tol:.4f} = {HOVER_NORM_TOL_N} N）"
+        f = _sp_frames(sc)[-1]
+        assert abs(f.thrust - expected) < tol, \
+            f"位置保持的归一化推力 {f.thrust:+.4f}，模型导出的悬停值是 " \
+            f"{expected:+.4f}（允许差 {tol:.4f} = {HOVER_NORM_TOL_N} N）—— 正负号对吗？"
         # 位置保持 ⟹ 参考就是测量点 ⟹ 不出力（阈值宽松，只判"没有明显动作"）
-        assert abs(f.roll) < 0.5 and abs(f.pitch) < 0.5 and abs(f.yaw) < 0.5, \
-            f"位置保持时还在转：roll={f.roll:+.3f} pitch={f.pitch:+.3f} yaw={f.yaw:+.3f}"
-        assert float(f.thrust_body[0]) == 0.0 and float(f.thrust_body[1]) == 0.0, \
-            "(C) 级只用机体系 +z 那一路，另外两路必须是 0"
+        wx, wy, wz = f.body_rate
+        assert abs(wx) < 0.5 and abs(wy) < 0.5 and abs(wz) < 0.5, \
+            f"位置保持时还在转：body_rate=({wx:+.3f}, {wy:+.3f}, {wz:+.3f})"
+        # ★ 掩码：只忽略姿态，**绝不能**顺带忽略推力或角速率（票面 §二②）
+        assert f.type_mask & 64 == 0, \
+            f"type_mask={f.type_mask} 置上了 IGNORE_THRUST(64) ⟹ 掉高度而话题面看起来正常"
 
 
-def test_目标在正前方时_pitch_为负_且顶约束表现为打满():
+def test_目标在正前方时_body_rate_y_为正_且顶约束表现为打满():
     """票面验收项「符号映射与 ticket 03 一致」+「饱和表现为**打满**，不静默截断」。
 
-    ★ 符号（`sign-map.md` §2 的权威表）：机体系 +x 前进 ⟹ 需要绕 +y 转（FLU 右手系）
-      ⟹ `ω_y > 0`，而 PX4 的 `pitch = −ω_y` ⟹ **`pitch` 是负的**。这一条把
-      "符号表写反了"与"模型解错了"分开：前者会让 pitch 反号，后者只会让幅值不对。
+    ☠️ **2026-10-13（ticket 13 §四③）断言的字段变了，符号也跟着变**：
+      · 旧版断言 PX4 口径的 `pitch = −ω_y` ⟹ **负**；
+      · 新载体 `AttitudeTarget.body_rate.y` 是 **FLU 原样** ⟹ 同一个指令在这里是**正**的。
+      ⟹ 这条用例现在同时守着两件事：① 模型解出来的**方向**对（ω_y > 0 把机身朝 +x 倾），
+        ② 我们**没有预先取负**（取负 = 转两次，mavros 会再翻一次 ⟹ 真机上朝**反**方向冲）。
+      ⚠️ 只断"方向"是不够的 —— 幅值也要对（见下一条"打满"）。
 
     ★ "打满"：目标远在 10 m 外（1 s 时域内不可行）⟹ `ω_y` 顶在 `PITCH_RATE_MAX` 上。
       断言的是**等号附近**（容差 0.05），不是"小于上限" —— 后者对"被谁悄悄按比例缩回去"
@@ -459,18 +646,19 @@ def test_目标在正前方时_pitch_为负_且顶约束表现为打满():
     with _scenario(hold_offset_x=10.0) as sc:
         _wait_dut_up(sc)
         _arm_and_offboard(sc)
-        sc.wait_for(lambda: len(sc.px4.published_frames("rates")) >= 10, timeout_s=10.0,
+        sc.wait_for(lambda: len(_sp_frames(sc)) >= 10, timeout_s=10.0,
                     message="解锁后没攒到 10 帧 setpoint")
 
-        frames = sc.px4.published_frames("rates")
-        first, last = float(frames[0].msg.pitch), float(frames[-1].msg.pitch)
-        assert last < -3.0, f"目标在 +x 10 m 之外，pitch 却是 {last:+.3f}（符号映射反了？）"
+        frames = _sp_frames(sc)
+        first, last = frames[0].body_rate[1], frames[-1].body_rate[1]
+        assert last > 3.0, \
+            f"目标在 +x 10 m 之外，body_rate.y 却是 {last:+.3f}（符号映射反了 / 我们预先取负了？）"
         assert abs(abs(last) - PITCH_RATE_MAX) < 0.05, \
-            f"|pitch| = {abs(last):.4f}，没有顶在 PITCH_RATE_MAX = {PITCH_RATE_MAX} 上" \
+            f"|body_rate.y| = {abs(last):.4f}，没有顶在 PITCH_RATE_MAX = {PITCH_RATE_MAX} 上" \
             "（饱和度被谁裁剪过？见 mpc_node 的「饱和表现为打满」）"
         # 默认热身 5 拍 ⟹ **第一帧**就已经带修正（否则等于在最需要动的时候朝悬停走）
-        assert first < -3.0, \
-            f"热身 5 拍之后的第一帧 pitch 只有 {first:+.3f} ⟹ 发出去的还是出厂迭代点"
+        assert first > 3.0, \
+            f"热身 5 拍之后的第一帧 body_rate.y 只有 {first:+.3f} ⟹ 发出去的还是出厂迭代点"
 
 
 def test_没热身时第一帧是出厂迭代点_热身之后就不再是():
@@ -482,11 +670,12 @@ def test_没热身时第一帧是出厂迭代点_热身之后就不再是():
         目标 +x 10 m（应当把 ω_y 打满）：第 0 次 ω_y = 0.0000、F = 7.8111（与悬停一模一样）
                                           第 1 次 ω_y = 3.8400（打满）
 
-    ⇒ `warmup_cycles=0` 时，DUT 会把那一帧**发出去** —— 于是第一帧的 pitch ≈ 0，
+    ⇒ `warmup_cycles=0` 时，DUT 会把那一帧**发出去** —— 于是第一帧的 `ω_y ≈ 0`，
       第二帧才打满。这正是"上电第一拍不要发"的实证：在最需要它动的时刻朝悬停走。
 
-    ★ 端到端复现（2026-09-28 本机，`-p warmup_cycles:=0 -p hold_offset_x:=10`，话题上读到的
-      前四帧，`pitch` 是与 ω_y 反号的那个量）：
+    ☠️ **2026-10-13（ticket 13 §四③）读的字段从 `pitch`（= −ω_y）换成 `body_rate.y`（= ω_y）**
+      —— 符号跟着翻正（理由见上一条）。下面那段端到端读数**保留原样**（它是 2026-09-28
+      在**旧载体**上量的，`pitch` 那一列与 `thrust_body[2]` 那一列都带旧字段的符号/单位）：
 
         #1 pitch=-0.0000  thrust_body[2]=-0.6235   ← 出厂迭代点（等于悬停）
         #2 pitch=-3.8400  thrust_body[2]=-0.6235   ← 一步就到位（ω_y 打满）
@@ -494,10 +683,9 @@ def test_没热身时第一帧是出厂迭代点_热身之后就不再是():
         #4 pitch=-3.8400  thrust_body[2]=-1.0000   ← 推力也顶到上限（"打满"的另一种）
 
     ⚠️ **上面那一列 `thrust_body[2]` 是旧归一化（`t_max = 11.8 N`）下的读数**，别照着它认数
-      （2026-09-29 回填 `hover_thrust` 后 `t_max = 46.3 N`）：现在悬停 ≈ **−0.169**、
-      "顶到 `f_max`（11.8 N）" ≈ **−0.255**（不再是 −1.0 —— 归一化常数与上限**已经解耦**，
-      `params.py`）。`pitch` 那一列不受影响（它不经过归一化）；本用例也只断言 `pitch`。
-
+      （2026-09-29 回填 `hover_thrust` 后 `t_max = 46.3 N`）：现在悬停 ≈ **+0.169**、
+      "顶到 `f_max`（11.8 N）" ≈ **+0.255**（不再是 ±1.0 —— 归一化常数与上限**已经解耦**，
+      `params.py`）。`ω_y`（= 旧的 `−pitch`）那一列不受影响；本用例也只断言 `body_rate.y`。
 
     ⚠️ 这一条**依赖时序**（"第一帧必须是第 0 次解"）。它的正控是第二帧：如果 DUT 一上来就
       打满，说明热身参数没生效（而不是"第一帧恰好是稳态"）。
@@ -505,37 +693,83 @@ def test_没热身时第一帧是出厂迭代点_热身之后就不再是():
     with _scenario(warmup_cycles=0, hold_offset_x=10.0) as sc:
         _wait_dut_up(sc)
         _arm_and_offboard(sc)
-        sc.wait_for(lambda: len(sc.px4.published_frames("rates")) >= 3, timeout_s=10.0,
+        sc.wait_for(lambda: len(_sp_frames(sc)) >= 3, timeout_s=10.0,
                     message="解锁后没攒到 3 帧 setpoint")
 
-        frames = sc.px4.published_frames("rates")
-        p0 = float(frames[0].msg.pitch)
-        p1 = float(frames[1].msg.pitch)
-        assert abs(p0) < 0.05, \
-            f"关掉热身之后第一帧 pitch = {p0:+.4f}，本该是出厂迭代点（≈0）—— 热身参数没生效？"
-        assert p1 < -3.0, f"第二帧 pitch = {p1:+.3f} ⟹ 没有从「出厂迭代点」走出来"
+        frames = _sp_frames(sc)
+        w0 = frames[0].body_rate[1]
+        w1 = frames[1].body_rate[1]
+        assert abs(w0) < 0.05, \
+            f"关掉热身之后第一帧 body_rate.y = {w0:+.4f}，本该是出厂迭代点（≈0）—— 热身参数没生效？"
+        assert w1 > 3.0, f"第二帧 body_rate.y = {w1:+.3f} ⟹ 没有从「出厂迭代点」走出来"
 
 
-# ───────────────────────────── 时间戳 ─────────────────────────────
+def test_N2_下行里_body_rate_是_FLU_原样_没有预先取负(tmp_path):
+    """★★ **票面 §四③ 点名要的"专测 N2"** —— 这条只测一件事：
+    **我们发出去的 `body_rate` 是 FLU 原样**（`pitch/yaw` 那两轴**没有**被我们预先取负）。
 
-def test_时间戳是墙钟微秒():
-    """票面验收项「时间戳**微秒**」—— 单位错在 PX4 侧是**静默**的
-    （`min(timestamp − time_offset, hrt)` 把它钳回"新鲜"，话题上看不出任何异常）。
+    ★ 为什么它必须是**独立**一条、且断言落在**我们发出的那个值**上（票面 §四① 的原话）：
+      mavros 自己会把 `body_rate`（FLU）→ FRD 再发下去（`setpoint_raw.cpp:321-331`）。
+      **我们再预转换一次 = 转两次 ⟹ pitch/yaw 静默反向**。
+      而这个错误**在"最终飞控收到的物理方向"上是看不出来的**（两次取负 = 原样），
+      在话题上也只有"**我们发的那一帧里 body_rate_y 的符号**"能证伪 ——
+      ✋ 见 [判据全绿也可能是机理反了] 那一族。所以本条的判据是**符号 + 与内部量逐位相等**。
 
-    ★ 夹具不能替 DUT 发时间戳，但能把"它到底发了什么"翻译成一个有物理含义的数：
-      `stamp_unit_guess` 按"相对**墙钟**的比值"把 µs / ms / ns / 零值分开（差三个数量级）。
+    ★ 两面一起断（都要，缺一半就能被下面的错法蒙混过去）：
+      · **话题面**：`hold_offset_x=10` ⟹ 机头 +x 追 10 m ⟹ FLU 的 `ω_y > 0`
+        （若被预先取负，这里会是**负**的 ⟹ 红）；
+      · **日志面**：日志的 `u` 是**求解器给的 FLU 内部量**，而 `body_rate_x/y/z` 是**发出去**的
+        ⟹ 换载体这条路**只该改字段名、不该动一个符号** ⟹ 两者必须**逐位相等**
+        （`u[1]→body_rate_x`、`u[2]→body_rate_y`、`u[3]→body_rate_z`）。
+      ⚠️ 日志面比话题面更硬：它不依赖"这一段任务恰好把哪根轴顶满"，任何一帧都成立。
+
+    ☠️ 旧载体上"两套约定是一回事"由 `roll=ω_x`、`pitch=−ω_y`、`yaw=−ω_z` 那一式守着
+      （见旧 `_cmd_to_flu`）；换 mavros 之后那一式的**取负项整根消失**，所以本用例接替它。
     """
-    with _scenario() as sc:
+    log_path = tmp_path / "mpc.jsonl"
+    with _scenario(hold_offset_x=10.0, log_file=str(log_path)) as sc:
         _wait_dut_up(sc)
         _arm_and_offboard(sc)
-        sc.wait_for(lambda: sc.px4.published_frames("rates"), timeout_s=10.0,
-                    message="没有 setpoint 就没有时间戳可验")
-        sc.hold(0.3)
+        sc.wait_for(lambda: len(_sp_frames(sc)) >= 10, timeout_s=10.0,
+                    message="解锁后没攒到 10 帧 setpoint")
 
-        for key in ("rates", "mode"):
-            unit, age = sc.px4.stamp_unit_guess(key)
-            assert unit == "us", f"{key} 的时间戳被判成 {unit!r}（中位年龄 {age:.3g} s）"
-            assert abs(age) < 0.5, f"{key} 的时间戳年龄 {age:.3g} s ⟹ 与墙钟不同步"
+        last = _sp_frames(sc)[-1]
+        assert last.body_rate[1] > 3.0, \
+            (f"话题上的 body_rate.y = {last.body_rate[1]:+.4f} ⟹ 负号 ⟹ **我们预先取了负**"
+             "（mavros 还会再翻一次 = 转两次 = 真机上朝反方向冲）。N2。")
+
+    rows = [r for r in _读日志(log_path) if r["fallback"] == "normal"]
+    assert rows, "逐帧日志一行正常帧都没有"
+    r = rows[-1]
+    for key, idx in (("body_rate_x", 1), ("body_rate_y", 2), ("body_rate_z", 3)):
+        assert abs(r[key] - r["u"][idx]) < 1e-6, \
+            (f"日志里 {key} = {r[key]:+.6f} 与内部量 u[{idx}] = {r['u'][idx]:+.6f} 不等 ⟹ "
+             "换载体这条路**动了符号**（该只改字段名、符号一个都不该动）。N2。")
+    # 推力那一头同理：`thrust = F/t_max`（正号），而日志的 u[0] 就是 F [N]
+    z0 = Z0Params()
+    assert abs(r["thrust"] - r["u"][0] / z0.t_max) < 1e-6, \
+        (f"日志里 thrust = {r['thrust']:+.6f}，而 u[0]/t_max = {r['u'][0] / z0.t_max:+.6f} ⟹ "
+         "推力那一路的归一化/符号动了（票面 N1）。")
+
+
+# ───────────────────────── ☠️ 时间戳（本类整条删除，2026-10-13）─────────────────────────
+#
+# ☠️☠️ **2026-10-13（ticket 13 §四③）：`test_时间戳是墙钟微秒` 已删除 —— 它在新的下行上没有对应物。**
+#
+#   旧用例断言的是 uXRCE-DDS 那条路的 `VehicleRatesSetpoint.timestamp`（恒为 0 就表示"DUT 没填"）
+#   与 `OffboardControlMode.timestamp`：**µs 单位错在 PX4 侧是静默的**
+#   （`min(timestamp − time_offset, hrt)` 把它钳回"新鲜"），所以当时只能靠
+#   `FakePx4.stamp_unit_guess` 按"相对墙钟的比值"把 µs/ms/ns/零值分开。
+#
+#   **新载体上这条通路整个不存在了**：mavros 的 `AttitudeTarget.header.stamp` 进
+#   `setpoint_raw.cpp` 之后是**给人看的**（转发给 `mavlink` 时另盖时间戳），DUT 那边填不填、
+#   填什么单位，**飞控都不读**。⟹ 留着它最多能断言"我们填了个墙钟微秒"，而那**不是任何
+#   验收项要的东西** —— 就是票面点名禁止的"绿着但不测任何东西"。
+#   ⛔ **不是"暂时跳过"**：真机上这条通路将来也不会有。要再验，验的是别的东西（另开票）。
+#
+#   仍然被别处覆盖的：`header.stamp` 字段本身**在话题面上**由 §四① 的
+#   `AttitudeSetpoint.stamp_ns` 记下来了（`fake_mavros.evidence()` 会回读最后一帧的
+#   `stamp_ns`）—— 那只是"这一帧带了个戳"，**不是**单位判据。单位判据随本用例一起作废。
 
 
 # ───────────────────────────── 进程收尾 ─────────────────────────────
@@ -547,9 +781,21 @@ def test_SIGINT_之后打出收尾摘要而不是_traceback():
 
     一条**负断言配正控**：没有 `Traceback`，同时**有**那行摘要 ——
     后者证明日志确实抓到了收尾路径（否则"没有 traceback"可能只是因为日志是空的）。
+
+    ★★ **必须先等到"定时器跑过至少一拍"再 SIGINT**（2026-10-13，ticket 13 §四 现场）：
+      `_wait_dut_up` 的判据（订上 `/mavros/state`）在 `create_timer` **之前**就成立
+      —— 实测判据成立后 ~167 ms 才跑出第一拍（读数与推理见 `_wait_dut_up` 的 ☠️☠️）。
+      原来这里写完 `_wait_dut_up` 就 `stop_dut()` ⟹ SIGINT 落在 `__init__` 里、
+      `node` 还是 `None`、`finally` 里那句收尾摘要**压根没被执行** ⟹ 这条用例
+      **独立跑也稳定红**（不是抖动）。现在先解锁 + OFFBOARD 并等到**真的收到下行帧**：
+      那一帧只可能由 `_tick` 发出 ⟹ 它是"`__init__` 已返回、`spin()` 已进入"的**证明**，
+      而不是"大概起来了吧"的猜测。
     """
     with _scenario() as sc:
         _wait_dut_up(sc)
+        _arm_and_offboard(sc)
+        sc.wait_for(lambda: len(_sp_frames(sc)) >= 1, timeout_s=10.0,
+                    message="解锁后一帧下行都没有 ⟹ 节点还没真的跑起来，这时 SIGINT 测不到收尾路径")
         sc.stop_dut()
         log, rc = sc.dut_log(), sc.dut_returncode()
         assert "[mpc_node] 收尾" in log, \
@@ -561,28 +807,34 @@ def test_SIGINT_之后打出收尾摘要而不是_traceback():
 
 # ───────────────────────────── 频率与 RViz 观测面 ─────────────────────────────
 
-def test_实做频率_心跳_50_Hz_setpoint_100_Hz():
-    """票面验收项「心跳 ≥2 Hz、**实做 50 Hz**；**100 Hz 定时器**」。
+def test_实做频率_setpoint_100_Hz():
+    """票面验收项「**100 Hz 定时器**」（☠️ 心跳那一半随 §二④ 一起作废，见下）。
 
-    ★ 与闸门那条用例分工不同：那里断言的是 `≥2 Hz`（**PX4 的安全线**，`COM_OF_LOSS_T` 的量级），
-      这里量的是**设计值有没有真的落在线上**——两者都要，因为把心跳写成 5 Hz 时前者照样绿。
-    ★ 阈值刻意留宽（心跳 ±20%，setpoint 只卡下限）：这一条量的是"定时器是不是按设计在跑"，
+    ☠️ **2026-10-13（ticket 13 §二④，操作者裁定 (a) 单一频率）**：旧版这条叫
+      `test_实做频率_心跳_50_Hz_setpoint_100_Hz`，同时量**两个**流 —— `/fmu/in/vehicle_rates_setpoint`
+      与 `/fmu/in/offboard_control_mode`（心跳，设计 50 Hz、验收线 "≥2 Hz"）。
+      `offboard_control_mode` 是 **uXRCE-DDS 那条路特有**的东西：它存在的唯一理由是
+      "uORB 侧的 OFFBOARD 看门狗要求 ≥2 Hz 的心跳"。走 mavros 之后**是 mavros 自己**
+      在维持 OFFBOARD（`setpoint_raw` 插件替我们发）、DUT 一个心跳都不发
+      ⟹ 那条流、`heartbeat_hz`/`heartbeat_always` 参数、`_publish_mode()` 一起**删除**。
+      ⚠️ 删得对：**"≥2 Hz 才不掉 OFFBOARD"这个约束在新载体上不存在**，留一条测它的断言
+      就是在测一个我们已经不发的流（"绿着但不测任何东西"）。
+
+    ★ 剩下这一条量的仍然是**设计值有没有真的落在线上**：100 Hz 定时器是不是 100 Hz。
+      阈值刻意**只卡下限**：它量的是"定时器是不是按设计在跑 / 是不是每拍都在求解被拖住"，
       不是"Jetson 有多快"。**最坏耗时与降档决定归 [09]/[11]**（票面原文：频率在实测最坏
       耗时后再降档）⟹ 这里卡上限会把那张票该做的判断提前做掉。
 
-    ★ 本机实测（2026-09-28，Orin NX，2 s 窗口、未解锁到解锁都在跑）：**心跳 50.0 Hz、
-      setpoint 100.0 Hz**（两个定时器都恰好落在设计值上）。
+    ★ 本机实测（2026-09-28，Orin NX，2 s 窗口、未解锁到解锁都在跑）：**setpoint 100.0 Hz**。
     """
     with _scenario() as sc:
         _wait_dut_up(sc)
         _arm_and_offboard(sc)
-        sc.wait_for(lambda: len(sc.px4.published_frames("rates")) >= 20, timeout_s=10.0,
+        sc.wait_for(lambda: len(_sp_frames(sc)) >= 20, timeout_s=10.0,
                     message="解锁后没攒到 20 帧 setpoint，频率没得量")
         t_from = sc.t()
         sc.hold(2.0)
-        hb = sc.px4.rate_hz("mode", from_s=t_from, to_s=sc.t())
-        sp = sc.px4.rate_hz("rates", from_s=t_from, to_s=sc.t())
-        assert 40.0 <= hb <= 60.0, f"心跳实测 {hb:.1f} Hz，设计值是 50 Hz（发得少就进不去 OFFBOARD）"
+        sp = _sp_rate_hz(sc, t_from, sc.t())
         assert sp >= 50.0, \
             f"setpoint 实测 {sp:.1f} Hz，设计值是 100 Hz（低了先查是不是每拍都在求解/被谁拖住）"
 
@@ -644,15 +896,27 @@ def test_RViz_的预测轨迹与参考点():
 #   的 ★ 那段与 `docs/control/mpc-node-fallback.md`。
 
 def _hover_norm() -> float:
-    """悬停归一化推力 —— **从模型算**（不是写死某个字面量，见归一化那条验收项）。"""
+    """悬停归一化推力 —— **从模型算**（不是写死某个字面量，见归一化那条验收项）。
+
+    ☠️ **2026-10-13（ticket 13 §四③）：正号**。旧版这里是 `-t_hover / t_max`（FRD 口径的
+      `thrust_body_z`）。新载体 `AttitudeTarget.thrust` 是**正号**（`F/t_max`，取负由飞控做）
+      ⟹ 这个助手如果跟着忘记翻，下面每一条用它的断言都会变成"永远不成立"的红
+      （好在是红不是绿 —— 反过来的错法才致命）。
+    """
     z0 = Z0Params()
-    return -z0.t_hover / z0.t_max
+    return +z0.t_hover / z0.t_max
 
 
 def _quad(f) -> tuple:
-    """一帧 setpoint 里**会变的那四个数**（与 `node_core.frame_is_finite` 同一组）。"""
-    m = f.msg
-    return (float(m.roll), float(m.pitch), float(m.yaw), float(m.thrust_body[2]))
+    """一帧 setpoint 里**会变的那四个数**。
+
+    ☠️ **2026-10-13（ticket 13 §四③）换过**：旧 = `(roll, pitch, yaw, thrust_body_z)`；
+      新 = `(body_rate.x, body_rate.y, body_rate.z, thrust)` —— **与 `node_core.frame_is_finite`
+      校验的那四个是同一组**（那个函数 2026-10-12 已按 §二② 换过名字，两处必须一起看）。
+    ★ `f` 是 `bench.fake_mavros.AttitudeSetpoint`（不是 rclpy 的 msg），它把
+      "**我们发出去的原值**"以属性暴露出来（`type_mask` / `body_rate` / `thrust` / `stamp_ns`）。
+    """
+    return (f.body_rate[0], f.body_rate[1], f.body_rate[2], f.thrust)
 
 
 def _is_hover_frame(f) -> bool:
@@ -670,12 +934,15 @@ def test_求解失败时先保持上一帧_再切安全悬停_且一帧都不带
 
     ★ 注入在"已发布 ≥ 20 帧之后"生效 ⟹ **同一条流上两个阶段**：注入前是正常解、注入后是
       兜底。不必去猜时刻，也不会有"注入有没有赶上"的含糊。
-    ★ 两个阶段的形状**刻意拉开**：`hold_offset_x=10` 让正常解把 pitch 打满（−3.84），
-      而悬停帧是 `(0, 0, 0, −t_hover/t_max)`（≈ −0.169，**从模型算**，别写死）—— 差两个量级，
+    ★ 两个阶段的形状**刻意拉开**：`hold_offset_x=10` 让正常解把 `body_rate.y` 打满（+3.84），
+      而悬停帧是 `(0, 0, 0, +t_hover/t_max)`（≈ +0.169，**从模型算**，别写死）—— 差两个量级，
       不会"看起来差不多"。
     ★ `hold` 的判据是"**内容原样、时间戳换新**"：PX4 会把最后一帧**锁存**下去
       （`MulticopterRateControl.cpp:177-184`）⟹ "我们不发了"与"飞控沿用旧帧"在飞控侧
       是同一件事，所以"在保持"必须是**发出去**的（否则它在话题上根本不可观测）。
+      ☠️ 换载体后"时间戳"那一半读的是 `header.stamp`（`AttitudeSetpoint.stamp_ns`），
+      不再是 `VehicleRatesSetpoint.timestamp`（微秒、且 PX4 侧有钳位）—— **判据本身没变**
+      （"每次都在前进"），变的只是它的载体与单位。
 
     ★ 本票的"非有限值"那一条**与"求解失败"共用同一次注入**（坏解同时带：状态码非零 +
       `u` 全 NaN + 耗时 NaN，见 `mpc_node._poisoned`）。这一层能验的是"非有限值绝不到达
@@ -688,11 +955,11 @@ def test_求解失败时先保持上一帧_再切安全悬停_且一帧都不带
                    inject_solve_fail_after_frames=20) as sc:
         _wait_dut_up(sc)
         _arm_and_offboard(sc)
-        sc.wait_for(lambda: len(sc.px4.published_frames("rates")) >= 20 + hold_frames + 3,
+        sc.wait_for(lambda: len(_sp_frames(sc)) >= 20 + hold_frames + 3,
                     timeout_s=10.0,
                     message="注入生效之后没有继续发帧（兜底把发布停掉了？那飞机就撒手了）")
         sc.hold(0.3)                       # 再攒几拍悬停，让"切过去了"这件事确定下来
-        frames = sc.px4.published_frames("rates")
+        frames = _sp_frames(sc)
         assert sc.dut_alive(), "一个坏解就把节点搞崩了 —— 判据 1 要的是**绝不 raise**"
         assert all(_finite(f) for f in frames), \
             f"话题上出现了非有限值：{[_quad(f) for f in frames if not _finite(f)][:3]}"
@@ -706,16 +973,16 @@ def test_求解失败时先保持上一帧_再切安全悬停_且一帧都不带
         holds = frames[i - hold_frames:i]
         prev = frames[i - hold_frames - 1]
 
-        assert abs(float(prev.msg.pitch)) > 3.0 and not _is_hover_frame(prev), \
+        assert abs(prev.body_rate[1]) > 3.0 and not _is_hover_frame(prev), \
             f"保持开始之前的那一帧不是打满的正常解：{_quad(prev)} ⟹ 正控不成立"
         assert not _is_hover_frame(holds[0]), \
             "『保持』发的是悬停帧 ⟹ 这一档根本没生效（下面几条断言会跟着变成废话）"
         for j, h in enumerate(holds):
             assert _quad(h) == _quad(prev), \
                 f"第 {j + 1} 拍保持的**内容**变了：{_quad(h)} ≠ 上一帧可行指令 {_quad(prev)}"
-        ts = [int(f.msg.timestamp) for f in holds]
-        assert len(set(ts)) == len(ts) and ts[0] > int(prev.msg.timestamp), \
-            f"保持帧的时间戳没有严格前进：{ts}（复用旧时间戳会让这一帧被读成陈旧的）"
+        ts = [f.stamp_ns for f in holds]
+        assert len(set(ts)) == len(ts) and ts[0] > prev.stamp_ns, \
+            f"保持帧的 header.stamp 没有严格前进：{ts}（复用旧戳会让这一帧被读成陈旧的）"
 
         bad = [_quad(f) for f in frames[i:] if not _is_hover_frame(f)]
         assert not bad, f"切到安全悬停之后又出现了不是悬停的帧：{bad[:3]}"
@@ -740,19 +1007,19 @@ def test_动捕时间戳倒退时不发指令_追平之后恢复():
     with _scenario() as sc:
         _wait_dut_up(sc)
         _arm_and_offboard(sc)
-        sc.wait_for(lambda: len(sc.px4.published_frames("rates")) >= 10, timeout_s=10.0,
+        sc.wait_for(lambda: len(_sp_frames(sc)) >= 10, timeout_s=10.0,
                     message="解锁后没攒到 10 帧 setpoint，闸门那条的正控不成立")
 
         t0 = sc.t()
         sc.timeline.extend(mocap_stamp_rewind(sc.mocap_source, t0 + 0.2, seconds=2.0, hold_s=1.0))
 
         sc.advance_to(t0 + 1.4)                     # 倒退中（0.2 → 1.2 是倒退窗口）
-        n = len(sc.px4.frames_between("rates", t0 + 0.6, t0 + 1.2))
+        n = len(_sp_between(sc, t0 + 0.6, t0 + 1.2))
         assert n == 0, f"stamp 倒退期间还发了 {n} 帧 setpoint（判据 4：这种时候宁可不发）"
         assert sc.dut_alive(), "stamp 倒退把节点搞崩了"
 
         sc.advance_to(t0 + 2.5)                     # 追平：stamp 一次性跳回来
-        n_after = len(sc.px4.frames_between("rates", t0 + 1.6, t0 + 2.5))
+        n_after = len(_sp_between(sc, t0 + 1.6, t0 + 2.5))
         assert n_after > 0, "stamp 追平之后没有重新开始发（闸门锁死了？）"
 
         assert "stamp_regress" in sc.dut_log(), \
@@ -770,7 +1037,7 @@ def test_位姿跳变时不发指令_回到原位之后恢复():
     with _scenario() as sc:
         _wait_dut_up(sc)
         _arm_and_offboard(sc)
-        sc.wait_for(lambda: len(sc.px4.published_frames("rates")) >= 10, timeout_s=10.0,
+        sc.wait_for(lambda: len(_sp_frames(sc)) >= 10, timeout_s=10.0,
                     message="解锁后没攒到 10 帧 setpoint，闸门那条的正控不成立")
 
         t0 = sc.t()
@@ -778,12 +1045,12 @@ def test_位姿跳变时不发指令_回到原位之后恢复():
                                            position=(100.0, 0.0, 0.0), hold_s=1.0))
 
         sc.advance_to(t0 + 1.4)
-        n = len(sc.px4.frames_between("rates", t0 + 0.6, t0 + 1.2))
+        n = len(_sp_between(sc, t0 + 0.6, t0 + 1.2))
         assert n == 0, f"位姿跳变期间还发了 {n} 帧 setpoint（那正是『发错指令』）"
         assert sc.dut_alive(), "位姿跳变把节点搞崩了"
 
         sc.advance_to(t0 + 2.5)
-        n_after = len(sc.px4.frames_between("rates", t0 + 1.6, t0 + 2.5))
+        n_after = len(_sp_between(sc, t0 + 1.6, t0 + 2.5))
         assert n_after > 0, "源回到原位之后没有重新开始发（判据把自己锁死了？）"
 
         log = sc.dut_log()
@@ -791,316 +1058,201 @@ def test_位姿跳变时不发指令_回到原位之后恢复():
         assert "100.000" in log, f"跳变判据的读数（差多少米）没进日志：{log[-500:]!r}"
 
 
-# ─────────────────── A 档：状态源换成 PX4 自己那两条（ticket 09）───────────────────
+# ─────────────── 期望方向的独立几何（本文件自己算，不从 DUT import）───────────────
 #
-# ★★ 本组换掉的是**状态源**，不是坐标系 —— 话题面一点没变（还是 `VehicleRatesSetpoint`），
-#   变的是"这个数是拿什么算出来的"：A 档从 `/fmu/out/vehicle_local_position` +
-#   `/fmu/out/vehicle_attitude` 拿的是 **NED/FRD**，得先换到模型要的 ENU/FLU。于是判据只剩
-#   两条**行为**：
-#     ① 该订的订、**不该订的一帧都不订**（票面："本档**不使用动捕输入**"）；
-#     ② 指令把机身**朝哪一边**拉 —— 而这一条在 NED 里想、在 ENU 里想会得到**不一样**的轴。
+# ★ 期望值**不从 `node_core` import**（那是 DUT 内部，seam 1 的定义不许碰它）：下面这个
+#   助手照 `docs/control/sign-map.md` §2 的定义**自己**把几何算出来。否则"转换写错了"与
+#   "断言抄了实现"就分不开了。
 #
-# ★ 期望值**不从 `node_core` import**（那是 DUT 内部，seam 1 的定义不许碰它）：本组照
-#   `docs/control/sign-map.md` §2 的定义**自己**把两个换标签矩阵写出来、独立算一遍。
-#   否则"转换写错了"与"断言抄了实现"就分不开 —— 这是本文件唯一一处"自己算一遍"的地方。
+# ☠️☠️ **2026-10-13（ticket 13 §二⑤ + §四③）：原来那一整套 NED/FRD 换算助手整块删掉了。**
+#   删的是 `L_NED_TO_ENU` / `M_FRD_TO_FLU` / `_rot_from_quat` / `_flu_rot` / `_ned_axis_quat`
+#   与"带 NED 姿态参数"的 `_need_rate_toward`。
+#   **理由**：它们服务的**唯一**对象是"A 档机头朝北"那一组 e2e 用例（下面 §A 档的 ☠️ 段），
+#   而 `state_source=px4` 现在**入口当场就拒**（操作者 2026-10-12 裁定取 (b)）⟹ 没有任何
+#   活用例还会构造 NED 姿态。⛔ **别为了"以后可能重开"留着** —— 留着的换算助手会被下一个
+#   读代码的人当成"活的约定"，而他没有任何用例能验证它。
+#   ★ 那套换算本身**仍然有活对象**，只是考的地方换了层：`test_node_core.py`
+#     的 `test_px4_位置与速度的_NED_到_ENU`、`test_px4_姿态转换满足旋转矩阵恒等式`、
+#     `test_px4_姿态转换与参考实现的手写公式一致_差一个整体符号`、
+#     `test_px4_姿态转换在两个物理特例上对得上` 直接对着 `px4_pose_to_enu` / `px4_quat_to_enu`
+#     考（那些单测跑的是**仍在**的纯函数，本票一个字没动它们）。
 
-# ⚠️ 下面这三个（`L` / `M` / `_rot_from_quat`）与 `test_node_core.py` 里那份是**各写一份**的
-#   —— 不是漏了复用：`colcon test` 一个文件一个进程、不保证两个测试模块能互相 import，
-#   而这一处要的恰恰是**自己独立算一遍**（理由见上）。两份**一样**是结论，不是前提：
-#   哪天对不上了，说明其中一份被改错了。
-#
-#: NED→ENU 的**世界换标签**：`p_enu = (y, x, −z)` 写成矩阵就是这个（`det = +1`，真旋转）。
-L_NED_TO_ENU = np.array([[0.0, 1.0, 0.0],
-                         [1.0, 0.0, 0.0],
-                         [0.0, 0.0, -1.0]])
-#: FRD→FLU 的**机体换标签**：绕 x 转 180°。
-M_FRD_TO_FLU = np.diag([1.0, -1.0, -1.0])
+def _w_of(f) -> np.ndarray:
+    """话题上那一帧的三个角速率 → **FLU 机体系**角速率 `(ωx, ωy, ωz)`。
 
-
-def _rot_from_quat(q) -> np.ndarray:
-    """w-first 四元数 → 旋转矩阵（本组自己算，见上面那两段 ★：不与 `test_node_core.py` 共享，
-    也与 `model.q_to_rot_mat` 无关 —— 那个是 CasADi 符号表达式）。"""
-    w, x, y, z = (float(v) for v in q)
-    return np.array([
-        [1 - 2 * (y * y + z * z), 2 * (x * y - w * z), 2 * (x * z + w * y)],
-        [2 * (x * y + w * z), 1 - 2 * (x * x + z * z), 2 * (y * z - w * x)],
-        [2 * (x * z - w * y), 2 * (y * z + w * x), 1 - 2 * (x * x + y * y)]])
-
-
-def _flu_rot(q_ned_frd) -> np.ndarray:
-    """「FRD 机体 → NED 世界」的姿态 → 「FLU 机体 → ENU 世界」的旋转矩阵。"""
-    return L_NED_TO_ENU @ _rot_from_quat(q_ned_frd) @ M_FRD_TO_FLU
-
-
-def _ned_axis_quat(axis: str, deg: float):
-    """绕 **NED** 某一根轴转 `deg` 度的姿态（w-first）—— 注入用的。"""
-    half = math.radians(float(deg)) / 2.0
-    c, s = math.cos(half), math.sin(half)
-    return {"x": (c, s, 0.0, 0.0), "y": (c, 0.0, s, 0.0), "z": (c, 0.0, 0.0, s)}[axis]
-
-
-def _cmd_to_flu(msg) -> np.ndarray:
-    """话题上的三个角速率 → **FLU 机体系**角速率 `(ωx, ωy, ωz)`。
-
-    反的就是 `sign_map.px4_rates_setpoint`：`roll = ωx`、`pitch = −ωy`、`yaw = −ωz`。
-    ⟹ 这一行本身就是"两套约定是一回事"的断言：**日志里的 `u` 与话题上的 `roll/pitch/yaw`
-      必须只差这一个式子**（`test_A_档的逐帧日志…` 里对着 JSONL 再钉一遍）。
+    ☠️ **2026-10-13（ticket 13 §四③）：这个助手现在是个恒等映射，那是刻意的。**
+      旧版叫 `_cmd_to_flu`，要反一个 `roll = ωx`、`pitch = −ωy`、`yaw = −ωz`
+      （PX4 的 FRD 口径）。新载体 `AttitudeTarget.body_rate` **就是 FLU 原样**
+      ⟹ 在这里再取一次负 = **N2（转两次）**，真机上 pitch/yaw 静默反向。
+    ★ 所以它现在唯一的价值是**把"这条路不该有任何符号"写成一处可被读到的代码**：
+      谁哪天在里面加个负号，`test_N2_下行里_body_rate_是_FLU_原样_没有预先取负` 会红。
     """
-    return np.array([float(msg.roll), -float(msg.pitch), -float(msg.yaw)])
+    return np.array(f.body_rate)
 
 
-def _need_rate_toward(d_world, q_ned_frd=(1.0, 0.0, 0.0, 0.0)) -> np.ndarray:
+def _need_rate_toward_enu(d_world) -> np.ndarray:
     """把**推力矢量**朝世界方向 `d`（ENU）倾，所需的 **FLU 机体系**角速率方向。
 
-    ★ 纯几何 + 一次符号映射，与 DUT 怎么算无关：`ω_world ∝ ẑ_body × d̂`（正转把机体 z 朝
-      `d̂` 拉），再旋进机体系 `ω_body = R_fluᵀ ω_world`。量纲/增益**不是**要断言的东西
-      （OCP 的增益由代价权重定），**方向**才是。
-    ★ 机体系里 `roll = ω_x`、`pitch = −ω_y` ⟹ 想让飞机朝 `d` 加速：`roll` 的期望值就是
-      `ω_body[0]`、`pitch` 的期望值是 `−ω_body[1]`。
+    ★ 纯几何，与 DUT 怎么算无关：`ω_world ∝ ẑ × d̂`（正转把机体 z 朝 `d̂` 拉），再旋进机体系
+      `ω_body = R_fluᵀ ω_world`。量纲/增益**不是**要断言的东西（OCP 的增益由代价权重定），
+      **方向**才是。
+    ★ 为什么这里可以**省掉** `R_fluᵀ`：本文件剩下的用例**全都跑在动捕档**，
+      而交班那一拍的姿态是**动捕源的 ENU 单位四元数**（机头 = +x），注入只动速度/位置、
+      不动姿态 ⟹ `R_flu = I` ⟹ `ω_body = ω_world = ẑ × d̂`。
+      ☠️ 这一点在 A 档下**不成立**（那时机头在 NED 里朝北 ⟹ ENU 里朝 +y），
+      而 A 档那几条正是**唯一**需要完整换算的用例 —— 它们随 A 档一起作废了（见上面 ☠️）。
     """
-    R = _flu_rot(q_ned_frd)
-    zb = R @ np.array([0.0, 0.0, 1.0])
     d = np.asarray(d_world, dtype=float).reshape(3)
-    return R.T @ np.cross(zb, d / float(np.linalg.norm(d)))
+    return np.cross(np.array([0.0, 0.0, 1.0]), d / float(np.linalg.norm(d)))
 
 
-def test_A_档只订_px4_那两条_动捕一帧都不订():
-    """票面验收项「状态源取 PX4 自己的 `/fmu/out/vehicle_local_position`
-    + `vehicle_attitude`」+「本档**不使用动捕输入**」。
+# ─────────── A 档（`state_source=px4`）：**只剩"入口当场拒绝"一条** ───────────
+#
+# ☠️☠️ **2026-10-13（ticket 13 §二⑤ + §四③）：本节原来的 7 条 e2e 用例全部作废。**
+#
+#   为什么：A 档读的是 `/fmu/out/vehicle_local_position` + `/fmu/out/vehicle_attitude`
+#   —— 那两条是 **uXRCE-DDS 专用**的，随（C）级下行一起换到 mavros 之后**不存在了**。
+#   操作者 2026-10-12 裁定取 **(b)**：**判为 uXRCE-DDS 专用、本阶段不可用，入口显式拒绝**
+#   （fail loud，不是静默无数据）。原话与理由见票面 §二⑤：
+#   "本阶段『A 级回退』的载体是 **Phase 1 的 `control` 包整条链**，不是节点内部的 px4 状态源。
+#    把一条死路留着不如让它当场喊出来。"
+#
+#   ⟹ 这一档**起不来了** ⟹ 任何"跑一场 A 档、看它发什么"的用例都失去了对象。
+#     原 7 条的**逐条去向**（映射表的正文在 `docs/control/mpc-node-seam1.md` §13）：
+#
+#     ① `…只订_px4_那两条_动捕一帧都不订`      → **删**。它考的是"条件订阅"这个**行为**，
+#        而那一档**根本不进入建订阅那段代码**（`_validate` 就退了）。`mpc_node` 的模块 docstring
+#        已把这条断言的**无对象**状态写死（"☠️ 这一条断言在**本阶段没有活对象**（那一档起不来）"）
+#        —— 本文件照它的口径收口。
+#     ② `…两条状态各判各的龄`（2 参数）        → **删**。纯逻辑**仍在**、且**仍有活单测**：
+#        `test_node_core.py::test_px4_源_只看_px4_的龄_而不是动捕的` +
+#        `test_px4_源_姿态单独超时也要停`（它们直接对着 `ControlCore.cycle()` 掐两条流）。
+#     ③ `…同一条正前方任务_走哪一根轴由_NED_到_ENU_的换算决定`（2 参数） → **删**。
+#     ④ `…锚点让位置换算在话题层可观测`        → **删**。
+#     ⑤ `…注入的倾斜_指令方向是把机身拉平的那一边`（3 参数） → **删**。
+#        （③④⑤ 的换算面由 `test_node_core.py` 的四条 `px4_*` 单测守着，见上面 ☠️ 段。）
+#     ⑥ `…有速度之后_tau_第一次在话题上可观测_配对差分` → **改挂 B 档**（下面
+#        `test_速度让_tau_在话题上可观测_配对差分`）—— ticket 15 之后动捕那条路**也有速度**了，
+#        而这一条考的是**外推那条通路**，与状态源无关 ⟹ 换来源不丢鉴别力。
+#     ⑦ `…垂直速度的外推_表现是推力低于悬停`   → **改挂 B 档**（与原来那条 B 档用例合并成一条，
+#        见 `test_垂直速度的外推_表现是推力低于悬停`）。
+#     ⑧ `…的逐帧日志把状态源_求解耗时_饱和标志都记下来了` → **改挂默认（mocap）档**，
+#        断言的 `state_source` 从 `"px4"` 改成 `"mocap"`。
+#     ★ ⑥⑦⑧ 是**保住覆盖率**的那三条：它们考的东西（外推通路、日志三列）**不依赖状态源**，
+#       原样跟着 A 档一起删就是白白丢掉 ticket 20 / 票面 D6 的判据。
+#
+#   ⛔ **不要**为了"把 7 条数回来"去把 A 档重新打开 —— 那要重指到
+#      `/mavros/local_position/*` + IMU 姿态，也就是票面 §二⑤ 明确**未采纳**的 (a)，
+#      且它**是回退路径、属安全相关件**（要另开票、要问操作者）。
 
-    ★★ 「不使用动捕」这一条**只有条件订阅才测得出**：两档都订、只是不看的那种写法，
-      在话题上**完全看不出来**（动捕帧照进、只是被丢掉）—— `matched_subscribers() == 0`
-      是唯一能把它与"根本没订"分开的地方。这也是 `NodeParams.state_source` 做成
-      **条件订阅**（而不是"都订、按参数挑一个"）的理由，见 `mpc_node` 的 ★★ 表。
+def test_A_档_state_source_px4_入口当场拒绝():
+    """票面 §二⑤ 裁定 (b) 的**唯一**落点：`state_source=px4` 必须**入口当场拒绝**。
 
-    ⚠️ 断言的**顺序**是判据的一部分：必须等发现跑完才能说"没有订阅者"。
-      屏障取"PX4 那两条都匹配上了"（⟹ 这个进程已经建完订阅），再加 `hold(1.0)` 让 DDS
-      把该发现的发现完 —— 节点是在 `__init__` 里**一次性**建订阅的，不会再冒出新的。
-      ⚠️ 反过来（先断言 == 0 再等）就是一条**永远绿**的假断言：那一刻谁都没匹配上。
+    ★ 为什么这条值得单开（而不是"反正没人用"）：`state_source` 是**回退路径**上的旋钮。
+      留着一条"能起、但读的是一条不存在的话题"的死路，症状是
+      **闸门永远关着、一帧都不发**（`no_px4_state`）—— 与"话题名写错"长得一模一样，
+      而它是**安全相关**的：操作者以为切到了回退档，实际飞机在等一个永不到来的状态。
+      ⟹ 裁定选了 fail loud。本用例就是"它真的 loud 了"的判据。
 
-    ★ 正控别省：解锁 + OFFBOARD 之后必须**真的开始发 setpoint** —— 否则"一帧都不订"
-      与"节点压根没起来"在断言里长得一样。
+    ★ 断言的**三层**（缺一层都能假绿）：
+      · **退出码非 0** —— 光有报错文字不够：一条 `warn` 之后照常跑起来的实现也满足"打了字"，
+        而它会**静默地不开闸门**；
+      · **那句拒绝文案** —— 退出码非 0 也可能是别的原因（参数名敲错、import 失败），
+        所以钉住 `REFUSE_PX4_STATE_SOURCE` 的**特征串**（`A 档` + `§二⑤` 那个裁定号）；
+      · **一帧 setpoint 都没有** —— 这是"拒绝"与"起了但不发"的**行为分界**：
+        后者的退出码可能也是 0、日志也干净，只有在话题面才看得出来。
+
+    ⚠️ **不许**去断言"它在拒绝之前还订了/没订什么话题"：拒绝发生在 `_validate`
+      （建订阅之前），那是**实现细节**，钉上去等于把"拒绝得早"写死成契约。
+      ★ 真正与操作者相关的只有"它拒绝了吗、理由说清了吗"。
+
+    ★ 本机实测（2026-10-13，Orin NX）：退出码 `2`；合并输出（stdout+stderr）里出现
+      `[mpc_node] 启动失败：A 档（state_source=px4）在本阶段不可用（ticket 13 §二⑤…）`；
+      `/mavros/setpoint_raw/attitude` 上 0 个发布者。
+      ⚠️ 那句走的是 **stderr**（`mpc_node.main` 的 `except SystemExit` 分支），而台架的
+      DUT 读取线程是 `stderr=subprocess.STDOUT` 合的流 ⟹ `dut_log()` 两路都能读到。
+      ★ 退出码 **`2`** 而不是 `1`：`main()` 自己 `return 2`（`SystemExit(消息)` 那条路
+      把字符串塞进了 `exc.code`，不能 `int()` 它，所以是**写死**的 2）。
+      ⟹ 本用例断的是"非 0"，**不钉 2**：退出码的具体值是实现细节，钉死它会在
+      "换一种失败方式"时假红，而那一层（`main` 的错误码约定）不该由这条用例来管。
     """
     with _scenario(state_source="px4") as sc:
-        _wait_dut_up(sc)
-        sc.wait_for(lambda: sc.px4.matched_subscribers("local_position") >= 1
-                    and sc.px4.matched_subscribers("attitude") >= 1,
-                    timeout_s=10.0,
-                    message="DUT 没订上 /fmu/out/vehicle_local_position 或 vehicle_attitude")
-        sc.hold(1.0)
-
-        assert sc.mocap_source.matched_subscribers() == 0, \
-            "A 档下 /mocap/pose_enu 上还有订阅者 —— 票面要求本档不使用动捕输入"
-
-        _arm_and_offboard(sc)
-        sc.wait_for(lambda: len(sc.px4.published_frames("rates")) >= 5, timeout_s=10.0,
-                    message="正控不成立：订上 PX4 两条之后并没有真的开始发 setpoint")
-
-
-@pytest.mark.parametrize("key,reason", [("local_position", "px4_stale"),
-                                        ("attitude", "px4_attitude_stale")])
-def test_A_档_两条状态各判各的龄(key, reason):
-    """票面验收项「状态源取 … `vehicle_local_position` + `vehicle_attitude`」的**判据面**。
-
-    ★ 两条消息是**两条独立的流**（z0 SITL 实测 32.5 / 31.6 Hz，2026-09-28）⟹ 各判各的龄。
-      所以本用例**按话题分别**掐断，且断言的是**哪一个理由**进了日志：
-        · 只掐 `local_position` ⟹ 理由必须是 `px4_stale`；
-        · 只掐 `attitude`      ⟹ 理由必须是 `px4_attitude_stale`。
-      只断言"停发了"是不够的 —— 合并成一条判据（"任一条旧了就算旧"）也满足"停发了"，
-      而它就丢掉了"姿态停在几秒前、节点却以为在闭环"这个唯一想抓的失效
-      （姿态变化慢，两个选择只差一个小倾角，话题上几乎看不出来）。
-    ★ 时间尺子：静默 3 s，判据是 `px4_timeout_s`（默认 0.5 s）、而这条流周期只有 ~31 ms
-      ⟹ 跨得过闸门（与 `px4_status_silence` 同一条纪律：时长要**明显大于**阈值）。
-    """
-    with _scenario(state_source="px4") as sc:
-        _wait_dut_up(sc)
-        _arm_and_offboard(sc)
-        sc.wait_for(lambda: sc.px4.published_frames("rates"), timeout_s=10.0,
-                    message="正控没成立：解锁之后就没发过 setpoint")
-
-        t0 = sc.t()
-        sc.timeline.extend(px4_state_silence(sc.px4, t0 + 0.2, duration_s=3.0, key=key))
-
-        sc.advance_to(t0 + 2.5)
-        n_sp = len(sc.px4.frames_between("rates", t0 + 1.2, t0 + 2.5))
-        n_hb = len(sc.px4.frames_between("mode", t0 + 1.2, t0 + 2.5))
-        assert n_sp == 0, f"只掐了 {key}，setpoint 却还在发（{n_sp} 帧）—— 那一条没被判据看着"
-        assert n_hb > 50, f"静默期间心跳掉了（{n_hb} 帧 / 1.3 s，期望 ~65）"
-        assert sc.dut_alive(), "DUT 在静默期间退出了"
+        sc.wait_for(lambda: not sc.dut_alive(), timeout_s=STARTUP_S,
+                    message="state_source=px4 之后 DUT 一直没退出 —— 入口没有拒它")
+        sc.hold(0.5)                 # 让读取线程把最后几行排空（进程没了不等于管道空了）
+        rc = sc.dut_returncode()
         log = sc.dut_log()
-        assert reason in log, \
-            f"停发的理由不是 {reason}（日志尾：{log[-500:]!r}）—— 两条状态被并成一条判据了？"
 
-        sc.advance_to(t0 + 6.5)
-        n_after = len(sc.px4.frames_between("rates", t0 + 4.5, t0 + 6.5))
-        assert n_after > 0, f"{key} 回来之后没有重新开始发（闸门没重开）"
+        assert rc not in (0, None), \
+            (f"state_source=px4 之后 DUT 的退出码是 {rc}（该是**非 0**）—— 它是不是"
+             f"只是打了句警告就照常跑起来了？（日志尾：{log[-800:]!r}）")
+        assert "A 档" in log and "§二⑤" in log, \
+            (f"拒绝理由没进日志（要含『A 档』与『§二⑤』这两串），"
+             f"日志尾：{log[-800:]!r}")
+        assert sc.fake.attitude_publishers() == 0, \
+            "入口都拒绝了，却还有人往 /mavros/setpoint_raw/attitude 上发 —— 那个进程是谁？"
 
 
-@pytest.mark.parametrize("offset, d_enu", [({"hold_offset_x": 10.0}, (1.0, 0.0, 0.0)),
-                                           ({"hold_offset_y": 10.0}, (0.0, 1.0, 0.0))])
-def test_A_档_同一条正前方任务_走哪一根轴由_NED_到_ENU_的换算决定(offset, d_enu):
-    """票面验收项「符号映射与推力标定在**真 PX4** 上最终确认 —— 判据是**行为符合预期**」
-    在话题层的落点：同一件事（"朝 ENU 的某个方向追 10 m"）在 A 档下必须走**换算出来**的那根轴。
 
-    ★★ 为什么这是一条**有牙齿**的断言（而不是"抄了实现"）：任务方向 `d_enu` 是**测试给的**
-      （`hold_offset` 就在 ENU 里），而机头朝向是**换算出来的** —— 两者之间那对关系由
-      NED→ENU/FRD→FLU 决定。初始姿态是 NED 单位四元数（= 机头朝**北**），换算到 ENU 之后
-      机头指 **ENU 的 +y** ⟹ 同一条 "ENU +x 追 10 m" 必须靠**绕机体 x 转**（`roll`）做到：
+# ☠️☠️ **2026-10-13（ticket 13 §四③）：这里原来还有三条 A 档 e2e 用例，删了。**
+#   逐条说清**删掉的是什么**、以及**有没有别处接着守** —— 免得下一个人以为"覆盖率没变"：
+#
+#   · `test_A_档_同一条正前方任务_走哪一根轴由_NED_到_ENU_的换算决定`（2 参数）
+#     ——考的是"机头朝**北**（NED 的 x）换算到 ENU 之后朝 +y"这件事在**指令轴**上的后果。
+#     **换算那一半**仍有活单测（`test_node_core.py::test_px4_位置与速度的_NED_到_ENU`、
+#     `test_px4_姿态转换在两个物理特例上对得上`：NED 单位四元数 ⟹ ENU 机头 +y）；
+#     **"OCP 据此发哪一根轴"那一半**在 A 档下**没有活对象**了。
+#   · `test_A_档_锚点让位置换算在话题层可观测` —— 位置误差（世界方向）⟹ 倾转方向。
+#     这一条在**动捕档**有等价物且更直接：`test_目标在正前方时_body_rate_y_为正_…`
+#     （位置误差在 +x ⟹ `body_rate.y > 0`，还多钉了"打满"）。差的那一点是"NED 报进来
+#     的位置换算"—— 同上面，换算本身有单测。
+#   · `test_A_档_注入的倾斜_指令方向是把机身拉平的那一边`（3 参数）—— 姿态误差 ⟹ 拉平方向。
+#     ⚠️ **这一条的覆盖面本条就是丢的**：它在动捕档**没有**等价物
+#     （`/mocap/pose_enu` 能注入姿态，但重写成动捕版要重算几何 + 重定跳变闸门的角阈值，
+#     那是**新造一条判据**、要实测才敢下阈值 —— 不在本票要落地的范围里）。
+#     ⟹ 已在票 13 Comments 的映射表里**单独点名**为"本条丢掉的覆盖"，留给操作者裁定
+#     （要回来的话另开票）。⛔ 别在这里写一条"看着像"的替代断言充数。
+#
+#   ★ 三条的共同点：它们考的都是 **A 档那条源**（NED/FRD 的 `/fmu/out/*`）活着时才有意义的
+#     东西。操作者 2026-10-12 裁定 (b)（`state_source=px4` 入口当场拒）之后，
+#     "跑一场 A 档看它发什么"这件事**在台架上做不到**了 —— 与其留三条永远红的用例，
+#     不如把它们删掉、把丢掉的覆盖面写在明处。
 
-        mocap 档（同一张票面上的同一条任务）：初始姿态是 ENU 单位四元数（机头 = +x）
-          ⟹ `pitch < 0`（见 `test_目标在正前方时_pitch_为负_且顶约束表现为打满`，实测 −3.84）
-        A 档（本用例）：机头 = ENU +y ⟹ 主项必须是 **`roll`**（实测 +3.8400 = `ROLL_RATE_MAX`）
 
-      ⟹ 任何"忘了转姿态"或"只翻了一半符号"的实现都会以为机头还在 +x、于是发 `pitch`
-        （或者两根轴都发）—— 这条用例就会红。
+def _速度_外推档跑一场(**params) -> np.ndarray:
+    """跑一场"动捕档 + 水平匀速 1 m/s"，返回**末帧发出去的 FLU 角速率**。
 
-    ★ 期望值走 `_need_rate_toward`（本组自己算的几何），**不写死"roll/pitch"**：
-      10 m 在 1 s 的时域里不可行 ⟹ 主项必然**打满**，所以断言的是"顶在 `*_RATE_MAX` 上"
-      （等号附近，容差 0.05），而不是"小于上限" —— 后者对"被谁悄悄按比例缩回去"也是绿的。
-
-    ⚠️ 位置换算（`(y, x, −z)`）**在这条里没有被考**：本用例的夹具**位置不动**，而参考钉在
-      交班那一拍的测量上（锚点）⟹ 位置**误差**恒等于 `hold_offset`，与怎么换无关。
-      ★ 它**不是**"位置换算量不到"（那句话在锚点之前成立、之后就不成立了）：让夹具的位置
-      动起来就能考到 —— 那是 `test_A_档_锚点让位置换算在话题层可观测` 的事。
+    ★ 抽出来是因为下面两条用例（τ 的可观测性、默认档落在哪一端）用的是**同一次跑程**：
+      注入也一样（ENU 东 +1 m/s）。各写一份的话，哪天要换注入方向就会只改一处，
+      两条用例就悄悄量起了**不同的东西** —— 而它们的结论是**互相引用**的。
+    ★★ `**params` 而不是形参 `tau_s`：第二条用例要的恰恰是"**不写** `tau_s`"（走
+      `FROZEN_PARAMS` 的冻结档）。写成形参就得传一个值进去，而"传什么值"正是那条用例
+      要考的东西 —— 一传就把自己要测的默认档覆盖掉了（**测试自己把自己测没了**）。
     """
-    with _scenario(state_source="px4", **offset) as sc:
+    with _scenario(hold_offset_z=0.0, **params) as sc:
         _wait_dut_up(sc)
         _arm_and_offboard(sc)
-        sc.wait_for(lambda: len(sc.px4.published_frames("rates")) >= 10, timeout_s=10.0,
-                    message="解锁后没攒到 10 帧 setpoint")
-
-        w_need = _need_rate_toward(d_enu)      # 初始姿态 = NED 单位四元数（机头朝北）
-        if abs(float(w_need[0])) >= abs(float(w_need[1])):
-            main, other, want, rate_max = "roll", "pitch", float(w_need[0]), ROLL_RATE_MAX
-        else:
-            main, other, want, rate_max = "pitch", "roll", -float(w_need[1]), PITCH_RATE_MAX
-
-        last = sc.px4.published_frames("rates")[-1].msg
-        got = float(getattr(last, main))
-        other_v = float(getattr(last, other))
-        assert got * want > 0.0, \
-            f"{offset}（朝 ENU {d_enu} 追 10 m）：主项该是 {main} 的" \
-            f"{'+' if want > 0 else '−'} 号，实测 {got:+.4f}（换算把机头方向弄反了？）"
-        assert abs(abs(got) - rate_max) < 0.05, \
-            f"{main} = {got:+.4f}，没顶在 {rate_max} 上 —— 10 m 在 1 s 时域里不可行，该打满"
-        assert abs(other_v) < 0.2, \
-            f"{other} = {other_v:+.4f} 不该有动作（纯 {main} 的任务被换成了斜的？）"
+        sc.mocap_source.set_velocity(vx=1.0)     # ENU 东 1 m/s（与 pose 同 frame，零变换）
+        sc.wait_for(lambda: len(_sp_frames(sc)) >= 15, timeout_s=10.0,
+                    message="注入速度后没攒到 15 帧 setpoint")
+        return _w_of(_sp_frames(sc)[-1])
 
 
-def test_A_档_锚点让位置换算在话题层可观测():
-    """★ **锚点改动的第二个后果**：位置换算第一次**在话题层**就能考（ticket 09 之前量不到）。
+def test_速度让_tau_在话题上可观测_配对差分():
+    """★ ticket 15 之后**动捕这一档也有速度了**（`/mocap/velocity_enu`，`TwistStamped`）
+    ⟹ 外推 `x + v·τ` 第一次能在**本票剩下的那一档**上被黑盒考到。
 
-    交班之后把夹具的**位置**挪走 0.3 m（NED 北 ⟹ ENU 的 +y），锚点仍在原点 ⟹ 位置误差的
-    **世界方向**是"从当前点指回锚点" = ENU 的 **−y**。于是节点该发的是一条朝 −y 倾转的角速率
-    —— 方向由 `_need_rate_toward`（本组自己算的几何）给出，**不写死 roll/pitch**。
-
-    ★★ 有牙齿的地方：`.3 m` 是**从 NED 报进去的**，而锚点与当前点都在 ENU 里比较 ——
-      "忘了换轴"（把 NED 的 north 当 ENU +x）会让期望方向整整转 90°，投影当场变负。
-    ★ 位移取 **0.3 m**：位姿跳变闸门的上限是 `20 m/s × dt`（dt ≈ 一帧 31 ms ⟹ 0.6 m），
-      1 m 会先被判成 `pose_jump`，看到的就不是本用例要考的那件事。
-    ★ 位置项在 0.3 m 上**不饱和**（不像上面那条 10 m 会打满）⟹ 判据是"投影增益为正、
-      残差小"，不是"顶在 `*_RATE_MAX` 上"。
-    ★ 本机实测（2026-09-28，本机 SITL 夹具）：`ω_cmd = [1.0e-04, −0.1456, −2.2e-03]`、
-      需要的方向 `(0, −1, 0)` ⟹ 投影 `k = **+0.1456**`、落在期望方向之外的只剩 0.0022 rad/s。
-      判据取 `k > 0.05`（实测的 1/3）与"残差 < 0.3·|ω_cmd|"（实测的 ~1/60）。
-    """
-    with _scenario(state_source="px4") as sc:
-        _wait_dut_up(sc)
-        _arm_and_offboard(sc)
-        sc.wait_for(lambda: len(sc.px4.published_frames("rates")) >= 10, timeout_s=10.0,
-                    message="解锁后没攒到 10 帧 setpoint")
-
-        # 锚点已经在原点钉住了（交班那一拍）—— 现在把飞机挪走
-        sc.px4.set_position_ned(0.3, 0.0, 0.0)          # NED 北 0.3 m ⟹ ENU (0, +0.3, 0)
-        n0 = len(sc.px4.published_frames("rates"))
-        sc.wait_for(lambda: len(sc.px4.published_frames("rates")) >= n0 + 8, timeout_s=10.0,
-                    message="注入位置偏移之后不再发 setpoint（撞上跳变闸门？）")
-        last = sc.px4.published_frames("rates")[-1].msg
-
-        w_need = _need_rate_toward((0.0, -1.0, 0.0))     # 从 ENU +y 回到锚点（原点）
-        assert float(np.linalg.norm(w_need)) > 0.1, "这条场景本身没造出方向，用例写错了"
-        w_cmd = _cmd_to_flu(last)
-        k = float(w_cmd @ w_need) / float(w_need @ w_need)
-        assert k > 0.05, \
-            f"位置误差（0.3 m，世界 −y）在话题上没产生朝那个方向的倾转：k = {k:+.4f}、" \
-            f"ω_cmd = {np.round(w_cmd, 4)}、需要 = {np.round(w_need, 4)}" \
-            f"（位置换算把北当成了 +x？锚点没钉住？）"
-        assert float(np.linalg.norm(w_cmd - k * w_need)) < 0.3 * float(np.linalg.norm(w_cmd)), \
-            f"指令里有 {np.linalg.norm(w_cmd - k * w_need):.4f} rad/s 落在期望方向之外"
-
-
-@pytest.mark.parametrize("axis, deg, expect_flat", [("y", 10.0, False),
-                                                   ("x", 10.0, False),
-                                                   ("z", 90.0, True)])
-def test_A_档_注入的倾斜_指令方向是把机身拉平的那一边(axis, deg, expect_flat):
-    """票面验收项「符号映射 … 在真 PX4 上最终确认」的姿态面：**注入一个倾斜，看它往哪边修**。
-
-    ★ 参考姿态是**水平**的（`hold_reference`：位置 = **锚点** + 偏移、速度 0、姿态水平），
-      而代价对姿态偏差的权重（`OcpConfig.q_diag` 的四元数段）都是正的 ⟹ 一个倾斜的测量姿态
-      必然换出一条**朝水平修**的角速率，方向由换算决定（希望值走 `_need_rate_toward`）。
-      （`qw` 曾长期是 0 —— 只罚倾斜不罚"朝向的 w 分量"；2026-09-29 ticket 16 改成 `0.1`。）
-
-    ★★ 这条能抓住什么、抓不住什么（第一手，2026-09-28 本机，四种错法各算了一遍）：
-      · 抓得住：**完全不转**（`q_enu = q_ned`）—— 它把倾斜轴换成另一根（NED-y 倾斜本该走
-        `pitch`，它会走 `roll`），投影测试直接红；
-      · **抓不住**："只翻 pitch/yaw"与"只换世界标签"这两种错法：对**单轴**倾斜，机体系里
-        所需的转速轴与整体 90° 偏航**无关** ⟹ 投影仍是正的。它们要靠
-        `test_A_档_同一条正前方任务…`（那条考的是机头朝向）与 SITL 闭环才是红的。
-      ⟹ 本用例的价值是"姿态误差被修的方向是对的"，**不是**"转换完全正确"。
-
-    ★ `deg=10` 是**按跳变闸门选的**，不是随手给的：`_pose_jump` 的上限是
-      `mocap_jump_rate_max (12.6 rad/s) × dt`，而 `dt` 取源自己的 stamp 差（这条流 ~31 ms）
-      ⟹ 允许的单拍转角 ≈ 12.6 × 0.031 = **22.4°**。10° 留了一倍余量；给到 30° 就会先撞上
-      **跳变闸门**（停发），看到的是"什么都不发"而不是"往哪边修"。
-    ★ `axis="z"`（纯偏航）是**负控**：偏航不产生倾斜 ⟹ 三轴角速率与推力都该是悬停值。
-      它同时证明"上面那些非零读数**是**倾斜带来的"，而不是"节点一被注入就乱发"。
-    """
-    z0 = Z0Params()
-    q_ned = _ned_axis_quat(axis, deg)
-    with _scenario(state_source="px4") as sc:
-        _wait_dut_up(sc)
-        _arm_and_offboard(sc)
-        sc.wait_for(lambda: len(sc.px4.published_frames("rates")) >= 10, timeout_s=10.0,
-                    message="解锁后没攒到 10 帧 setpoint")
-
-        n0 = len(sc.px4.published_frames("rates"))
-        sc.px4.set_attitude_quat(q_ned)
-        # 注入之后**至少 8 帧**再看：状态流 ~32 Hz、节点 100 Hz ⟹ 8 帧足以让新姿态进闭环
-        sc.wait_for(lambda: len(sc.px4.published_frames("rates")) >= n0 + 8, timeout_s=10.0,
-                    message=f"注入 NED {axis} {deg:g}° 之后就不再发 setpoint 了（撞上跳变闸门？）")
-        last = sc.px4.published_frames("rates")[-1].msg
-
-        if expect_flat:
-            w = _cmd_to_flu(last)
-            assert float(np.linalg.norm(w)) < 0.02, \
-                f"纯偏航（NED {axis} {deg:g}°）不该产生任何倾斜修正，实测 ω = {np.round(w, 4)}"
-            hover = -z0.t_hover / z0.t_max
-            # 容差按牛顿定义再除以 `t_max`（同 `test_位置保持…` 那条的理由）：纯偏航下
-            # 推力该守在悬停值上。旧阈值是归一化的 `0.02` ⟹ 物理量 `0.02 × 11.8003 = 0.236 N`，
-            # 原样取那个物理量（不写死归一化余量，它随 `t_max` 走）。
-            tol = 0.236 / z0.t_max
-            assert abs(float(last.thrust_body[2]) - hover) < tol, \
-                f"纯偏航下推力该是悬停值 {hover:+.4f}，实测 {float(last.thrust_body[2]):+.4f}" \
-                f"（允许差 {tol:.4f} = 0.236 N）"
-            return
-
-        w_need = _need_rate_toward((0.0, 0.0, 1.0), q_ned)   # 水平参考 ⟹ 朝「上」修
-        assert float(np.linalg.norm(w_need)) > 0.1, "这条注入本身没造出倾斜，用例写错了"
-        w_cmd = _cmd_to_flu(last)
-        k = float(w_cmd @ w_need) / float(w_need @ w_need)
-        assert k > 0.5, \
-            f"指令在「把机身拉平」方向上的增益是 {k:+.3f}（该是正的、可观的）—— " \
-            f"ω_cmd = {np.round(w_cmd, 4)}、需要 = {np.round(w_need, 4)}"
-        assert float(np.linalg.norm(w_cmd - k * w_need)) < 0.1, \
-            f"指令里有 {np.linalg.norm(w_cmd - k * w_need):.3f} rad/s 落在拉平之外的方向上"
-
-
-def test_A_档_有速度之后_tau_第一次在话题上可观测_配对差分():
-    """A 档的**新能力**：外推 `x + v·τ` 第一次能被黑盒考到 —— 因为这条源**有速度**。
-
-    ★★ 为什么 A 档之前测不出来（见 `test_动捕那条话题没有速度字段_所以拍不出_tau_的黑盒测试`）：
-      `/mocap/pose_enu` 是 `PoseStamped`，**没有** `twist` ⟹ `v ≡ 0` ⟹ `x + v·τ` 恒等变换
-      ⟹ 话题上**任何** τ 都长得一样。A 档的 `vehicle_local_position` 带 `vx/vy/vz`。
+    ☠️ **2026-10-13（ticket 13 §四③）这条原来叫 `test_A_档_有速度之后_tau_第一次在话题上
+      可观测_配对差分`，跑在 A 档。** A 档整档被拒（§二⑤）⟹ **改挂动捕档**。
+      **判据一个字没改** —— 它考的是**外推那条通路**（`x + v·τ`），与"速度从哪条话题来"
+      无关；A 档那一版在 ticket 15 之前是**唯一**能跑它的地方，现在不是了。
+      ⚠️ 旧的读数（下面那段 `ω_FLU = [...]`）是在 **A 档**、`v = NED 北向 1 m/s`
+        （⟹ ENU 北 +1 m/s）下量的。本条现在注入的是 **ENU 东 +1 m/s** ——
+        **不是同一个世界方向**（差 90°），所以那些数**别当成本条的实测基线去反推阈值**。
+        能沿用它们的只有一条理由：两场里"要刹住的方向"投影到**机体系**之后都是
+        `(0, −1, 0)`（mocap 档机头 +x、速度 +x ⟹ 该朝 −x 倾 ⟹ 绕机体 −y；
+        A 档机头朝北、速度朝北 ⟹ 同样绕机体 −y）⟹ **量级可比、方向同轴**。
+        ⛔ 但"可比"不是"采过"：本条改挂之后**没有重新采数**。
 
     ★★ 为什么判据是**两次跑程的差**、而不是"有/没有动作"（第一手，2026-09-28 本机——
       这一条是**被实测推翻过一次**的判据，别改回去）：
@@ -1109,7 +1261,7 @@ def test_A_档_有速度之后_tau_第一次在话题上可观测_配对差分()
       真实的机理是：`v ≠ 0` 时，参考的速度是 0 而状态的速度是 v ⟹ OCP 要**刹住**它，
       这一项**与 τ 无关**；τ 只通过位置那一项进来（`x_ref − x0 = hold_offset − v·τ`）。
       所以 τ 的效果是**幅度上的一点差**，不是"有/无"。实测（`hold_offset_z=0`、
-      `v = NED (1,0,0)` 北向 1 m/s、末帧，2026-09-28 本机）：
+      `v = ENU 水平 1 m/s`、末帧，2026-09-28，**A 档**）：
 
           τ = 0.05  ⟹ ω_FLU = [3.0e-04, −0.5572, −2.2e-03]
           τ = 1e-6  ⟹ ω_FLU = [3.0e-04, −0.5340, −2.1e-03]
@@ -1130,18 +1282,10 @@ def test_A_档_有速度之后_tau_第一次在话题上可观测_配对差分()
       实测 `hold_offset_z` 取 0 与取默认 1.0 时，角速率读数到小数第三位都一样 ——
       "保持 1 m"那一项进的是**推力**（`u[0]`），不是横向角速率。
     """
-    def run(tau_s: float) -> np.ndarray:
-        with _scenario(state_source="px4", hold_offset_z=0.0, tau_s=tau_s) as sc:
-            _wait_dut_up(sc)
-            _arm_and_offboard(sc)
-            sc.px4.set_velocity_ned(1.0, 0.0, 0.0)
-            sc.wait_for(lambda: len(sc.px4.published_frames("rates")) >= 15, timeout_s=10.0,
-                        message="注入速度后没攒到 15 帧 setpoint")
-            return _cmd_to_flu(sc.px4.published_frames("rates")[-1].msg)
-
-    w_big, w_tiny = run(0.05), run(0.0)
+    w_big, w_tiny = _速度_外推档跑一场(tau_s=0.05), _速度_外推档跑一场(tau_s=0.0)
     d = w_big - w_tiny
-    w_need = _need_rate_toward((0.0, -1.0, 0.0))     # ENU：NED 北 +1 m/s ⟹ ENU 东 +1 ⟹ 该朝南
+    # 要刹住的是 +x 的速度 ⟹ 世界方向 −x̂（`_need_rate_toward_enu` 收的就是"该朝哪边倾"）
+    w_need = _need_rate_toward_enu((-1.0, 0.0, 0.0))
     k = float(d @ w_need) / float(w_need @ w_need)
     # ⚠️ 负控那一路标签**跟着实际值走**：2026-10-09 起跑的是 `0.0`（冻结值），不再是 `1e-6` 那个近似
     #   —— 标签留旧会让失败诊断把人往"测的还是旧近似"上带（`/code-review` 2026-10-10 指出，本票顺手改）。
@@ -1160,54 +1304,71 @@ def test_冻结档的_tau_真的是_0_而不是节点默认的_0_05():
     本文件现在按**实机冻结档**起 DUT（`FROZEN_PARAMS`）—— 这条钉住**那个默认档真的生效了**：
     `_scenario()` **不写** `tau_s` 时，τ 必须是 **`0.0`**（首飞冻结值），不是节点默认的 `0.05`。
 
-    ★ 为什么要单开一条：`test_A_档_有速度之后_tau_第一次在话题上可观测_配对差分` 与那两条
+    ★ 为什么要单开一条：`test_速度让_tau_在话题上可观测_配对差分` 与那两条
       "推力低于悬停"的用例**都是显式**给 `tau_s` 的 ⟹ 它们证明的是"这个旋钮两端都动得起来"，
       **不**证明"本文件的默认落在哪一端"。少了这条，把 `FROZEN_PARAMS` 从 `0.0` 改回 `0.05`
       会**全绿** —— 而那正是"搬到真机后参数搬错"，本票要挡的就是它。
 
-    判据 = **配对差分**（做法与下面那条 A 档用例逐字相同，连阈值来源都一样）：
-      冻结档（**不写** `tau_s`，走 `FROZEN_PARAMS`） 对 **显式 `tau_s = 0.05`**（= 节点默认值，
-      也就是"搬错"时会变成的那个值）。同一注入速度下两者必须差在"外推该有的方向"上
-      （灵敏度实测 ≈ 0.46 (rad/s) / s 的 τ，推导见下一条用例）。
-    ★ 阈值**不写死读数**（沿用下一条的 `k > 0.004`），免得把实测的 `0.0232` 抄死。
+    ☠️ **2026-10-13（ticket 13 §四③）这条原来跑在 A 档**（`state_source="px4"`）——
+      A 档整档被拒（§二⑤）⟹ **改挂动捕档**；它考的是"**本文件的默认档**落在哪一端"，
+      而那默认档从头到尾就是动捕档 ⟹ 换过来之后它**比原来更贴题**。
+      ☠️ 同时**判据也换了**（原判据在这里已经不成立）：老判据是"冻结档 vs **`0.05`** 必须
+      差得出外推该有的量"—— 那在 A 档下能红（A 档没有 `FROZEN_PARAMS` 的默认），
+      改挂动捕档之后它就和上一条**逐字重复**了（两条都是 `0.05` vs `0.0`）。
+      ⟹ 现在**直接断那句话本身**：**隐含档（不写 `tau_s`）= 显式 `0.0`**。
+
+    ★ 判据 = **三个跑程**、同一个度量（两次跑程的差在"该朝哪边倾"方向上的投影）：
+      · **主判据**：隐含（**不写** `tau_s` ⟹ 走 `FROZEN_PARAMS`）对 显式 `0.0` ⟹ 投影 **≈ 0**
+        （两者**本来就该是同一档**）。把 `FROZEN_PARAMS` 从 `0.0` 改成 `0.05`，这一条当场红
+        （那时 `k_self` 会等于下面那个正控的 `k_ctrl`，比值 ≈ 1 ≫ 0.25）。
+      · **正控**：显式 `0.05` 对 显式 `0.0` ⟹ 投影**明显不为 0**。
+      ★★ 正控**必须**在这一条里，不能靠隔壁那条用例：隔壁的跑程绿不绿与本条无关，
+        而"**这一场的夹具到底分不分得开 0.05 与 0**"是本条断言成立的前提。
+        见 [判据全绿也可能是机理反了] 那一族的"先问这个量这一场能不能取到别的值"。
+      ★ 阈值取**比例**（`|k_self| < 0.25·|k_ctrl|`）而不是绝对读数：绝对阈值会把实测的
+        0.0232 抄死（同本文件"不写死读数"的纪律）；比例阈值只要求"跑程抖动远小于 τ 的信号"，
+        而那是上一条用例能成立的前提。⛔ 别把它放宽到 0.5 以上：再宽就与"判据没鉴别力"相邻了。
     """
-    def run(**params) -> np.ndarray:
-        with _scenario(state_source="px4", hold_offset_z=0.0, **params) as sc:
-            _wait_dut_up(sc)
-            _arm_and_offboard(sc)
-            sc.px4.set_velocity_ned(1.0, 0.0, 0.0)
-            sc.wait_for(lambda: len(sc.px4.published_frames("rates")) >= 15, timeout_s=10.0,
-                        message="注入速度后没攒到 15 帧 setpoint")
-            return _cmd_to_flu(sc.px4.published_frames("rates")[-1].msg)
+    w_impl = _速度_外推档跑一场()                 # 不写 tau_s ⟹ 走 FROZEN_PARAMS
+    w_zero = _速度_外推档跑一场(tau_s=0.0)         # 显式冻结值
+    w_050 = _速度_外推档跑一场(tau_s=0.05)         # 节点默认值（"搬错"时会变成的那个）
+    u = _need_rate_toward_enu((-1.0, 0.0, 0.0))   # 同一条注入 ⟹ 同一个期望方向
+    u = u / float(np.linalg.norm(u))
+    k_self = float((w_impl - w_zero) @ u)
+    k_ctrl = float((w_050 - w_zero) @ u)
+    print(f"\n隐含档 {FROZEN_PARAMS} ⟹ ω={np.round(w_impl, 4)}；显式 0.0 ⟹ {np.round(w_zero, 4)}；"
+          f"显式 0.05 ⟹ {np.round(w_050, 4)}；k_self={k_self:+.5f}、k_ctrl={k_ctrl:+.5f}")
 
-    w_default, w_frozen = run(tau_s=0.05), run()      # 顺序同下一条：先 0.05，后冻结档
-    d = w_default - w_frozen
-    w_need = _need_rate_toward((0.0, -1.0, 0.0))      # ENU：NED 北 +1 m/s ⟹ 该朝南
-    k = float(d @ w_need) / float(w_need @ w_need)
-    print(f"\nτ=0.05 ⟹ ω={np.round(w_default, 4)}；冻结档 {FROZEN_PARAMS} ⟹ "
-          f"ω={np.round(w_frozen, 4)}；差 {np.round(d, 4)}（k={k:+.4f}）")
-
-    assert k > 0.004, \
-        f"冻结档与 τ=0.05 差不出外推该有的量：差 {np.round(d, 4)}、期望方向 " \
-        f"{np.round(w_need, 4)}（k={k:+.5f}）—— `FROZEN_PARAMS` 里还是首飞冻结的 " \
-        f"`tau_s = 0.0` 吗（[first-flight-config.md] §2 的 N2）？"
+    assert abs(k_ctrl) > 0.004, \
+        (f"正控不成立：显式 0.05 与显式 0.0 在期望方向上只差 {k_ctrl:+.5f} "
+         f"（差 {np.round(w_050 - w_zero, 4)}）—— 这一场量不出外推的差，"
+         "下面那条『隐含 = 0.0』就变成了【测不出任何东西】的绿。查 `tau_s` 有没有进参考。")
+    assert abs(k_self) < 0.25 * abs(k_ctrl), \
+        (f"隐含档（不写 tau_s）与显式 `tau_s=0.0` 差了 {k_self:+.5f}（正控的量级是 "
+         f"{k_ctrl:+.5f}）⟹ `FROZEN_PARAMS` 里不是首飞冻结的 `tau_s = 0.0` 了吗"
+         "（[first-flight-config.md] §2 的 N2）？")
 
 
-def test_A_档_垂直速度的外推_表现是推力低于悬停():
-    """A 档外推的**另一面**：垂直方向的速度差改的是**推力**，不是角速率（纯几何上 `ẑ × ẑ = 0`）。
+def test_垂直速度的外推_表现是推力低于悬停():
+    """★ 外推的**另一面**：垂直方向的速度差改的是**推力**，不是角速率（纯几何上 `ẑ × ẑ = 0`）。
 
-    ★ 这条顺手把**速度**的 z 符号钉住（`v_enu_z = −v_ned_z`）：注入 NED `vz = −1`（**上升** 1 m/s），
-      τ = 0.05 ⟹ `x0` 比参考高 5 cm ⟹ 该**减推力**。符号如果反了，节点会以为在下降、于是加推力
-      —— 而"加/减推力"在话题上就是 `thrust_body[2]` 的两个方向，一眼分得开。
-    ★ 与上一条配对：一个考速度进**角速率**，一个考速度进**推力**；两条的期望符号都由
-      "参考比外推点低/高"推出来，不抄实现。实测（2026-09-28 本机，**当时代码**）：
-        `vz = −1` ⟹ `thrust_body[2] = −0.3974`（当时悬停是 −0.6235 ⟹ 确实**低于**悬停）
+    ☠️ **2026-10-13（ticket 13 §四③）：这一条是两条老用例合并来的** ——
+      原来有一份跑 A 档（`sc.px4.set_velocity_ned(0,0,−1)`，NED 里"上升"= `vz = −1`）、
+      一份跑 B 档（`sc.mocap_source.set_velocity(vz=+1)`，ENU 里"上升"= `vz = +1`）。
+      内容**逐字重复**，只差一个来源。A 档被拒（§二⑤）之后 A 档那份失去了对象 ⟹
+      合成这一条（保留 B 档的形态与那段 ticket 15 的来历），**判据一个字没动**。
+
+    ★★ 这条顺手把**速度的 z 符号**钉住：注入 ENU `vz = +1`（**上升** 1 m/s），τ = 0.05
+      ⟹ `x0` 比参考高 5 cm ⟹ 该**减推力**。符号如果没传到位（或反了），要么推力不动、
+      要么更大 —— 一眼分得开。
+      ⚠️ 符号在**两条源上的写法本来就不一样**（NED 的"上升"是 `vz = −1`、ENU 是 `+1`）
+      ⟹ 合并时**没有**把旧读数直接搬过来：旧 A 档那份的读数（`thrust_body[2] = −0.3974`、
+      悬停当时 −0.6235）是**旧归一化 + 旧载体**下的，只留在 `git log` 里。
 
     ⚠️ **判据跟着物理量走，不跟着归一化走**（2026-09-29 回填 `hover_thrust` 后订正）：
-      上面那组读数是在**旧归一化**（`t_max = 11.8 N`）下量的；现在 `t_max = 46.3 N`，
-      **同一个物理推力差**折到归一化上是原来的 **1/3.9**。把阈值仍写成归一化的 `0.05`，
-      余量会从 4.5 倍缩到 1.15 倍 —— 变成一条随时可能假红的用例。
-      所以这里先把阈值定义成**牛顿**（`MIN_DELTA_THRUST_N`），再折算成归一化余量。
+      阈值先按**牛顿**定（`MIN_DELTA_THRUST_N`），再折算成归一化余量 —— 否则归一化常数
+      从 11.8 N 换到 46.3 N 之后，**同一个物理推力差**折到归一化上只剩 1/3.9，
+      余量会从 4.5 倍缩到 1.15 倍，变成一条随时可能假红的用例。
     """
     #: 外推 5 cm 该带来的推力变化，至少要有这么多 **牛顿**（≈ 悬停推力的 8 %）。
     #: **不是新挑的**：旧阈值是归一化的 `0.05`，按旧归一化常数 `t_max = 11.8003 N` 折回物理量
@@ -1216,49 +1377,12 @@ def test_A_档_垂直速度的外推_表现是推力低于悬停():
     MIN_DELTA_THRUST_N = 0.590
 
     z0 = Z0Params()
-    hover = -z0.t_hover / z0.t_max
+    hover = +z0.t_hover / z0.t_max
     min_delta = MIN_DELTA_THRUST_N / z0.t_max
     # ★★ **显式钉 τ**（不跟 `FROZEN_PARAMS` 的冻结档 0.0）：本用例探的是**外推那一条通路**
     #   （`x + v·τ`），而 τ = 0 时它是**恒等变换** ⟹ 读数里剩下的只有"OCP 要把 v 刹到 0"那一项
-    #   （与 τ 无关，见 `test_A_档_有速度之后_tau_第一次在话题上可观测_配对差分` 的机理段）。
+    #   （与 τ 无关，见 `test_速度让_tau_在话题上可观测_配对差分` 的机理段）。
     #   不钉的话它会**照样绿**、却不再测外推 —— 那是本仓最恨的静默失效。
-    with _scenario(state_source="px4", tau_s=0.05) as sc:
-        _wait_dut_up(sc)
-        _arm_and_offboard(sc)
-        sc.px4.set_velocity_ned(0.0, 0.0, -1.0)
-        sc.wait_for(lambda: len(sc.px4.published_frames("rates")) >= 15, timeout_s=10.0,
-                    message="注入垂直速度后没攒到 15 帧 setpoint")
-        last = sc.px4.published_frames("rates")[-1].msg
-
-        fz = float(last.thrust_body[2])
-        assert fz > hover + min_delta, \
-            f"向上 1 m/s ⟹ 外推点比参考高 ⟹ 该减推力，实测 {fz:+.4f}（悬停 {hover:+.4f}、" \
-            f"要求高出 {min_delta:.4f} = {MIN_DELTA_THRUST_N} N）—— 速度的 z 符号反了？"
-        assert abs(float(last.roll)) < 0.02 and abs(float(last.pitch)) < 0.02, \
-            "垂直方向的速度差不该产生角速率（ẑ × ẑ = 0）"
-
-
-def test_B_档_速度从_velocity_enu_进外推_表现为推力低于悬停():
-    """★ ticket 15 之后**动捕这一档**第一次有速度了：`/mocap/velocity_enu`（`TwistStamped`）。
-
-    ★★ 与上面两条 A 档用例是同一件事的**两个来源面**：A 档的速度来自
-      `vehicle_local_position` 的 `vx/vy/vz`；B 档（动捕闭环）的速度来自 `mocap` 节点
-      republish 的 `/mocap/velocity_enu`。**这条在 ticket 15 之前不可能存在** ——
-      `/mocap/pose_enu` 是 `PoseStamped`、没有 `twist` 字段 ⟹ `v ≡ 0` ⟹ `x + v·τ` 恒等变换
-      （见 `test_动捕那条话题没有速度字段_所以拍不出_tau的黑盒测试` 与 mpc-node-seam1.md §5）。
-
-    ★ 判据取**推力**而不是角速率（纯几何：垂直速度差 `ẑ × ẑ = 0` ⟹ 不动姿态）：
-      注入 ENU `vz = +1`（**上升** 1 m/s），τ = 0.05 ⟹ `x0` 比参考高 5 cm ⟹ 该**减推力**。
-      符号如果没传到位（或反了），要么推力不动、要么更大 —— 一眼分得开。
-      ⚠️ 阈值按**牛顿**定（同 A 档那条的理由：归一化常数变过、物理量没变）。
-    """
-    MIN_DELTA_THRUST_N = 0.590   # 同 test_A_档_垂直速度的外推…（= 旧归一化下 0.05 的物理对应）
-
-    z0 = Z0Params()
-    hover = -z0.t_hover / z0.t_max
-    min_delta = MIN_DELTA_THRUST_N / z0.t_max
-    # ★★ **显式钉 τ = 0.05**：理由与上一条 A 档用例逐字相同（探的是外推通路，τ = 0 会让它恒等）。
-    #   状态源仍是默认的 mocap 档（夹具 `target='mocap'`）。
     with _scenario(tau_s=0.05) as sc:
         _wait_dut_up(sc)
         # 接口面先钉一下：DUT 真的订上了**速度那条话题**（QoS 不兼容就不报错、只是永不匹配）
@@ -1266,19 +1390,29 @@ def test_B_档_速度从_velocity_enu_进外推_表现为推力低于悬停():
             "DUT 没接上 /mocap/velocity_enu —— ticket 15 的速度这条路没通"
         _arm_and_offboard(sc)
         sc.mocap_source.set_velocity(vz=1.0)      # ENU 向上 1 m/s（与 pose 同 frame，零变换）
-        sc.wait_for(lambda: len(sc.px4.published_frames("rates")) >= 15, timeout_s=10.0,
+        sc.wait_for(lambda: len(_sp_frames(sc)) >= 15, timeout_s=10.0,
                     message="注入速度后没攒到 15 帧 setpoint")
-        last = sc.px4.published_frames("rates")[-1].msg
+        last = _sp_frames(sc)[-1]
 
-        fz = float(last.thrust_body[2])
-        assert fz > hover + min_delta, \
-            f"向上 1 m/s ⟹ 外推点比参考高 ⟹ 该减推力，实测 {fz:+.4f}（悬停 {hover:+.4f}、" \
-            f"要求高出 {min_delta:.4f}）—— /mocap/velocity_enu 的速度没进外推？"
-        assert abs(float(last.roll)) < 0.02 and abs(float(last.pitch)) < 0.02, \
-            "垂直方向的速度差不该产生角速率（ẑ × ẑ = 0）"
+        wx, wy, _wz = last.body_rate
+        # ☠️ **`<` 不是 `>`**（2026-10-13，ticket 13 §四 现场实测后订正）：换载体时这一条
+        #   连着**符号**一起搬，"比悬停**低**"在新口径下是 `<`，而它当时被写成了 `>`
+        #   ⟹ 独立跑也稳定红（实测 `thrust = +0.0976` vs 悬停 `+0.1589`）。
+        #   为什么老口径是 `>`：uXRCE-DDS 那条路上记的是 `thrust_body_z`，**NED/FRD 朝下 ⟹ 负**
+        #   —— 在负号口径下"推力更小"= 数值更**大**（−0.0976 > −0.1589）。N1 把推力改成
+        #   **正号**（`F/t_max`）之后，同一个物理结论就翻成了 `<`。
+        #   ⚠️ 教训的形态：**符号换了，比较方向也要跟着换** —— 而"符号"这一类改动
+        #   **不会**让一条方向写反的断言变红，它只会让**真结论**看起来像失败（这条当年就是这么红的）。
+        assert last.thrust < hover - min_delta, \
+            (f"向上 1 m/s ⟹ 外推点比参考高 ⟹ 该**减**推力，实测 {last.thrust:+.4f}"
+             f"（悬停 {hover:+.4f}、要求低出 {min_delta:.4f} = {MIN_DELTA_THRUST_N} N）"
+             "—— /mocap/velocity_enu 的速度没进外推？（⛔ 新载体的 `thrust` 是**正**号，"
+             "所以'减推力'是**小于**悬停；旧口径 `thrust_body_z` 是负的，那时是 `>`）")
+        assert abs(wx) < 0.02 and abs(wy) < 0.02, \
+            f"垂直方向的速度差不该产生角速率（ẑ × ẑ = 0），实测 ω=({wx:+.4f}, {wy:+.4f})"
 
 
-def test_A_档的逐帧日志把状态源_求解耗时_饱和标志都记下来了(tmp_path):
+def test_逐帧日志把状态源_求解耗时_饱和标志都记下来了(tmp_path):
     """票面验收项「日志记录 MPC（模型预测控制）内部状态、**求解耗时**、**约束饱和标志**，
     供飞行后复盘而不只依赖记忆」—— 这条验收项以前**没有任何用例**，而它的失效方式是静默的：
     键名写错、值不能 JSON 序列化（`float32` / `uint8`）、某一档忘了合并进去，
@@ -1287,22 +1421,49 @@ def test_A_档的逐帧日志把状态源_求解耗时_饱和标志都记下来�
     ★ 判据分三层，**都对着文件读**（不读节点内部）：
       · **结构**：每行都是合法 JSON、`u` 是 4 维、`x0` 是 10 维（`u` 是求解器给的、
         `x0` 是喂进去的、`x_ref0` 是要它去哪 —— 复盘时靠这三列把一帧重算回去）；
-      · **A 档的取证面**：`state_source` 与两条状态的**分龄**（`age_pos_s` / `age_att_s`）
-        以及 EKF 自报的有效性标志 —— 这正是票面要的"谁给的、多旧"；
-      · **与话题的一致性**（最要紧的一条）：同一帧里 `u` 是 FLU/ENU 的内部量、`roll/pitch` 是
-        PX4 的 FRD/NED 量，两者**必须只差 `sign_map` 那一式**。这一条把"映射写错了"与
+      · **取证面**：`state_source` 与状态源的**分龄**（这一档是 `age_state_s` + `vel_cb`）
+        —— 这正是票面要的"谁给的、多旧"；
+      · **与话题的一致性**（最要紧的一条）：同一帧里 `u` 是 FLU/ENU 的内部量、
+        而 `body_rate_x/y/z` 与 `thrust` 是**发出去那一帧**的量。这一条把"映射写错了"与
         "模型解错了"分开，也正是 `docs/control/sign-map.md` 要的东西。
+
+    ☠️☠️ **2026-10-13（ticket 13 §四③）这条原来跑在 A 档**（`state_source="px4"`），
+      随 A 档被拒（§二⑤）改挂**默认（动捕）档**。连带**两处**必须一起换，别只换一处：
+      · **取证面**：A 档记的是 `age_pos_s` / `age_att_s`（`node_core.describe_state` 的
+        **px4 分支**才并进来的两格）。动捕档**根本没有这两格** ⟹ 照旧键名去读会 `KeyError`，
+        或者更坏 —— 有人"顺手"给它填个 0，那就变成一条**永远绿**的假取证。
+        动捕档的对应面是 `age_state_s`（状态龄）+ `vel_cb`（速度那条话题收了多少帧，
+        ticket 15）。★ `vel_cb` 特别值得钉：`v` 恒为 0 时"没速度"与"静止"**在数值上分不开**，
+        只有这一列能分开（`describe_state` 那段 ★ 说的就是这件事）。
+      · **"与话题的一致性"那一式**：旧版断的是"日志内部量 `u` 与话题上的 `roll/pitch/yaw` /
+        `thrust_body_z` **只差 `sign_map` 那一式**"（`u[1] == roll`、`thrust_body_z == −u[0]/t_max`）。
+        ☠️ 那两式在**旧字段名**下是一条**要验的映射**；在新字段名（FLU 原样 + 正号推力）下
+        它**恰好是恒等式** —— 而"恒等式"正是本票的结论之一：我们**没有**在下行那一侧
+        再转一次 / 再取一次负（N1/N2）。所以这里**原样保留 `u[1] == body_rate_x` 这一式**，
+        只是把"只差那一式"这句话改成了"**逐位相等**"。
 
     ★ 热身拍也**照记**（`fallback == "warmup"`）：那几拍不发，却是"最坏求解耗时"里最容易漏掉的
       （RTI 冷启动、代码页刚进 cache）—— 实测最坏耗时是票面 D6 那个数字的来源，
       漏掉冷启动那几拍就等于把最坏情况藏起来。
-    ★ 饱和标志用 `hold_offset_x=10` 那条任务来造（roll 必然打满）⟹ `sat` 里要有 `"wx"`。
+    ☠️ **饱和标志那一档在 2026-10-13 从 `wx` 换成了 `wy`** —— 不是笔误，是**换档带来的轴变了**
+      （第一手：本用例在动捕档下 `sat` 里恒无 `"wx"`、`max|u[1]|` 恒为 0 ⟹ 那条"该把 roll 顶满"
+      的断言在动捕档下**测的是一条恒为零的轴**，红得有理）。机理：`hold_offset_x = +10`
+      把参考放到 **ENU +x（正东）**，而"往那边飞要转哪个轴"由**机头朝哪儿**决定 ——
+        · A 档（`fake_px4`）：姿态四元数是 NED/FRD 里的单位四元数 ⟹ 机头朝**北** ⟹
+          body `+x`（前）指向 ENU `+y` ⟹ **ENU `+x` 在机体的右手边** ⟹ 目标是"右边 10 m"
+          ⟹ 压 **roll**（`u[1]` / `wx`）；
+        · 默认（动捕）档：`/mocap/pose_enu` 的单位四元数 ⟹ body 轴 = ENU 轴 ⟹ 机头朝**东**
+          ⟹ 同一个方向在**正前方** ⟹ 压 **pitch**（`u[2]` / `wy`）。
+      ⟹ 同一句"往正东 10 m"在两档下**练的是不同的轴**，换档时这类断言必须逐条重新对轴
+        （同族：`test_垂直偏置不跟着解爬` / `test_垂直偏置积的是实测位置误差` 的 `u[1]→u[2]`）。
+    ★ 饱和标志用 `hold_offset_x=10` 那条任务来造（动捕档下该把 pitch/`wy` 顶满）
+      ⟹ `sat` 里要有 `"wy"`。
     """
     log_path = tmp_path / "mpc.jsonl"
-    with _scenario(state_source="px4", hold_offset_x=10.0, log_file=str(log_path)) as sc:
+    with _scenario(hold_offset_x=10.0, log_file=str(log_path)) as sc:
         _wait_dut_up(sc)
         _arm_and_offboard(sc)
-        sc.wait_for(lambda: len(sc.px4.published_frames("rates")) >= 15, timeout_s=10.0,
+        sc.wait_for(lambda: len(_sp_frames(sc)) >= 15, timeout_s=10.0,
                     message="解锁后没攒到 15 帧 setpoint")
 
     # ★ 摘要在**进程退出时**才打（`mpc_node.main` 的 `finally`）⟹ 必须在 `with` 之外读：
@@ -1317,30 +1478,37 @@ def test_A_档的逐帧日志把状态源_求解耗时_饱和标志都记下来�
         f"日志里的档位只有 {sorted({r['fallback'] for r in recs})} —— 热身拍没记？"
 
     for r in recs:
-        assert r["state_source"] == "px4", f"状态源记成了 {r['state_source']!r}"
-        assert isinstance(r["age_pos_s"], (int, float)), "位置分龄没进日志"
-        assert isinstance(r["age_att_s"], (int, float)), "姿态分龄没进日志"
+        assert r["state_source"] == "mocap", f"状态源记成了 {r['state_source']!r}"
+        assert isinstance(r["age_state_s"], (int, float)), "状态源的龄没进日志"
+        assert isinstance(r["vel_cb"], int) and r["vel_cb"] > 0, \
+            f"速度那条话题的收帧数没进日志（vel_cb={r.get('vel_cb')!r}）—— 没有它，" \
+            "『速度为 0』与『速度话题一帧都没到』在日志上分不开"
         assert len(r["u"]) == 4 and len(r["x0"]) == 10, "u/x0 的维度不对（求解器接口变了？）"
 
     normal = [r for r in recs if r["fallback"] == "normal"]
     assert normal, "一行正常帧都没有"
     assert all(r["solve_ok"] and r["solve_ms"] > 0.0 for r in normal), \
         "正常帧里没有求解耗时（票面 D6 那个数字就从这一列来）"
-    assert any("wx" in r["sat"] for r in normal), \
-        "hold_offset_x=10 该把 roll 顶满 ⟹ 饱和标志里要有 'wx'"
+    assert any("wy" in r["sat"] for r in normal), \
+        ("hold_offset_x=10 在**动捕档**下该把 pitch 顶满 ⟹ 饱和标志里要有 'wy'"
+         "（⛔ 不是 'wx'：动捕档机头朝东，正东那条参考练的是 pitch，见上面 ☠️）")
 
     last = normal[-1]
     z0 = Z0Params()
-    assert abs(last["u"][1] - last["roll"]) < 1e-4, \
-        f"日志内部量 u[1]={last['u'][1]} 与话题上的 roll={last['roll']} 不符（符号映射只差这一式）"
-    assert abs(last["thrust_body_z"] + last["u"][0] / z0.t_max) < 1e-4, \
-        "thrust_body_z 与 −F/T_max 不符（归一化改了？）"
+    # ★ 「日志内部量」与「发出去的那个值」必须**逐位相等**（见上面第二处 ☠️）：
+    for idx, key in ((1, "body_rate_x"), (2, "body_rate_y"), (3, "body_rate_z")):
+        assert abs(last["u"][idx] - last[key]) < 1e-4, \
+            (f"日志内部量 u[{idx}]={last['u'][idx]} 与发出去的 {key}={last[key]} 不等 ⟹ "
+             "下行那一侧动了符号/换了轴（FLU 原样这条路被谁转了一次？）")
+    assert abs(last["thrust"] - last["u"][0] / z0.t_max) < 1e-4, \
+        f"发出去的 thrust={last['thrust']} 与 u[0]/T_max={last['u'][0] / z0.t_max} 不等" \
+        "（归一化或符号改了？）"
 
     # 收尾摘要：D6 那个数字与饱和计数必须能被**人**读到（不只是进了 JSONL）
     assert "求解耗时 p50" in summary and "最坏" in summary, \
         f"收尾摘要里没有求解耗时的分布（D6 要读它）：{summary[-300:]!r}"
-    assert "约束饱和" in summary and "wx" in summary, \
-        f"收尾摘要里没有饱和计数：{summary[-300:]!r}"
+    assert "约束饱和" in summary and "wy" in summary, \
+        f"收尾摘要里没有饱和计数（动捕档该出现 wy，见上面的 ☠️）：{summary[-300:]!r}"
 
 
 def test_垂直偏置不跟着解爬(tmp_path):
@@ -1364,19 +1532,30 @@ def test_垂直偏置不跟着解爬(tmp_path):
     ★ 这条用例是**负控**（正控见 `test_垂直偏置积的是实测位置误差`）：
       任务 `hold_offset = (10, 0, 0)` ⟹ **`e_z ≡ 0`** ⟹ 积分器没有任何东西可积
       ⟹ `ΔF` 必须**逐帧严格为 0**，`u_ref0` 恒等于 `[t_hover,0,0,0]`（用 `==`，不是 `approx`）。
-      而同段里 `u[1]` 顶满（> 1 rad/s）、`u[0]` 也在动 ⟹ "**解在动、前馈纹丝不动**"
+      而同段里 `u[2]` 顶满（> 1 rad/s）、`u[0]` 也在动 ⟹ "**解在动、前馈纹丝不动**"
       就是"偏置不来自解"的直接读数。
     ⚠️ `ΔF ≡ 0` 这一场里"落点对不对"是**量不出来**的（加 0 与不加 0 一样）⟹ 落点那条判据的
       真读数在正控里（那边 `df ≠ 0`）。这里留着它只为"落点搬了一半"（比如加在了 `u` 上
       却又乘了系数）能当场红。
-    ★ 任务用 `hold_offset_x = 10 m`：位置误差大到把 roll 顶满 ⟹ 解明显非零。
+    ★ 任务用 `hold_offset_x = 10 m`：位置误差大到把**角速率**顶满 ⟹ 解明显非零。
       少了"同一段里 `u` 真的在动"这半条，测试就没有鉴别力（静态悬停时旧代码也看不出爬）。
+      ☠️ **哪条角速率**由档位决定：A 档（机头朝北）下是 **roll（`u[1]`/`wx`）**，
+      默认动捕档（机头朝东）下是 **pitch（`u[2]`/`wy`）** —— 轴与理由见
+      `test_逐帧日志把状态源_求解耗时_饱和标志都记下来了` 的 ☠️。本组三处的
+      `u[1] → u[2]` 就是这么来的（2026-10-13 实测：动捕档下 `max|u[1]| ≡ 0`）。
+
+    ☠️ **2026-10-13（ticket 13 §四③）这一组（垂直偏置）整组换过档**：原来跑在 A 档
+      （`state_source="px4"` + `fake_px4`），随 §二⑤ 的 A 档拒绝改挂**默认（动捕）档**
+      （即 `_scenario` 里不再传 `state_source`）。★ 这一整组量的都是 `ki_z` 积分器
+      —— 它在 `node_core` 里**与状态源无关**（误差由锚点参考与 `x0` 相减得到，两档走同一段代码）
+      ⟹ 换档**不改变任何一条判据的语义**，只换"状态从哪来"。⚠️ 但两档的**龄**不同
+      （A 档两条消息各有龄；动捕档只有 `age_state_s`），所以凡是读龄的断言都得跟着换键名。
     """
     log_path = tmp_path / "mpc.jsonl"
-    with _scenario(state_source="px4", hold_offset_x=10.0, log_file=str(log_path)) as sc:
+    with _scenario(hold_offset_x=10.0, log_file=str(log_path)) as sc:
         _wait_dut_up(sc)
         _arm_and_offboard(sc)
-        sc.wait_for(lambda: len(sc.px4.published_frames("rates")) >= 15, timeout_s=10.0,
+        sc.wait_for(lambda: len(_sp_frames(sc)) >= 15, timeout_s=10.0,
                     message="解锁后没攒到 15 帧 setpoint")
 
     normal = [r for r in _读日志(log_path) if r["fallback"] == "normal"]
@@ -1396,14 +1575,15 @@ def test_垂直偏置不跟着解爬(tmp_path):
         assert _发出去的推力(r, z0) == pytest.approx(_该发出去的推力(r, z0, r["df"]), abs=1e-4), \
             (f"第 {r['tick']} 拍发出去的推力不是 `clip(u[0] + ΔF)`：实测 {_发出去的推力(r, z0):.5f} N、"
              f"该是 {_该发出去的推力(r, z0):.5f} N ⟹ 落点搬错了（或加了两遍）")
-    assert max(abs(r["u"][1]) for r in normal) > 1.0, \
-        "同段的解没动过 ⟹ 这条测试证明不了「前馈没跟着解爬」（任务参数失效？）"
+    assert max(abs(r["u"][2]) for r in normal) > 1.0, \
+        ("同段的解没动过 ⟹ 这条测试证明不了「前馈没跟着解爬」（任务参数失效？）"
+         "（动捕档看 `u[2]`/pitch —— 见本用例的 ☠️，⛔ 不是 `u[1]`/roll）")
 
 
 def test_垂直偏置积的是实测位置误差(tmp_path):
     """★ ticket 20 的**正控**：`ΔF` 必须等于"**实测垂直位置误差**的纯积分"，一阶不差。
 
-    与负控是同一条 x 任务（`hold_offset_x = 10` ⟹ `u[1]` 照样顶满、解照样在动），
+    与负控是同一条 x 任务（`hold_offset_x = 10` ⟹ `u[2]` 照样顶满、解照样在动），
     **只多一个 z 偏移** `hold_offset_z = 2.0` ⟹ `e_z ≡ +2.0` 永远关不掉（锚点从测量起，
     见 `node_core.hold_reference` 的 ★★）⟹ `ΔF` 该以 `ki_z·e_z` 的斜率线性长上去。
 
@@ -1413,12 +1593,12 @@ def test_垂直偏置积的是实测位置误差(tmp_path):
     | ② | `ΔF` 逐帧**严格单调增** | 正号累积（偏低 ⟹ 加推力） |
     | ③ | `ΔF_last − ΔF_first ≈ ki_z·e_z·(t_last − t_first)`（`t` 取日志的 `wall_ns`） | **望远镜求和**：右边 = `ki_z·∫e_z dt` 的离散形式，左边只由两端读数决定 ⟹ 与逐拍抖动无关 |
     | ④ | 全程 `ΔF` 没顶到界（`f_max − t_hover`） | ③ 在饱和段会失真 ⟹ 先排除 |
-    | ⑤ | `u_ref0[1:]` 逐帧恒 0 且同段 `u[1]` > 1.0 | runaway 守卫（角速率三路**永远**是常量 0） |
+    | ⑤ | `u_ref0[1:]` 逐帧恒 0 且同段 `u[2]` > 1.0 | runaway 守卫（角速率三路**永远**是常量 0） |
     | ⑥ | ⚠️ **本夹具量不到**：只验"没有中途复位"这个前提（见下 ☠️） | 「钉锚点 ⟹ 复位」在本层**没有端到端读数**（起始那一次之前无历史；此后造不出第二个锚点） |
 
     ★ 为什么 ③ 能证伪"偏置来自上一帧解"：②③ 量到的是一条**跟着墙钟线性走**的斜坡，
       斜率**正好**是 `ki_z·e_z` —— 那是实测误差的函数。解那一路既不是线性的、也不带 `e_z`
-      （同段 `u[1]` 就顶在 3.84 rad/s 上不动）⟹ 任何"把 `sol.u` 接进积分器"的写法都过不了 ③。
+      （同段 `u[2]` 就顶在 3.84 rad/s 上不动）⟹ 任何"把 `sol.u` 接进积分器"的写法都过不了 ③。
     ⚠️ ③ 是**差分**形式 ⟹ 对 `ΔF` 上的**恒定**偏置免疫（比如 OCP 自己的稳态偏置被算进去）。
       原打算由 ⑥（锚点处必须为 0）挡这一头，2026-09-29 实测发现 ⑥ **在本夹具上量不到**
       （☠️ 见下面那段），于是它现在只守"没有中途复位"这个前提 ⟹ **这条恒定偏置的缺口
@@ -1428,11 +1608,11 @@ def test_垂直偏置积的是实测位置误差(tmp_path):
     # ★ `ki_z` 在这里**显式设成 1.0**、并拿同一个数去算预测值：既让③不依赖"节点当前的默认增益"
     #   （那是产品参数，会变），也不用 `import NodeParams`（seam 1 的纪律：不 import 节点的类）。
     ki = 1.0
-    with _scenario(state_source="px4", hold_offset_x=10.0, hold_offset_z=2.0, ki_z=ki,
+    with _scenario(hold_offset_x=10.0, hold_offset_z=2.0, ki_z=ki,
                    log_file=str(log_path)) as sc:
         _wait_dut_up(sc)
         _arm_and_offboard(sc)
-        sc.wait_for(lambda: len(sc.px4.published_frames("rates")) >= 150, timeout_s=15.0,
+        sc.wait_for(lambda: len(_sp_frames(sc)) >= 150, timeout_s=15.0,
                     message="解锁后没攒到 150 帧 setpoint（1.5 s，够积分器长起来）")
 
     z0 = Z0Params()
@@ -1447,7 +1627,7 @@ def test_垂直偏置积的是实测位置误差(tmp_path):
     df = [r["df"] for r in normal]
     assert all(b > a for a, b in zip(df, df[1:])), \
         f"ΔF 没有逐帧严格上升（前 10 拍：{[round(v, 4) for v in df[:10]]}）"
-    assert max(abs(r["u"][1]) for r in normal) > 1.0, \
+    assert max(abs(r["u"][2]) for r in normal) > 1.0, \
         "同段的解没动过 ⟹ 正控不成立（任务参数失效？）"
 
     # ★★ 落点判据里**能在这一场判**的那半：`u_ref0` 必须仍是常量（代价参考里没有 ΔF）。
@@ -1480,11 +1660,15 @@ def test_垂直偏置积的是实测位置误差(tmp_path):
     #    ① `_tick` 的顺序是**先归零、同一拍立刻积分**（`mpc_node.py:606-616`）⟹ 锚点那一拍
     #       落盘的 `df` **结构上就不是 0**，而是那一拍自己的积分量（实测 `tick=6`：
     #       `fallback=warmup, df=0.020045` = `ki·e_z·dt`）。断"锚点拍 df == 0"必红。
-    #    ② 本夹具**结构上造不出第二个锚点**：`fake_px4._build_local_position` /
-    #       `_build_attitude` 把 `xy_reset_counter` / `quat_reset_counter` 写死 0、
-    #       没有注入口（`src/bench/bench/fake_px4.py:344`/`:352`）⟹ 起始那一次之后
-    #       `cycle.anchor` 不会再来。而起始那次之前积分器还没有历史，"复位"与"没复位"
-    #       读数相同 ⟹ **端到端不可观测**。
+    #    ② 本夹具**结构上造不出第二个锚点**，而且换载体之后这一条**更强**了：
+    #       ☠️ 旧版靠"`fake_px4` 把 `xy_reset_counter`/`quat_reset_counter` 写死 0、没有注入口"
+    #       —— 那是 **A 档（px4 源）** 的重钉路子，随 A 档被拒（§二⑤）整条消失。
+    #       现在这一场是**动捕档**，而 `node_core._state_reset_counters` 对非 px4 源
+    #       **直接 `return None, None`**（"动捕那一档没有这种计数器"）⟹ `re_xy`/`re_quat`
+    #       恒为假 ⟹ 第二个锚点**在这一层根本不存在**，不是"夹具没造出来"。
+    #       而起始那次之前积分器还没有历史，"复位"与"没复位"读数相同 ⟹ **端到端不可观测**。
+    #       ⚠️ 这条缺口因此从"夹具能力不足"升级成"**本层原理上量不到**"—— 要补 ⑥，
+    #       得先在动捕档给锚点找一个"帧真的换了"的信号（另开票），别指望夹具补个注入口。
     #    ⟹ 只能验"没有中途复位"这个**前提**本身（真出中途复位时这条会红，提示把 ⑥ 加回来）。
     anchors = [r for r in _读日志(log_path) if r["ref_anchor"]]
     assert anchors, "日志里连起始锚点都没有 ⟹ 夹具或节点有问题（不是 ⑥ 的结论）"
@@ -1505,7 +1689,7 @@ def test_垂直偏置加在发出去的指令上_不在代价参考上(tmp_path)
     `tools/px4-sitl/probe_u_ref_authority.py`、完整读数见 ticket 20 §10/§10.7。
 
     ☠️ **为什么单独一条用例、而且工况必须"小误差"**：落点等式
-    `−thrust_body_z·t_max == clip(u[0] + ΔF, 0, f_max)` 只有在**求解器那份 `u[0]` 没顶到 `f_max`**
+    `thrust·t_max == clip(u[0] + ΔF, 0, f_max)` 只有在**求解器那份 `u[0]` 没顶到 `f_max`**
     时才有鉴别力。`hold_offset_z = 2.0`（正控用的那个）会让 `u[0]` **逐帧恒 = 11.8 N**（实测），
     于是等式两边都成常量、**什么错法都拦不住** —— 本张第一版就是这么写的（假绿），
     2026-09-29 用"只加一半 ΔF"的变异实测才发现 ⟹ 拆成这条：`hold_offset_z = 0.15`
@@ -1523,11 +1707,10 @@ def test_垂直偏置加在发出去的指令上_不在代价参考上(tmp_path)
     """
     log_path = tmp_path / "mpc.jsonl"
     ki, e_z = 20.0, 0.15
-    with _scenario(state_source="px4", hold_offset_z=e_z, ki_z=ki,
-                   log_file=str(log_path)) as sc:
+    with _scenario(hold_offset_z=e_z, ki_z=ki, log_file=str(log_path)) as sc:
         _wait_dut_up(sc)
         _arm_and_offboard(sc)
-        sc.wait_for(lambda: len(sc.px4.published_frames("rates")) >= 100, timeout_s=15.0,
+        sc.wait_for(lambda: len(_sp_frames(sc)) >= 100, timeout_s=15.0,
                     message="解锁后没攒到 100 帧 setpoint（1 s，够 ΔF 长到 1 N 以上）")
 
     z0 = Z0Params()
@@ -1587,7 +1770,8 @@ def test_垂直偏置顶在界上就不再累积(tmp_path):
       · 每一帧 `ΔF ≤ f_max − t_hover`（**不出界**）；
       · 达到上界之后 `ΔF` **逐帧 `==`**（不是"还在长、只是输出被夹"）——
         这正是"夹状态"与"只夹输出"唯一能从外部区分的地方：只夹输出的话这一列会继续单调长；
-      · 发出去的推力 `−thrust_body_z·t_max` 逐帧 ∈ `[0, f_max]`（状态在界内 + 发布点那次夹取）。
+      · 发出去的推力 `thrust·t_max`（☠️ 旧载体上写作 `−thrust_body_z·t_max`）逐帧 ∈ `[0, f_max]`
+        （状态在界内 + 发布点那次夹取）。
         ⚠️ 读数**不能**用 `u_ref0[0]`：ticket 20 的落点搬到指令上之后它恒为 `t_hover`
         （☠️ 本张第一版这里写的就是 `u_ref0[0]`，落点一搬它就变成一句废话 —— 断言不报错、
         只是不再测任何东西，这正是最难发现的那种退化）。
@@ -1598,11 +1782,10 @@ def test_垂直偏置顶在界上就不再累积(tmp_path):
       这条用例量的是**饱和之后的行为**，与增益怎么标定无关。
     """
     log_path = tmp_path / "mpc.jsonl"
-    with _scenario(state_source="px4", hold_offset_z=5.0, ki_z=200.0,
-                   log_file=str(log_path)) as sc:
+    with _scenario(hold_offset_z=5.0, ki_z=200.0, log_file=str(log_path)) as sc:
         _wait_dut_up(sc)
         _arm_and_offboard(sc)
-        sc.wait_for(lambda: len(sc.px4.published_frames("rates")) >= 40, timeout_s=15.0,
+        sc.wait_for(lambda: len(_sp_frames(sc)) >= 40, timeout_s=15.0,
                     message="解锁后没攒到 40 帧 setpoint")
 
     z0 = Z0Params()
@@ -1645,11 +1828,10 @@ def test_关掉积分增益时垂直偏置恒为0(tmp_path):
       与 `ki_z` 取什么值无关 ⟹ 用它断言等于什么都没测（本张第一版就是这么写的，本轮改掉）。
     """
     log_path = tmp_path / "mpc.jsonl"
-    with _scenario(state_source="px4", hold_offset_z=2.0, ki_z=0.0,
-                   log_file=str(log_path)) as sc:
+    with _scenario(hold_offset_z=2.0, ki_z=0.0, log_file=str(log_path)) as sc:
         _wait_dut_up(sc)
         _arm_and_offboard(sc)
-        sc.wait_for(lambda: len(sc.px4.published_frames("rates")) >= 40, timeout_s=15.0,
+        sc.wait_for(lambda: len(_sp_frames(sc)) >= 40, timeout_s=15.0,
                     message="解锁后没攒到 40 帧 setpoint")
 
     z0 = Z0Params()
@@ -1684,35 +1866,47 @@ def test_闸门关闭期间垂直偏置冻结(tmp_path):
       界按**机理**给：正确行为是"只积了重入梯那几拍" ⟹ `≪ ki·e_z·空洞长度`；
       两种错法都正好等于右边那个量级 ⟹ `1/4` 是个两头都留 4× 以上的分割点。
 
-    造法：`hold_offset_z = 2.0`（⟹ `ΔF` 以 2 N/s 稳定长）先飞 1 s，然后掐掉
-    `vehicle_local_position` 2 s（闸门在 0.5 s 后关，`px4_timeout_s` 默认值）。
+    造法：`hold_offset_z = 2.0` ⟹ `ΔF` 以 `ki·e_z` 稳定长；先飞 1 s，然后**掐掉
+    `/mavros/state` 4 s**（闸门源，§二④ 之后它是**唯一**那条 —— 心跳那条流整个删掉了）。
 
     | 读数 | 判据 | 为什么 |
     |---|---|---|
     | 日志里有一段 `wall_ns` 的**空洞** | 空洞 ≥ 0.8 s | 闸门**真的**关了（否则整条用例白跑） |
-    | 空洞两端 `ΔF` 之差 | `0 ≤ Δ < ¼ · ki·e_z·空洞长度`（本次 = 0.80 N） | 下界挡住"清零"；上界挡住两种错法 —— 若**不推时钟**，恢复那一拍会积进 `ki·e_z·空洞长度 ≈ 3.2 N`；若**静默期间继续积**，空洞里没有日志行、但恢复后 `ΔF` 会跳同一个量级（`2 N/s × 1.6 s`）。两者都 ≥ 4× 于界 |
+    | 空洞两端 `ΔF` 之差 | `0 ≤ Δ < ¼ · ki·e_z·空洞长度` | 下界挡住"清零"；上界挡住两种错法 —— 若**不推时钟**，恢复那一拍会积进 `ki·e_z·空洞长度`；若**静默期间继续积**，空洞里没有日志行、但恢复后 `ΔF` 会跳同一个量级。两者都 ≥ 4× 于界 |
     | 闸门关着的那段（话题面） | 零帧 setpoint | 与 `test_状态静默…` 同一条纪律 |
+
+    ☠️☠️ **2026-10-13（ticket 13 §四③）这条改了两处，第二处不改就会静默失效**：
+      · **静默对象**：旧版掐的是 `/fmu/*` 的 `vehicle_local_position`、闸门 0.5 s 后关
+        （`px4_timeout_s`）。换成 `silence_for(sc.fake, "state", …)`（`/mavros/state`）。
+      · ★★ **增益必须跟着降**：`/mavros/state` 是 **1 Hz + `status_timeout_s = 2.5`**
+        （§二③ 从 0.75 提上来的）⟹ 闸门**最晚**在 `t0+2.7` 才关，比旧版晚了 ~2 s。
+        若 `ki` 仍是 1.0，这 2 s 足够把 `ΔF` 顶到上界 `f_max − t_hover`（实测会顶满）
+        ⟹ **两端都被夹在同一个常量上**，上界那条判据对两种错法**同时失效**（都绿）。
+        这正是票面说的"绿着但不测任何东西"那类退化 ⟹ 取 **`ki_z = 0.3`**（0.6 N/s），
+        闸门关时 `ΔF ≈ 0.7–1.1 N`，离上界（4.44 N）还差 4 倍。
+        ⚠️ 换这个数之后，上界的量级也要跟着核：`¼·0.6 N/s×2.6 s ≈ 0.39 N`，而
+        "静默期间照积"会给出 `0.6×2.6 ≈ 1.56 N` ⟹ 仍有 4× 分离。
 
     ⚠️ 两把时钟**不能混**：日志的 `wall_ns` 是 DUT 的墙钟，`sc.t()` 是夹具自己的时间线
       ⟹ 空洞在**日志里**找（不拿 `sc.t()` 去切日志），夹具时钟只用来查话题。
     """
     log_path = tmp_path / "mpc.jsonl"
-    ki, e_z = 1.0, 2.0
-    with _scenario(state_source="px4", hold_offset_z=e_z, ki_z=ki,
-                   log_file=str(log_path)) as sc:
+    ki, e_z = 0.3, 2.0
+    with _scenario(hold_offset_z=e_z, ki_z=ki, log_file=str(log_path)) as sc:
         _wait_dut_up(sc)
         _arm_and_offboard(sc)
-        sc.wait_for(lambda: len(sc.px4.published_frames("rates")) >= 100, timeout_s=15.0,
+        sc.wait_for(lambda: len(_sp_frames(sc)) >= 100, timeout_s=15.0,
                     message="解锁后没攒到 100 帧 setpoint（1 s，先让 ΔF 长起来）")
 
         t0 = sc.t()
-        sc.timeline.extend(px4_state_silence(sc.px4, t0 + 0.2, duration_s=2.0,
-                                             key="local_position"))
-        # 闸门在静默 0.5 s 后关（`px4_timeout_s`）⟹ [t0+1.0, t0+1.7] 整段都在关着
-        sc.advance_to(t0 + 1.2)
-        n_sp = len(sc.px4.frames_between("rates", t0 + 1.0, t0 + 1.7))
+        sc.timeline.extend(silence_for(sc.fake, "state", t0 + 0.2, duration_s=4.0))
+        # 闸门在**最后一帧 state 之后 2.5 s** 关，而那帧最晚也只到 `t0+0.2`
+        # ⟹ `[t0+3.0, t0+4.2]` 整段都在关着（静默到 `t0+4.2` 才解）。
+        sc.advance_to(t0 + 4.5)
+        n_sp = len(_sp_between(sc, t0 + 3.0, t0 + 4.2))
         assert n_sp == 0, f"闸门该关着，setpoint 却还在发（{n_sp} 帧）"
-        sc.advance_to(t0 + 3.5)
+        # 解静默之后还要等下一拍 1 Hz 的 state（≤1 s）把闸门重新打开，再走一段重入梯
+        sc.advance_to(t0 + 8.0)
 
     normal = [r for r in _读日志(log_path) if r["fallback"] == "normal"]
     gaps = [(b["wall_ns"] - a["wall_ns"]) / 1e9 for a, b in zip(normal, normal[1:])]
@@ -1753,11 +1947,11 @@ def test_兜底期间垂直偏置冻结但不清零(tmp_path):
       "恢复后从哪儿起步"因此**没有端到端读数**，只能靠这里的"冻结且保留"间接守住。
     """
     log_path = tmp_path / "mpc.jsonl"
-    with _scenario(state_source="px4", hold_offset_z=2.0, ki_z=1.0,
+    with _scenario(hold_offset_z=2.0, ki_z=1.0,
                    inject_solve_fail_after_frames=20, log_file=str(log_path)) as sc:
         _wait_dut_up(sc)
         _arm_and_offboard(sc)
-        sc.wait_for(lambda: len(sc.px4.published_frames("rates")) >= 40, timeout_s=15.0,
+        sc.wait_for(lambda: len(_sp_frames(sc)) >= 40, timeout_s=15.0,
                     message="注入生效之后没有继续发帧（兜底把发布停掉了？）")
 
     recs = _读日志(log_path)
@@ -1898,7 +2092,7 @@ def test_轨迹档才订_traj_reference_而默认档一帧都不订():
             f"轨迹档下 DUT 没有给 /traj/reference 加上一个订阅者（{base} → {traj.matched_subscribers()}）"
         _按下开始键(sc, traj)                                  # 没有参考的话闸门不会开
         _arm_and_offboard(sc)
-        sc.wait_for(lambda: len(sc.px4.published_frames("rates")) >= 5, timeout_s=10.0,
+        sc.wait_for(lambda: len(_sp_frames(sc)) >= 5, timeout_s=10.0,
                     message="正控不成立：订上参考之后并没有真的开始发 setpoint")
 
     with _scenario(start_dut=False) as sc:                    # 默认档 = hold
@@ -1913,7 +2107,7 @@ def test_轨迹档才订_traj_reference_而默认档一帧都不订():
             ("默认（hold）档下 DUT 也订了 /traj/reference —— 那会让「默认档不改变任何现有行为」"
              "不可证伪（这条数错了不是外来的订阅者，差值已经把它消掉了）")
         _arm_and_offboard(sc)
-        sc.wait_for(lambda: len(sc.px4.published_frames("rates")) >= 5, timeout_s=10.0,
+        sc.wait_for(lambda: len(_sp_frames(sc)) >= 5, timeout_s=10.0,
                     message="正控不成立：默认档在解锁之后没发 setpoint（那说明「没订」是因为节点坏了）")
 
 
@@ -1944,7 +2138,7 @@ def test_轨迹参考驱动目标点_且参考速度进了日志(tmp_path):
                     message="DUT 没订上 /traj/reference")
         _按下开始键(sc, traj)
         _arm_and_offboard(sc)
-        sc.wait_for(lambda: len(sc.px4.published_frames("rates")) >= 20, timeout_s=10.0,
+        sc.wait_for(lambda: len(_sp_frames(sc)) >= 20, timeout_s=10.0,
                     message="参考一直在发，闸门却没开 ⟹ 参考那条没进 `cycle()`")
         sc.hold(0.5)
 
@@ -1989,14 +2183,14 @@ def test_参考断流之后冻结_而不是停发(tmp_path):
                     message="DUT 没订上 /traj/reference")
         _按下开始键(sc, traj)
         _arm_and_offboard(sc)
-        sc.wait_for(lambda: len(sc.px4.published_frames("rates")) >= 20, timeout_s=10.0,
+        sc.wait_for(lambda: len(_sp_frames(sc)) >= 20, timeout_s=10.0,
                     message="参考一直在发，闸门却没开")
 
         t0 = sc.t()
         traj.silence()                       # 上游没了：不归零、不发任何东西
         sc.advance_to(t0 + 1.5)
 
-        n_sp = len(sc.px4.frames_between("rates", t0 + 0.8, t0 + 1.5))
+        n_sp = len(_sp_between(sc, t0 + 0.8, t0 + 1.5))
         assert n_sp > 0, "参考断流之后 setpoint 停了 —— 该冻住，不该交给兜底阶梯"
         assert sc.dut_alive(), "DUT 在参考断流期间退出了"
 
@@ -2018,7 +2212,12 @@ def test_没有参考时闸门不开_理由是_no_traj_reference():
     ★ 为什么看理由而不是只看"没发"：`not_armed` / `no_mocap` / `no_traj_reference`
       在"发了没有"这一层长得一模一样，而根因完全不同。这条闸门是**本票新增**的那一条，
       它进不了日志的话，现场"解锁了、offboard 了、什么都没发"就查不出是谁拦的。
-    ★ 正控在同一个场景里：心跳照发（否则"没发 setpoint"可能只是节点没起来）。
+    ★ **正控**（☠️ 2026-10-13，ticket 13 §四③ 换过）：旧版是"心跳照发"（
+      `sc.px4.published_frames("mode") > 50`），而心跳那条流在 §二④ **整个删掉了**
+      ⟹ 那条正控没有载体了。换成一条**更强**的：把参考真的送上去，看闸门**当场开**。
+      它比"心跳在发"多证一件事 —— 心跳只证明"进程在跑"，拦它的完全可能是
+      `not_armed` / `no_mocap`（那这条用例就根本没测到 `no_traj_reference`）；
+      而"参考一到就发帧"把**停发的原因**唯一地钉在了参考上。
     """
     with _scenario(reference_source="traj") as sc:
         from bench import FakeTraj
@@ -2030,12 +2229,15 @@ def test_没有参考时闸门不开_理由是_no_traj_reference():
         sc.hold(1.5)
 
         assert traj.reference_frames == 0, "假 traj 自己发了参考 ⟹ 本用例的前提不成立"
-        n_sp = len(sc.px4.published_frames("rates"))
+        n_sp = len(_sp_frames(sc))
         assert n_sp == 0, f"参考一帧都没到，却发了 {n_sp} 帧 setpoint"
-        assert len(sc.px4.published_frames("mode")) > 50, "心跳没在发 ⟹ 不是闸门拦的，是节点没起来"
         assert sc.dut_alive()
         assert "no_traj_reference" in sc.dut_log(), \
             f"停发的理由不是 no_traj_reference（日志尾：{sc.dut_log()[-500:]!r}）"
+
+        _按下开始键(sc, traj)                 # 正控：参考一到，闸门当场开
+        sc.wait_for(lambda: len(_sp_frames(sc)) >= 5, timeout_s=10.0,
+                    message="参考送上去了闸门仍不开 ⟹ 上面那句'零帧'不是 no_traj_reference 拦的")
 
 
 # ───────────────────────────── 在这一层量不了的那几条（不写假测试）─────────────────────────────
@@ -2050,19 +2252,32 @@ def test_发现信息里的_depth_读不回来_所以票面那条只能靠读常
     `TRANSIENT_LOCAL` 订阅者**匹配得上**（发布者视角 `get_subscription_count() == 1`）、
     也收得到**新**帧，但**收不到任何旧帧** ⟹ 也拿不到"depth 语义"的间接证据。
 
-    ⟹ 本节点这一条的守法是：① 发布方 QoS 常量（`QOS_PUB_FMU`）在**单测里**逐字段对
-      （`depth=1` 在那里是能读的，对象就在进程内）；② 黑盒这一层只断言得到的两项
+    ⟹ 本节点这一条的守法是：① 发布方 QoS 常量（`QOS_PUB_ATT`）在**单测里**逐字段对
+      （`depth` 在那里是能读的，对象就在进程内）；② 黑盒这一层只断言得到的两项
       （`test_接口与_QoS_与票面一致`）。夹具侧的同一事实见
       `test_fake_px4_selftest.py::test_发现信息里读不回来的那两项_history_与_depth`。
+
+    ☠️☠️ **2026-10-13（ticket 13 §四③）这条换过对象，两处都得改，别只改名字**：
+      · 常量从 `QOS_PUB_FMU` 换成 **`QOS_PUB_ATT`**（新载体那条下行）。
+      · ★ **三个字段的值全变了**，因为它们对齐的是**另一个收端**：
+        · `depth`：`1` → **`5`**（`mavros::SensorDataQoS()`，`setpoint_raw.cpp:62`）
+        · `durability`：`TRANSIENT_LOCAL` → **`VOLATILE`**（同上；旧值的对齐对象是
+          uXRCE-DDS 那条 `/fmu/in/*`，与本条无关）
+        · `reliability`：`BEST_EFFORT` **不变**（两边都是）
+      ⟹ 谁"顺手"只把常量名换掉、值照抄旧的那三个，这条会红 —— 这正是它存在的意义
+        （**QoS 不匹配是静默的**：DDS 不报错，只是永不匹配，话题名与 `ros2 topic hz`
+        全都看不出原因）。
+      ⚠️ 写死的 `depth == 5` 是**故意的**：这一格在黑盒那层读不回来（本用例的 docstring
+        就是在讲这件事），所以"常量里写的到底是几"只能在这里钉住。
     """
     from rclpy.qos import HistoryPolicy
 
-    from nmpc.mpc_node import QOS_PUB_FMU
+    from nmpc.mpc_node import QOS_PUB_ATT
 
-    assert QOS_PUB_FMU.depth == 1, "发布方 QoS 常量里的 depth 必须是 1（票面）"
-    assert QOS_PUB_FMU.history == HistoryPolicy.KEEP_LAST
-    assert QOS_PUB_FMU.reliability == ReliabilityPolicy.BEST_EFFORT
-    assert QOS_PUB_FMU.durability == DurabilityPolicy.TRANSIENT_LOCAL
+    assert QOS_PUB_ATT.depth == 5, "发布方 QoS 常量里的 depth 必须是 5（mavros 收端的 SensorDataQoS）"
+    assert QOS_PUB_ATT.history == HistoryPolicy.KEEP_LAST
+    assert QOS_PUB_ATT.reliability == ReliabilityPolicy.BEST_EFFORT
+    assert QOS_PUB_ATT.durability == DurabilityPolicy.VOLATILE
 
 
 def test_动捕那条话题没有速度字段_所以拍不出_tau_的黑盒测试():
@@ -2129,7 +2344,13 @@ def test_位置保持锚点让位置换算第一次在话题层可观测():
     ⇒ 结论：位置那一半约定现在**在话题层与闭环里都能被考**（飞机往错误的方向飞、或者误差
       收敛到一个平移过的点）。闭环仍然是最终判据 —— 但不再是**唯一**的判据。
     ⚠️ 姿态那一半**一直**能在话题层量到（参考姿态取**水平**、而机头朝向与 `hold_offset`
-      的方向是一对关系）—— 见 `test_A_档_同一条正前方任务_走哪一根轴由_NED_到_ENU_的换算决定`。
+      的方向是一对关系）—— ☠️ 2026-10-13（ticket 13 §四③）：这里原来指的是
+      `test_A_档_同一条正前方任务_走哪一根轴由_NED_到_ENU_的换算决定`，那条随 A 档被拒
+      （§二⑤）**删掉了**（见 `test_A_档_state_source_px4_入口当场拒绝` 上方的 ☠️ 清单 ③）。
+      现在接替它的是**动捕档**的 `test_目标在正前方时_body_rate_y_为正_且顶约束表现为打满`
+      —— 任务改成正前方，判据落在 `body_rate_y`（而不是 `body_rate_x`）上。
+      ⚠️ 换载体之后**"由哪根轴"这句话本身也换了内容**（旧版问的是 NED→ENU 那一步翻不翻，
+      新版问的是 FLU 有没有被预先取负，即 N2）⟹ 结论的**形态**一样，**对象**不是同一个。
     """
     from nmpc.node_core import ControlConfig, extrapolate_state, hold_reference
 
