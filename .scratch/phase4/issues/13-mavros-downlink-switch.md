@@ -1768,7 +1768,9 @@ timeout 40 ros2 launch bringup mavros.launch.py fcu_url:=/dev/ttyUSB99:921600
 | `run/tests` | **`166 passed in 13.25s`**（exit 0） | 同上 |
 | `src/nmpc/test/test_preflight_check.py`（单文件） | **`34 passed`**（原 34 条里含 2 条 yaml 用例 ⟹ 本轮删 2 加 2，条数不变） | 同上 |
 
-⚠️ 上表是**一次性**读数，只对"这一份工作树 + 这一套环境"成立。`233 warnings` 的构成（当场分类过）：
+⚠️ 上表是**一次性**读数，只对"这一份工作树 + 这一套环境"成立。★ **上面第 (h) 条那个"11 条红"是
+环境没配全时的读数，不是本轮的代码状态 —— 两个数别混着引**（同一个坑 2026-10-10 已踩过一次）。
+`233 warnings` 的构成（当场分类过）：
 **acados_template 的 `deprecated`（`N` / `json_file` / `code_export_directory` / `ext_fun_compile_flags`）
 与 matplotlib `Axes3D` 两类长期噪声，全部落在 `test_ocp_*` 与 import 期** —— **没有一条来自本轮**。
 
