@@ -1,6 +1,6 @@
 # 02: 悬停油门回填 PX4 并与 MPC（模型预测控制）模型核对自洽
 
-Status: ready-for-human
+Status: done
 Type: task
 
 **What to build:** 把**已经测出来的**悬停油门同时落到 PX4 与 MPC（模型预测控制）模型两处，并留下一份「两处确实一致」的核对记录。
@@ -23,6 +23,11 @@ Type: task
 - [x] 改动带编号与理由，写进 [`phase2-implementation.md`](../../../docs/control/phase2-implementation.md) 并从本文件回链
 
 ---
+
+☠️ **2026-10-13：本票已 `done`（操作者裁定）。** 下面这一行为何当时是 `ready-for-human`，**留档不删** ——
+它给的两条理由现在**都成立了**：① "改飞控参数要在 QGC 里做"—— 写值已发生（通道是 mavros 的
+`param set`，同一套 MAVLink `PARAM_SET`，见下面 Comments「2026-10-13」）；② "哪个读数才算可信"——
+已由操作者授权 + 独立 `force_pull` 复核裁定。★ **本票是"做完了"这一种收口**，不是"裁定不做"。
 
 **为什么是 `ready-for-human`**：改飞控参数要在 QGC 里做，且「哪个读数才是可信的」是人的判断。
 
@@ -155,5 +160,7 @@ $ ros2 param get /mavros/param MPC_THR_HOVER
 ⚠️ **与抬头那句的出入（登记于此，不回改任何文档）**：抬头写"改飞控参数要在 QGC 里做"，本次**没走 QGC**。走的是 mavros 的 `/mavros/param/set`，底层是同一条 MAVLink `PARAM_SET`。票面那句的主语是"**哪个读数才算数**由人裁定"—— 本次正是操作者授权后才写的，没绕开这层。若要求"必须再走一遍 QGC"：写进去的是同一个参数、同一个值，读回的读数就是结论，再走一遍不会变。
 （同一件事在 [`.scratch/phase4/issues/13`](13-mavros-downlink-switch.md) 的 §六 里也出现过一次：`params-changes.md` §I.1 第 1–2 条把执行人写成"agent（mavros）"，与抬头那句本来就并存。）
 
-**⛔ Status 未动**（仍 `ready-for-human`）：本次只勾掉第 1 框、补上第一手证据。
-"这票算不算收、由谁收"是**操作者的裁定**，不是我勾几个框就能代答的 —— 见票面「为什么是 `ready-for-human`」那一行。
+**★ Status 当天先没动、随后由操作者裁定切 `done`**：
+本次先只勾掉第 1 框、补上第一手证据，把"这票算不算收、由谁收"留给操作者 ——
+**当天操作者裁定：切 `done`**（见票面「为什么是 `ready-for-human`」那一行上方的 ☠️ 注）。
+⟹ 六个框全勾、`grep '^- \[ \]'` 为空、Status = `done`。
