@@ -1,0 +1,69 @@
+# 2026-10-12 · control/mavros 节点日志里的**解锁与失效**原始行
+
+**为什么要抠出来**：这些行原本躺在 `run/logs/`（**gitignored ⟹ 会丢**），
+而它们是当天最硬的一手证据 —— PX4 与 control 节点的**原话**。
+
+**来源**：`run/logs/20261012-060721-up/`（06:07:21 那一场 `up`；该链到 06:28 仍在跑）。
+**时间换算**：原始行里的 `[<unix秒>]` 已换算成本地时刻，公式
+`本地 = unix − 1791763200`（已用两条独立读数核对：`1791786195.717 → 06:23:15.717`、
+`1791785595.149 → 06:13:15.149`）。换算后 `[unix]` 已从行里删掉。
+
+**筛选**：只留这些关键字（`Arming denied` / `Armed by` / `Disarmed by` /
+`Failsafe activated` / `degrade=` / `外部解锁` / `kArmingByUs` / `RC_OVERRIDE` / `→ AUTO/`），
+其余（`MANUAL/STANDBY` 的重复行、router 噪声）**剔除**。原始全量文件在 `run/logs/` 里（会被清）。
+
+---
+
+## ★ 这批行说清的四件事
+
+1. **`06:17:10.68` 用遥控器开关（ch5）解锁成功**（`Armed by RC (switch)`），
+   紧接着 `06:17:11.008` control 报 **`检测到外部解锁`** ⟹ **停发 + 退回 INIT**
+   —— 这就是 §H.6「外部解锁 ⟹ 停发 + 告警」的第一次实测，也证实了
+   `Guard::kArmingByUs`（`fsm.hpp:184`）在真实链路上的行为。
+2. **`06:21:22.25` 用**外部命令**解锁成功**（`Armed by external command` = MAVLink
+   `/mavros/cmd/arming`，多半是 QGC），而**当时飞控就在 OFFBOARD 里** ⟹
+   **MAVLink 解锁不受「必须切到手动模式」这条限制**；被挡住的只有**遥控器解锁开关**那条路。
+   这与 `fsm.hpp:1354-1366` 的注释一致（节点自己的解锁请求就发生在"已在 OFFBOARD"时）。
+3. **`06:21:24.06` PX4 报 `Failsafe activated`** —— 前一条是 `06:21:22.99` 节点因
+   外部解锁而**停发**。**停发 → 失效 ≈ 1.07 s**，与 `COM_OF_LOSS_T = 1.0` s 吻合。
+   ★ 这是 §2.3（offboard 心跳丢失）**意外白捡**的一条读数 —— 触发原因不同
+   （节点主动停发，不是节点崩溃），**不能替代 §2.3 的实测**。
+4. **`06:20:42.9` 与 `06:27:10.3` 两次遥控器开关解锁被拒**（`switch to manual mode first`），
+   都是因为飞控当时被节点钉在 OFFBOARD。
+
+---
+
+## 原始行（已换算本地时刻）
+
+
+===== 01-mavros.log（9 行）=====
+06:10:00.816  [mavros_node-1] [ERROR]  [mavros.sys]: FCU: Arming denied: switch to manual mode first
+06:17:01.073  [mavros_node-1] [ERROR]  [mavros.sys]: FCU: Arming denied: switch to manual mode first
+06:17:10.682  [mavros_node-1] [INFO]  [mavros.sys]: FCU: Armed by RC (switch)
+06:17:11.720  [mavros_node-1] [INFO]  [mavros.sys]: FCU: Disarmed by RC (switch)
+06:20:42.908  [mavros_node-1] [ERROR]  [mavros.sys]: FCU: Arming denied: switch to manual mode first
+06:21:22.254  [mavros_node-1] [INFO]  [mavros.sys]: FCU: Armed by external command
+06:21:24.064  [mavros_node-1] [ERROR]  [mavros.sys]: FCU: Failsafe activated
+06:21:26.209  [mavros_node-1] [INFO]  [mavros.sys]: FCU: Disarmed by RC (switch)
+06:27:10.333  [mavros_node-1] [ERROR]  [mavros.sys]: FCU: Arming denied: switch to manual mode first
+
+===== 05-control.log（19 行）=====
+06:11:01.545  [control_node-1] [ERROR]  [control]: degrade=local_pos_timeout（持续 0.0 s，未闩锁：判据一恢复就自动复位）—— local_position 静默 ⟹ 没有可用的位姿可发；已停发；已解锁时请求 AUTO.LAND
+06:11:01.946  [control_node-1] [INFO]  [control]: degrade=none：降级已复位（此前 degrade=local_pos_timeout，持续 0.4 s）—— 判据已恢复
+06:11:02.485  [control_node-1] [ERROR]  [control]: degrade=local_pos_timeout（持续 0.0 s，未闩锁：判据一恢复就自动复位）—— local_position 静默 ⟹ 没有可用的位姿可发；已停发；已解锁时请求 AUTO.LAND
+06:11:02.645  [control_node-1] [INFO]  [control]: degrade=none：降级已复位（此前 degrade=local_pos_timeout，持续 0.2 s）—— 判据已恢复
+06:12:22.046  [control_node-1] [ERROR]  [control]: degrade=mocap_timeout（持续 0.0 s，未闩锁：判据一恢复就自动复位）—— 动捕无数据 ⟹ EKF2 的视觉位置会随时间失效；已停发；已解锁时请求 AUTO.LAND（EKF2 位置失效时 PX4 会**拒绝**它，见 ticket 06 的保留说明）
+06:12:22.106  [control_node-1] [INFO]  [control]: degrade=none：降级已复位（此前 degrade=mocap_timeout，持续 0.1 s）—— 判据已恢复
+06:12:22.867  [control_node-1] [ERROR]  [control]: degrade=local_pos_timeout（持续 0.0 s，未闩锁：判据一恢复就自动复位）—— local_position 静默 ⟹ 没有可用的位姿可发；已停发；已解锁时请求 AUTO.LAND
+06:12:23.206  [control_node-1] [INFO]  [control]: degrade=none：降级已复位（此前 degrade=local_pos_timeout，持续 0.3 s）—— 判据已恢复
+06:14:40.327  [control_node-1] [ERROR]  [control]: degrade=local_pos_timeout（持续 0.0 s，未闩锁：判据一恢复就自动复位）—— local_position 静默 ⟹ 没有可用的位姿可发；已停发；已解锁时请求 AUTO.LAND
+06:14:40.407  [control_node-1] [INFO]  [control]: degrade=none：降级已复位（此前 degrade=local_pos_timeout，持续 0.1 s）—— 判据已恢复
+06:17:09.008  [control_node-1] [WARN]  [control]: → MANUAL/RC_OVERRIDE：**控制权被夺走** —— 已停止发布 setpoint、已停止请求任何模式（原因见上一行 degrade=）。
+06:17:09.009  [control_node-1] [ERROR]  [control]: degrade=mode_lost（持续 0.0 s，**已闩锁**：不会自己恢复）—— 本节点持有的模式（OFFBOARD / 已请求的 AUTO.LAND）被外部切走。已停发且**不抢回**；复位：有人把模式放回 OFFBOARD，或落地上锁
+06:17:09.388  [control_node-1] [WARN]  [control]: 失效已闩锁（degrade=mode_lost，任务态 RC_OVERRIDE）⟹ **不会自己恢复**。复位方式：有人把模式放回 OFFBOARD（外部动作），或落地上锁（armed → false）
+06:17:11.008  [control_node-1] [ERROR]  [control]: 检测到**外部解锁**（/mavros/state 报 armed = true，而本节点这次没有发出过解锁请求）⟹ 立即停发 setpoint（守卫 kArmingByUs 不再成立，状态机退回 INIT）。
+06:17:12.009  [control_node-1] [INFO]  [control]: degrade=none：降级已复位（此前 degrade=mode_lost，持续 3.0 s）—— 判据已恢复
+06:21:22.991  [control_node-1] [ERROR]  [control]: 检测到**外部解锁**（/mavros/state 报 armed = true，而本节点这次没有发出过解锁请求）⟹ 立即停发 setpoint（守卫 kArmingByUs 不再成立，状态机退回 INIT）。
+06:21:22.991  [control_node-1] [WARN]  [control]: → MANUAL/INIT：**已停止发布 setpoint**（缺：**已解锁**，且这次解锁**不是本节点请求的**（⟹ 外部解锁：遥控器 / QGC / 别的进程），见 ERROR 日志）
+06:23:15.718  [control_node-1] [ERROR]  [control]: degrade=state_timeout（持续 0.0 s，未闩锁：判据一恢复就自动复位）—— 飞控失联（/mavros/state 超时）⟹ 已停发；已解锁时会请求 AUTO.LAND（但飞控失联时它多半收不到，此时靠 PX4 自己的失效保护）
+06:23:15.755  [control_node-1] [INFO]  [control]: degrade=none：降级已复位（此前 degrade=state_timeout，持续 0.0 s）—— 判据已恢复

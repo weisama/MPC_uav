@@ -1,0 +1,372 @@
+# 2026-10-12 · 解锁被拒：`Arming denied: switch to manual mode first`
+
+**目的**：§2.1（打杆接管）要求 `armed=True`，但 ch5 拨到高位（999→2000）**没有**让飞控解锁。
+本文件是为此挂的只读探针的**原始输出**（未删改），用于定位拒绝原因。
+
+**探针**：`python3 -u <探针> 240`，窗口 `06:14:39.872 – 06:18:40`。
+订阅 5 路：`/mavros/statustext/recv`（**PX4 原话**）、`/mavros/status_event`、
+`/mavros/state`、`/control/state`、`/mavros/rc/in`。只读，不发布、不调服务。
+
+---
+
+## ★ 结论（第一手）
+
+**PX4 拒绝在 OFFBOARD 模式下解锁。** 原文（`t=141.219`，即 `06:17:01.073`）：
+
+```
+★★STATUSTEXT[CRIT] Arming denied: switch to manual mode first
+```
+
+链起来之后，控制节点一直把飞控钉在 `OFFBOARD`（`/control/state = MANUAL/STANDBY`
+配 `mode=OFFBOARD`），所以**每次 ch5 拨高都被这条判据挡掉**。
+
+**同场还带出三条活证据**（都不是计划内要测的，是这次误打误撞量到的）：
+
+| 时刻（本地） | 读数 | 说明 |
+|---|---|---|
+| `06:17:08.991` | `mode=POSCTL` + `/control/state = MANUAL/RC_OVERRIDE` | ch6 拨低位 ⟹ **mode_lost 接管**；PX4 自己也切到 POSCTL（ch6 低位 = `COM_FLTMODE1` = Position） |
+| `06:17:10.683` | `Armed by RC (switch)` ⟹ `06:17:10.989 armed=True` | **解锁成功，此刻在 `STABILIZED`（不在 OFFBOARD）** ⟹ 反证上一条判据 |
+| `06:17:11.722` | `Disarmed by RC (switch)` ⟹ `armed=False` | 随即 `06:17:13.992 mode=OFFBOARD`（节点**自己**抢回） |
+
+★ 最后一行是**闩锁清除路径 (a)（解锁下降沿，带 `connected` 门）的第一次实测**：
+上锁之后节点从 `MANUAL/RC_OVERRIDE` 回到 `MANUAL/STANDBY` 并重新请求 OFFBOARD。
+
+★ 另一条：`/mavros/rc/in` 的 `rssi` **恒为 255**（PX4 的"不可用"哨兵值）——
+**不能**用 rssi 判断遥控链路有效性；通道值随打杆实时变化才是链路活的证据。
+
+---
+
+## 原始输出（逐字）
+
+===== 解锁排查探针挂上，窗口 240 s（06:14:39.872）=====
+  订阅：/mavros/statustext/recv（★PX4 拒绝原因）、/mavros/state、/control/state、/mavros/rc/in
+  ★ 只读；解锁动作请你自己在遥控器/QGC 上做
+[06:14:40.327] 状态 /control/state = MANUAL/INIT
+[06:14:40.408] 状态 /control/state = MANUAL/STANDBY   （上一拍 MANUAL/INIT）
+[06:14:40.782] RC   基线 ch5-9 = [999, 1503, 1503, 999, 999]  rssi=255
+[06:14:40.872] 节拍  armed=None  mode=None  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=12  statustext=0  event=0
+[06:14:40.992] 飞控 /mavros/state  mode='OFFBOARD'  armed=False  connected=True
+[06:14:41.873] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=32  statustext=0  event=0
+[06:14:42.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=52  statustext=0  event=0
+[06:14:43.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=72  statustext=0  event=0
+[06:14:44.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=92  statustext=0  event=0
+[06:14:45.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=112  statustext=0  event=0
+[06:14:46.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=132  statustext=0  event=0
+[06:14:47.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=152  statustext=0  event=0
+[06:14:48.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=172  statustext=0  event=0
+[06:14:49.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=192  statustext=0  event=0
+[06:14:50.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=212  statustext=0  event=0
+[06:14:51.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=232  statustext=0  event=0
+[06:14:52.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=252  statustext=0  event=0
+[06:14:53.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=272  statustext=0  event=0
+[06:14:54.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=292  statustext=0  event=0
+[06:14:55.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=312  statustext=0  event=0
+[06:14:56.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=332  statustext=0  event=0
+[06:14:57.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=352  statustext=0  event=0
+[06:14:58.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=372  statustext=0  event=0
+[06:14:59.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=392  statustext=0  event=0
+[06:15:00.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=412  statustext=0  event=0
+[06:15:01.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=432  statustext=0  event=0
+[06:15:02.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=452  statustext=0  event=0
+[06:15:03.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=472  statustext=0  event=0
+[06:15:04.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=492  statustext=0  event=0
+[06:15:05.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=512  statustext=0  event=0
+[06:15:06.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=532  statustext=0  event=0
+[06:15:07.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=552  statustext=0  event=0
+[06:15:08.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=572  statustext=0  event=0
+[06:15:09.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=592  statustext=0  event=0
+[06:15:10.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=612  statustext=0  event=0
+[06:15:11.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=632  statustext=0  event=0
+[06:15:12.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=652  statustext=0  event=0
+[06:15:13.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=672  statustext=0  event=0
+[06:15:14.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=692  statustext=0  event=0
+[06:15:15.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=712  statustext=0  event=0
+[06:15:16.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=732  statustext=0  event=0
+[06:15:17.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=752  statustext=0  event=0
+[06:15:18.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=772  statustext=0  event=0
+[06:15:19.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=792  statustext=0  event=0
+[06:15:20.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=812  statustext=0  event=0
+[06:15:21.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=832  statustext=0  event=0
+[06:15:22.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=852  statustext=0  event=0
+[06:15:23.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=872  statustext=0  event=0
+[06:15:24.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=892  statustext=0  event=0
+[06:15:25.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=912  statustext=0  event=0
+[06:15:26.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=932  statustext=0  event=0
+[06:15:27.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=952  statustext=0  event=0
+[06:15:28.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=972  statustext=0  event=0
+[06:15:29.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=992  statustext=0  event=0
+[06:15:30.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=1012  statustext=0  event=0
+[06:15:31.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=1032  statustext=0  event=0
+[06:15:32.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=1052  statustext=0  event=0
+[06:15:33.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=1072  statustext=0  event=0
+[06:15:34.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=1092  statustext=0  event=0
+[06:15:35.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=1112  statustext=0  event=0
+[06:15:36.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=1132  statustext=0  event=0
+[06:15:37.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=1152  statustext=0  event=0
+[06:15:38.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=1172  statustext=0  event=0
+[06:15:39.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=1192  statustext=0  event=0
+[06:15:40.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=1212  statustext=0  event=0
+[06:15:41.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=1232  statustext=0  event=0
+[06:15:42.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=1252  statustext=0  event=0
+[06:15:43.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=1272  statustext=0  event=0
+[06:15:44.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=1292  statustext=0  event=0
+[06:15:45.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=1312  statustext=0  event=0
+[06:15:46.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=1332  statustext=0  event=0
+[06:15:47.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=1352  statustext=0  event=0
+[06:15:48.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=1372  statustext=0  event=0
+[06:15:49.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=1392  statustext=0  event=0
+[06:15:50.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=1412  statustext=0  event=0
+[06:15:51.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=1432  statustext=0  event=0
+[06:15:52.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=1452  statustext=0  event=0
+[06:15:53.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=1472  statustext=0  event=0
+[06:15:54.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=1492  statustext=0  event=0
+[06:15:55.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=1512  statustext=0  event=0
+[06:15:56.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=1532  statustext=0  event=0
+[06:15:57.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=1552  statustext=0  event=0
+[06:15:58.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=1572  statustext=0  event=0
+[06:15:59.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=1592  statustext=0  event=0
+[06:16:00.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=1612  statustext=0  event=0
+[06:16:01.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=1632  statustext=0  event=0
+[06:16:02.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=1652  statustext=0  event=0
+[06:16:03.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=1672  statustext=0  event=0
+[06:16:04.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=1692  statustext=0  event=0
+[06:16:05.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=1712  statustext=0  event=0
+[06:16:06.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=1732  statustext=0  event=0
+[06:16:07.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=1752  statustext=0  event=0
+[06:16:08.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=1772  statustext=0  event=0
+[06:16:09.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=1792  statustext=0  event=0
+[06:16:10.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=1812  statustext=0  event=0
+[06:16:11.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=1832  statustext=0  event=0
+[06:16:12.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=1852  statustext=0  event=0
+[06:16:13.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=1872  statustext=0  event=0
+[06:16:14.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=1892  statustext=0  event=0
+[06:16:15.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=1912  statustext=0  event=0
+[06:16:16.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=1932  statustext=0  event=0
+[06:16:17.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=1952  statustext=0  event=0
+[06:16:18.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=1972  statustext=0  event=0
+[06:16:19.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=1992  statustext=0  event=0
+[06:16:20.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=2012  statustext=0  event=0
+[06:16:21.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=2032  statustext=0  event=0
+[06:16:22.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=2052  statustext=0  event=0
+[06:16:23.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=2072  statustext=0  event=0
+[06:16:24.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=2092  statustext=0  event=0
+[06:16:25.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=2112  statustext=0  event=0
+[06:16:26.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=2132  statustext=0  event=0
+[06:16:27.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=2152  statustext=0  event=0
+[06:16:28.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=2172  statustext=0  event=0
+[06:16:29.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=2192  statustext=0  event=0
+[06:16:30.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=2212  statustext=0  event=0
+[06:16:31.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=2232  statustext=0  event=0
+[06:16:32.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=2252  statustext=0  event=0
+[06:16:33.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=2272  statustext=0  event=0
+[06:16:34.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=2292  statustext=0  event=0
+[06:16:35.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=2312  statustext=0  event=0
+[06:16:36.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=2332  statustext=0  event=0
+[06:16:37.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=2352  statustext=0  event=0
+[06:16:38.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=2372  statustext=0  event=0
+[06:16:39.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=2392  statustext=0  event=0
+[06:16:40.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=2412  statustext=0  event=0
+[06:16:41.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=2432  statustext=0  event=0
+[06:16:42.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=2452  statustext=0  event=0
+[06:16:43.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=2472  statustext=0  event=0
+[06:16:44.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=2492  statustext=0  event=0
+[06:16:45.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=2512  statustext=0  event=0
+[06:16:46.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=2532  statustext=0  event=0
+[06:16:47.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=2552  statustext=0  event=0
+[06:16:48.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=2572  statustext=0  event=0
+[06:16:49.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=2592  statustext=0  event=0
+[06:16:50.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=2612  statustext=0  event=0
+[06:16:51.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=2632  statustext=0  event=0
+[06:16:52.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=2652  statustext=0  event=0
+[06:16:53.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=2672  statustext=0  event=0
+[06:16:54.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=2692  statustext=0  event=0
+[06:16:55.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=2712  statustext=0  event=0
+[06:16:56.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=2732  statustext=0  event=0
+[06:16:57.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=2752  statustext=0  event=0
+[06:16:58.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=2772  statustext=0  event=0
+[06:16:59.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=2792  statustext=0  event=0
+[06:17:00.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=2812  statustext=0  event=0
+[06:17:01.073] ★★STATUSTEXT[CRIT] Arming denied: switch to manual mode first	
+[06:17:01.082] EVENT[sev2] px4_id=12420351  seq=56  arguments=[np.uint8(0), np.uint8(0), np.uint8(0), np.uint8(0), np.uint8(0), np.uint8(0), np.uint8(0), np.uint8(0)]
+[06:17:01.093] 开关 ch5: 999 → 2000   rssi=255
+[06:17:01.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=1 s  rc帧=2832  statustext=1  event=1
+[06:17:02.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=2 s  rc帧=2852  statustext=1  event=1
+[06:17:03.692] 开关 ch5: 2000 → 999   rssi=255
+[06:17:03.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=2872  statustext=1  event=1
+[06:17:04.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=2892  statustext=1  event=1
+[06:17:05.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=2912  statustext=1  event=1
+[06:17:06.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=2932  statustext=1  event=1
+[06:17:07.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=2952  statustext=1  event=1
+[06:17:08.639] 开关 ch6: 1503 → 999   rssi=255
+[06:17:08.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=2972  statustext=1  event=1
+[06:17:08.991] 飞控 /mavros/state  mode='POSCTL'  armed=False  connected=True
+[06:17:09.009] 状态 /control/state = MANUAL/RC_OVERRIDE   （上一拍 MANUAL/STANDBY）
+[06:17:09.441] 开关 ch6: 999 → 1503   rssi=255
+[06:17:09.872] 节拍  armed=False  mode=POSCTL  ctl=MANUAL/RC_OVERRIDE  ch5高位持续=—  rc帧=2992  statustext=1  event=1
+[06:17:09.988] 飞控 /mavros/state  mode='STABILIZED'  armed=False  connected=True
+[06:17:10.080] EVENT[sev8] px4_id=11047904  seq=57  arguments=[np.uint8(0), np.uint8(0), np.uint8(0), np.uint8(16), np.uint8(0), np.uint8(0), np.uint8(0), np.uint8(0)]
+[06:17:10.082] EVENT[sev3] px4_id=10011251  seq=58  arguments=[np.uint8(56), np.uint8(0), np.uint8(0), np.uint8(0), np.uint8(20), np.uint8(0), np.uint8(0), np.uint8(0)]
+[06:17:10.083] EVENT[sev6] px4_id=377561  seq=59  arguments=[np.uint8(8), np.uint8(0), np.uint8(0), np.uint8(0), np.uint8(20), np.uint8(0), np.uint8(0), np.uint8(0)]
+[06:17:10.084] EVENT[sev3] px4_id=3087815  seq=60  arguments=[np.uint8(0), np.uint8(64), np.uint8(0), np.uint8(0), np.uint8(20), np.uint8(0), np.uint8(0), np.uint8(0)]
+[06:17:10.084] EVENT[sev6] px4_id=79408  seq=61  arguments=[np.uint8(32), np.uint8(0), np.uint8(0), np.uint8(0), np.uint8(20), np.uint8(0), np.uint8(0), np.uint8(0)]
+[06:17:10.085] EVENT[sev8] px4_id=1914663  seq=62  arguments=[np.uint8(0), np.uint8(130), np.uint8(24), np.uint8(2), np.uint8(32), np.uint8(0), np.uint8(0), np.uint8(0)]
+[06:17:10.683] ★★STATUSTEXT[INFO] Armed by RC (switch)	
+[06:17:10.693] 开关 ch5: 999 → 2000   rssi=255
+[06:17:10.694] EVENT[sev6] px4_id=9489139  seq=63  arguments=[np.uint8(2), np.uint8(0), np.uint8(0), np.uint8(0), np.uint8(0), np.uint8(0), np.uint8(0), np.uint8(0)]
+[06:17:10.872] 节拍  armed=False  mode=STABILIZED  ctl=MANUAL/RC_OVERRIDE  ch5高位持续=0 s  rc帧=3012  statustext=2  event=8
+[06:17:10.989] 飞控 /mavros/state  mode='STABILIZED'  armed=True  connected=True
+[06:17:11.722] ★★STATUSTEXT[INFO] Disarmed by RC (switch)	
+[06:17:11.730] EVENT[sev6] px4_id=16017271  seq=64  arguments=[np.uint8(2), np.uint8(0), np.uint8(0), np.uint8(0), np.uint8(0), np.uint8(0), np.uint8(0), np.uint8(0)]
+[06:17:11.740] 开关 ch5: 2000 → 999   rssi=255
+[06:17:11.872] 节拍  armed=True  mode=STABILIZED  ctl=MANUAL/RC_OVERRIDE  ch5高位持续=—  rc帧=3032  statustext=3  event=9
+[06:17:11.990] 飞控 /mavros/state  mode='STABILIZED'  armed=False  connected=True
+[06:17:12.009] 状态 /control/state = MANUAL/STANDBY   （上一拍 MANUAL/RC_OVERRIDE）
+[06:17:12.149] EVENT[sev8] px4_id=11047904  seq=65  arguments=[np.uint8(0), np.uint8(0), np.uint8(0), np.uint8(16), np.uint8(0), np.uint8(0), np.uint8(0), np.uint8(0)]
+[06:17:12.150] EVENT[sev3] px4_id=10011251  seq=66  arguments=[np.uint8(56), np.uint8(0), np.uint8(0), np.uint8(0), np.uint8(20), np.uint8(0), np.uint8(0), np.uint8(0)]
+[06:17:12.152] EVENT[sev6] px4_id=377561  seq=67  arguments=[np.uint8(8), np.uint8(0), np.uint8(0), np.uint8(0), np.uint8(20), np.uint8(0), np.uint8(0), np.uint8(0)]
+[06:17:12.153] EVENT[sev6] px4_id=79408  seq=68  arguments=[np.uint8(32), np.uint8(0), np.uint8(0), np.uint8(0), np.uint8(20), np.uint8(0), np.uint8(0), np.uint8(0)]
+[06:17:12.154] EVENT[sev8] px4_id=1914663  seq=69  arguments=[np.uint8(0), np.uint8(130), np.uint8(24), np.uint8(2), np.uint8(32), np.uint8(0), np.uint8(0), np.uint8(0)]
+[06:17:12.872] 节拍  armed=False  mode=STABILIZED  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=3052  statustext=3  event=14
+[06:17:13.872] 节拍  armed=False  mode=STABILIZED  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=3072  statustext=3  event=14
+[06:17:13.992] 飞控 /mavros/state  mode='OFFBOARD'  armed=False  connected=True
+[06:17:14.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=3092  statustext=3  event=14
+[06:17:15.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=3112  statustext=3  event=14
+[06:17:16.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=3132  statustext=3  event=14
+[06:17:17.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=3152  statustext=3  event=14
+[06:17:18.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=3172  statustext=3  event=14
+[06:17:19.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=3192  statustext=3  event=14
+[06:17:20.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=3212  statustext=3  event=14
+[06:17:21.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=3232  statustext=3  event=14
+[06:17:22.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=3252  statustext=3  event=14
+[06:17:23.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=3272  statustext=3  event=14
+[06:17:24.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=3292  statustext=3  event=14
+[06:17:25.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=3312  statustext=3  event=14
+[06:17:26.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=3332  statustext=3  event=14
+[06:17:27.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=3352  statustext=3  event=14
+[06:17:28.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=3372  statustext=3  event=14
+[06:17:29.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=3392  statustext=3  event=14
+[06:17:30.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=3412  statustext=3  event=14
+[06:17:31.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=3432  statustext=3  event=14
+[06:17:32.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=3452  statustext=3  event=14
+[06:17:33.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=3472  statustext=3  event=14
+[06:17:34.873] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=3492  statustext=3  event=14
+[06:17:35.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=3512  statustext=3  event=14
+[06:17:36.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=3532  statustext=3  event=14
+[06:17:37.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=3552  statustext=3  event=14
+[06:17:38.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=3572  statustext=3  event=14
+[06:17:39.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=3592  statustext=3  event=14
+[06:17:40.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=3612  statustext=3  event=14
+[06:17:41.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=3632  statustext=3  event=14
+[06:17:42.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=3652  statustext=3  event=14
+[06:17:43.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=3672  statustext=3  event=14
+[06:17:44.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=3692  statustext=3  event=14
+[06:17:45.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=3712  statustext=3  event=14
+[06:17:46.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=3732  statustext=3  event=14
+[06:17:47.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=3752  statustext=3  event=14
+[06:17:48.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=3772  statustext=3  event=14
+[06:17:49.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=3792  statustext=3  event=14
+[06:17:50.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=3812  statustext=3  event=14
+[06:17:51.873] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=3832  statustext=3  event=14
+[06:17:52.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=3852  statustext=3  event=14
+[06:17:53.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=3872  statustext=3  event=14
+[06:17:54.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=3892  statustext=3  event=14
+[06:17:55.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=3912  statustext=3  event=14
+[06:17:56.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=3932  statustext=3  event=14
+[06:17:57.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=3952  statustext=3  event=14
+[06:17:58.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=3972  statustext=3  event=14
+[06:17:59.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=3992  statustext=3  event=14
+[06:18:00.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=4012  statustext=3  event=14
+[06:18:01.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=4032  statustext=3  event=14
+[06:18:02.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=4052  statustext=3  event=14
+[06:18:03.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=4072  statustext=3  event=14
+[06:18:04.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=4092  statustext=3  event=14
+[06:18:05.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=4112  statustext=3  event=14
+[06:18:06.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=4132  statustext=3  event=14
+[06:18:07.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=4152  statustext=3  event=14
+[06:18:08.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=4172  statustext=3  event=14
+[06:18:09.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=4192  statustext=3  event=14
+[06:18:10.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=4212  statustext=3  event=14
+[06:18:11.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=4232  statustext=3  event=14
+[06:18:12.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=4252  statustext=3  event=14
+[06:18:13.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=4272  statustext=3  event=14
+[06:18:14.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=4292  statustext=3  event=14
+[06:18:15.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=4312  statustext=3  event=14
+[06:18:16.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=4332  statustext=3  event=14
+[06:18:17.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=4352  statustext=3  event=14
+[06:18:18.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=4372  statustext=3  event=14
+[06:18:19.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=4392  statustext=3  event=14
+[06:18:20.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=4412  statustext=3  event=14
+[06:18:21.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=4432  statustext=3  event=14
+[06:18:22.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=4452  statustext=3  event=14
+[06:18:23.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=4472  statustext=3  event=14
+[06:18:24.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=4492  statustext=3  event=14
+[06:18:25.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=4512  statustext=3  event=14
+[06:18:26.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=4532  statustext=3  event=14
+[06:18:27.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=4552  statustext=3  event=14
+[06:18:28.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=4572  statustext=3  event=14
+[06:18:29.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=4592  statustext=3  event=14
+[06:18:30.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=4612  statustext=3  event=14
+[06:18:31.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=4632  statustext=3  event=14
+[06:18:32.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=4652  statustext=3  event=14
+[06:18:33.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=4672  statustext=3  event=14
+[06:18:34.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=4692  statustext=3  event=14
+[06:18:35.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=4712  statustext=3  event=14
+[06:18:36.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=4732  statustext=3  event=14
+[06:18:37.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=4752  statustext=3  event=14
+[06:18:38.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=4772  statustext=3  event=14
+[06:18:39.872] 节拍  armed=False  mode=OFFBOARD  ctl=MANUAL/STANDBY  ch5高位持续=—  rc帧=4792  statustext=3  event=14
+
+===== 事件表（相对启动，秒）=====
+  t=  0.472  状态  /control/state = MANUAL/INIT
+  t=  0.553  状态  /control/state = MANUAL/STANDBY   （上一拍 MANUAL/INIT）
+  t=  1.137  飞控  /mavros/state  mode='OFFBOARD'  armed=False  connected=True
+  t=141.219  ★★STATUSTEXT[CRIT]  Arming denied: switch to manual mode first	
+  t=141.227  EVENT[sev2]  px4_id=12420351  seq=56  arguments=[np.uint8(0), np.uint8(0), np.uint8(0), np.uint8(0), np.uint8(0), np.uint8(0), np.uint8(0), np.uint8(0)]
+  t=141.238  开关  ch5: 999 → 2000   rssi=255
+  t=143.837  开关  ch5: 2000 → 999   rssi=255
+  t=148.784  开关  ch6: 1503 → 999   rssi=255
+  t=149.136  飞控  /mavros/state  mode='POSCTL'  armed=False  connected=True
+  t=149.154  状态  /control/state = MANUAL/RC_OVERRIDE   （上一拍 MANUAL/STANDBY）
+  t=149.586  开关  ch6: 999 → 1503   rssi=255
+  t=150.133  飞控  /mavros/state  mode='STABILIZED'  armed=False  connected=True
+  t=150.225  EVENT[sev8]  px4_id=11047904  seq=57  arguments=[np.uint8(0), np.uint8(0), np.uint8(0), np.uint8(16), np.uint8(0), np.uint8(0), np.uint8(0), np.uint8(0)]
+  t=150.227  EVENT[sev3]  px4_id=10011251  seq=58  arguments=[np.uint8(56), np.uint8(0), np.uint8(0), np.uint8(0), np.uint8(20), np.uint8(0), np.uint8(0), np.uint8(0)]
+  t=150.228  EVENT[sev6]  px4_id=377561  seq=59  arguments=[np.uint8(8), np.uint8(0), np.uint8(0), np.uint8(0), np.uint8(20), np.uint8(0), np.uint8(0), np.uint8(0)]
+  t=150.229  EVENT[sev3]  px4_id=3087815  seq=60  arguments=[np.uint8(0), np.uint8(64), np.uint8(0), np.uint8(0), np.uint8(20), np.uint8(0), np.uint8(0), np.uint8(0)]
+  t=150.229  EVENT[sev6]  px4_id=79408  seq=61  arguments=[np.uint8(32), np.uint8(0), np.uint8(0), np.uint8(0), np.uint8(20), np.uint8(0), np.uint8(0), np.uint8(0)]
+  t=150.230  EVENT[sev8]  px4_id=1914663  seq=62  arguments=[np.uint8(0), np.uint8(130), np.uint8(24), np.uint8(2), np.uint8(32), np.uint8(0), np.uint8(0), np.uint8(0)]
+  t=150.828  ★★STATUSTEXT[INFO]  Armed by RC (switch)	
+  t=150.838  开关  ch5: 999 → 2000   rssi=255
+  t=150.839  EVENT[sev6]  px4_id=9489139  seq=63  arguments=[np.uint8(2), np.uint8(0), np.uint8(0), np.uint8(0), np.uint8(0), np.uint8(0), np.uint8(0), np.uint8(0)]
+  t=151.134  飞控  /mavros/state  mode='STABILIZED'  armed=True  connected=True
+  t=151.867  ★★STATUSTEXT[INFO]  Disarmed by RC (switch)	
+  t=151.875  EVENT[sev6]  px4_id=16017271  seq=64  arguments=[np.uint8(2), np.uint8(0), np.uint8(0), np.uint8(0), np.uint8(0), np.uint8(0), np.uint8(0), np.uint8(0)]
+  t=151.885  开关  ch5: 2000 → 999   rssi=255
+  t=152.135  飞控  /mavros/state  mode='STABILIZED'  armed=False  connected=True
+  t=152.154  状态  /control/state = MANUAL/STANDBY   （上一拍 MANUAL/RC_OVERRIDE）
+  t=152.294  EVENT[sev8]  px4_id=11047904  seq=65  arguments=[np.uint8(0), np.uint8(0), np.uint8(0), np.uint8(16), np.uint8(0), np.uint8(0), np.uint8(0), np.uint8(0)]
+  t=152.296  EVENT[sev3]  px4_id=10011251  seq=66  arguments=[np.uint8(56), np.uint8(0), np.uint8(0), np.uint8(0), np.uint8(20), np.uint8(0), np.uint8(0), np.uint8(0)]
+  t=152.297  EVENT[sev6]  px4_id=377561  seq=67  arguments=[np.uint8(8), np.uint8(0), np.uint8(0), np.uint8(0), np.uint8(20), np.uint8(0), np.uint8(0), np.uint8(0)]
+  t=152.298  EVENT[sev6]  px4_id=79408  seq=68  arguments=[np.uint8(32), np.uint8(0), np.uint8(0), np.uint8(0), np.uint8(20), np.uint8(0), np.uint8(0), np.uint8(0)]
+  t=152.299  EVENT[sev8]  px4_id=1914663  seq=69  arguments=[np.uint8(0), np.uint8(130), np.uint8(24), np.uint8(2), np.uint8(32), np.uint8(0), np.uint8(0), np.uint8(0)]
+  t=154.137  飞控  /mavros/state  mode='OFFBOARD'  armed=False  connected=True
+
+===== 小结 =====
+  STATUSTEXT 3 条、EVENT 14 条、出现 armed=True 的时刻 1 次
+   · t=141.227  px4_id=12420351  seq=56  arguments=[np.uint8(0), np.uint8(0), np.uint8(0), np.uint8(0), np.uint8(0), np.uint8(0), np.uint8(0), np.uint8(0)]
+   · t=150.225  px4_id=11047904  seq=57  arguments=[np.uint8(0), np.uint8(0), np.uint8(0), np.uint8(16), np.uint8(0), np.uint8(0), np.uint8(0), np.uint8(0)]
+   · t=150.227  px4_id=10011251  seq=58  arguments=[np.uint8(56), np.uint8(0), np.uint8(0), np.uint8(0), np.uint8(20), np.uint8(0), np.uint8(0), np.uint8(0)]
+   · t=150.228  px4_id=377561  seq=59  arguments=[np.uint8(8), np.uint8(0), np.uint8(0), np.uint8(0), np.uint8(20), np.uint8(0), np.uint8(0), np.uint8(0)]
+   · t=150.229  px4_id=3087815  seq=60  arguments=[np.uint8(0), np.uint8(64), np.uint8(0), np.uint8(0), np.uint8(20), np.uint8(0), np.uint8(0), np.uint8(0)]
+   · t=150.229  px4_id=79408  seq=61  arguments=[np.uint8(32), np.uint8(0), np.uint8(0), np.uint8(0), np.uint8(20), np.uint8(0), np.uint8(0), np.uint8(0)]
+   · t=150.230  px4_id=1914663  seq=62  arguments=[np.uint8(0), np.uint8(130), np.uint8(24), np.uint8(2), np.uint8(32), np.uint8(0), np.uint8(0), np.uint8(0)]
+   · t=150.839  px4_id=9489139  seq=63  arguments=[np.uint8(2), np.uint8(0), np.uint8(0), np.uint8(0), np.uint8(0), np.uint8(0), np.uint8(0), np.uint8(0)]
+   · t=151.875  px4_id=16017271  seq=64  arguments=[np.uint8(2), np.uint8(0), np.uint8(0), np.uint8(0), np.uint8(0), np.uint8(0), np.uint8(0), np.uint8(0)]
+   · t=152.294  px4_id=11047904  seq=65  arguments=[np.uint8(0), np.uint8(0), np.uint8(0), np.uint8(16), np.uint8(0), np.uint8(0), np.uint8(0), np.uint8(0)]
+   · t=152.296  px4_id=10011251  seq=66  arguments=[np.uint8(56), np.uint8(0), np.uint8(0), np.uint8(0), np.uint8(20), np.uint8(0), np.uint8(0), np.uint8(0)]
+   · t=152.297  px4_id=377561  seq=67  arguments=[np.uint8(8), np.uint8(0), np.uint8(0), np.uint8(0), np.uint8(20), np.uint8(0), np.uint8(0), np.uint8(0)]
+   · t=152.298  px4_id=79408  seq=68  arguments=[np.uint8(32), np.uint8(0), np.uint8(0), np.uint8(0), np.uint8(20), np.uint8(0), np.uint8(0), np.uint8(0)]
+   · t=152.299  px4_id=1914663  seq=69  arguments=[np.uint8(0), np.uint8(130), np.uint8(24), np.uint8(2), np.uint8(32), np.uint8(0), np.uint8(0), np.uint8(0)]
+   · t=141.219  Arming denied: switch to manual mode first	
+   · t=150.828  Armed by RC (switch)	
+   · t=151.867  Disarmed by RC (switch)	
