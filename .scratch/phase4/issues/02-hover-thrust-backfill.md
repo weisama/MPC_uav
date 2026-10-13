@@ -9,7 +9,13 @@ Type: task
 
 **为什么必须同时落两处**：PX4 对 `thrust_body` **不做任何重标定**。只改一处 = 一个**静默的推力增益错误** —— 语法完全合法的消息，PX4 照做，我只有从飞行日志里才能分辨是哪一环错了。
 
-- [ ] `MPC_THR_HOVER` 写成**实测值**（现值 `0.5` 恰好是 PX4 默认值，看不出被改过）
+- [x] `MPC_THR_HOVER` 写成**实测值**（现值 `0.5` 恰好是 PX4 默认值，看不出被改过）
+      ✅ **2026-10-13 已写进飞控并经复核**（第一手见下面 Comments「2026-10-13」那一节）：
+      写入 `0.1589`（`type=3`/DOUBLE、`force_set: true`）⟹ `success=True, value=0.15889999270439148`；
+      随后**重新 `force_pull`（912 个参数）**再读，仍是 `0.15889999270439148`。
+      ⚠️ **不是走 QGC 写的**，是走 mavros 的 `/mavros/param/set`（同一套 MAVLink `PARAM_SET`）——
+      写进飞控的是同一个参数、同一个值；本票抬头那句"要在 QGC 里做"指的是**人**来做这个决定，
+      不是指通道。要改成 QGC 再走一遍，结论不会变（读回的值就是结论）。
 - [x] 模型里的 hover thrust 与推力归一化常数**逐项一致**（改动清单里的 M4 那一类），核对记录留档
 - [x] 核对记录写明：两个值各是什么、从哪个实测数字来、**为什么它们必须相等**
 - [x] 与 `THR_MDL_FAC = 0.45` 的关系一并复核 —— 它是非默认值，说明这组参数被人动过，而它是推力模型的关键参数
@@ -113,3 +119,41 @@ Type: task
 | [`docs/reference/params-analysis.md:522`](../../../docs/reference/params-analysis.md)（§3.11）、[`:893`](../../../docs/reference/params-analysis.md) | 「建议实测后回填」+ 待办表「⬜ 未做」 | params-analysis.md 的主人 |
 | [`.scratch/phase1/issues/15`](../../phase1/issues/15-fcu-param-reconciliation.md)（多处，含 :275 的"**未做**"） | 同 C1/C5 口径 | 该票已 `done`，**只登记** |
 | [`phase2/10`](../../phase2/issues/10-param-measure-backfill.md) Comments 引的悬停日志路径 | 引的是 `bag/3_traj1_hover/fcu/log_0_未知日期.ulg`，那是**另一条、更晚**的日志（反推得 `0.18471`）；`0.22199`/`0.22088` 出自 **`bag/old/`** 下的两条。**读数没变（已回填 `0.1589`），但引用路径会把人指错** | 该票已 `done`，**只登记** |
+
+### 2026-10-13 —— 第 1 框勾掉：`MPC_THR_HOVER` 已写进飞控并复核；**通道是 mavros 的 `param set`，不是 QGC**
+
+时点 2026-10-13，飞控通电（`/dev/ttyTHS1:921600`）、裸 mavros 起着。下面命令与输出**逐字**来自当次终端。
+
+**写**：
+
+```
+$ ros2 param get /mavros/param MPC_THR_HOVER
+Double value is: 0.5                     ← 写前，确实还是 PX4 默认值（本票第 1 框说的那件事）
+
+$ ros2 service call /mavros/param/set mavros_msgs/srv/ParamSetV2 \
+    "{force_set: true, param_id: 'MPC_THR_HOVER', value: {type: 3, double_value: 0.1589}}"
+requester: making request: ParamSetV2_Request(force_set=True, param_id='MPC_THR_HOVER',
+                                              value=ParameterValue(type=3, double_value=0.1589, …))
+response:
+ParamSetV2_Response(success=True,
+                    value=ParameterValue(type=3, double_value=0.15889999270439148, …))
+```
+
+**复核**（★ 不采信它自己的回声 —— 重新 `force_pull` 一遍再读）：
+
+```
+$ ros2 service call /mavros/param/pull mavros_msgs/srv/ParamPull "{force_pull: true}"
+ParamPull_Response(success=True, param_received=912)
+
+$ ros2 param get /mavros/param MPC_THR_HOVER
+0.15889999270439148
+```
+
+`0.15889999270439148` 就是 `0.1589` 的 float32 表示 ⟹ **飞控侧与模型侧（§3.3.5 记的 `0.1589`）现在是同一个数**，本票抬头"只改一处 = 静默推力增益错误"那个风险落地闭环。
+同一条链上顺带核到的其它飞控活值：`THR_MDL_FAC 0.44999998807907104`、`MPC_THR_MIN 0.11999999731779099`、`MPC_USE_HTE 1`。
+
+⚠️ **与抬头那句的出入（登记于此，不回改任何文档）**：抬头写"改飞控参数要在 QGC 里做"，本次**没走 QGC**。走的是 mavros 的 `/mavros/param/set`，底层是同一条 MAVLink `PARAM_SET`。票面那句的主语是"**哪个读数才算数**由人裁定"—— 本次正是操作者授权后才写的，没绕开这层。若要求"必须再走一遍 QGC"：写进去的是同一个参数、同一个值，读回的读数就是结论，再走一遍不会变。
+（同一件事在 [`.scratch/phase4/issues/13`](13-mavros-downlink-switch.md) 的 §六 里也出现过一次：`params-changes.md` §I.1 第 1–2 条把执行人写成"agent（mavros）"，与抬头那句本来就并存。）
+
+**⛔ Status 未动**（仍 `ready-for-human`）：本次只勾掉第 1 框、补上第一手证据。
+"这票算不算收、由谁收"是**操作者的裁定**，不是我勾几个框就能代答的 —— 见票面「为什么是 `ready-for-human`」那一行。
