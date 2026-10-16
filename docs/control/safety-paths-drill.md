@@ -97,10 +97,10 @@
   `node=vrpn_listener`，另一次同一个发布者报 `node=_NODE_NAME_UNKNOWN_`
   ⟹ **别用一次查询给"有几个"定案**，跟 Hz 指纹对一下再下结论。
 
-**症状的来源常常是孤儿**：链条**先后起过两遍**（例如先菜单 **8= 一键启动（动捕+mavros，手动遥控飞）**
-＝ `run/z0.py up_manual`，再菜单 **9= 一键启动全部（选轨迹 → 按开始键）**＝ `run/z0.py up`）
+**症状的来源常常是孤儿**：链条**先后起过两遍**（例如先菜单 **8= 一键启动（起前选控制器；默认手动遥控飞）**
+＝ `run/z0.py up_manual`，再菜单 **9= 一键启动全部（起前选控制器；默认 offboard 控制）**＝ `run/z0.py up`）
 时，**旧那套的编排器会退、节点本身留下来**（`ppid=1`）接着发。
-`run/z0.py down`（菜单 **10= 清除后台节点（扫 mavros/vrpn/mocap/traj/control 并停掉）**）**管得了它** ——
+`run/z0.py down`（菜单 **10= 清除后台节点（扫 mavros/vrpn/mocap/traj/control/mpc 并停掉）**）**管得了它** ——
 它按名字扫，`run/z0.py:1154-1156` 那几行注释写的正是这个场景；
 但**它分不出新旧** ⟹ 只想清**旧的一套**，得照 §3.1 第 2 步那条 ⚠️ 的同一套信号阶梯
 **按 PID 手工杀**（先 `SIGINT` ⟹ 超时 `SIGTERM` ⟹ 再 `SIGKILL`；同一张 `STOP_LADDER`），
@@ -372,7 +372,7 @@ ros2 run nmpc mpc_node.py --ros-args -p tau_s:=0.0 -p inject_solve_fail_after_fr
 | 1 | 确认 (A) 链此刻**不在发** | `run/z0.py check`（[`run/README.md`](../../run/README.md) 菜单 **2= 起链核对（只读，约 5 s）**） | `/control/state` 没有在跑的任务态；`/mavros/setpoint_raw/local` 不是我们的帧 |
 | 2 | 停 (C) 级的**发指令那一个** | `mpc_node` 是**前台**进程 ⟹ 在它那个终端 `Ctrl-C`（会打一行收尾摘要）；终端不在了见下面的 ⚠️ | 进程真的退了（不是"终端关了"） |
 | 3 | 确认 (C) 链**停了** | ☠️ `ros2 topic hz /mavros/setpoint_raw/attitude`（2026-10-13 换载体；**原写** `/fmu/in/vehicle_rates_setpoint`，那条今天没有） | **没有帧**。☠️ **2026-10-13**：原写"心跳 `/fmu/in/offboard_control_mode` **同时**没了 —— 那才是 PX4 的判据" —— 换到 mavros 后**独立心跳流已删除**，**setpoint 本身就是 PX4 的判据** ⟹ 这一格要重读（判据待重做，见页首）。它仍会在 `COM_OF_LOSS_T` = `1.0` s 后自己退出 OFFBOARD |
-| 4 | 起 (A) 级的**两端** | `run/z0.py up`（菜单 **9= 一键启动全部（选轨迹 → 按开始键）**，= `run/up.sh`）；⚠️ 它**也会去起 mavros**，已经有一个在跑时会先问一句 —— 只补缺的两端就用 `run/z0.py traj` / `run/z0.py control`（各自前台） | 见第 5 步（它才是判据） |
+| 4 | 起 (A) 级的**两端** | `run/z0.py up`（菜单 **9= 一键启动全部（起前选控制器；默认 offboard 控制）**，= `run/up.sh`）；⚠️ 它**也会去起 mavros**，已经有一个在跑时会先问一句 —— 只补缺的两端就用 `run/z0.py traj` / `run/z0.py control`（各自前台） | 见第 5 步（它才是判据） |
 | 5 | **确认 (A) 链真的回来了** | `run/z0.py check`（菜单 **2= 起链核对（只读，约 5 s）**） | `/mavros/state` 的 `connected/armed/mode` + **`/control/state` 的原文** + 每个话题有没有帧/多少 Hz。起始态是 `MANUAL/INIT`，守卫齐了是 `MANUAL/STANDBY`（出处：[`operation_manual.md`](../../operation_manual.md) §5.1 那张核对表的 `/control/state` 行 ＋ 菜单 **7= 起 control（单独）** 那一行）；**落地上锁之后**自己回 `MANUAL/STANDBY`（同页 §7 第 1 条） |
 
 **今天能不能做**（★ 这是本页最容易被误读的一格）：
