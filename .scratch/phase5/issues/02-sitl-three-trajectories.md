@@ -1,6 +1,6 @@
 # 02: 三趟统一 nominal SITL（悬停 / 正方形 / 8 字）
 
-Status: ready-for-human
+Status: done
 Type: task
 
 **What to build:** 用同一被控对象、同一控制器参数、逐字取自三份 offboard 包的参考，跑三趟
@@ -177,7 +177,8 @@ SITL 驱动器上跑起来，本轮在 `tools/report/evidence/sitl/` 下加了�
    合理绕行**；绕过写在 `models/R-hover-model.json` 的 `segment.how` 与各
    `harness-identity.json` 里。
 
-本票的人工裁定项已全部落定。是否把状态转 `done` 仍由操作者确认（本会话不自行 promote）。
+本票的人工裁定项已全部落定。操作者 2026-10-17 说「收工」⟹ 按「做完了」义转 `done`
+（不是「裁定不做了」那种收口；四条裁定即上面 §7 的内容，均已落地）。
 
 #### 8. 重跑与票 01 的时序冲突（**请操作者转给票 01**）
 
