@@ -1,0 +1,782 @@
+[
+  {
+    "bag": "bag/3_traj1_hover",
+    "topics": {
+      "/vrpn/z0/pose": {
+        "n": 21944,
+        "span_s": 116.38890361785889,
+        "rate_n_over_span_hz": 188.54031026917312,
+        "median_dt_ms": 1.1777877807617188,
+        "median_rate_hz": 849.0493927125506,
+        "p95_gap_ms": 27.45063304901118,
+        "max_gap_ms": 291.19253158569336
+      },
+      "/traj/start": {
+        "n": 1,
+        "span_s": 0.0,
+        "rate_n_over_span_hz": NaN,
+        "median_dt_ms": NaN,
+        "median_rate_hz": NaN,
+        "p95_gap_ms": NaN,
+        "max_gap_ms": NaN
+      },
+      "/traj/reference": {
+        "n": 1983,
+        "span_s": 39.63950037956238,
+        "rate_n_over_span_hz": 50.025857566620836,
+        "median_dt_ms": 19.974112510681152,
+        "median_rate_hz": 50.06480260213064,
+        "p95_gap_ms": 26.412904262542707,
+        "max_gap_ms": 60.30702590942383
+      },
+      "/traj/progress": {
+        "n": 1983,
+        "span_s": 39.63949179649353,
+        "rate_n_over_span_hz": 50.02586839863104,
+        "median_dt_ms": 19.972920417785645,
+        "median_rate_hz": 50.06779074278552,
+        "p95_gap_ms": 26.451325416564938,
+        "max_gap_ms": 60.33062934875488
+      },
+      "/control/state": {
+        "n": 109,
+        "span_s": 103.48012256622314,
+        "rate_n_over_span_hz": 1.053342393658689,
+        "median_dt_ms": 1000.4767179489136,
+        "median_rate_hz": 0.999523509202802,
+        "p95_gap_ms": 1019.5856690406799,
+        "max_gap_ms": 1037.999153137207
+      },
+      "/mavros/setpoint_raw/local": {
+        "n": 5197,
+        "span_s": 103.9301974773407,
+        "rate_n_over_span_hz": 50.0047159164984,
+        "median_dt_ms": 19.98603343963623,
+        "median_rate_hz": 50.03494080104978,
+        "p95_gap_ms": 26.39758586883545,
+        "max_gap_ms": 143.42617988586426
+      },
+      "/mavros/vision_pose/pose": {
+        "n": 21019,
+        "span_s": 111.64796900749207,
+        "rate_n_over_span_hz": 188.26137355521024,
+        "median_dt_ms": 1.1131763458251953,
+        "median_rate_hz": 898.3302634397087,
+        "p95_gap_ms": 27.70115137100207,
+        "max_gap_ms": 292.1321392059326
+      },
+      "/mocap/pose_enu": {
+        "n": 21028,
+        "span_s": 111.64796018600464,
+        "rate_n_over_span_hz": 188.34199894890614,
+        "median_dt_ms": 1.1065006256103516,
+        "median_rate_hz": 903.7500538677009,
+        "p95_gap_ms": 27.785444259643587,
+        "max_gap_ms": 292.1338081359863
+      },
+      "/mocap/velocity_enu": {
+        "n": 21023,
+        "span_s": 111.64797472953796,
+        "rate_n_over_span_hz": 188.29719079927102,
+        "median_dt_ms": 1.0895729064941406,
+        "median_rate_hz": 917.7908096280088,
+        "p95_gap_ms": 27.951717376709023,
+        "max_gap_ms": 292.13786125183105
+      },
+      "/mavros/local_position/pose": {
+        "n": 3451,
+        "span_s": 115.03444004058838,
+        "rate_n_over_span_hz": 29.999711380195013,
+        "median_dt_ms": 33.34450721740723,
+        "median_rate_hz": 29.98994687430733,
+        "p95_gap_ms": 40.753626823425286,
+        "max_gap_ms": 83.92858505249023
+      },
+      "/mavros/local_position/velocity_local": {
+        "n": 3420,
+        "span_s": 114.00275754928589,
+        "rate_n_over_span_hz": 29.999274346688143,
+        "median_dt_ms": 33.361196517944336,
+        "median_rate_hz": 29.97494407798352,
+        "p95_gap_ms": 40.84985256195068,
+        "max_gap_ms": 83.7244987487793
+      },
+      "/mavros/state": {
+        "n": 124,
+        "span_s": 113.05005645751953,
+        "rate_n_over_span_hz": 1.0968592487752988,
+        "median_dt_ms": 999.3586540222168,
+        "median_rate_hz": 1.000641757566417,
+        "p95_gap_ms": 1011.3842248916626,
+        "max_gap_ms": 1024.8558521270752
+      },
+      "/mavros/rc/in": {
+        "n": 2280,
+        "span_s": 113.95892333984375,
+        "rate_n_over_span_hz": 20.007209029175144,
+        "median_dt_ms": 49.96323585510254,
+        "median_rate_hz": 20.014716478734115,
+        "p95_gap_ms": 57.55279064178467,
+        "max_gap_ms": 512.7112865447998
+      }
+    },
+    "missing": [
+      "/control/target",
+      "/mavros/setpoint_raw/attitude"
+    ]
+  },
+  {
+    "bag": "bag/4_traj2_square",
+    "topics": {
+      "/vrpn/z0/pose": {
+        "n": 7027,
+        "span_s": 36.90548300743103,
+        "rate_n_over_span_hz": 190.4053118227742,
+        "median_dt_ms": 1.7511844635009766,
+        "median_rate_hz": 571.0420694349898,
+        "p95_gap_ms": 22.497594356536865,
+        "max_gap_ms": 251.51824951171875
+      },
+      "/traj/start": {
+        "n": 1,
+        "span_s": 0.0,
+        "rate_n_over_span_hz": NaN,
+        "median_dt_ms": NaN,
+        "median_rate_hz": NaN,
+        "p95_gap_ms": NaN,
+        "max_gap_ms": NaN
+      },
+      "/traj/reference": {
+        "n": 895,
+        "span_s": 17.905375719070435,
+        "rate_n_over_span_hz": 49.98498853317915,
+        "median_dt_ms": 19.971609115600586,
+        "median_rate_hz": 50.07107810951807,
+        "p95_gap_ms": 27.087342739105175,
+        "max_gap_ms": 109.56573486328125
+      },
+      "/traj/progress": {
+        "n": 895,
+        "span_s": 17.90453577041626,
+        "rate_n_over_span_hz": 49.987333459871785,
+        "median_dt_ms": 19.955158233642578,
+        "median_rate_hz": 50.11235632870559,
+        "p95_gap_ms": 26.85307264328,
+        "max_gap_ms": 109.91525650024414
+      },
+      "/control/state": {
+        "n": 50,
+        "span_s": 35.67530417442322,
+        "rate_n_over_span_hz": 1.4015297460546006,
+        "median_dt_ms": 998.5604286193848,
+        "median_rate_hz": 1.0014416467339944,
+        "p95_gap_ms": 1015.6177043914795,
+        "max_gap_ms": 1020.8945274353027
+      },
+      "/mavros/setpoint_raw/local": {
+        "n": 1471,
+        "span_s": 35.9400417804718,
+        "rate_n_over_span_hz": 40.92927907499749,
+        "median_dt_ms": 19.99831199645996,
+        "median_rate_hz": 50.004220365049655,
+        "p95_gap_ms": 26.00961923599243,
+        "max_gap_ms": 6552.023887634277
+      },
+      "/mavros/vision_pose/pose": {
+        "n": 7018,
+        "span_s": 36.90553879737854,
+        "rate_n_over_span_hz": 190.1611581538135,
+        "median_dt_ms": 1.6505718231201172,
+        "median_rate_hz": 605.8506427849198,
+        "p95_gap_ms": 22.713232040405273,
+        "max_gap_ms": 251.42574310302734
+      },
+      "/mocap/pose_enu": {
+        "n": 7017,
+        "span_s": 36.90549564361572,
+        "rate_n_over_span_hz": 190.1342842746476,
+        "median_dt_ms": 1.6374588012695312,
+        "median_rate_hz": 610.7023878858474,
+        "p95_gap_ms": 22.77815341949463,
+        "max_gap_ms": 251.4333724975586
+      },
+      "/mocap/velocity_enu": {
+        "n": 7007,
+        "span_s": 36.89871883392334,
+        "rate_n_over_span_hz": 189.89819217132327,
+        "median_dt_ms": 1.6198158264160156,
+        "median_rate_hz": 617.3541360023551,
+        "p95_gap_ms": 23.195087909698486,
+        "max_gap_ms": 251.5389919281006
+      },
+      "/mavros/local_position/pose": {
+        "n": 1086,
+        "span_s": 36.211505651474,
+        "rate_n_over_span_hz": 29.99046795934027,
+        "median_dt_ms": 33.34856033325195,
+        "median_rate_hz": 29.986301957476016,
+        "p95_gap_ms": 42.186546325683594,
+        "max_gap_ms": 56.65421485900879
+      },
+      "/mavros/local_position/velocity_local": {
+        "n": 1088,
+        "span_s": 36.27601408958435,
+        "rate_n_over_span_hz": 29.992269749183635,
+        "median_dt_ms": 33.362627029418945,
+        "median_rate_hz": 29.97365882243645,
+        "p95_gap_ms": 42.09179878234864,
+        "max_gap_ms": 57.459115982055664
+      },
+      "/mavros/state": {
+        "n": 46,
+        "span_s": 35.972625970840454,
+        "rate_n_over_span_hz": 1.2787501262011778,
+        "median_dt_ms": 999.1624355316162,
+        "median_rate_hz": 1.0008382665706783,
+        "p95_gap_ms": 1004.8638820648193,
+        "max_gap_ms": 1023.4417915344238
+      },
+      "/mavros/rc/in": {
+        "n": 725,
+        "span_s": 36.19635081291199,
+        "rate_n_over_span_hz": 20.02964342309826,
+        "median_dt_ms": 49.93081092834473,
+        "median_rate_hz": 20.027713978751343,
+        "p95_gap_ms": 58.74512195587158,
+        "max_gap_ms": 312.5734329223633
+      }
+    },
+    "missing": [
+      "/control/target",
+      "/mavros/setpoint_raw/attitude"
+    ]
+  },
+  {
+    "bag": "bag/5_traj3_lemniscate",
+    "topics": {
+      "/vrpn/z0/pose": {
+        "n": 8962,
+        "span_s": 49.55794143676758,
+        "rate_n_over_span_hz": 180.8388270411691,
+        "median_dt_ms": 1.499176025390625,
+        "median_rate_hz": 667.0330788804072,
+        "p95_gap_ms": 23.904085159301758,
+        "max_gap_ms": 484.99417304992676
+      },
+      "/traj/start": {
+        "n": 1,
+        "span_s": 0.0,
+        "rate_n_over_span_hz": NaN,
+        "median_dt_ms": NaN,
+        "median_rate_hz": NaN,
+        "p95_gap_ms": NaN,
+        "max_gap_ms": NaN
+      },
+      "/traj/reference": {
+        "n": 1312,
+        "span_s": 26.223570823669434,
+        "rate_n_over_span_hz": 50.03132520822781,
+        "median_dt_ms": 19.980430603027344,
+        "median_rate_hz": 50.048971409479265,
+        "p95_gap_ms": 27.406692504882812,
+        "max_gap_ms": 153.66053581237793
+      },
+      "/traj/progress": {
+        "n": 1312,
+        "span_s": 26.223251581192017,
+        "rate_n_over_span_hz": 50.03193429074981,
+        "median_dt_ms": 19.96612548828125,
+        "median_rate_hz": 50.08482995796714,
+        "p95_gap_ms": 27.353405952453613,
+        "max_gap_ms": 153.63097190856934
+      },
+      "/control/state": {
+        "n": 63,
+        "span_s": 48.61363434791565,
+        "rate_n_over_span_hz": 1.2959327325565648,
+        "median_dt_ms": 1000.1176595687866,
+        "median_rate_hz": 0.9998823542733588,
+        "p95_gap_ms": 1018.9826369285583,
+        "max_gap_ms": 1025.2115726470947
+      },
+      "/mavros/setpoint_raw/local": {
+        "n": 2129,
+        "span_s": 49.55189657211304,
+        "rate_n_over_span_hz": 42.96505577544664,
+        "median_dt_ms": 19.96588706970215,
+        "median_rate_hz": 50.085428035776125,
+        "p95_gap_ms": 28.46088409423828,
+        "max_gap_ms": 7068.303346633911
+      },
+      "/mavros/vision_pose/pose": {
+        "n": 8960,
+        "span_s": 49.437286138534546,
+        "rate_n_over_span_hz": 181.23972207721997,
+        "median_dt_ms": 1.3988018035888672,
+        "median_rate_hz": 714.8975626384864,
+        "p95_gap_ms": 24.35390949249268,
+        "max_gap_ms": 485.68153381347656
+      },
+      "/mocap/pose_enu": {
+        "n": 8954,
+        "span_s": 49.4372923374176,
+        "rate_n_over_span_hz": 181.11833348168597,
+        "median_dt_ms": 1.3775825500488281,
+        "median_rate_hz": 725.9093111803393,
+        "p95_gap_ms": 24.599790573120114,
+        "max_gap_ms": 485.67676544189453
+      },
+      "/mocap/velocity_enu": {
+        "n": 8936,
+        "span_s": 49.437278509140015,
+        "rate_n_over_span_hz": 180.75428643079337,
+        "median_dt_ms": 1.3484954833984375,
+        "median_rate_hz": 741.5671852899576,
+        "p95_gap_ms": 24.918460845947234,
+        "max_gap_ms": 485.32724380493164
+      },
+      "/mavros/local_position/pose": {
+        "n": 1460,
+        "span_s": 48.67582297325134,
+        "rate_n_over_span_hz": 29.99435676315753,
+        "median_dt_ms": 33.30254554748535,
+        "median_rate_hz": 30.027734623893014,
+        "p95_gap_ms": 43.61681938171386,
+        "max_gap_ms": 79.54287528991699
+      },
+      "/mavros/local_position/velocity_local": {
+        "n": 1460,
+        "span_s": 48.67543053627014,
+        "rate_n_over_span_hz": 29.994598587311756,
+        "median_dt_ms": 33.29873085021973,
+        "median_rate_hz": 30.031174596355566,
+        "p95_gap_ms": 43.70787143707275,
+        "max_gap_ms": 79.8797607421875
+      },
+      "/mavros/state": {
+        "n": 58,
+        "span_s": 47.679614305496216,
+        "rate_n_over_span_hz": 1.216452793187006,
+        "median_dt_ms": 999.7270107269287,
+        "median_rate_hz": 1.000273063816564,
+        "p95_gap_ms": 1010.1587772369385,
+        "max_gap_ms": 1016.972541809082
+      },
+      "/mavros/rc/in": {
+        "n": 973,
+        "span_s": 48.60373067855835,
+        "rate_n_over_span_hz": 20.01903941150018,
+        "median_dt_ms": 49.96895790100098,
+        "median_rate_hz": 20.01242455328387,
+        "p95_gap_ms": 59.931528568267815,
+        "max_gap_ms": 360.9788417816162
+      }
+    },
+    "missing": [
+      "/control/target",
+      "/mavros/setpoint_raw/attitude"
+    ]
+  },
+  {
+    "bag": "bag/6_free__20261017-070103",
+    "topics": {
+      "/vrpn/z0/pose": {
+        "n": 16411,
+        "span_s": 87.77256846427917,
+        "rate_n_over_span_hz": 186.97185563937086,
+        "median_dt_ms": 1.0762214660644531,
+        "median_rate_hz": 929.1767833407177,
+        "p95_gap_ms": 26.451301574707024,
+        "max_gap_ms": 377.0163059234619
+      },
+      "/traj/start": {
+        "n": 1,
+        "span_s": 0.0,
+        "rate_n_over_span_hz": NaN,
+        "median_dt_ms": NaN,
+        "median_rate_hz": NaN,
+        "p95_gap_ms": NaN,
+        "max_gap_ms": NaN
+      },
+      "/traj/reference": {
+        "n": 3535,
+        "span_s": 70.8072452545166,
+        "rate_n_over_span_hz": 49.92426957571142,
+        "median_dt_ms": 20.017147064208984,
+        "median_rate_hz": 49.95716906072084,
+        "p95_gap_ms": 24.238932132720947,
+        "max_gap_ms": 44.47746276855469
+      },
+      "/traj/progress": {
+        "n": 3535,
+        "span_s": 70.80722570419312,
+        "rate_n_over_span_hz": 49.92428336011845,
+        "median_dt_ms": 20.035147666931152,
+        "median_rate_hz": 49.912284981584726,
+        "p95_gap_ms": 24.171018600463867,
+        "max_gap_ms": 44.481515884399414
+      },
+      "/control/state": {
+        "n": 104,
+        "span_s": 89.18751239776611,
+        "rate_n_over_span_hz": 1.166082528865385,
+        "median_dt_ms": 1000.9262561798096,
+        "median_rate_hz": 0.9990746009767545,
+        "p95_gap_ms": 1014.1019582748413,
+        "max_gap_ms": 1018.6123847961426
+      },
+      "/control/target": {
+        "n": 4117,
+        "span_s": 89.77480888366699,
+        "rate_n_over_span_hz": 45.85918980161726,
+        "median_dt_ms": 20.05302906036377,
+        "median_rate_hz": 49.86777792969795,
+        "p95_gap_ms": 24.294674396514893,
+        "max_gap_ms": 7202.850103378296
+      },
+      "/mavros/setpoint_raw/attitude": {
+        "n": 8978,
+        "span_s": 90.00940227508545,
+        "rate_n_over_span_hz": 99.74513520889256,
+        "median_dt_ms": 9.839296340942383,
+        "median_rate_hz": 101.63328406309822,
+        "p95_gap_ms": 14.82300758361816,
+        "max_gap_ms": 93.58787536621094
+      },
+      "/mavros/vision_pose/pose": {
+        "n": 16463,
+        "span_s": 88.31810903549194,
+        "rate_n_over_span_hz": 186.40571203108638,
+        "median_dt_ms": 0.9977817535400391,
+        "median_rate_hz": 1002.2231780167264,
+        "p95_gap_ms": 27.134406566619873,
+        "max_gap_ms": 376.85346603393555
+      },
+      "/mocap/pose_enu": {
+        "n": 16461,
+        "span_s": 88.31784009933472,
+        "rate_n_over_span_hz": 186.38363417272924,
+        "median_dt_ms": 0.9851455688476562,
+        "median_rate_hz": 1015.0784123910939,
+        "p95_gap_ms": 27.270591259002682,
+        "max_gap_ms": 376.889705657959
+      },
+      "/mocap/velocity_enu": {
+        "n": 16460,
+        "span_s": 88.31716632843018,
+        "rate_n_over_span_hz": 186.37373326482466,
+        "median_dt_ms": 0.9708404541015625,
+        "median_rate_hz": 1030.0353634577602,
+        "p95_gap_ms": 27.27375030517578,
+        "max_gap_ms": 376.89733505249023
+      },
+      "/mavros/local_position/pose": {
+        "n": 2635,
+        "span_s": 88.05427885055542,
+        "rate_n_over_span_hz": 29.924724095146903,
+        "median_dt_ms": 33.362746238708496,
+        "median_rate_hz": 29.973551722782606,
+        "p95_gap_ms": 38.735759258270264,
+        "max_gap_ms": 55.43351173400879
+      },
+      "/mavros/local_position/velocity_local": {
+        "n": 2633,
+        "span_s": 88.0028829574585,
+        "rate_n_over_span_hz": 29.91947435713918,
+        "median_dt_ms": 33.379316329956055,
+        "median_rate_hz": 29.958672314164698,
+        "p95_gap_ms": 38.773643970489495,
+        "max_gap_ms": 56.498050689697266
+      },
+      "/mavros/state": {
+        "n": 98,
+        "span_s": 87.40897536277771,
+        "rate_n_over_span_hz": 1.1211663286666598,
+        "median_dt_ms": 1000.7290840148926,
+        "median_rate_hz": 0.9992714471613361,
+        "p95_gap_ms": 1016.7362213134766,
+        "max_gap_ms": 1030.2588939666748
+      },
+      "/mavros/rc/in": {
+        "n": 1756,
+        "span_s": 88.02356290817261,
+        "rate_n_over_span_hz": 19.949203849336154,
+        "median_dt_ms": 50.03094673156738,
+        "median_rate_hz": 19.98762896423551,
+        "p95_gap_ms": 55.92343807220459,
+        "max_gap_ms": 69.09894943237305
+      }
+    },
+    "missing": [
+      "/mavros/setpoint_raw/local"
+    ]
+  },
+  {
+    "bag": "bag/6_free__20261017-070446",
+    "topics": {
+      "/vrpn/z0/pose": {
+        "n": 7093,
+        "span_s": 37.9208083152771,
+        "rate_n_over_span_hz": 187.04770059298693,
+        "median_dt_ms": 0.964045524597168,
+        "median_rate_hz": 1037.295412390256,
+        "p95_gap_ms": 25.862479209899902,
+        "max_gap_ms": 375.43416023254395
+      },
+      "/traj/start": {
+        "n": 1,
+        "span_s": 0.0,
+        "rate_n_over_span_hz": NaN,
+        "median_dt_ms": NaN,
+        "median_rate_hz": NaN,
+        "p95_gap_ms": NaN,
+        "max_gap_ms": NaN
+      },
+      "/traj/reference": {
+        "n": 981,
+        "span_s": 19.587505102157593,
+        "rate_n_over_span_hz": 50.082948026491714,
+        "median_dt_ms": 19.983649253845215,
+        "median_rate_hz": 50.04091031109255,
+        "p95_gap_ms": 24.2933988571167,
+        "max_gap_ms": 45.984506607055664
+      },
+      "/traj/progress": {
+        "n": 981,
+        "span_s": 19.58750605583191,
+        "rate_n_over_span_hz": 50.08294558805871,
+        "median_dt_ms": 19.97840404510498,
+        "median_rate_hz": 50.0540482484143,
+        "p95_gap_ms": 24.23787117004394,
+        "max_gap_ms": 45.27139663696289
+      },
+      "/control/state": {
+        "n": 46,
+        "span_s": 35.06542181968689,
+        "rate_n_over_span_hz": 1.311833641601142,
+        "median_dt_ms": 1018.3920860290527,
+        "median_rate_hz": 0.9819400736893314,
+        "p95_gap_ms": 1021.6603755950928,
+        "max_gap_ms": 1022.7982997894287
+      },
+      "/control/target": {
+        "n": 1390,
+        "span_s": 35.6606924533844,
+        "rate_n_over_span_hz": 38.978491565103674,
+        "median_dt_ms": 19.980192184448242,
+        "median_rate_hz": 50.04956863119459,
+        "p95_gap_ms": 24.321842193603516,
+        "max_gap_ms": 7918.319940567017
+      },
+      "/mavros/setpoint_raw/attitude": {
+        "n": 3539,
+        "span_s": 35.81104850769043,
+        "rate_n_over_span_hz": 98.82424970718182,
+        "median_dt_ms": 9.870171546936035,
+        "median_rate_hz": 101.31536166769327,
+        "p95_gap_ms": 14.51510190963745,
+        "max_gap_ms": 398.8955020904541
+      },
+      "/mavros/vision_pose/pose": {
+        "n": 6987,
+        "span_s": 37.462196588516235,
+        "rate_n_over_span_hz": 186.50801704836002,
+        "median_dt_ms": 0.8418560028076172,
+        "median_rate_hz": 1187.8516001132823,
+        "p95_gap_ms": 26.101648807525635,
+        "max_gap_ms": 370.65625190734863
+      },
+      "/mocap/pose_enu": {
+        "n": 6995,
+        "span_s": 37.46633005142212,
+        "rate_n_over_span_hz": 186.70096565101093,
+        "median_dt_ms": 0.8280277252197266,
+        "median_rate_hz": 1207.6890296573567,
+        "p95_gap_ms": 26.333045959472624,
+        "max_gap_ms": 370.79572677612305
+      },
+      "/mocap/velocity_enu": {
+        "n": 6987,
+        "span_s": 37.44001030921936,
+        "rate_n_over_span_hz": 186.6185383576002,
+        "median_dt_ms": 0.8139610290527344,
+        "median_rate_hz": 1228.5600468658465,
+        "p95_gap_ms": 26.355266571044922,
+        "max_gap_ms": 370.63145637512207
+      },
+      "/mavros/local_position/pose": {
+        "n": 1080,
+        "span_s": 35.94876742362976,
+        "rate_n_over_span_hz": 30.042754658956593,
+        "median_dt_ms": 33.205270767211914,
+        "median_rate_hz": 30.11570081781824,
+        "p95_gap_ms": 38.62488269805908,
+        "max_gap_ms": 58.7611198425293
+      },
+      "/mavros/local_position/velocity_local": {
+        "n": 1078,
+        "span_s": 35.86389660835266,
+        "rate_n_over_span_hz": 30.058083530971786,
+        "median_dt_ms": 33.20479393005371,
+        "median_rate_hz": 30.116133294081322,
+        "p95_gap_ms": 38.60635757446289,
+        "max_gap_ms": 59.47065353393555
+      },
+      "/mavros/state": {
+        "n": 46,
+        "span_s": 35.289710521698,
+        "rate_n_over_span_hz": 1.3034960990036102,
+        "median_dt_ms": 998.2080459594727,
+        "median_rate_hz": 1.0017951709042827,
+        "p95_gap_ms": 1004.8718929290771,
+        "max_gap_ms": 1012.1948719024658
+      },
+      "/mavros/rc/in": {
+        "n": 718,
+        "span_s": 35.82860541343689,
+        "rate_n_over_span_hz": 20.03985339967284,
+        "median_dt_ms": 49.97444152832031,
+        "median_rate_hz": 20.01022861722835,
+        "p95_gap_ms": 55.88226318359375,
+        "max_gap_ms": 80.67989349365234
+      }
+    },
+    "missing": [
+      "/mavros/setpoint_raw/local"
+    ]
+  },
+  {
+    "bag": "bag/6_free__20261017-070935",
+    "topics": {
+      "/vrpn/z0/pose": {
+        "n": 8947,
+        "span_s": 46.32023620605469,
+        "rate_n_over_span_hz": 193.1553189884318,
+        "median_dt_ms": 1.2607574462890625,
+        "median_rate_hz": 793.1739788199698,
+        "p95_gap_ms": 21.999716758728027,
+        "max_gap_ms": 212.1717929840088
+      },
+      "/traj/start": {
+        "n": 1,
+        "span_s": 0.0,
+        "rate_n_over_span_hz": NaN,
+        "median_dt_ms": NaN,
+        "median_rate_hz": NaN,
+        "p95_gap_ms": NaN,
+        "max_gap_ms": NaN
+      },
+      "/traj/reference": {
+        "n": 1058,
+        "span_s": 21.147017002105713,
+        "rate_n_over_span_hz": 50.03069699592381,
+        "median_dt_ms": 20.015239715576172,
+        "median_rate_hz": 49.961929720071474,
+        "p95_gap_ms": 24.04227256774902,
+        "max_gap_ms": 44.73280906677246
+      },
+      "/traj/progress": {
+        "n": 1058,
+        "span_s": 21.147025108337402,
+        "rate_n_over_span_hz": 50.030677817792636,
+        "median_dt_ms": 20.003795623779297,
+        "median_rate_hz": 49.99051274105504,
+        "p95_gap_ms": 24.103260040283203,
+        "max_gap_ms": 44.698476791381836
+      },
+      "/control/state": {
+        "n": 61,
+        "span_s": 45.89212656021118,
+        "rate_n_over_span_hz": 1.3292040393893505,
+        "median_dt_ms": 1000.0859498977661,
+        "median_rate_hz": 0.9999140574889839,
+        "p95_gap_ms": 1020.5773830413818,
+        "max_gap_ms": 1033.365249633789
+      },
+      "/control/target": {
+        "n": 1942,
+        "span_s": 46.31462001800537,
+        "rate_n_over_span_hz": 41.93060418600053,
+        "median_dt_ms": 19.99521255493164,
+        "median_rate_hz": 50.01197147831064,
+        "p95_gap_ms": 23.543596267700195,
+        "max_gap_ms": 7542.591333389282
+      },
+      "/mavros/setpoint_raw/attitude": {
+        "n": 4553,
+        "span_s": 45.633222818374634,
+        "rate_n_over_span_hz": 99.77379897364366,
+        "median_dt_ms": 9.906172752380371,
+        "median_rate_hz": 100.9471594122673,
+        "p95_gap_ms": 14.343822002410887,
+        "max_gap_ms": 78.71627807617188
+      },
+      "/mavros/vision_pose/pose": {
+        "n": 8797,
+        "span_s": 45.6389696598053,
+        "rate_n_over_span_hz": 192.7519412811724,
+        "median_dt_ms": 1.0813474655151367,
+        "median_rate_hz": 924.7721309668174,
+        "p95_gap_ms": 22.42898941040039,
+        "max_gap_ms": 214.72764015197754
+      },
+      "/mocap/pose_enu": {
+        "n": 8797,
+        "span_s": 45.6388885974884,
+        "rate_n_over_span_hz": 192.7522836409324,
+        "median_dt_ms": 1.0654926300048828,
+        "median_rate_hz": 938.5330051465652,
+        "p95_gap_ms": 22.451817989349365,
+        "max_gap_ms": 214.72668647766113
+      },
+      "/mocap/velocity_enu": {
+        "n": 8793,
+        "span_s": 45.63898420333862,
+        "rate_n_over_span_hz": 192.6642354883255,
+        "median_dt_ms": 1.033782958984375,
+        "median_rate_hz": 967.3210332103321,
+        "p95_gap_ms": 22.433245182037336,
+        "max_gap_ms": 214.72859382629395
+      },
+      "/mavros/local_position/pose": {
+        "n": 1366,
+        "span_s": 45.5028338432312,
+        "rate_n_over_span_hz": 30.020108301522853,
+        "median_dt_ms": 33.265113830566406,
+        "median_rate_hz": 30.061523465496975,
+        "p95_gap_ms": 39.01834487915039,
+        "max_gap_ms": 53.536415100097656
+      },
+      "/mavros/local_position/velocity_local": {
+        "n": 1367,
+        "span_s": 45.5408730506897,
+        "rate_n_over_span_hz": 30.016991516136457,
+        "median_dt_ms": 33.258676528930664,
+        "median_rate_hz": 30.067341950006092,
+        "p95_gap_ms": 38.964688777923584,
+        "max_gap_ms": 53.084373474121094
+      },
+      "/mavros/state": {
+        "n": 56,
+        "span_s": 45.16494393348694,
+        "rate_n_over_span_hz": 1.239899690398587,
+        "median_dt_ms": 999.8135566711426,
+        "median_rate_hz": 1.0001864780964544,
+        "p95_gap_ms": 1003.7716627120972,
+        "max_gap_ms": 1013.4165287017822
+      },
+      "/mavros/rc/in": {
+        "n": 912,
+        "span_s": 45.565099477767944,
+        "rate_n_over_span_hz": 20.01531897115646,
+        "median_dt_ms": 49.94630813598633,
+        "median_rate_hz": 20.021499832927585,
+        "p95_gap_ms": 58.0521821975708,
+        "max_gap_ms": 72.07012176513672
+      }
+    },
+    "missing": [
+      "/mavros/setpoint_raw/local"
+    ]
+  }
+]
