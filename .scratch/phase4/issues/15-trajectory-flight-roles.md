@@ -472,6 +472,14 @@ x_ref = traj_reference(anchor_state(), ..., self.traj_pos, self.traj_vel, self.t
 2. **实飞验收**：本票所有结论来自用例与离线核读；两档「现场动作逐字相同」**没有实飞读数**。
 3. **新的控制后端**：没有任何第三种控制方式的代码；本轮只把接口形状留好。
 4. **`output_mode` 的 launch/CLI 之外的配置面**：只有 yaml 与 launch 参数，没有动态切换。
+5. **`run/rec.py` 的预期话题没跟着分档**（归票 19，本轮**不改别人的在制品**）：
+   场景 3/4/5 的 `expect` 写死 `/mavros/setpoint_raw/local`；第 2 档 `control` **不写**这条，
+   由 `mpc` 写 `/mavros/setpoint_raw/attitude` ⟹ 用第 2 档录 3/4/5 会在收口摘要里
+   误报"缺 `/mavros/setpoint_raw/local`"（包其实录到了，只是预期写错）。
+   建议改为 `^/mavros/setpoint_raw/(local|attitude)$` 并跑 `run/tests/test_rec.py`。
+6. **起链判据不到端到端**：`z0.py` 对 `mpc` 只等它自己的启动日志、对 `control` 只等
+   `/control/state` 有帧；**没有**"`/control/target` 已在流"的判据。链起全了但没接通的
+   情形，目前只能现场看 mpc 日志或 `ros2 topic hz /control/target`。
 
 ## 验收
 
