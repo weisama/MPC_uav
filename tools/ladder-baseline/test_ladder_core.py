@@ -19,6 +19,7 @@ import numpy as np
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
 from ladder_core import (  # noqa: E402
+    anchor_index,
     best_shift,
     interp_columns,
     make_grid,
@@ -26,6 +27,7 @@ from ladder_core import (  # noqa: E402
     summarize,
     track_window,
     tracking_metrics,
+    trim_window,
 )
 
 # 合成信号：半径 1 m、0.1 Hz 的圆 ⟹ 线速度 2π·0.1·1 = 0.628 m/s，全程动、没有静止段
@@ -92,6 +94,44 @@ def test容忍连丢两拍不算断档():
     win = track_window(states)
     assert win is not None and abs(win[0] - 0.0) < 1e-9, win
     assert abs(win[1] - 17.0) < 1e-9, win
+
+
+# ------------------------------------------------------------------ 锚点与窗口裁剪
+
+
+def test锚点取闸门打开前的最新一帧():
+    """闸门 10.0 打开时，节点手里只有 9.9 那一帧；10.1 是**未来**，不能用。
+
+    ★ 反例是"取最接近 `t_gate` 的那一帧"（会拿到 10.1）与"取第一帧"（会拿到 0.1）。
+    两种错都会让参考整体偏一个真实位移，且在别的读数上完全看不出来。
+    """
+    t = np.array([0.1, 5.0, 9.9, 10.1, 20.0])
+    assert anchor_index(10.0, t) == 2
+    assert anchor_index(9.9, t) == 2          # 正好命中也要算"已收到"
+    assert anchor_index(0.05, t) == 0          # 闸门比第一帧还早 ⟹ 用第一帧
+    assert anchor_index(100.0, t) == 4
+
+
+def test空测量取锚点要报错():
+    try:
+        anchor_index(1.0, np.array([]))
+    except ValueError:
+        return
+    raise AssertionError("空序列应当报错，不能静默返回 0")
+
+
+def test窗口裁剪只动左端():
+    assert trim_window((10.0, 50.0), skip_s=5.0) == (15.0, 50.0)
+    assert trim_window((10.0, 50.0), last_s=30.0) == (20.0, 50.0)
+    # 两个都给：先切头，再留尾；取更靠右的那个起点
+    assert trim_window((10.0, 50.0), skip_s=25.0, last_s=10.0) == (40.0, 50.0)
+    # 切完为空必须报错 —— 静默的零长窗口会在 make_grid 里以别的原因炸
+    try:
+        trim_window((10.0, 50.0), skip_s=40.0)
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("切完为空应当报错")
 
 
 # ------------------------------------------------------------------ 网格与插值

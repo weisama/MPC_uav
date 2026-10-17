@@ -37,6 +37,8 @@ import numpy as np
 __all__ = [
     "TRACK_TOKEN",
     "track_window",
+    "anchor_index",
+    "trim_window",
     "make_grid",
     "interp_columns",
     "tracking_metrics",
@@ -99,6 +101,49 @@ def _longer(a: Optional[Tuple[float, float]], b: Tuple[float, float]) -> Tuple[f
     if a is None:
         return b
     return b if (b[1] - b[0]) > (a[1] - a[0]) else a
+
+
+def anchor_index(t_gate: float, t_samples) -> int:
+    """模型预测控制锚点规则：闸门**第一次打开**那一拍用的测量，是当时**已收到的最新一帧**。
+
+    返回 `t_samples` 里满足 `t <= t_gate` 的最后一帧下标；一帧都没有（闸门比第一帧
+    测量还早）就用第 0 帧 —— 与节点的行为一致：它不会有"未来的测量"。
+    空序列直接报错（没有测量就谈不上锚点）。
+
+    ★★ 这是"最近一帧"，**不是"最接近 `t_gate` 的那一帧"**：闸门打开后到达的样本
+    在那一拍还不可见，拿它当锚点会把一个**未来位移**算进参考里。
+    """
+    t = np.asarray(t_samples, dtype=float)
+    if t.size == 0:
+        raise ValueError("没有测量帧，无法取锚点")
+    if np.any(np.diff(t) < 0):
+        raise ValueError("t_samples 必须单调不减")
+    i = int(np.searchsorted(t, float(t_gate), side="right")) - 1
+    return max(i, 0)
+
+
+def trim_window(
+    window: Tuple[float, float],
+    skip_s: float = 0.0,
+    last_s: Optional[float] = None,
+) -> Tuple[float, float]:
+    """把窗口**前** `skip_s` 秒切掉，再只留末尾 `last_s` 秒（`None` = 不限）。
+
+    用于阶梯 3 的「系绳悬停 **30 s**」：整段 TRACK 里既有爬升瞬态又有稳态，
+    判据只对稳态那 30 s 说话，切法必须写成参数、进 JSON，不能靠人眼挑。
+    切完为空就报错 —— 静默给一个零长窗口会让 `make_grid` 在别处炸，看着像网格的问题。
+    """
+    lo, hi = float(window[0]), float(window[1])
+    if skip_s < 0:
+        raise ValueError(f"skip_s 不能为负：{skip_s}")
+    lo = lo + skip_s
+    if last_s is not None:
+        if last_s <= 0:
+            raise ValueError(f"last_s 必须为正：{last_s}")
+        lo = max(lo, hi - float(last_s))
+    if lo >= hi:
+        raise ValueError(f"切完窗口为空：[{lo}, {hi}]（原窗口 {window}）")
+    return (lo, hi)
 
 
 def make_grid(t0: float, t1: float, hz: float) -> np.ndarray:

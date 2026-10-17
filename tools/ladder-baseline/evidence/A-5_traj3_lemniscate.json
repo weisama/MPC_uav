@@ -4,6 +4,17 @@
   "cmd_topic": "/mavros/setpoint_raw/local",
   "cmd_type": "mavros_msgs/msg/PositionTarget",
   "actual_topic": "/mocap/pose_enu",
+  "window_rule": "/control/state 里最长的一段 AUTO/TRACK",
+  "window_untrimmed_s": [
+    1791454734.787083,
+    1791454746.808489
+  ],
+  "window_trim": {
+    "skip_s": 0.0,
+    "last_s": null,
+    "applied": false
+  },
+  "anchor": null,
   "n_cmd": 2129,
   "n_actual": 8954,
   "segments": [
@@ -56,6 +67,23 @@
       "z_max": 0.017515525855025582
     }
   ],
+  "readings": {
+    "progress_max": 1.0,
+    "battery_v_min": 22.894001007080078,
+    "battery_v_max": 24.631000518798828,
+    "state_window_total": 12,
+    "state_window_armed_offboard": 12,
+    "actual_z_min": 0.9718005695690711,
+    "actual_z_min_t_rel": 8.620881795883179,
+    "peak_xy": 0.8160496258988849,
+    "peak_xy_t_rel": 6.819999933242798,
+    "peak_z_abs": 0.018516061142297535,
+    "peak_z_t_rel": 8.599999904632568,
+    "z_abs_settle_t_rel": 0.0,
+    "tail10_dx": -0.8167992835498799,
+    "tail10_dy": -0.6066284082435366,
+    "tail10_net": 1.0174276855362665
+  },
   "window_s": [
     1791454734.787083,
     1791454746.808489
