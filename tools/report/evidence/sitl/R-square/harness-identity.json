@@ -8,7 +8,7 @@
   "求解汇总抽取": "python3 tools/report/evidence/sitl/extract_solver_summary.py --jsonl /tmp/phase5-sitl/R-square/R-square-dut.jsonl --tag R-square --out tools/report/evidence/sitl/R-square/solver-summary.json"
  },
  "git": {
-  "head": "1187db5f49394594a96a46add87f799bb2584f73",
+  "head": "045615be32ff6a98a516dd23048d2aefe8c655a5",
   "src_nmpc_dirty": "",
   "本票范围外的改动": "共享工作树里还有别的票/并行会话的在制品 （`.scratch/phase5/` 其余票、`docs/report/chapters/` 等）；本票只新增 `tools/report/evidence/sitl/**` 并改本票文件。"
  },

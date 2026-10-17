@@ -1,37 +1,37 @@
 {
  "tag": "R-square",
  "source": "原始 DUT JSONL（未入库；脚本见同目录 extract_solver_summary.py）",
- "n_frames": 5627,
+ "n_frames": 5696,
  "bad_lines": 0,
- "n_solved": 5474,
+ "n_solved": 5679,
  "fallback_dist": {
-  "prestream": 153,
-  "warmup": 10,
-  "normal": 5464
+  "prestream": 17,
+  "warmup": 5,
+  "normal": 5674
  },
  "solve_ms_all_solved": {
-  "n": 5474,
-  "mean": 3.267,
-  "p50": 3.181,
-  "p95": 4.056,
-  "max": 23.287,
-  "min": 2.088
+  "n": 5679,
+  "mean": 2.985,
+  "p50": 3.071,
+  "p95": 3.313,
+  "max": 12.916,
+  "min": 2.015
  },
  "solve_ms_steady": {
-  "n": 5464,
-  "mean": 3.265,
-  "p50": 3.181,
-  "p95": 4.05,
-  "max": 23.287,
-  "min": 2.088
+  "n": 5674,
+  "mean": 2.983,
+  "p50": 3.071,
+  "p95": 3.312,
+  "max": 6.462,
+  "min": 2.015
  },
  "warmup": {
-  "n": 10,
-  "first_solved_ms": 7.563
+  "n": 5,
+  "first_solved_ms": 12.916
  },
  "degraded_frames": 0,
  "solve_failed_frames": 0,
- "solve_ok_missing_frames": 153,
+ "solve_ok_missing_frames": 17,
  "saturation": {
   "frames_with_sat": 0,
   "by_name": {}

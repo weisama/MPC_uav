@@ -69,12 +69,12 @@ SITL 驱动器上跑起来，本轮在 `tools/report/evidence/sitl/` 下加了�
 | tag | DUT 帧 / 真值点 | 参考 span | OFFBOARD 窗口（记录器钟） | 离地段高度 | 稳态误差 水平均值/最大；垂直绝对值均值 | 求解 p50/p95/最坏（ms） |
 |---|---|---|---|---|---|---|
 | `R-hover` | 7774 / 20410 | 39.64 s（参考恒 0） | —（traj 档不判轨迹） | [0.151, 1.736] m | 0.0114 / 0.0203；0.0002 | 3.154 / 3.624 / **20.138** |
-| `R-square` | 5519 / 15237 | 17.88 s（1×1 m） | [15.43, 71.45] s，参考移动段 [36.63, 44.62] 整段在内 | [0.153, 1.891] m | 0.0126 / 0.0192；0.0006 | 3.181 / 4.050 / **23.287** |
+| `R-square` | 5602 / 15352 | 17.88 s（1×1 m） | [14.92, 70.93] s，参考移动段 [36.62, 44.60] 整段在内 | [0.154, 1.736] m | 0.0121 / 0.0246；0.0002 | 3.071 / 3.313 / **12.916**（稳态最坏 6.462） |
 | `R-lemniscate` | 6529 / 17251 | 26.22 s（2×1 m） | [15.24, 80.25] s，参考移动段 [36.96, 49.14] 整段在内 | [0.154, 1.776] m | 0.0130 / 0.0317；0.0003 | 3.160 / 3.612 / **10.738** |
 
 - 三趟 `fallback` 分布只有 `prestream` / `warmup` / `normal`，**没有** `hold`/`hover` 兜底；
 - 退化拍数 **0**、求解失败 **0**、饱和拍数 **0**（`sat` 全是空列表）；
-- 移动段跟踪误差（**只留档，spec 无数值界**）：正方形水平均值 0.404 m / 最大 0.635 m；
+- 移动段跟踪误差（**只留档，spec 无数值界**）：正方形水平均值 0.398 m / 最大 0.615 m；
   8 字 0.505 / 0.819 m。**没有**拿它判成败，操作者 2026-09-30 的「不编阈值」裁定照旧。
 - 每份 `harness-identity.json` 里 `mismatch="none"`、`mismatch_markers=[]`；
   被控对象是标称 `z0.param`（sha256 `94e64ec8…`），不是 `mass+30`。
@@ -132,11 +132,13 @@ SITL 驱动器上跑起来，本轮在 `tools/report/evidence/sitl/` 下加了�
    但本批回落更深。另有**一次未入库**的 `R-lemniscate` 试跑（同配置，在补 `FRAME_KEYS` 之前）
    在 t≈14.4 s 跌到 **z=0.012 m**（1.2 cm AGL）；入库这一趟最低 0.154 m。**同配置两趟差这么多**
    ⟹ 起飞段对时序/负载敏感，报告里别拿单趟最低点当结论。
-2. **求解最坏值受本机负载污染**：三趟跑的同时，另一个会话在跑全量 pytest
-   （`/tmp/pytest_ch03_full.log`，13:56:37 起，load average ≈ 4.7）。p95 只有 3.6–4.1 ms、
-   `solve_ok` 全真、退化 0，但最坏出现 20.1 / 23.3 ms 的**单拍**尖峰（`over_10` 7/12/2 拍）。
-   若报告要引用「实测最坏求解时间」，建议机器空闲时另跑一趟；本轮的 `solver-summary.json`
-   如实记录了这些尖峰，**没有**为了好看去截断。
+2. **求解最坏值受本机负载污染（已重跑最坏那趟）**：首轮三趟跑的同时，另一个会话在跑全量
+   pytest（`/tmp/pytest_ch03_full.log`，13:56:37 起，load average ≈ 4.7）。p95 只有
+   3.6–4.1 ms、`solve_ok` 全真、退化 0，但最坏出现 20.1 / 23.3 ms 的**单拍**尖峰
+   （`over_10` 7/11/2 拍）。按操作者裁定「只重跑最坏的那趟」，2026-10-17 15:09 在机器空闲
+   （load ≈ 0.16）时重跑了 `R-square`：`over_10` 11 → **1** 拍、稳态最坏 23.287 → **6.462 ms**、
+   p95 4.050 → **3.313 ms**；入库读数已换成本轮。`R-hover` / `R-lemniscate`（最坏 20.1 / 10.7 ms）
+   保留首轮读数。旧一轮的 summary 只在 `/tmp` 备份，未入库。
 3. `summary.json` 的 `dut.ages_ok=false` 是 **A 档旧口径**：B 档只有 `age_state_s` 一条分龄，
    A 档的 `age_pos_s`/`age_att_s` 本就不存在；控制台判据⑧ 已按 B 档口径判过（通过）。
 4. `判据②·轨迹1`（原地悬停）在这三趟里是「**没做**」：`--reference-source traj` 下不判；
@@ -154,14 +156,35 @@ SITL 驱动器上跑起来，本轮在 `tools/report/evidence/sitl/` 下加了�
 
 #### 6. 收尾检查
 
-- 跑完后已停掉本轮起的 mavros；`ps` 里没有 `px4_sitl` / `MicroXRCE` / `mocap_replay`，
-  也没有 14540/14580/8888 的 UDP listener。
+- 两轮跑完后均已停掉本轮起的 mavros（含 15:09 的 `R-square` 重跑）；`ps` 里没有
+  `px4_sitl` / `MicroXRCE` / `mocap_replay`，也没有 14540/14580/8888 的 UDP listener。
 - **没有碰真机链路**：全程 `ROS_DOMAIN_ID=55`（真机 0、bench 73）。
 - 另一个会话的 pytest 子进程（`mpc_node.py -p tau_s:=0.0`，cwd `~/.cache/mpc-ocp-codegen`）
   仍在跑；**不是本轮起的，没有杀**。
 - 相关测试：`pytest tools/px4-sitl/test_tier_b_judges.py tools/px4-sitl/test_mocap_model.py -q`
   ⟹ **103 passed**。全量套件由另一个会话在跑，本轮没有重复起一份。
 
-**请操作者裁定**：① 起飞欠阻尼是否接受为"nominal 仿真"的已知形态；② 是否需要机器空闲时
-重跑一轮来给出干净的求解最坏值；③ 上述包装式适配是否可作为 Phase 5 的正式口径
-（若否，替代方案是改 `verify_tier_b_seam3.py`，但那会碰归档证据共用的文件）。
+#### 7. 操作者裁定（2026-10-17）与落地
+
+1. **起飞欠阻尼**：**接受为 nominal 仿真的已知形态**。报告如实描述，引 archived Phase 3 的
+   F0/F4 同现象作旁证，不再深挖。
+2. **求解最坏值**：**只重跑最坏的那趟**（`R-square`）。已在机器空闲时重跑，读数已替换
+   （见 §4.2 与 §1 表）。
+3. **包装式适配**（另起 mavros + 脚本内三处补丁）：**认，作为 Phase 5 正式口径**。
+   后续票（含票 01 取数）沿用 `tools/report/evidence/sitl/run_nominal_sitl.py` 这条路径；
+   `README.md` 已按此口径记录，共享 `verify_tier_b_seam3.py` 仍不改。
+4. **悬停模型绕过**（`build_hover_model.py` 把噪声窗口终点改到包尾）：**认，属数据缺陷的
+   合理绕行**；绕过写在 `models/R-hover-model.json` 的 `segment.how` 与各
+   `harness-identity.json` 里。
+
+本票的人工裁定项已全部落定。是否把状态转 `done` 仍由操作者确认（本会话不自行 promote）。
+
+#### 8. 重跑与票 01 的时序冲突（**请操作者转给票 01**）
+
+15:09 的 `R-square` 重跑**替换了** `tools/report/evidence/sitl/R-square/R-square-summary.json`
+（旧文件 sha256 `d687277a…`，大小 9,119,717 B）。但票 01 已在 15:0x 提交（`045615b`），
+其 `docs/report/data/square.json` 的 `inputs.sim_summary.sha256` 仍是旧快照
+（`d687277a…`），而当前文件已不同。⟹ **票 01 的 `square.csv` / `square.json` 需要重跑
+`python3 tools/report/build.py --scene square`**（`build.py` 的 sha256 核对会报这一条，
+不会静默通过）。本票**没有**改票 01 的任何文件（并行会话的在制品），只在此记录。
+`hover` / `lemniscate` 两源的 summary 未变，不受影响。
