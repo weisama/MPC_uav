@@ -1,6 +1,6 @@
 # 15: 让菜单 9 的模型预测控制也能用开始键飞轨迹 1/2/3/4 —— 两种控制平替、共用 `control`/`traj`/开始键
 
-Status: ready-for-agent
+Status: done
 Type: task
 
 ## What to build（2026-10-17 操作者原话）
@@ -465,6 +465,9 @@ x_ref = traj_reference(anchor_state(), ..., self.traj_pos, self.traj_vel, self.t
 
 ## 本轮**没做**（不静默）
 
+> ★ 2026-10-17 收口后回看：第 **2** 条（实飞验收）已由操作者完成并裁定收口，证据见文末
+> 「收口」条；第 1、3、4、5、6 条仍成立。
+
 1. **飞行中重选轨迹**（§1.4 / §8①）：`mpc_node` 的 `traj_pos` 收到后不回 `None` 的行为未改；
    第 2 档飞行中重选轨迹仍会停在最后一个参考上。要接上得改 `traj` 的重选语义或让 `control`
    在参考断流时重发 `/traj/start` —— **本轮没动**，因为两档共用 `control` 之后，
@@ -538,7 +541,13 @@ x_ref = traj_reference(anchor_state(), ..., self.traj_pos, self.traj_vel, self.t
       （就地标注）；`nmpc/README.md` “不再选 traj”说得太满；根 `README.md` 仍写四档。
       驳回并记录理由：`absolute_reference`/`traj_reference` 合并与测试夹具复制属判断类气味，
       本轮不动；`publish_setpoint` 的空发布者守卫已有注释说明，不是静默失败〕
-- [ ] **实飞验收**（归操作者）：两档分别按开始键飞轨迹 1/2/3/4；本票不代做
+- [x] **实飞验收**（归操作者，2026-10-17 裁定「收工」）：模型预测控制档已用开始键飞轨迹 4/1/2/3
+      〔`bag/6_free__20261017-020757` 轨迹 4、`070103` 轨迹 1、`070446` 轨迹 2、`070935` 轨迹 3；
+      后三份 `/control/state` 序列含 `WAIT_START → TRACK`（开始键②松手后进 TRACK），
+      四份 `/traj/reference` 形状与轨迹编号逐一吻合（见 `bag/README.md`）。
+      020757 是统一流程之前的独立档，包内无 `/control/state`，开始键这一步无包内锚。
+      offboard 档轨迹 1/2/3 见 2026-10-08 的 `bag/3/4/5`；**offboard 轨迹 4 无录制锚**，
+      按操作者裁定收口，不据此声称已验证〕
 
 ## Comments
 
@@ -581,3 +590,29 @@ x_ref = traj_reference(anchor_state(), ..., self.traj_pos, self.traj_vel, self.t
 - **提交**：只 add 本票路径。⚠️ `run/z0.py`、`run/tests/test_z0_menu.py` 同一文件里带着
   **先行未提交**的票 14 二定与 Ctrl-C 处置改动（本会话未改那些行）；整文件纳入并在提交信息里
   逐项写明。其余在制品（`src/traj/`、`run/rec.py`、`bag/`、`.scratch/09`、`.scratch/14` 等）不提交。
+
+### 2026-10-17 —— 收口（操作者裁定「票14和15都收工」）
+
+- **票 14**：已以 `wontfix` 收口（被本票取代）；本次不改其内容，只把它已经写在票面的
+  收口块一并纳入提交。
+- **本票**：`Status: ready-for-agent` → **`done`** —— 是「**做完了**」那一种，不是「裁定不做」。
+  此前 `Status` 停着不动，是因为「归谁收口是操作者的裁定」；这次裁定到了。
+- **实飞证据（模型预测控制档）**：
+  - `bag/6_free__20261017-020757` → 轨迹 **4**（起飞；独立档，早于本票统一流程）
+  - `bag/6_free__20261017-070103` → 轨迹 **1**（悬停 60 s）
+  - `bag/6_free__20261017-070446` → 轨迹 **2**（1 m 正方形）
+  - `bag/6_free__20261017-070935` → 轨迹 **3**（1 m 八字）
+  后三份的 `/control/state` 都走了 `AUTO/TAKEOFF → AUTO/HOVER → AUTO/WAIT_START →
+  AUTO/TRACK → MANUAL/LAND`；四份的 `/traj/reference` 形状与轨迹编号逐一吻合
+  （0→0.2 m / 恒 0 / 0→1 m 方形 / ±1±0.5 八字），见 `bag/README.md`。
+- **offboard 档**：轨迹 1/2/3 的记录是 2026-10-08 的 `bag/3_traj1_hover`、
+  `4_traj2_square`、`5_traj3_lemniscate`；**轨迹 4 的 offboard 实飞没有录制锚** ——
+  按操作者「收工」裁定收口，不据此声称已验证。
+- ⚠️ **依赖仍在工作树、HEAD 没有**：轨迹 4 的 `src/traj` 实现（`kTakeoff` /
+  `takeoff_height_m` / 斜坡 + 用例）与本票部分文档仍是未提交改动
+  （现算：`git show HEAD:src/traj/include/traj/trajectories.hpp | grep Takeoff` 为空）。
+  本票收口**只提交票面**，不替并行会话提交它的在制品；HEAD 若要具备轨迹 4，
+  需另一次提交（先确认那些改动归属与完整性）。
+- **包修复**：`070103` 收口时 `.zstd` 尾部截断，2026-10-17 用解压出的完整 db3 重压修复；
+  原因、验证与新旧哈希见该包 `session.json` 的 `repair` 块。
+- **验收清单**：顶层 `## 验收` 无未勾项；本票 Comments 里没有第二份验收副本。
