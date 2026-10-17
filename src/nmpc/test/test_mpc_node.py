@@ -70,8 +70,8 @@ import pytest
 from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
 
 from bench import Scenario
-from bench.timeline import (mocap_pose_jump, mocap_stamp_rewind, silence_for,
-                            state_change)
+from bench.timeline import (Event, mocap_pose_jump, mocap_stamp_rewind,
+                            silence_for, state_change)
 from nmpc.params import PITCH_RATE_MAX, Z0Params
 
 #: session 级的 ROS 上下文（在 `test/conftest.py` 里）—— 本模块的每条用例都要起 DUT
@@ -461,6 +461,97 @@ def test_闸门源静默超过阈值之后停发_恢复之后重开():
         sc.advance_to(t0 + 9.0)
         n_after = len(_sp_between(sc, t0 + 7.0, t0 + 9.0))
         assert n_after > 0, "状态恢复之后没有重新开始发 setpoint（闸门没重开）"
+
+
+def test_预流_只在那两档发悬停帧_别的关闸原因照旧一帧不发(tmp_path):
+    """★★ `offboard_prestream`（ticket 14 二定）：闸门关着时**只**在 `not_armed` / `not_offboard`
+    这两档发一帧**悬停**，别的关闸原因照旧一帧不发。
+
+    ★ 它在解决什么：闸门关着 ⟹ 一帧都不发 ⟹ 换载体后 **setpoint 就是心跳** ⟹
+      操作者想手动把飞机带进 OFFBOARD 时，飞控因为"1 s 内没收到 setpoint"**拒绝**，
+      而且拒绝得毫无线索（`/mavros/state` 上 mode 就是不变）。
+
+    ★★ 这条用例的**鉴别力全在"哪几档发"**上，所以两个极端都要量（缺一半就是假绿）：
+      · 只量"开了 ⟹ 有帧"：把名单放宽成**所有**关闸原因也能过 —— 而那一档的后果是
+        **安全网消失**（输入不可信时我们仍然在发 ⟹ 飞控不会把我们踢出 OFFBOARD）。
+      · 只量"闸门关着一帧不发"：那在**默认档**就成立，什么都没验到。
+    ⚠️ 两条负向**不是**同一件事的重复：一条关的是闸门源（`status_stale`：我们的知识过期），
+      一条关的是测量（动捕静默 ⟹ `no_mocap`/`mocap_stale`：飞机在哪都不可信）。
+      "顺手全放"是最可能的错法，但只放一半的实现也见得到，所以两条各钉一次。
+
+    ★ 帧的**内容**也要量（必须是**悬停**）：`thrust = t_hover/t_max`、三个角速率恒 0。
+      ⛔ 若预流发的是"上一帧解"或"零推力"，飞机在 OFFBOARD 里会直接掉或飞 ——
+      而话题面上"有帧在流"**照样成立**（这正是它在台架上必须被钉住的原因）。
+      ★ 它的**权限**只有"让飞控收下我们"：不在 OFFBOARD 时飞控不消费这一帧的姿态/角速率
+      （第一手 PX4 1.14.3 `mavlink_receiver.cpp:1562` / `:1592`；`offboard_control_mode` 那一路
+      在 `:1530-1536`），见 `mpc_node.REASONS_PRESTREAM`。
+
+    ★ 用 `log_file` 读 JSONL 判"这一帧走的是预流那条路"（`fallback == "prestream"`）而不是
+      只看"有帧"：闸门**开着**时也有帧，两者在话题面上长得一模一样。
+    """
+    log = tmp_path / "prestream.jsonl"
+    z0 = Z0Params()
+    hover = z0.t_hover / z0.t_max
+    with _scenario(offboard_prestream=True, log_file=str(log), log_every=1) as sc:
+        _wait_dut_up(sc)
+
+        # ① `not_armed`（未解锁，人还在准备）—— **应该**有预流帧。
+        #    ★ 这一段的所有帧都在**解锁之前**（下面才 arm_and_offboard）⟹
+        #      "这一档的预流帧是发在未解锁状态下的"这件事由**构造**保证，不是靠时序假设。
+        sc.wait_for(lambda: len(_sp_frames(sc)) >= 5, timeout_s=10.0,
+                    message="开了 offboard_prestream，未解锁这一段却一帧都没发")
+        sc.hold(0.5)                          # 攒够几帧再判内容
+        assert not sc.fake.state_frames[-1].msg.armed, "前提不成立：夹具报告的已经是解锁状态"
+        rows = [r for r in _读日志(log) if r.get("fallback") == "prestream"]
+        assert rows, ("有帧在流，但逐帧日志里一帧 `fallback=prestream` 都没有 ⟹ "
+                      "那些帧不是预流那条路发的（闸门不是关着？）")
+        for r in rows:
+            assert r["armed"] is False, "这一段都还没解锁，日志里却是已解锁 ⟹ 判据对不上"
+            assert r["thrust"] == pytest.approx(hover, abs=1e-4), \
+                (f"预流帧的推力是 {r['thrust']}，不是悬停归一化推力 {hover:.4f} —— "
+                 "预流必须发**悬停**帧（发上一帧解/零推力会让飞机在 OFFBOARD 里掉或飞）")
+            assert r["body_rate_x"] == pytest.approx(0.0, abs=1e-6) \
+                and r["body_rate_y"] == pytest.approx(0.0, abs=1e-6) \
+                and r["body_rate_z"] == pytest.approx(0.0, abs=1e-6), \
+                f"预流帧的角速率不为 0（{r['body_rate_x']}, {r['body_rate_y']}, {r['body_rate_z']}）"
+        assert "not_armed" in sc.dut_log(), \
+            f"闸门理由不是 not_armed（日志尾：{sc.dut_log()[-400:]!r}）"
+
+        # ② 解锁 + OFFBOARD ⟹ 闸门开，走的是正常帧（不再是预流）
+        n0 = len(_sp_frames(sc))
+        _arm_and_offboard(sc)
+        sc.wait_for(lambda: len(_sp_frames(sc)) >= n0 + 20, timeout_s=10.0,
+                    message="解锁切 OFFBOARD 之后没有正常帧在流（闸门没开）")
+
+        # ③ `status_stale`（闸门源静默 > `status_timeout_s` = 2.5 s）—— **不该**有帧
+        t0 = sc.t()
+        sc.timeline.extend(silence_for(sc.fake, "state", at_s=t0 + 0.2, duration_s=4.0))
+        sc.advance_to(t0 + 4.2)
+        n_stale = len(_sp_between(sc, t0 + 3.3, t0 + 4.2))
+        assert n_stale == 0, (f"status_stale 期间还在发 {n_stale} 帧 —— 预流的名单被放到了"
+                              "「所有关闸原因」上 ⟹ 输入不可信时飞控也不会把我们踢出 OFFBOARD")
+        assert "status_stale" in sc.dut_log(), \
+            f"停发的理由不是 status_stale（日志尾：{sc.dut_log()[-500:]!r}）"
+
+        # ④ 恢复（正控：上面那句"零帧"不是节点死了），再让**动捕**静默 —— 同样不该有帧
+        sc.advance_to(t0 + 9.0)
+        n_back = len(_sp_between(sc, t0 + 7.0, t0 + 9.0))
+        assert n_back > 0, "状态恢复之后闸门没有重开 ⟹ 上面那条零帧断言没鉴别力"
+
+        t1 = sc.t()
+        sc.timeline.extend([
+            Event(at_s=t1 + 0.2, action=sc.mocap_source.pause, label="开始：动捕静默"),
+            Event(at_s=t1 + 4.2, action=sc.mocap_source.resume, label="恢复：动捕"),
+        ])
+        sc.advance_to(t1 + 3.5)
+        # 窗口从 t1+2.6 起：动捕静默 0.2 s + `mocap_timeout_s` 0.5 s 之后判据才可能成立，
+        # 留大一点余量（静默到 t1+4.2 结束，窗口整段都在静默里）。
+        n_nomocap = len(_sp_between(sc, t1 + 2.6, t1 + 3.5))
+        assert n_nomocap == 0, \
+            f"动捕静默（位置不可信）期间还在发 {n_nomocap} 帧 —— 预流的名单里混进了测量那几条"
+        log_all = sc.dut_log()
+        assert "mocap_stale" in log_all or "no_mocap" in log_all, \
+            f"闸门理由里没有 mocap 那几条（日志尾：{log_all[-500:]!r}）"
 
 
 def test_闸门源超时阈值_2_5_下正常跑不报_stale_而_0_75_下会():
@@ -1971,10 +2062,16 @@ def test_兜底期间垂直偏置冻结但不清零(tmp_path):
 # ─────────────────── 轨迹参考 `/traj/reference`（ticket 17）───────────────────
 
 #: 假 `traj` 上电时**不动**（`FakeTraj.running` 只有收到 `/traj/start` 才为真，见它的 ★★ 第 1 条）
-#: ⟹ 本组的用例必须自己按一下"开始"。⚠️ **Phase 2 里没有那个按键的合法主人**：
-#: 真身上是 `control` 节点发的（`/traj/start`），而 `mpc_node` **不接管轨迹几何**（本票的边界）。
-#: 所以按下它的这一方在台架上就是**测试自己**（= 操作员）—— 别把它挪进 DUT，
-#: 那会让"参考还没来"那条闸门（`no_traj_reference`）永远走不到。
+#: ⟹ 本组的用例必须自己按一下"开始"。
+#: ☠️ **2026-10-16（ticket 14 二定）这里原本写着「Phase 2 里没有那个按键的合法主人 …
+#:   `mpc_node` 不接管轨迹几何」** —— 那句话现在**只对一半**：`mpc_node` 仍然不碰几何，
+#:   但它**多了一个可选的主人身份**（参数 `start_traj_reference`，默认关）：
+#:   模型预测控制档下 `control` 不在场，再没人发这一帧的话，`traj` 就永远在"等开始"、
+#:   而我们永远在"等参考"—— 两边都正常，飞机不动（见
+#:   `test_自发起步_开了之后由节点自己按开始键_没人按就一直卡着`）。
+#:   ⛔ 但**这一组**（下面那几条）仍然由测试自己按：它们要验的是"参考到了之后怎么样"，
+#:   而那一条闸门（`no_traj_reference`）必须**走得到** —— 让 DUT 替我们按开始键的话，
+#:   它当场就跨过去了。所以"谁按开始键"这件事在**这一组**里照旧是测试自己（= 操作员）。
 _TOPIC_TRAJ_START = "/traj/start"
 
 # ⚠️ **本组对"别的会话"比本文件其它用例更敏感**（第一手，2026-09-30）：本机的台架都跑在
@@ -2238,6 +2335,252 @@ def test_没有参考时闸门不开_理由是_no_traj_reference():
         _按下开始键(sc, traj)                 # 正控：参考一到，闸门当场开
         sc.wait_for(lambda: len(_sp_frames(sc)) >= 5, timeout_s=10.0,
                     message="参考送上去了闸门仍不开 ⟹ 上面那句'零帧'不是 no_traj_reference 拦的")
+
+
+def test_自发起步_开了之后由节点自己按开始键_没人按就一直卡着():
+    """★★ `start_traj_reference`（ticket 14 二定）：**模型预测控制档没有 `control` 在场**，
+    所以那一个档要由 `mpc_node` 自己发 `/traj/start`；不开就维持老行为（谁都不发）。
+
+    ★★ 为什么这条非有不可：`traj` 的"选轨迹"与"开始"是**两条**消息（见 `traj_node.cpp` 文件头），
+      而没人按开始键时**两边都正常**——`traj` 说"我准备好了，等开始"、我们说"闸门关着，
+      理由是 `no_traj_reference`"——**日志里找不出一条错**，飞机就是不动。
+      这条用例把那个状态造出来（两个方向都造），因为它是这一档**唯一**会踩的坑。
+
+    ★ 两个方向的鉴别力（缺一半就是一个假断言）：
+      · **开**：全程**没有任何人**按开始键（测试不调 `_按下开始键`）⟹ 参考必须自己上线、
+        闸门必须开、必须有下行帧。谁把这个参数删掉/写死成关，这条立刻红。
+      · **关**（默认）：同样的场面、同样没人按 ⟹ 参考**一帧都不该有**、下行帧**一帧都不该有**、
+        理由必须是 `no_traj_reference`。谁把它写死成"总是发"（或干脆不读这个参数），
+        这条红。⟹ 与上面那条 `test_没有参考时闸门不开…` 是**同一个场面**，
+        那条守的是老行为，这条守的是"开关真的分了岔"。
+
+    ⚠️ **发出去那一帧可能丢**：DUT 只在"第一次见到 `no_traj_reference`"那一拍发**一次**
+      （闩住是对的，见 `_maybe_start_traj` 的 ⛔），而 DDS 发现是异步的 —— 若那一帧落在
+      假 traj 的订阅匹配好之前，它就没了，且**不会重发**。所以下面先等"假 traj 已经和
+      DUT 的 `/traj/start` 发布者见上面"（`starts` 之外还有一条更早的判据：DUT 的发布者
+      被本进程发现），再解锁。★ 这条等待是**判据的一部分**，不是客套：
+      把它删掉，这条用例会变成一条**随机红**（同 `test_轨迹档才订…` 的 ★★）。
+      而"解锁 → DUT 看见 OFFBOARD"这一段本身还要 ~1 s（`/mavros/state` 是 1 Hz）⟹
+      两个窗叠起来，发现早就跑完了。
+    """
+    with _scenario(reference_source="traj", start_traj_reference=True) as sc:
+        from bench import FakeTraj
+        traj = FakeTraj(sc.node, sc)          # `selected=True`：收到 start 就会发参考
+        _wait_dut_up(sc)
+        sc.wait_for(lambda: traj.matched_subscribers() >= 1, timeout_s=10.0,
+                    message="DUT 没订上 /traj/reference")
+        # ★ 屏障：DUT 的 `/traj/start` 发布者**被本进程发现**之后才解锁（否则那一帧可能丢）
+        sc.wait_for(lambda: sc.node.count_publishers(_TOPIC_TRAJ_START) >= 1, timeout_s=10.0,
+                    message=f"DUT 没建 {_TOPIC_TRAJ_START} 的发布者"
+                            "（`start_traj_reference=True` 时它该建 —— 条件是建了吗？）")
+        assert traj.starts == [], "假 traj 还没上电就收到了 start ⟹ 本用例的前提不成立"
+
+        _arm_and_offboard(sc)
+        # 判据①：**没人按开始键**，而参考自己上线了
+        sc.wait_for(lambda: traj.reference_frames > 0, timeout_s=10.0,
+                    message=f"没人按开始键，假 traj 一帧参考都没发 ⟹ DUT 没有自己发"
+                            f"{_TOPIC_TRAJ_START}（参数没生效？）{_污染提示}")
+        assert len(traj.starts) == 1, \
+            f"收到 {len(traj.starts)} 次 /traj/start（该是**恰好一次**）—— 每拍都发的话，"\
+            "`traj` 会把参考时钟一直归零，飞机永远停在轨迹起点（见 `_maybe_start_traj` 的 ⛔）"
+        # 判据②：参考上线之后闸门就该开（这条才是"飞得起来"）
+        sc.wait_for(lambda: len(_sp_frames(sc)) >= 5, timeout_s=10.0,
+                    message="参考自己上线了，闸门却不开 ⟹ 上面那个 start 只是发了，没接上")
+        assert "no_traj_reference" in sc.dut_log(), \
+            "日志里没有过 no_traj_reference ⟹ 触发时刻不对（它不是被'等参考'叫醒的）"
+
+    with _scenario(reference_source="traj") as sc:        # 老行为：默认关
+        from bench import FakeTraj
+        traj = FakeTraj(sc.node, sc)
+        _wait_dut_up(sc)
+        sc.wait_for(lambda: traj.matched_subscribers() >= 1, timeout_s=10.0,
+                    message="DUT 没订上 /traj/reference")
+        assert sc.node.count_publishers(_TOPIC_TRAJ_START) == 0, \
+            (f"默认档（`start_traj_reference` 没打开）却建了 {_TOPIC_TRAJ_START} 的发布者 —— "
+             "「默认档不改变任何现有行为」在话题面上就不可证伪了")
+        _arm_and_offboard(sc)
+        sc.hold(1.5)
+        assert traj.starts == [] and traj.reference_frames == 0, \
+            f"默认档下假 traj 自己动了起来（starts={traj.starts}）⟹ 有人替我们按了开始键"
+        n_sp = len(_sp_frames(sc))
+        assert n_sp == 0, f"没有参考却发了 {n_sp} 帧 setpoint"
+
+
+def test_自发起步只在轨迹档有意义_别的档入口当场拒():
+    """★ `start_traj_reference=true` + `reference_source=hold` ⟹ **入口当场拒**（ticket 14 二定）。
+
+    ★ 为什么拒而不是"接受但忽略"：这个参数认的触发原因是 `no_traj_reference`，而
+      `hold` 档下参考是自己算出来的、**不存在**"等参考"这个状态 ⟹ 那个旋钮在那一档
+      **永远是死的**。接受它的症状是"我明明开了，参考还是不动"—— 而**参考本来就不该由它驱动**，
+      两句话都成立，读日志的人会一路查到参考那一头去（那是对的，但白查）：
+      与 `traj` 档拒非 0 的 `hold_offset` 是同一条纪律（**没意义的组合在入口说清楚**）。
+
+    ★ 断言的三层同 `test_A_档_state_source_px4_入口当场拒绝`：退出码非 0、拒绝文案里要有
+      特征串（`start_traj_reference` 与 `reference_source` 两个参数名）、**一帧 setpoint 都没有**
+      —— 最后一层是"拒绝"与"起了但那一档不发"的行为分界。
+    """
+    with _scenario(reference_source="hold", start_traj_reference=True) as sc:
+        sc.wait_for(lambda: not sc.dut_alive(), timeout_s=STARTUP_S,
+                    message="start_traj_reference + reference_source=hold 之后 DUT 一直没退出")
+        sc.hold(0.5)                 # 让读取线程把最后几行排空
+        rc = sc.dut_returncode()
+        log = sc.dut_log()
+        assert rc not in (0, None), \
+            (f"这个没意义的组合没被拒（退出码 {rc}）—— 它是不是只打了句警告就照常跑起来了？"
+             f"（日志尾：{log[-800:]!r}）")
+        assert "start_traj_reference" in log and "reference_source" in log, \
+            f"拒绝理由没把两个参数名都说出来（日志尾：{log[-800:]!r}）"
+        assert sc.fake.attitude_publishers() == 0, \
+            "入口都拒绝了，却还有人往 /mavros/setpoint_raw/attitude 上发"
+
+
+# ───────────────────────────── 票 15：`reference_source=control` ─────────────────────────────
+
+_TOPIC_CONTROL_TARGET = "/control/target"
+
+
+def _控制目标_msg(p=(4.0, 5.0, 6.0), v=(0.2, 0.0, 0.0), yaw=0.3):
+    """一帧 `/control/target`：位置 + 速度 + yaw，掩码把加速度与 yaw_rate 忽略掉。
+
+    ★ 掩码与 `control` 侧要发的**逐位相同**（2496）：少一位 ⟹ 那一路被当成 0 用，
+      而话题面上每帧都"正常"（正是 `traj_reference` 那条 ☠️ 的同一个坑）。
+    """
+    from geometry_msgs.msg import Point, Vector3
+    from mavros_msgs.msg import PositionTarget
+    m = PositionTarget()
+    m.type_mask = (PositionTarget.IGNORE_AFX | PositionTarget.IGNORE_AFY
+                   | PositionTarget.IGNORE_AFZ | PositionTarget.IGNORE_YAW_RATE)
+    assert m.type_mask == 2496, f"掩码与 control 侧不一致：{m.type_mask}"
+    m.position = Point(x=p[0], y=p[1], z=p[2])
+    m.velocity = Vector3(x=v[0], y=v[1], z=v[2])
+    m.yaw = yaw
+    return m
+
+
+def _开始发控制目标(sc: Scenario, **kw):
+    """在 `/control/target` 上按 50 Hz 定时发；返回 `(pub, state)`。
+
+    `state["on"] = False` 即断流（用来量"超时关闸"），不必销毁定时器。
+    """
+    from mavros_msgs.msg import PositionTarget
+    msg = _控制目标_msg(**kw)
+    state = {"on": True}
+    pub = sc.node.create_publisher(PositionTarget, _TOPIC_CONTROL_TARGET, 10)
+
+    def _tick():
+        if state["on"]:
+            pub.publish(msg)
+
+    sc.node.create_timer(0.02, _tick)
+    return pub, state
+
+
+def test_控制档没有目标时闸门不开_理由是_no_control_target():
+    """★ **控制档新增的那条闸门**：`/control/target` 一帧都没到 ⟹ 一帧 setpoint 都不发，
+    理由必须指得出是"目标没来"，而不是 `not_armed` / `no_mocap`（三层在"没发"上长得一样）。
+
+    ★ **正控**：把目标送上去，闸门必须**当场开** —— 只断言"没发"无法区分"闸门拦住了"
+      与"节点根本没在跑"。正控同时把订阅关系也证了（话题面上 `pub` 的订阅者 ≥ 1）。
+    """
+    with _scenario(reference_source="control") as sc:
+        _wait_dut_up(sc)
+        _arm_and_offboard(sc)
+        sc.hold(1.5)
+
+        n_sp = len(_sp_frames(sc))
+        assert n_sp == 0, f"一帧 /control/target 都没到，却发了 {n_sp} 帧 setpoint"
+        assert sc.dut_alive()
+        assert "no_control_target" in sc.dut_log(), \
+            f"停发的理由不是 no_control_target（日志尾：{sc.dut_log()[-500:]!r}）"
+
+        pub, _ = _开始发控制目标(sc)
+        sc.wait_for(lambda: pub.get_subscription_count() >= 1, timeout_s=10.0,
+                    message="DUT 没订上 /control/target")
+        sc.wait_for(lambda: len(_sp_frames(sc)) >= 5, timeout_s=10.0,
+                    message="目标送上去了闸门仍不开 ⟹ 上面那句'零帧'不是 no_control_target 拦的")
+
+
+def test_控制档目标直接用绝对量_不加锚点_速度进日志(tmp_path):
+    """★★ 本票的**行为**判据：`/control/target` 是**绝对目标**，`mpc_node` **不许再加锚点**。
+
+    ★ 鉴别力：动捕位置 `(1,2,3)`、目标 `(4,5,6)`。若误用了轨迹档的"锚点 + 相对量"，
+      目标会变成 `(5,7,9)`；若参考没接上、退回悬停，则是 `(1,2,3)`。三个数互不相同
+      ⟹ 这一格能把三种失效分开。
+    ★ 速度用的是**参考的** `(0.2,0,0)`，而假动捕的速度恒 0 ⟹ 这一格非 0 **只可能**来自
+      `/control/target`（与 `traj` 档那条同一个理由）。
+    """
+    log = tmp_path / "control.jsonl"
+    with _scenario(reference_source="control", log_file=str(log), log_every=1) as sc:
+        sc.mocap_source.position = (1.0, 2.0, 3.0)
+        pub, _ = _开始发控制目标(sc)
+        _wait_dut_up(sc)
+        sc.wait_for(lambda: pub.get_subscription_count() >= 1, timeout_s=10.0,
+                    message="DUT 没订上 /control/target")
+        _arm_and_offboard(sc)
+        sc.wait_for(lambda: len(_sp_frames(sc)) >= 20, timeout_s=10.0,
+                    message="目标一直在发，闸门却没开 ⟹ 目标那条没进 `cycle()`")
+        sc.hold(0.5)
+
+        rows = [r for r in _读日志(log) if r.get("x_ref0")]
+        assert rows, "逐帧日志一帧都没写（`log_file` 参数没生效？）"
+        r = rows[-1]
+        assert r["reference_source"] == "control"
+        assert r["x_ref0"] == pytest.approx([4.0, 5.0, 6.0], abs=1e-4), \
+            ("目标点不是 /control/target 的**绝对量** —— 要么被当成了「锚点 + 相对量」"
+             "（动捕 (1,2,3) 会加出 (5,7,9)），要么参考没接上退回了悬停")
+        assert r["x_ref0_v"] == pytest.approx([0.2, 0.0, 0.0], abs=1e-6), \
+            "参考速度没进日志（`velocity` 三格被掩码吃了 / 没读？）"
+        assert r["x0"][3:6] == pytest.approx([0.0, 0.0, 0.0], abs=1e-6), \
+            "测量速度非 0 ⟹ 上面那条断言就不是「参考的速度」了（夹具的假设变了）"
+
+
+def test_控制目标断流之后关闸_不是冻结(tmp_path):
+    """★★ 与 `traj` 档**相反的**裁定（票 15）：目标断流 ⟹ **关闸**，不是冻住最后一点。
+
+    ★ 为什么必须相反：控制档的 `control` 才是任务总管。它一旦死了/卡了，`mpc_node`
+      继续拿最后一帧目标发姿态，飞机就会**一直照着那个点飞**，而没有任何一层会退出
+      OFFBOARD；关闸之后 mpc 停止发 setpoint，PX4 的 OFFBOARD 失流保护（1 s）接管 ——
+      这是两条链共用同一套安全兜底的前提。
+    ★ 正控（断流之前帧确实在流）不能省：否则"断流后没发"与"从头就没接上"分不开。
+    """
+    log = tmp_path / "control_stale.jsonl"
+    with _scenario(reference_source="control", control_target_timeout_s=0.3,
+                   log_file=str(log), log_every=1) as sc:
+        pub, state = _开始发控制目标(sc)
+        _wait_dut_up(sc)
+        sc.wait_for(lambda: pub.get_subscription_count() >= 1, timeout_s=10.0,
+                    message="DUT 没订上 /control/target")
+        _arm_and_offboard(sc)
+        sc.wait_for(lambda: len(_sp_frames(sc)) >= 20, timeout_s=10.0,
+                    message="目标一直在发，闸门却没开")
+
+        t0 = sc.t()
+        state["on"] = False                  # 上游没了：不归零、不发任何东西
+        sc.advance_to(t0 + 1.5)
+
+        n_sp = len(_sp_between(sc, t0 + 0.8, t0 + 1.5))
+        assert n_sp == 0, \
+            f"目标断流 0.8 s 之后还发了 {n_sp} 帧 —— 该关闸交给 PX4 的失流保护，不该冻住"
+        # ★★ 这一条让 `control_target_timeout_s:=0.3` **真的可鉴别**：默认值是 0.5 s，
+        #   只在 0.8 s 之后看，默认值也照样"通过"（参数没读进 NodeParams 时是假绿）。
+        #   0.45–0.70 s 这个窗口：配了 0.3 ⟹ 早就该关；没读进参数（默认 0.5）⟹ 还会发几帧。
+        n_sp_early = len(_sp_between(sc, t0 + 0.45, t0 + 0.70))
+        assert n_sp_early == 0, (
+            f"断流 0.45–0.70 s 之间还在发 {n_sp_early} 帧 —— `control_target_timeout_s` "
+            "没有生效（默认 0.5 s？）")
+        assert sc.dut_alive()
+        assert "no_control_target" in sc.dut_log(), \
+            f"关闸的理由不是 no_control_target（日志尾：{sc.dut_log()[-500:]!r}）"
+
+        rows = [r for r in _读日志(log) if r.get("x_ref0")]
+        assert [r for r in rows if r.get("ref_age_s", 0.0) < 0.3], \
+            "断流之前目标就没被读进来过 ⟹ 这条用例没有鉴别力"
+
+        # 正控的反面：重新发目标，闸门必须自己重开（不是"关一次就锁死"）
+        state["on"] = True
+        sc.advance_to(t0 + 2.5)
+        assert len(_sp_between(sc, t0 + 1.8, t0 + 2.5)) > 0, \
+            "目标恢复之后闸门没有自己重开（`control` 重启会撞上这个状态）"
 
 
 # ───────────────────────────── 在这一层量不了的那几条（不写假测试）─────────────────────────────

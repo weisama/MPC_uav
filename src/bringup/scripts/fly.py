@@ -3,16 +3,18 @@
 
     ros2 run bringup fly.py
 
-    1 = 原地悬停   2 = 1 m 正方形   3 = 1 m 八字
+    1 = 原地悬停   2 = 1 m 正方形   3 = 1 m 八字   4 = 起飞（直上 0.2 m）
     0 = 取消选择   h = 帮助   q = 退出   （回车 = 立刻打印一次当前状态）
 
 ★★ 本脚本**只做两件事**：发 `/traj/select`（`std_msgs/UInt8`）、显示 `/control/state` 与
    `/control/traj_progress`。它**不**发 `/traj/start`、**不**调起飞服务、**不**碰 setpoint——
    这三件事各有各的主人，抢着做只会让"谁在驱动飞机"变成一笔糊涂账：
 
-   · `/traj/start` **由 `control` 在进 `TRACK` 那一刻自己发**（ticket 09 Comments ②）：
-     参考时钟的零点必须与"开始飞"同一时刻。这里再发一次 = 把正在跑的参考时钟归零，
-     飞机当场掉头飞回轨迹起点 —— 且现场看不出是谁干的。
+   · `/traj/start` **由任务总管 `control` 在"开始跟踪"那一刻自己发**（票 15 起两档一致；
+     票 09 Comments ② 的原始裁定）：两档都是 `control` 进 `TRACK` 时发，
+     模型预测控制档不再由 `mpc_node` 发（`start_traj_reference` 在 `reference_source=control`
+     下会被 `_validate` 直接拒）。参考时钟的零点必须与"开始飞"同一时刻。
+     这里再发一次 = 把正在跑的参考时钟归零，飞机当场掉头飞回轨迹起点 —— 且现场看不出是谁干的。
    · 起飞 = **遥控器开始键的第 1 次上升沿**（§H.5）。这条防线是刻意的：
      "开始键按下之前不发任何控制指令"。
      ⚠️ 注意别把这句话读成"程序解锁不存在" —— `/control/takeoff` 服务**是**存在的，
@@ -38,12 +40,16 @@ from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
 from std_msgs.msg import Float32, String, UInt8
 
-#: 三条轨迹的**名字**（几何与时长在 `traj` 侧：`src/traj/config/traj.yaml` 与它的 README）。
+#: 四条轨迹的**名字**（几何与时长在 `traj` 侧：`src/traj/config/traj.yaml` 与它的 README）。
 #  ★ 这里只印名字与时长量级，**不印几何** —— 几何改了不会让这份脚本说谎。
 KINDS = {
     1: ("原地悬停", "60 s（= §5.3 的验收时长）"),
     2: ("正方形 1 m", "≈8 s"),
     3: ("八字 a=1.0（偏扁：2.0 m × 1.0 m）", "≈12.2 s"),
+    # ★ 4 的高度/速率**写死在 traj.yaml**（`takeoff_height_m` / `takeoff_speed_ms`，2026-10-16 裁定）：
+    #   这里只说"直上 0.2 m"是为了让人一眼认得出这条是什么，改高度要改的是那份 yaml ——
+    #   所以这行**没有**做成可输入项（起链时也不问高度）。
+    4: ("起飞（直上 0.2 m）", "≈1 s 到顶，之后停在那儿"),
 }
 
 SELECT_TOPIC = "/traj/select"
@@ -159,11 +165,13 @@ def _stdin_ready(timeout_s: float = 0.0) -> bool:
 
 def _print_help() -> None:
     print(
-        "\n命令：1 = 原地悬停   2 = 1 m 正方形   3 = 1 m 八字   0 = 取消选择\n"
+        "\n命令：1 = 原地悬停   2 = 1 m 正方形   3 = 1 m 八字   4 = 起飞（直上 0.2 m）\n"
+        "      0 = 取消选择\n"
         "      h = 帮助        q = 退出          回车 = 立刻打印一次当前状态\n"
         "★ 起飞与开始轨迹**不在这个脚本里**：遥控器开始键的第 1 次上升沿 = 解锁起飞，\n"
         "  第 2 次 = 进 TRACK（§H.5）。开始键按下之前，control 不会发任何控制指令。\n"
-        "★ 本脚本**不发** /traj/start —— 那是 control 进 TRACK 时自己发的（见脚本头部说明）。\n",
+        "★ 本脚本**不发** /traj/start —— 两档都由 control 在进 TRACK 时发\n"
+        "  （模型预测控制档也一样，见脚本头部说明）。\n",
         flush=True)
 
 
@@ -189,7 +197,7 @@ def main() -> int:
                     _print_help()
                 elif cmd in ("", "p", "s"):
                     print(node.status_line(), flush=True)   # 回车 = 立刻看一次
-                elif cmd in ("0", "1", "2", "3"):
+                elif cmd in ("0", "1", "2", "3", "4"):
                     node.select(int(cmd))
                 else:
                     print(f"? 不认识 {cmd!r} —— 按 h 看帮助", flush=True)

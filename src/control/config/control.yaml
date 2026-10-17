@@ -22,6 +22,22 @@ control:
     #   ⚠️ 注意：**真 PX4 只在 OFFBOARD 模式下才读 setpoint_raw** ⟹ 关掉它，飞机不会有任何反应。
     enter_offboard: true
 
+    # ★★ 票 15：**输出后端** —— 谁把最终指令交给 PX4。
+    #   position（默认）：本节点直接发 `/mavros/setpoint_raw/local`（位置 + yaw）。
+    #   external        ：本节点**不发任何 PX4 setpoint**，只把绝对目标（位置 + 速度 + yaw）
+    #                     发到 `control_target_topic`；由订阅它的外部控制器（当前是
+    #                     `nmpc/mpc_node.py` 的 `reference_source=control`）求解并发
+    #                     `/mavros/setpoint_raw/attitude`。
+    # ★ 两种后端**共用**：开始键、解锁、切 OFFBOARD、起飞斜坡、判稳、轨迹原点、
+    #   `/traj/start`、轨迹超时、降落 —— 全部在本节点。换后端不改变任务流程。
+    # ⚠️ external 档下本节点**不写** `/mavros/setpoint_raw/local`；"飞控进入 OFFBOARD 前
+    #   必须先有 setpoint 流"这一条由外部控制器自己的前置流补上（mpc 的 `offboard_prestream`）。
+    # ⛔ 不认识的档会在启动时直接 FATAL 退出（不会静默退回 position）。
+    # ⚠️ 走 `control.launch.py` 时**本行被覆盖**：launch 的参数表排在 `params_file` 之后、
+    #   默认值就是 `position` ⟹ 改档要传 `output_mode:=external`，只改这行不生效。
+    #   直接 `ros2 run control control_node`（不带 params_file）才由这行/代码默认值决定。
+    output_mode: "position"
+
     # ☠️ 这里原本有一个 `yaw` 参数（ticket 05），**ticket 08 删掉了**。
     #   原因：那个参数默认 0，而 0 在 ROS/ENU 口径下经 mavros 换算后是 PX4 的 +90°（机头朝东）
     #   （`setpoint_raw.cpp:231/235`，实测 `yaw_ned = π/2 − yaw_enu`）⟹ 一旦在 OFFBOARD 里解锁，
@@ -86,6 +102,11 @@ control:
     #   ⚠️ 与 `/traj/progress` 同名不同域：那是 traj 的、这条是我们的。别名会让
     #      "订阅谁"在现场变成一个猜谜（且同一条通道上两个发布者会让 QoS/频率对不上）。
     control_traj_progress_topic: "/control/traj_progress"
+    # ★ 票 15：external 档的**绝对目标**（`PositionTarget`，50 Hz，位置 + 速度 + yaw）。
+    #   内部话题，**不经 mavros**：数值口径与 `/mavros/setpoint_raw/local` 同系（ROS/ENU，
+    #   z 向上为正），`coordinate_frame` 只是占位（与 `/traj/reference` 的既有做法一致）。
+    #   掩码 2496 ⟹ 位置、速度、yaw 三路有效。
+    control_target_topic: "/control/target"
 
     # —— 遥控器**开始键**（ticket 09；§H.1 的裁定值，**别就地改**）——
     # ★ 通道号与阈值的裁定过程（含 §H.4 的 EdgeTX 分配、§H.2 的"ch9 未被任何 `RC_MAP_*` 占用"、

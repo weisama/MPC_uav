@@ -1467,6 +1467,17 @@ control::TrajReference ref_at(double x, double y, double z, double progress = 0.
   return t;
 }
 
+/// 一条**带速度**的活参考（票 15：`/control/target` 的前馈）。
+control::TrajReference ref_at_with_velocity(double x, double y, double z,
+  double vx, double vy, double vz, double progress = 0.0)
+{
+  control::TrajReference t = ref_at(x, y, z, progress);
+  t.vx = vx;
+  t.vy = vy;
+  t.vz = vz;
+  return t;
+}
+
 /// 参考**断了**的读法：位置与完成度是**手上残留的值**（`traj` 停流之后我们只剩这些），
 /// 只有 `age_s` 是无穷。
 /// ★ 刻意保留残留值而不是写成 `(0,0,0)`：把断流写成"参考回到原点"是另一种场面
@@ -1647,6 +1658,36 @@ TEST(Track, 收到参考后目标等于轨迹原点加参考)
   //   ★ 这一条是**结构性**保证的（`TrajReference` 里根本没有 yaw 字段）；断言放在这里
   //     是为了让"以后有人想把它加回来"必须先删掉这条用例。
   EXPECT_DOUBLE_EQ(d.target_yaw, c.yaw) << "参考的 yaw 被转发了 ⟹ 飞机会自己转 90°";
+}
+
+/// ★★ 票 15：`TRACK` 的**参考速度**要原样进 `Decision`（`/control/target` 的前馈）。
+/// 鉴别力：位置那档掩码忽略速度、看不出对错；external 档若漏掉这三格，模型预测控制的时域外推
+/// 会退化成"原地保持"——**话题面上每帧都正常**，只有飞机的跟随会慢半拍（最难查的一类）。
+TEST(Track, 参考速度原样转发_断流时归零)
+{
+  Climbing c = reach_climb();
+  stop_at_wait_start(c);
+  double ox = 0.0, oy = 0.0, oz = 0.0;
+  ASSERT_TRUE(c.fsm.traj_origin(&ox, &oy, &oz));
+  press_and_release_start(c);
+  const control::Odometry odom = odom_at(ox, oy, oz, c.yaw);
+  advance_traj(c, 1, odom, ref_stale());
+
+  const control::Decision d = advance_traj(
+    c, 1, odom, ref_at_with_velocity(0.5, -0.25, 0.10, 0.20, -0.10, 0.05, 0.3));
+  EXPECT_EQ(d.phase, control::Phase::kTrack);
+  EXPECT_DOUBLE_EQ(d.target_vx, 0.20) << "参考速度没转发 ⟹ external 档的模型预测控制少了前馈";
+  EXPECT_DOUBLE_EQ(d.target_vy, -0.10);
+  EXPECT_DOUBLE_EQ(d.target_vz, 0.05);
+
+  // ★ 断流：位置保持、**速度必须归零**。留着最后一帧的速度等于让外部控制器按它继续外推
+  //   （参考自己飞走，飞机照着追）—— 与 `traj` 档冻结时必须把速度一起归零是同一条理由。
+  const control::Decision held =
+    advance_traj(c, frames_of(0.40), odom, ref_stale(0.5, -0.25, 0.10, 0.3));
+  EXPECT_DOUBLE_EQ(held.target_x, ox + 0.5) << "断流时位置该保持";
+  EXPECT_DOUBLE_EQ(held.target_vx, 0.0) << "断流时速度没归零 ⟹ 参考会自己往前飘";
+  EXPECT_DOUBLE_EQ(held.target_vy, 0.0);
+  EXPECT_DOUBLE_EQ(held.target_vz, 0.0);
 }
 
 /// 参考**断流**时的两条处置：目标**保持不动**，以及过了闸门之后**重发一次** `/traj/start`。

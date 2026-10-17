@@ -13,6 +13,28 @@
 > ⚠️ **起飞这条路径的判据只在台架/仿真上验过**：验收阶梯的 1–4 级（无桨台架 / 系绳离地 20 cm /
 > 系绳闭环悬停 30 s / 自由飞）都**需要人 + 拆桨台架 + 飞控空闲窗口**，见本文末的「⏳ 还没做的验收项」。
 
+## ★ 输出后端：两种控制平替，任务流程共用（票 15）
+
+**`control` 始终是任务总管**：开始键（ch9）、解锁、切 `OFFBOARD`、起飞斜坡、判稳、
+轨迹原点、`/traj/start`、飞完 `AUTO.LAND` 全在这里，**与选哪个输出后端无关**。
+`output_mode` 只决定最后一步交给谁：
+
+| 档 | `control` 写什么 | 谁写 PX4 setpoint | 链 |
+|---|---|---|---|
+| `position`（默认） | `/mavros/setpoint_raw/local`（位置 + yaw，掩码 2552） | `control` | `traj → control` |
+| `external` | `/control/target`（**绝对**位置 + 速度 + yaw，掩码 2496） | 外部控制器（今天 = `mpc_node` → `/mavros/setpoint_raw/attitude`） | `traj → mpc → control` |
+
+- **结构互斥**：`Px4Interface` 在构造时**只建一个**发布者 —— `external` 档下
+  `/mavros/setpoint_raw/local` 的发布者根本不存在，不是"发了但值为 0"。
+- **目标语义**：`external` 发的是**绝对目标**（轨迹原点已经在 `Fsm` 里加过），
+  外部控制器**不许再加锚点**；`/traj/reference` 的速度原样转发作前馈。
+- **失效**：`external` 只负责把目标发出去；它停发 ⟹ 外部控制器断流关闸
+  （`mpc_node` 的 `no_control_target`，0.5 s）。本节点的守卫/降级逻辑一字未改。
+- **加新的控制方式**（后续）：实现一个消费 `/control/target` 的节点、自己写执行器话题即可；
+  `control` / `traj` / 开始键 / 解锁 / 降落**都不用动**。`control` 侧要动的是
+  `OutputMode` 的枚举、`parse_output_mode` / `to_string` 与发布者构造分支 ——
+  仍是一处集中的小改动，不是散在状态机里的开关。
+
 ## ★ 运行纪律（比代码重要）
 
 1. **启动顺序**：`mavros` → `vrpn_listener` → `mocap` → 摆好飞机、静止 → 本节点。
@@ -338,8 +360,12 @@ mavros 2.15.1 @ `22ae5b7`）：真丢链路时 mavros 会在 `conn_timeout`（�
 /mavros/local_position/pose ───┤
 /mavros/local_position/velocity_local ┤
 /mocap/pose_enu ───────────────┤
-/mavros/estimator_status ──────┼─▶ 守卫/读数 ─▶ 状态机 ─▶ /mavros/setpoint_raw/local（PositionTarget）
-/mavros/rc/in、/mavros/battery ┘            ├─▶ /control/state（"<控制权>/<任务态>"）
+/mavros/estimator_status ──────┼─▶ 守卫/读数 ─▶ 状态机 ─┬─▶ output_mode=position：
+/mavros/rc/in、/mavros/battery ┘                         │     /mavros/setpoint_raw/local（PositionTarget，位置 + yaw）
+                                                         └─▶ output_mode=external：
+                                                               /control/target（PositionTarget，位置 + 速度 + yaw）
+                                                               └─▶ 外部控制器（mpc_node）发 /mavros/setpoint_raw/attitude
+                              ├─▶ /control/state（"<控制权>/<任务态>"）
 /traj/reference、/traj/progress ───────┘            └─▶ /control/traj_progress（转发 /traj/progress）
 
 开始键上升沿（rc_switch）┐
@@ -360,7 +386,8 @@ mavros 2.15.1 @ `22ae5b7`）：真丢链路时 mavros 会在 `conn_timeout`（�
 | `/mavros/battery` | 订阅 | `sensor_msgs/BatteryState` | **best_effort** | 低电压判据（**只看值**，不看新鲜度） |
 | `/mavros/estimator_status` | 订阅 | `mavros_msgs/EstimatorStatus` | ★★ **故意用易失 `QoS(10)`** | 上游 1 Hz。`ekf2_pos_lost` 判据的载体（ticket 16）。⚠️ 真 mavros 这条是 **transient_local** 发的，我们**刻意不跟**：那会让晚订阅者一次性回放约 10 条历史消息（现场实测）⟹ 陈年 `false` 帧被当成"现在坏了"。由 `estimator_timeout_s` 这条新鲜度门兜 |
 | `/mocap/pose_enu` | 订阅 | `geometry_msgs/PoseStamped` | 可靠 | 来自 `mocap` 节点；**是守卫的输入**（新鲜度决定发不发 setpoint） |
-| `/mavros/setpoint_raw/local` | **发布** | `mavros_msgs/PositionTarget` | 可靠 | 唯一的控制输出 |
+| `/mavros/setpoint_raw/local` | **发布（仅 `output_mode=position`）** | `mavros_msgs/PositionTarget` | 可靠 | 第 1 档的控制输出。`external` 档下**这个发布者根本不建** ⟹ 不会出现两路 setpoint 互相覆盖 |
+| `/control/target` | **发布（仅 `output_mode=external`）** | `mavros_msgs/PositionTarget` | 可靠 | ★ 票 15：给外部控制器的**绝对目标**（ENU/FLU 数值，位置 + 速度 + yaw，`type_mask = 2496`）。50 Hz。外部控制器断流 0.5 s 要自己关闸；PX4 的 1 s OFFBOARD 丢失保护是最后一道 |
 | `/control/state` | **发布** | `std_msgs/String` | 可靠 + transient_local | `"MANUAL/STANDBY"` |
 | `/control/takeoff` | **服务** | `std_srvs/Trigger` | —— | ★ ticket 08：起飞的**调试入口**（ticket 09 起，主用的是遥控器 ch9 的第 1 次上升沿；两者走同一个 `request_takeoff`） |
 | `/mavros/cmd/arming` | **服务（客户端）** | `mavros_msgs/CommandBool` | —— | ★ ticket 08：程序解锁（H.6 的 D3）。**被拒 ⟹ 放弃本次起飞**（不重试） |
@@ -413,6 +440,8 @@ mavros 把 `header.stamp` 换算成 MAVLink 的 `time_boot_ms`（**毫秒**，�
 
 | 参数 | 默认 | 说明 |
 |---|---|---|
+| `output_mode` | `"position"` | ★ 票 15：输出后端。`position` = 本节点直接写 `/mavros/setpoint_raw/local`（老行为）；`external` = 只写 `/control/target`，由外部控制器（`mpc_node`）发 PX4 setpoint。⛔ 不认识的档**启动时当场拒**（FATAL + 退出码 2），不许静默退回 `position` |
+| `control_target_topic` | `"/control/target"` | `external` 档的目标话题名（多机/台架可改） |
 | `setpoint_rate_hz` | `50.0` | setpoint 频率。PX4 要求进入 OFFBOARD 期间 ≥2 Hz |
 | `offboard_prestream_s` | `1.0` | ★ 切 OFFBOARD 前 setpoint 必须先连续流多久。**断流 PX4 会自动退出 OFFBOARD**（`COM_OF_LOSS_T`，z0 现值 1.0 s）⟹ 这是前提不是优化 |
 | `offboard_retry_s` | `1.0` | 切模式失败后的重试间隔（真正的成功判据是 `/mavros/state.mode` 变成 `OFFBOARD`） |

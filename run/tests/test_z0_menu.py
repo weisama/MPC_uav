@@ -164,7 +164,18 @@ def test_动作表里没有任何会动飞机的入口():
     violations = z0.forbidden_commands(z0.ACTIONS)
     assert violations == [], f"动作表里出现了不该有的命令：{violations}"
     # 判据的两条设计依据要在文件里留着（改这些命令前先读它们）
-    assert all(a.cmd is None or a.cmd.startswith("ros2 ") for a in z0.ACTIONS)
+    # ★ 2026-10-17：`mpc` 那条前面挂了 `env ACADOS_SOURCE_DIR=… LD_LIBRARY_PATH=…`
+    #   （缺它起链死在第 5 步）⟹ 这里认「`env` 只设变量、然后仍以 `ros2` 走」这一种前缀。
+    #   ⛔ **不要把它放宽成"随便什么前缀"** —— 这条断言的用处就是"命令的出口只有 ros2"。
+    for action in z0.ACTIONS:
+        cmd = action.cmd
+        if cmd is None or cmd.startswith("ros2 "):
+            continue
+        assert cmd.startswith("env "), f"{action.key}: 命令的出口不是 ros2：{cmd}"
+        head, sep, tail = cmd[4:].partition(" ros2 ")
+        assert sep, f"{action.key}: `env` 前缀后面不是 ros2：{cmd}"
+        for word in head.split():
+            assert "=" in word, f"{action.key}: `env` 前缀里混进了非赋值项 {word!r}：{cmd}"
 
 
 def test_源码里不出现发布与服务调用():
@@ -224,6 +235,192 @@ def test_每条起链命令都带_source_前缀():
     # 不存在的 setup **不能**被写进命令（否则 `source` 直接失败，看上去像脚本坏了）
     command = z0.sourced_command("true", setups=[pathlib.Path("/nope/setup.bash")])
     assert command == "source /nope/setup.bash && true"
+
+
+def test_source_重入等子进程时不动_SIGINT_处置(monkeypatch):
+    """★ 回归第一层（2026-10-17 现场：一次 Ctrl-C 就丢掉了一份 `session.json`）。
+
+    机制：Ctrl-C 发给**整个前台进程组** ⟹ 外壳（`ensure_sourced` 里等重开菜单的那个
+    进程）与菜单进程同时收到。Python 3 的 `subprocess.call` 被 `KeyboardInterrupt`
+    打断时会 `p.kill()`（SIGKILL）子进程（3.10.12 `subprocess.py:347`）⟹ 菜单进程
+    在"收口中"那几个字刚打印完就被打死，`ros2 bag info` / `session.json` 全没跑。
+
+    ★ 修法**不许**是"先 `SIG_IGN` 再起子进程"——那会被子进程继承（见下一条用例）。
+    这里钉住：等待期间**不改任何信号处置**；`wait()` 被 `KeyboardInterrupt` 打断后
+    要**接着等**（而不是走掉），返回值照旧透传。
+    """
+    seen = {"handlers": [], "waits": 0}
+
+    class FakeProc:
+        def wait(self):
+            seen["waits"] += 1
+            seen["handlers"].append(signal.getsignal(signal.SIGINT))
+            if seen["waits"] == 1:
+                raise KeyboardInterrupt
+            return 7
+
+    monkeypatch.setattr(z0.subprocess, "Popen", lambda argv, env=None: FakeProc())
+    before = signal.getsignal(signal.SIGINT)
+    assert z0.call_ignoring_sigint(["bash", "-c", "true"]) == 7
+    assert seen["waits"] == 2, "被打断之后必须接着等，不能走"
+    assert all(h is before for h in seen["handlers"]), "等待期间不许改 SIGINT 处置"
+    assert signal.getsignal(signal.SIGINT) is before
+
+
+def test_source_重入的子进程不能继承_SIGINT_忽略(tmp_path):
+    """★ 回归第二层（2026-10-17 当天现场：录制挂着，按 Ctrl-C **毫无反应**）。
+
+    上一版修法在起子进程**之前**把 SIGINT 设成 `SIG_IGN`。被忽略的信号会被
+    `fork`+`exec` **继承**，而 CPython 只有当启动时 SIGINT 不是 `SIG_IGN` 才装
+    `KeyboardInterrupt` 处理器 ⟹ 内层菜单从启动起就永远看不见 Ctrl-C。
+    现场一手：`/proc/<内层 pid>/status` 的 `SigIgn` 带 `…0002`（SIGINT 被忽略）、
+    `SigCgt` 是 0（连处理器都没装）。
+
+    ⟹ 让子进程自己把"启动时 SIGINT 是否被忽略"写出来：必须是 `0`。
+    """
+    seen = tmp_path / "sigint_ignored.txt"
+    child = tmp_path / "child.py"
+    child.write_text(
+        "import signal\n"
+        f"open({str(seen)!r}, 'w').write("
+        "'1' if signal.getsignal(signal.SIGINT) is signal.SIG_IGN else '0')\n",
+        encoding="utf-8")
+    helper = tmp_path / "helper.py"
+    helper.write_text(
+        "import sys\n"
+        f"sys.path.insert(0, {str(RUN_DIR)!r})\n"
+        "import z0\n"
+        f"sys.exit(z0.call_ignoring_sigint([sys.executable, {str(child)!r}]))\n",
+        encoding="utf-8")
+
+    rc = subprocess.run([sys.executable, str(helper)], timeout=30).returncode
+    assert rc == 0
+    assert seen.exists(), "子进程没跑起来 ⟹ 这条用例没测到东西"
+    assert seen.read_text() == "0", (
+        "子进程继承了 SIGINT=SIG_IGN ⟹ 它里面的 Python 不会再装 KeyboardInterrupt，"
+        "Ctrl-C 永远是死的（2026-10-17 现场就是这么挂住的）")
+
+
+def test_一次_SIGINT_不能打死正在等它的子进程(tmp_path):
+    """端到端：外壳只收到**一次** SIGINT 时，它等着的子进程必须**还活着**。
+
+    ⛔ 反面就是裸 `subprocess.call` —— 子进程会被 SIGKILL 掉（本机复现过：child 直接消失，
+    外层退出码 130）。这里把 SIGINT **只发给外壳**（不是发给进程组），这样"子进程死了"
+    就只可能是外壳干的，不可能是终端那一下顺手带走的。
+    """
+    child = tmp_path / "child.py"
+    pid_file = tmp_path / "child.pid"
+    child.write_text(
+        "import os, time\n"
+        f"open({str(pid_file)!r}, 'w').write(str(os.getpid()))\n"
+        "time.sleep(30)\n", encoding="utf-8")
+    helper = tmp_path / "helper.py"
+    helper.write_text(
+        "import sys\n"
+        f"sys.path.insert(0, {str(RUN_DIR)!r})\n"
+        "import z0\n"
+        f"sys.exit(z0.call_ignoring_sigint([sys.executable, {str(child)!r}]))\n",
+        encoding="utf-8")
+
+    proc = subprocess.Popen([sys.executable, str(helper)], start_new_session=True)
+    try:
+        deadline = time.monotonic() + 10
+        while not pid_file.exists() and time.monotonic() < deadline:
+            time.sleep(0.02)
+        assert pid_file.exists(), "子进程没起来 ⟹ 这条用例没测到东西"
+        child_pid = int(pid_file.read_text())
+
+        os.kill(proc.pid, signal.SIGINT)        # ★ 只发外壳：等于"一次 Ctrl-C"
+        time.sleep(0.5)
+        try:
+            os.kill(child_pid, 0)
+            alive = True
+        except ProcessLookupError:
+            alive = False
+        assert alive, "外壳把正在等它的子进程打死了 ⟹ 菜单进程也会这样死在收口途中"
+
+        os.kill(child_pid, signal.SIGKILL)      # 收尾；返回码因此非 0
+        assert proc.wait(timeout=10) != 0
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+
+
+def _foreground_helper(tmp_path, child_source: str, argv_extra: str = ""):
+    """起一个"外壳 → `z0.run_foreground`"的假前台，返回 (helper 进程, 子进程 pid 文件)。"""
+    child = tmp_path / "child.py"
+    pid_file = tmp_path / "child.pid"
+    child.write_text(child_source.replace("PIDFILE", repr(str(pid_file))), encoding="utf-8")
+    helper = tmp_path / "helper.py"
+    helper.write_text(
+        "import sys\n"
+        f"sys.path.insert(0, {str(RUN_DIR)!r})\n"
+        "import z0\n"
+        f"{argv_extra}"
+        f"print('rc=%d' % z0.run_foreground(f'\"{{sys.executable}}\" \"{child}\"'), flush=True)\n",
+        encoding="utf-8")
+    proc = subprocess.Popen([sys.executable, str(helper)], start_new_session=True,
+                            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    deadline = time.monotonic() + 15
+    while not pid_file.exists() and time.monotonic() < deadline:
+        time.sleep(0.02)
+    assert pid_file.exists(), "前台子进程没起来 ⟹ 这条用例没测到东西"
+    return proc, int(pid_file.read_text())
+
+
+def test_前台_Ctrl_C_不立刻_SIGKILL_子进程(tmp_path):
+    """前台动作（launch / `fly.py`）也**不能**被 `subprocess.call` 的 `p.kill()` 带走。
+
+    ★ 修之前：Ctrl-C ⟹ `subprocess.call` 里的 `except: p.kill()` ⟹ 子进程被 SIGKILL，
+      它自己的收摊逻辑（`fly.py` 的 `rclpy.shutdown()`、launch 的关串口）根本没机会跑。
+    ★ 现在：只等；子进程自己退（2 s 后退 0），外壳把它的返回码交回来。
+    """
+    proc, child_pid = _foreground_helper(
+        tmp_path, "import os, time\nopen(PIDFILE, 'w').write(str(os.getpid()))\ntime.sleep(2)\n")
+    try:
+        os.kill(proc.pid, signal.SIGINT)        # ★ 只发外壳
+        time.sleep(0.5)
+        try:
+            os.kill(child_pid, 0)
+            alive = True
+        except ProcessLookupError:
+            alive = False
+        assert alive, "Ctrl-C 把前台子进程直接 SIGKILL 了 ⟹ 它没机会自己收摊"
+        out, err = proc.communicate(timeout=15)
+        assert proc.returncode == 0, err
+        assert "rc=0" in out, out
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+
+
+def test_前台_Ctrl_C_等不到就升级_TERM_再_KILL(tmp_path):
+    """子进程**不理** SIGINT 时不能永远等：`FOREGROUND_GRACE_S` 到点 ⟹ SIGTERM → SIGKILL。
+
+    ★ 这一条同时钉住"升级只发给直接子进程"之前的那一步：只要 SIGTERM 能收掉它，
+      就用不到 SIGKILL（读数 `rc=-15`）。
+    """
+    proc, child_pid = _foreground_helper(
+        tmp_path,
+        "import os, signal, time\n"
+        "signal.signal(signal.SIGINT, signal.SIG_IGN)\n"
+        "open(PIDFILE, 'w').write(str(os.getpid()))\n"
+        "time.sleep(30)\n",
+        argv_extra="z0.FOREGROUND_GRACE_S = 0.3\n")
+    try:
+        os.kill(proc.pid, signal.SIGINT)        # ★ 只发外壳
+        out, err = proc.communicate(timeout=15)
+        assert proc.returncode == 0, err
+        assert "rc=-15" in out, out             # SIGTERM 收掉的（不是 SIGKILL 的 -9）
+        try:
+            os.kill(child_pid, 0)
+            alive = True
+        except ProcessLookupError:
+            alive = False
+        assert not alive, "升级之后子进程还活着"
+    finally:
+        if proc.poll() is None:
+            proc.kill()
 
 
 def test_菜单与_动作表对得上():
@@ -308,6 +505,19 @@ def test_可选参数只有答_y_才追加():
     assert z0.ACTION_BY_KEY["bringup"].optionals[0].suffix == "use_vrpn:=false"
 
 
+def test_互斥的参考源不能同时打开():
+    """两条 `reference_source` 同时入命令行时 ROS 只取最后一个、**不报错** ⟹
+    必须在拼装处一声响，不能让它静默变成"后答的胜出"。"""
+    mpc = z0.ACTION_BY_KEY["mpc"]
+    both = [opt.name in ("reference_source_traj", "reference_source_control")
+            for opt in mpc.optionals]
+    with pytest.raises(ValueError, match="reference_source"):
+        z0.optionals_suffix(mpc, both)
+    # 只开一条（菜单 9 第 2 档的情形）照常拼出尾巴
+    only_control = [opt.name == "reference_source_control" for opt in mpc.optionals]
+    assert "reference_source:=control" in z0.optionals_suffix(mpc, only_control)
+
+
 def test_答_y_之后命令尾巴真的进了_bash_c(capsys, monkeypatch):
     seen = []
     monkeypatch.setattr(z0, "_serial_holders", lambda _path: [])       # 别去动真的串口
@@ -332,7 +542,7 @@ def test_可选参数的值也受安全不变式扫查():
 
 
 def _chain_choice_keys(chain, *, with_handoff: bool = False) -> list:
-    """这条链**四档合起来**能起（或要让终端）的 key（去重、保序）—— 判据要盖住全部档。"""
+    """这条链**各档合起来**能起（或要让终端）的 key（去重、保序）—— 判据要盖住全部档。"""
     keys: list = []
     for choice in chain.choices:
         tail = z0.MANUAL_CHAIN + choice.tail
@@ -361,75 +571,171 @@ def test_起链的顺序就是操作手册那条():
         assert set(names) <= have, f"{key} 默认要带的可选参数不在它的表项里：{set(names) - have}"
 
 
-def test_四个档的尾巴_默认值_与_公共前缀():
-    """★ ticket 14 的核心表：**四档各起哪几条**，两条链只差默认档，空回车 = 今天的行为。"""
-    want = {  # 档位号 → (尾巴, 要不要让终端)
-        1: ((), False),
-        2: (("traj", "control"), True),
-        3: (("mpc",), False),
-        4: (("traj", "mpc"), True),
+def test_第八项不再问那一句_且与一版之前起的一样(monkeypatch, capsys):
+    """★ 票 14 二定的第一条（2026-10-16 操作者：「z0.py 的 8 复原」）：
+
+    第 8 项**只有一档** ⟹ 起链时**不问**，起的东西与一版之前（`85bde0d^`）**逐字一致**
+    —— 三条命令 `mavros/vrpn/mocap`、不让终端、收尾说「直接用遥控器起飞」。
+
+    ★ 判据挑的是**「问没问」这件事本身**（`input` 换成抛异常的假件）：把那一问留下的
+      症状不是报错，是**多占操作者一次手**（还会让人以为能选别的档）。
+    """
+    def boom(*_a, **_k):
+        raise AssertionError("第 8 项**不许**提问（它只有一档）")
+
+    monkeypatch.setattr("builtins.input", boom)
+    chain = z0.CHAIN_BY_KEY["up_manual"]
+    assert len(chain.choices) == 1, "第 8 项就是「只有一档」（多一档 ⟹ 那一句又回来了）"
+    assert chain.choice(1).key == "none"
+    chosen = z0.ask_chain_choice(chain)          # ★ 不问也要有返回值，且不碰 `input`
+    assert chosen.key == "none"
+    assert "不问" in capsys.readouterr().out, "不问 ≠ 不说：屏上照旧要把这一档起什么打出来"
+    assert list(chain.steps) == list(z0.MANUAL_CHAIN)
+    assert chain.default_choice == 1
+    assert not chain.handoff, "第 8 项不选轨迹 ⟹ 不把终端让给操作台"
+    assert "遥控器" in "\n".join(chain.closing)
+
+
+def test_两档的尾巴都起_traj_且模型预测控制档带三条参数():
+    """★ 票 15 之后的表：第 9 项**只有两档**、**两档的尾巴都含 `traj` 与 `control`**
+    （操作者原话「轨迹必须起没得选」—— 这是**结构上的事实**，不是提示语）。
+
+    ★★ 票 15 的核心：模型预测控制档的尾巴变成 `traj → mpc → control` —— `control` 仍是
+      **唯一任务总管**（开始键/解锁/OFFBOARD/起飞/判稳/轨迹原点/`/traj/start`/降落），
+      `mpc` 只是它的输出后端。额外三条参数缺一条，这条链就跑不起来：
+        · `reference_source_control` —— mpc 订 `/control/target`（绝对目标）；
+        · `offboard_prestream` —— control 这档不写 PX4 setpoint，进 OFFBOARD 前那条流由 mpc 给；
+        · `output_mode_external` —— control **只发** `/control/target`，不写
+          `/mavros/setpoint_raw/local`（两路 setpoint 会互相覆盖）。
+      ⛔ `start_traj_reference` **不再带**：`/traj/start` 由 control 的 TRACK 分支发
+      （两边都发会让参考时钟归零两次）。
+
+    ★ 顺便钉住"`hold` 那一档没有了"：一版第 3 档是**唯一**不起 `traj` 的档，
+      它要是偷偷回来，下面这条 `all("traj" in …)` 立刻红。
+    """
+    want = {  # 档位号 → (尾巴, 要不要让终端, 额外带的参数)
+        1: (("traj", "control"), True, ()),
+        2: (("traj", "mpc", "control"), True,
+            ("reference_source_control", "offboard_prestream", "output_mode_external")),
     }
-    assert len(z0.CHAIN_CHOICES) == 4, "四档就是这张表的长度（多一档少一档都要在这里现形）"
-    for number, (tail, handoff) in want.items():
-        choice = z0.CHAIN_BY_KEY["up"].choice(number)
+    chain = z0.CHAIN_BY_KEY["up"]
+    assert len(chain.choices) == 2, "第 9 项只剩两档（多一档少一档都要在这里现形）"
+    for number, (tail, handoff, extra) in want.items():
+        choice = chain.choice(number)
         assert choice.tail == tail, f"第 {number} 档的尾巴不对"
         assert bool(choice.handoff) is handoff, f"第 {number} 档「要不要把终端让出去」不对"
+        assert choice.extra_optionals == extra, f"第 {number} 档额外带的参数不对"
         assert choice.title and choice.closing, f"第 {number} 档：标题/起完要说的话不能空"
         # 尾巴里**不许**重复公共前缀那几条（重复 ⟹ 同一条会被起两遍）
         assert not set(choice.tail) & set(z0.MANUAL_CHAIN), \
             f"第 {number} 档的尾巴里混进了公共前缀：{set(choice.tail) & set(z0.MANUAL_CHAIN)}"
-    assert (z0.CHAIN_BY_KEY["up_manual"].default_choice,
-            z0.CHAIN_BY_KEY["up"].default_choice) == (1, 2), \
-        "★ 默认档就是「今天的行为」：第 8 项 = 不起控制器、第 9 项 = offboard 控制"
+    assert all("traj" in choice.tail for choice in chain.choices), \
+        "★ 「轨迹必须起」= 每一档的尾巴里都有 `traj`（模型预测控制**没有** hold 那一档）"
+    # ★★ 票 15：两档的尾巴都含 `control`（它是唯一任务总管）；第 2 档的 control **只发**
+    #   `/control/target`，第 1 档的 control 照旧直接写 PX4 setpoint。
+    assert all("control" in choice.tail for choice in chain.choices), \
+        "两档都必须有 control —— 开始键/解锁/起飞/轨迹原点/降落只写一遍"
+    assert _cmd_for("control", chain.choice(1)).endswith("ros2 launch control control.launch.py"), \
+        f"默认档的 control 不许带 output_mode（默认就是 position）：{_cmd_for('control', chain.choice(1))}"
+    assert _cmd_for("control", chain.choice(2)).endswith(" output_mode:=external"), \
+        ("模型预测控制档的 control 必须切到 external —— 否则它会和 mpc 同时写 PX4 setpoint："
+         f"{_cmd_for('control', chain.choice(2))}")
+    assert chain.default_choice == 1, "★ 空回车 = offboard 控制 = 今天的行为，一个字不变"
     # ★ 空回车 = 默认档 ⟹ 默认档下的顺序与这一版之前**逐字相同**
     assert list(z0.CHAIN_BY_KEY["up_manual"].steps) == list(z0.MANUAL_CHAIN)
     assert list(z0.CHAIN_BY_KEY["up"].steps) == list(z0.UP_CHAIN)
 
 
-def test_四档的编号与默认档的提示一致():
+def test_模型预测控制档没有_hold_那一条():
+    """★ 二定删掉的正是那条路：`mpc` 那一档的参考源**只能是 `traj`** —— 名字里不许有 `hold`，
+    屏幕上（收尾）也不许再提"这一档的参考是 hold"那类话（留着会把现场指向一条不存在的路）。"""
+    chain = z0.CHAIN_BY_KEY["up"]
+    keys = [choice.key for choice in chain.choices]
+    assert "mpc_hold" not in keys, f"`hold` 那一档还在：{keys}"
+    mpc = chain.choice(2)
+    text = "\n".join((mpc.title,) + mpc.closing)
+    assert "hold" not in text, f"模型预测控制那一档的屏上还在说 hold：{text}"
+    # 而下面这条是"它还真的带上了正确的参考源"的**正面**判据（只查名字只能证明没写错字）。
+    # ★★ 票 15：参考源从 `traj` 换成 `control`（绝对目标），`start_traj_reference` **不再带**
+    #   —— `/traj/start` 由 control 的 TRACK 分支发，两边都发会让参考时钟归零两次。
+    assert _mpc_cmd(mpc).endswith(
+        " --ros-args -p reference_source:=control"
+        " --ros-args -p offboard_prestream:=true"), \
+        f"模型预测控制档的命令不对：{_mpc_cmd(mpc)}"
+    assert "start_traj_reference" not in _mpc_cmd(mpc), \
+        "control 在场时 mpc 不许再自己发 /traj/start（参考时钟会被归零两次）"
+    assert _mpc_cmd(chain.choice(1)).endswith("ros2 run nmpc mpc_node.py"), \
+        f"offboard 控制档**不许**带这些参数（它根本不起模型预测控制）：{_mpc_cmd(chain.choice(1))}"
+
+
+def test_默认档的提示与默认档一致():
     """菜单提示里写的"默认是哪一档"必须由 `Chain.default_choice` 现算 —— 不许另抄一份编号。
 
     ★ 判据直接从 `CHAINS` 现取（**不另设**一份 `{key: 默认档}` 的常量：那种副本没有生产读者，
-      却正是"两份编号会分叉"的入口）。第 8 项 = 1、第 9 项 = 2 写死在这里**是故意的**
+      却正是"两份编号会分叉"的入口）。第 8 项 = 1、第 9 项 = 1 写死在这里**是故意的**
       —— 它就是"空回车 = 今天的行为"那句话的锚。
+    ★ 只有一档的链（第 8 项）的提示里**根本不列档号** ⟹ 这一条对它无从适用，跳过并**明说**。
     """
-    assert {c.key: c.default_choice for c in z0.CHAINS} == {"up_manual": 1, "up": 2}
+    assert {c.key: c.default_choice for c in z0.CHAINS} == {"up_manual": 1, "up": 1}
     for chain in z0.CHAINS:
-        # 提示里四档用 `/` 隔开、每档形如 `N 标题`；标默认的那一档写着 `（**默认**`
-        marked = re.findall(r"(\d) [^/]*?（\*\*默认\*\*", z0.ACTION_BY_KEY[chain.key].note)
+        note = z0.ACTION_BY_KEY[chain.key].note
+        # 提示里多档用 `/` 隔开、每档形如 `N 标题`；标默认的那一档写着 `（**默认**`
+        marked = re.findall(r"(\d) [^/]*?（\*\*默认\*\*", note)
+        if len(chain.choices) == 1:
+            assert marked == [] and "档" not in note, \
+                f"{chain.key}: 只有一档，提示里不该出现档号/选档的话：{note!r}"
+            continue
         assert marked == [str(chain.default_choice)], (
             f"{chain.key} 的菜单提示里标默认的档位是 {marked}，"
             f"而 `default_choice` 是 {chain.default_choice}")
 
 
-def test_起链问的那一句_四档都列出来_且标出默认(monkeypatch, capsys):
-    """★ 这是操作者真正看到的屏：四个档都在、**正好一处**"（默认）"、且标在默认那一档上。"""
+def test_起链问的那一句_两档都列出来_且标出默认(monkeypatch, capsys):
+    """★ 这是操作者真正看到的屏：第 9 项两档都在、**正好一处**"（默认）"、且标在默认那一档上。"""
     monkeypatch.setattr("builtins.input", lambda *a: "")
-    for chain in z0.CHAINS:
-        capsys.readouterr()
-        z0.ask_chain_choice(chain)
-        lines = capsys.readouterr().out.splitlines()
-        numbered = [ln for ln in lines if re.match(r"\s*[1-4] = ", ln)]
-        assert len(numbered) == 4, f"{chain.key}: 四个档没列全：{lines}"
-        marked = [ln for ln in numbered if "（默认）" in ln]
-        assert len(marked) == 1, f"{chain.key}: 「（默认）」应当正好一处：{marked}"
-        assert marked[0].strip().startswith(f"{chain.default_choice} = "), \
-            f"{chain.key}: 默认标错档了：{marked[0]!r}"
+    chain = z0.CHAIN_BY_KEY["up"]
+    z0.ask_chain_choice(chain)
+    lines = capsys.readouterr().out.splitlines()
+    numbered = [ln for ln in lines if re.match(r"\s*[1-2] = ", ln)]
+    assert len(numbered) == 2, f"两档没列全：{lines}"
+    marked = [ln for ln in numbered if "（默认）" in ln]
+    assert len(marked) == 1, f"「（默认）」应当正好一处：{marked}"
+    assert marked[0].strip().startswith(f"{chain.default_choice} = "), \
+        f"默认标错档了：{marked[0]!r}"
+    assert all(choice.title in "\n".join(numbered) for choice in chain.choices)
+
+
+def _answers(replies: list):
+    """按脚本给答案的假 `input`：**给完就抛**（不是固定返回同一个值）。
+
+    ★ 固定返回值有一个安静的坑：被测的那条路要是"一直打错就一直问"，用例会**死循环**
+      —— 挂住而不是变红，`-q` 下看着像"跑得慢"。给完就抛，等于把"问的次数"也钉住了。
+    """
+    pending = list(replies)
+
+    def fake(*_a):
+        assert pending, "问得比预期多（`ask_chain_choice` 该在拿到答案后就返回）"
+        return pending.pop(0)
+
+    return fake
 
 
 def test_起链问的那一句_空回车走默认_打错的再问一遍(monkeypatch, capsys):
     """★ 纪律与 `ask_confirm` 一条：**不猜、不吞** —— 打错的再问一遍，空回车才是默认。"""
     chain = z0.CHAIN_BY_KEY["up"]
-    replies = iter(["7", "mpc", "", ""])
-    monkeypatch.setattr("builtins.input", lambda *a: next(replies))
+    monkeypatch.setattr("builtins.input", _answers(["7", "mpc", "", ""]))
     assert z0.ask_chain_choice(chain).key == "offboard"          # 第 9 项的默认档
     out = capsys.readouterr().out
     assert out.count("不认识的选项") == 2, "打错两次就该问两遍（`mpc` 那种非数字也算打错）"
 
-    monkeypatch.setattr("builtins.input", lambda *a: "4")
-    assert z0.ask_chain_choice(chain).key == "mpc_traj"
-    assert z0.ask_chain_choice(z0.CHAIN_BY_KEY["up_manual"]).key == "mpc_traj", \
-        "★ 四档对两条链是**同一张表**（第 8 项也能选到模型预测控制档）"
+    # ★ `input` 一律走"按脚本给答案、给完就**炸**"的假件（**不是**固定返回同一个值）：
+    #   问不完的那条路（一直打错）在固定返回值下会变成**死循环**——测试挂住而不是变红，
+    #   现场看起来只是"跑得慢"。给完就抛，等于把这一条也钉住了。
+    monkeypatch.setattr("builtins.input", _answers(["2"]))
+    assert z0.ask_chain_choice(chain).key == "mpc"
+    monkeypatch.setattr("builtins.input", _answers(["3", "9", "2"]))
+    assert z0.ask_chain_choice(chain).key == "mpc", \
+        "★ 第 9 项只有两档 ⟹ 3 与 9 都算打错，要一直问到认识的数字为止（不许悄悄退回默认档）"
 
 
 def test_起链问的那一句_非交互时走默认(monkeypatch, capsys):
@@ -438,7 +744,6 @@ def test_起链问的那一句_非交互时走默认(monkeypatch, capsys):
         raise EOFError
 
     monkeypatch.setattr("builtins.input", eof)
-    assert z0.ask_chain_choice(z0.CHAIN_BY_KEY["up_manual"]).key == "none"
     assert z0.ask_chain_choice(z0.CHAIN_BY_KEY["up"]).key == "offboard"
     assert "非交互" in capsys.readouterr().out
 
@@ -447,46 +752,48 @@ def test_档位越界要报错_不许悄悄退回默认():
     with pytest.raises(ValueError):
         z0.CHAIN_BY_KEY["up"].choice(0)
     with pytest.raises(ValueError):
-        z0.CHAIN_BY_KEY["up"].choice(5)
+        z0.CHAIN_BY_KEY["up"].choice(3)      # ★ 二定之后第 9 项只有两档
+    with pytest.raises(ValueError):
+        z0.CHAIN_BY_KEY["up_manual"].choice(2)   # 第 8 项只有一档
 
 
-def _mpc_cmd(choice) -> str:
+def _cmd_for(key: str, choice) -> str:
     """按 `start_child` 的同一条路（`optionals_suffix`）拼出这一档**真正会跑**的那条命令。"""
-    action = z0.ACTION_BY_KEY["mpc"]
-    chosen = tuple(z0.UP_OPTIONALS.get("mpc", ())) + tuple(choice.extra_optionals)
+    action = z0.ACTION_BY_KEY[key]
+    chosen = tuple(z0.UP_OPTIONALS.get(key, ())) + tuple(choice.extra_optionals)
     return (action.cmd or "") + z0.optionals_suffix(
         action, [o.name in chosen for o in action.optionals])
 
 
-def test_只有_mpc_traj_档带那条_ros_args_参数():
-    """★ 第 3 档（hold）**不带** `reference_source`，第 4 档（traj）**必须带** ——
-    它是这两档唯一的一条命令行差别，搞反一个是"追不到轨迹"、一个是"莫名追轨迹"。"""
-    hold = z0.CHAIN_BY_KEY["up"].choice(3)
-    traj = z0.CHAIN_BY_KEY["up"].choice(4)
-    assert _mpc_cmd(hold) == "ros2 run nmpc mpc_node.py", \
-        f"hold 档不许带参考源参数：{_mpc_cmd(hold)}"
-    assert _mpc_cmd(traj).endswith(" --ros-args -p reference_source:=traj"), \
-        f"traj 档必须带参考源参数：{_mpc_cmd(traj)}"
+def _mpc_cmd(choice) -> str:
+    return _cmd_for("mpc", choice)
 
 
-def test_模型预测控制两档的收尾都要说清_还差哪两步():
-    """★ 起链 ≠ 能飞：模型预测控制档下**没人 arm、没人切 OFFBOARD** ⟹ 那几句必须写在屏上，
-    且**只指文档**（不许在这里给命令 —— `FORBIDDEN_IN_COMMANDS` 扫的正是全文件的字面量）。"""
-    for number in (3, 4):
-        text = "\n".join(z0.CHAIN_BY_KEY["up"].choice(number).closing)
-        assert "OFFBOARD" in text and "armed" in text
-        assert "safety-paths-drill" in text, "要说清那两步的原文在哪"
-    hold = "\n".join(z0.CHAIN_BY_KEY["up"].choice(3).closing)
-    traj = "\n".join(z0.CHAIN_BY_KEY["up"].choice(4).closing)
-    assert "一帧都不发" in traj and "/traj/start" in traj, \
-        "traj 档要点名那条**没有人发**的 `/traj/start`（否则现场只会看到它冻住）"
-    assert "/traj/start" not in hold, "hold 档不起 traj ⟹ 那一条与它无关"
-    # ★ 票 14「这一轮不解决的三件事」第 ③ 条（复核时查出**当时漏了**）：这一档把终端让给
-    #   `fly.py`，而它的状态栏读的是 `control` 的话题 —— 没有 `control` 在跑，那两格永远停在
-    #   「还没收到」。不说这一句，现场第一反应是"操作台坏了"。
-    assert "/control/state" in traj and "状态栏" in traj, \
-        "traj 档要让操作者知道 `fly.py` 的状态栏在这里**是空的**（不是坏了）"
-    assert "状态栏" not in hold, "hold 档根本不起 `fly.py` ⟹ 那一条与它无关"
+def test_模型预测控制档的收尾要说清_开始键与_offboard_档一样():
+    """★★ 票 15 之后这一档**不再是"起链 ≠ 能飞"**：`control` 在场，开始键/解锁/OFFBOARD/
+    起飞/判稳/轨迹原点/`/traj/start`/降落全由它负责，`mpc` 只是输出后端 ⟹ 屏上必须
+    明确写出"**手上的动作与 offboard 档完全一样**"。
+
+    ★ 反面判据同样重要：不能再出现一版的「没有 control」「解锁/切模式要手打」
+      「`start_traj_reference` 替你发 start」—— 那三句现在**全是假的**，留着会把现场
+      引到一条不存在的路上（尤其 `/traj/start`，手打一次就是第二次归零参考时钟）。
+    """
+    text = "\n".join(z0.CHAIN_BY_KEY["up"].choice(2).closing)
+    assert "开始键与 offboard 档完全一样" in text, \
+        "必须明说两种控制只是输出后端不同（否则操作员会以为这一档还要额外做点什么）"
+    assert "唯一任务总管" in text and "control" in text
+    assert "/control/target" in text and "绝对目标" in text, \
+        "要说清 mpc 在这条链上吃什么（否则现场会去 mpc 里找轨迹参考）"
+    assert "/traj/start" in text, "要说明 start 由 control 的 TRACK 分支发"
+    assert "失流保护" in text, "control 死了之后的兜底必须写清楚（0.5 s 关闸 + PX4 1 s）"
+    # 反面：三句旧话不许留。
+    for stale in ("没有 `control`", "手打", "start_traj_reference", "safety-paths-drill"):
+        assert stale not in text, f"模型预测控制档的收尾里还留着一版的旧话：{stale!r}"
+    # ★ 状态栏在这一档**确实可用**（`control` 在场）—— 与一版的"会是空的"正好相反。
+    assert "/control/state" in text and "照常可用" in text
+    # offboard 控制档的收尾里不该出现模型预测控制的概念。
+    offboard = "\n".join(z0.CHAIN_BY_KEY["up"].choice(1).closing)
+    assert "/control/target" not in offboard and "mpc_node" not in offboard
 
 
 def test_起链里没有会动飞机的入口():
@@ -547,7 +854,30 @@ def test_mpc_那一步的日志判据仍出现在_mpc_node_源码里():
     assert z0.STEP_LOG_READY["mpc"] in src, (
         f"`mpc_node.py` 里找不到那句启动日志 {z0.STEP_LOG_READY['mpc']!r} —— "
         "改措辞可以，但要同步改 `STEP_LOG_READY`")
-    assert z0.ACTION_BY_KEY["mpc"].cmd == "ros2 run nmpc mpc_node.py"
+    assert z0.ACTION_BY_KEY["mpc"].cmd.endswith("ros2 run nmpc mpc_node.py"), \
+        f"`mpc` 那条命令的可执行文件改了：{z0.ACTION_BY_KEY['mpc'].cmd}"
+
+
+def test_mpc_那条命令自带_acados_的两个环境变量():
+    """★★ **2026-10-17 起链实测**：第 9 项死在第 5 步，`OSError: …/libacados.so: cannot open
+    shared object file` —— shell 里两个变量都没设，`acados_template` 去猜了 `~/refs/acados`（源码树）。
+
+    ★ 这条用例钉的是"**操作者不用记着先 export**"：两个变量必须在**命令里**，
+      且 `--dry-run` 摊出来的同一条命令也带得上（它就是从 `cmd` 拼的）。
+    ★ 判据取"两个名字都在前缀里"而不是比整串：真正的价值是**缺一个就起不来**
+      （缺 `LD_LIBRARY_PATH` ⟹ `libhpipm.so` 找不到），所以两个都要在。
+    """
+    cmd = z0.ACTION_BY_KEY["mpc"].cmd
+    assert cmd.startswith("env "), f"acados 的环境变量必须挂在命令前面：{cmd}"
+    prefix = cmd.split(" ros2 ")[0]
+    for name in ("ACADOS_SOURCE_DIR", "LD_LIBRARY_PATH"):
+        assert name in prefix, f"{name} 没进 `mpc` 那条命令的环境前缀：{prefix}"
+    # ★ 外层已经指对了就听外层的（同 `src/nmpc/test` 的 `_dut_env()`），别写死一个绝对路径
+    assert "$HOME/acados" in prefix and "${ACADOS_SOURCE_DIR:-" in prefix, \
+        f"默认值应当是 `$HOME/acados`、且不覆盖外层已设的值：{prefix}"
+    # ★ 末尾不许留一个空路径元素（空 = 当前目录，ld.so 的规矩）
+    assert "${LD_LIBRARY_PATH:+:" in prefix, \
+        f"`LD_LIBRARY_PATH` 没设时会拼出一个尾部空元素（= 当前目录）：{prefix}"
 
 
 def test_mavros_的判据是_connected_不是有帧():
@@ -595,16 +925,17 @@ def test_dry_run_up_把顺序与判据全摊开_且一条都不起(capsys, monke
 
 
 def _default_block(out: str) -> str:
-    """`--dry-run` 输出里**默认那一档**那一块（分隔标题以上）——
-    ★ 判据都落在这里：另一块是"选到才起"的，混着看会得出"默认档起了 control"这种假结论。"""
+    """`--dry-run` 输出里**默认那一档**那一块（有"其他档"的链：分隔标题以上；
+    ★ 只有一档的链（第 8 项）根本没有第二块 ⟹ 整份输出就是它）——"""
     head, sep, _tail = out.partition(z0.OTHER_CHOICES_HEADER)
-    assert sep, f"摊开的两块之间没有分隔标题 {z0.OTHER_CHOICES_HEADER!r}"
+    if not sep:
+        return out                       # 只有一档 ⟹ 没有分隔标题（`render_chain` 明说"不问"）
     return head
 
 
 def test_dry_run_up_manual_只到_mocap_且不起_control(capsys, monkeypatch):
     """第 8 项（手动遥控飞）与第 9 项只差后两条 + 选轨迹那一步 ——
-    摊开的**默认那一档**必须正好是这些（另起一块里那三档就写在分隔标题以下）。"""
+    摊开的**默认那一档**必须正好是这些，而且**没有第二块**（复原：它只有一档、不问）。"""
     def boom(*_args, **_kwargs):
         raise AssertionError("`--dry-run up_manual` 起了东西")
 
@@ -617,15 +948,14 @@ def test_dry_run_up_manual_只到_mocap_且不起_control(capsys, monkeypatch):
     default = _default_block(out)
     for key in z0.MANUAL_CHAIN:
         assert z0.ACTION_BY_KEY[key].cmd in default, f"{key} 的命令没摊出来"
-    assert z0.ACTION_BY_KEY["control"].cmd not in default, "手动飞那条**不许**起 control"
-    assert z0.ACTION_BY_KEY["traj"].cmd not in default, "手动飞那条**不许**起 traj"
-    assert z0.ACTION_BY_KEY["fly"].cmd not in default, "手动飞那条不选轨迹（没有 traj 可选）"
+    assert z0.ACTION_BY_KEY["control"].cmd not in out, "手动飞那条**不许**起 control"
+    assert z0.ACTION_BY_KEY["traj"].cmd not in out, "手动飞那条**不许**起 traj"
+    assert z0.ACTION_BY_KEY["mpc"].cmd not in out, "手动飞那条**不许**起模型预测控制"
+    assert z0.ACTION_BY_KEY["fly"].cmd not in out, "手动飞那条不选轨迹（没有 traj 可选）"
     assert "遥控器" in default          # 起完是"你自己用遥控器飞"
-    # ★ 另外三档的命令也要摊开（选到才起）—— 否则现场不知道选 3/4 会发生什么
-    other = out.partition(z0.OTHER_CHOICES_HEADER)[2]
-    for number in (2, 3, 4):
-        assert z0.CHAIN_BY_KEY["up_manual"].choice(number).title in other, \
-            f"第 {number} 档没摊出来"
+    # ★ 复原的判据：**没有**「其他档」那一块（一版之前它就没有），且明说"不问"
+    assert z0.OTHER_CHOICES_HEADER not in out, "第 8 项只有一档 ⟹ 不该有「其他档」那一块"
+    assert "不问" in out
 
 
 def test_起链先重入_source_再问选档(up_world, monkeypatch, capsys):
@@ -634,7 +964,7 @@ def test_起链先重入_source_再问选档(up_world, monkeypatch, capsys):
     order: list = []
     monkeypatch.setattr(z0, "ensure_sourced", lambda: order.append("sourced"))
     monkeypatch.setattr(z0, "ask_chain_choice",
-                        lambda chain: (order.append("asked"), chain.choice(3))[1])
+                        lambda chain: (order.append("asked"), chain.choice(2))[1])
     monkeypatch.setattr(z0, "wait_for_step", lambda *a, **k: (True, {}))
     monkeypatch.setattr(z0, "wait_for_log", lambda *a, **k: (True, ""))
 
@@ -642,7 +972,7 @@ def test_起链先重入_source_再问选档(up_world, monkeypatch, capsys):
     assert order[:2] == ["sourced", "asked"], f"先问了才重入 ⟹ 答案会被 exec 丢掉：{order}"
 
 
-def test_dry_run_把四档的命令都摊开且默认那档排在前面(capsys, monkeypatch):
+def test_dry_run_把两档的命令都摊开且默认那档排在前面(capsys, monkeypatch):
     def boom(*_a, **_k):
         raise AssertionError("`--dry-run up` 不该提问、也不该起东西")
 
@@ -653,14 +983,24 @@ def test_dry_run_把四档的命令都摊开且默认那档排在前面(capsys, 
     out = capsys.readouterr().out
     default = _default_block(out)
     other = out.partition(z0.OTHER_CHOICES_HEADER)[2]
-    # 默认档（第 9 项 = offboard）那一块里**只有**它的尾巴；traj 档那条 `--ros-args` 不在里头
+    # 默认档（第 9 项 = offboard 控制）那一块里**只有**它的尾巴；模型预测控制档那三条
+    # `--ros-args` 参数不在里头
     assert z0.ACTION_BY_KEY["control"].cmd in default
-    assert "--ros-args -p reference_source:=traj" not in default, \
-        "★ 那个参数只有模型预测控制 + traj 档才带 ⟹ 不许出现在默认那一块"
-    assert "--ros-args -p reference_source:=traj" in other, "第 4 档那条参数要摊出来"
+    assert "output_mode:=external" not in default, \
+        "★ external 只有模型预测控制档才带 ⟹ 不许出现在默认那一块"
+    assert "--ros-args -p reference_source:=control" not in default, \
+        "★ 模型预测控制的那几条参数只有第 2 档才带"
+    assert "--ros-args -p reference_source:=control" in other, "第 2 档那几条参数要摊出来"
+    assert "offboard_prestream:=true" in other and "output_mode:=external" in other
+    assert "start_traj_reference:=true" not in other, \
+        "control 在场时 mpc 不许再自己发 /traj/start"
     assert z0.ACTION_BY_KEY["mpc"].cmd in other
-    # 第 1 档没有尾巴 ⟹ 它那块里只有公共前缀那三条
-    assert z0.CHAIN_BY_KEY["up"].choice(1).title in other
+    assert z0.ACTION_BY_KEY["control"].cmd in other, "第 2 档的尾格里也有 control（任务总管）"
+    # 第 2 档（模型预测控制）在"其他档"那一块；第 1 档是默认档 ⟹ 它**不**该出现在那里
+    # （★ 默认那一块摊的是它的**命令与判据**，不是它的标题 —— 标题只在提问那一屏上）
+    assert z0.CHAIN_BY_KEY["up"].choice(2).title in other
+    assert z0.CHAIN_BY_KEY["up"].choice(1).title not in other
+    assert f"第 {z0.CHAIN_BY_KEY['up'].default_choice} 档" in default
     # ★ **跨层核对**：摊开的等待上限必须与真等的那一处同源（都问 `wait_kind`）——
     #   `mpc` 那一步（日志判据）要带超时，`traj` 那一步要明说"不等"
     assert f"最多 {z0.STEP_TIMEOUT_S['mpc']:.0f} s" in other, \
@@ -699,7 +1039,7 @@ def up_world(monkeypatch, tmp_path, fake_child):
 
     ★ 前台那一步（`handover`）也换掉：它会真去跑 `fly.py` 并把终端抢走。
     ★ 起链前那一问（`ask_chain_choice`）换成**直接给默认档** —— 与 `ask_confirm` 同一个套路；
-      要试别的档，用例自己再 `monkeypatch` 一次（见 `test_选到_mpc_hold_档就起_mpc_不起_control`）。
+      要试别的档，用例自己再 `monkeypatch` 一次（见 `test_选到_模型预测控制档_先起_traj_再起_mpc_且带上三条参数`）。
     ★ `启动参数`那一栏用的是 `choice.extra_optionals` ⟹ 假 `start_child` 也必须收它，
       否则"第 4 档带没带 `--ros-args`"这件事在编排这一层就没有任何观测点。
     """
@@ -774,56 +1114,60 @@ def test_手动飞那条只起三条_不占前台_也没有_traj_control(up_worl
     assert "遥控器" in capsys.readouterr().out
 
 
-def test_选到_mpc_hold_档就起_mpc_不起_traj_不起_control(up_world, monkeypatch, capsys):
-    """★ 第 3 档（阶梯 3 的系绳悬停用这档）：**只多起 `mpc` 一条** ——
-    `traj` 与 `control` 都不起（hold 档不追轨迹；而且这一档没人给模型预测控制发 `/traj/start`）。"""
+def test_选到_模型预测控制档_先起_traj_再起_mpc_再起_control_且各带参数(up_world, monkeypatch, capsys):
+    """★★ 第 9 项第 2 档（票 15 之后的形状）：`traj → mpc → control`。
+
+    三条额外参数缺一条，这条链就断在某一处：
+    · `reference_source:=control` —— 否则 mpc 还在等 `/traj/reference`，而 control 这档不发它；
+    · `offboard_prestream:=true` —— control 这档不写 PX4 setpoint，进 OFFBOARD 前那条流由 mpc 给；
+    · `control output_mode:=external` —— 否则 control 仍写 `/mavros/setpoint_raw/local`，
+      与 mpc 的 attitude setpoint **两路同时驱动飞控**。
+    ⛔ `start_traj_reference` 不带：`/traj/start` 由 control 的 TRACK 分支发。
+    """
     snapshots, started, foreground, optionals = up_world
-    monkeypatch.setattr(z0, "ask_chain_choice", lambda chain: chain.choice(3))
+    monkeypatch.setattr(z0, "ask_chain_choice", lambda chain: chain.choice(2))
     monkeypatch.setattr(z0, "wait_for_step", lambda *a, **k: (True, {}))
     monkeypatch.setattr(z0, "wait_for_log", lambda *a, **k: (True, ""))
 
     assert z0.cmd_up() == 0
-    assert [c.key for c in started] == ["mavros", "vrpn", "mocap", "mpc"]
-    assert [c.log.name for c in started][-1] == "04-mpc.log"
-    assert optionals[-1] == ("mpc", ()), "第 3 档**不**带参考源参数"
-    assert foreground == [], "模型预测控制档不把终端让给操作台（`fly.py` 的状态栏在模型预测控制档下是空的）"
-    out = capsys.readouterr().out
-    assert "OFFBOARD" in out and "armed" in out, "起完要把「还差哪两步」写在屏上"
-
-
-def test_选到_mpc_traj_档_先起_traj_再起_mpc_且带上参考源参数(up_world, monkeypatch, capsys):
-    """★ 第 4 档：`traj → mpc`，且 `mpc` 那条**带着** `--ros-args -p reference_source:=traj`。"""
-    snapshots, started, foreground, optionals = up_world
-    monkeypatch.setattr(z0, "ask_chain_choice", lambda chain: chain.choice(4))
-    monkeypatch.setattr(z0, "wait_for_step", lambda *a, **k: (True, {}))
-    monkeypatch.setattr(z0, "wait_for_log", lambda *a, **k: (True, ""))
-
-    assert z0.cmd_up() == 0
-    assert [c.key for c in started] == ["mavros", "vrpn", "mocap", "traj", "mpc"]
-    assert optionals[-1] == ("mpc", ("reference_source_traj",)), \
-        "★ 少了这个参数，模型预测控制会去追一条根本没在发的 `/traj/reference`"
+    assert [c.key for c in started] == ["mavros", "vrpn", "mocap", "traj", "mpc", "control"]
+    assert [c.log.name for c in started][-2:] == ["05-mpc.log", "06-control.log"]
+    # ⚠️ 这里记的是**这一档带的名字**（`start_child` 再按各 action 自己的 `optionals` 过滤）
+    #   ⟹ mpc 那条里也会看到 `output_mode_external`（它属于 control）。
+    assert optionals[-2] == ("mpc", ("reference_source_control", "offboard_prestream",
+                                    "output_mode_external")), \
+        "★ mpc 那两条少一条这条链就断在某一处（见 docstring）"
+    assert optionals[-1] == ("control", ("reference_source_control", "offboard_prestream",
+                                        "output_mode_external")), \
+        "★ control 必须切 external，否则两路 setpoint 同时写飞控"
     assert foreground == [z0.ACTION_BY_KEY["fly"].cmd], "选轨迹那一步照旧（`fly.py` 的选择那一半可用）"
-    assert "/traj/start" in capsys.readouterr().out, \
-        "★ 这一档要点名那条**没有人发**的 `/traj/start`，否则现场只会看到它冻住"
+    out = capsys.readouterr().out
+    assert "开始键与 offboard 档完全一样" in out, \
+        "起完要说明：这一档手上的动作与 offboard 档完全相同"
+    assert "/control/target" in out and "唯一任务总管" in out, \
+        "要说清这一档谁管任务、谁只是输出后端"
 
 
-def test_选到_不起控制器_档时第_9_项也只起三条(up_world, monkeypatch, capsys):
-    """第 9 项选第 1 档 = 退回"手动遥控飞"：**不起** traj/control，也不占前台。"""
-    snapshots, started, foreground, _optionals = up_world
+def test_选到_offboard_控制档_起四条_一条参数都不带(up_world, monkeypatch, capsys):
+    """第 9 项第 1 档（默认）= 今天的行为：`traj → control`，**不**起模型预测控制、
+    也不带任何 `--ros-args` 参数。"""
+    snapshots, started, foreground, optionals = up_world
     monkeypatch.setattr(z0, "ask_chain_choice", lambda chain: chain.choice(1))
     monkeypatch.setattr(z0, "wait_for_step", lambda *a, **k: (True, {}))
 
     assert z0.cmd_up() == 0
-    assert [c.key for c in started] == list(z0.MANUAL_CHAIN)
-    assert foreground == []
-    assert "遥控器" in capsys.readouterr().out
+    assert [c.key for c in started] == ["mavros", "vrpn", "mocap", "traj", "control"]
+    assert all(names == () for _key, names in optionals), \
+        f"这一档一条可选参数都不带（`mavros` 的 `gcs_url` 是另一条路）：{optionals}"
+    assert foreground == [z0.ACTION_BY_KEY["fly"].cmd]
+    assert "遥控器开始键" in capsys.readouterr().out
 
 
 def test_mpc_那一步等的是它自己的日志行_等不到就报红并停掉其余的(up_world, monkeypatch, capsys):
     """★ `mpc` 的判据只能落在日志上（闸门关着时它一帧都不发）；等不到 ⟹
     打日志尾巴 + **停掉前面那几条** + 退出码 1（不许留下一半的链）。"""
     snapshots, started, _foreground, _optionals = up_world
-    monkeypatch.setattr(z0, "ask_chain_choice", lambda chain: chain.choice(3))
+    monkeypatch.setattr(z0, "ask_chain_choice", lambda chain: chain.choice(2))
     monkeypatch.setattr(z0, "wait_for_step", lambda *a, **k: (True, {}))
     seen = []
     monkeypatch.setattr(z0, "wait_for_log",
@@ -833,7 +1177,8 @@ def test_mpc_那一步等的是它自己的日志行_等不到就报红并停掉
     assert seen == [("mpc", z0.STEP_LOG_READY["mpc"])], "等错了行（或没等）"
     out = capsys.readouterr().out
     assert "等超时" in out and "假日志尾" in out
-    assert [c.key for c in started] == ["mavros", "vrpn", "mocap", "mpc"], "没往下起第五条"
+    assert [c.key for c in started] == ["mavros", "vrpn", "mocap", "traj", "mpc"], \
+        "★ 这一档 `traj` 在 `mpc` **前面**（两档的尾巴都含 traj）—— 起齐到 mpc 为止"
     assert all(c.stopped and c.closed for c in started), "中断后不能留下任何子进程"
 
 
@@ -914,18 +1259,23 @@ def test_日志尾巴读的是最后几行(tmp_path):
 
 def _launch_package(key: str) -> str:
     """从动作表那条命令里取出包名（`ros2 launch <包> <文件>` / `ros2 run <包> <可执行>`）——
-    **不另抄一份**。★ ticket 14 起链里多了 `mpc`（`ros2 run nmpc mpc_node.py`）⟹ 这里认两种写法。"""
+    **不另抄一份**。★ ticket 14 起链里多了 `mpc`（`ros2 run nmpc mpc_node.py`）⟹ 这里认两种写法。
+    ★ 2026-10-17：`mpc` 那条命令前面多了 `env ACADOS_SOURCE_DIR=… LD_LIBRARY_PATH=…`
+      （起链实测缺它则 `OSError: libacados.so`）⟹ 这里**从 `ros2` 那一段开始取**，
+      不管前面挂了几个 `env` 赋值。"""
     cmd = z0.ACTION_BY_KEY[key].cmd or ""
     parts = cmd.split()
-    assert parts[:1] == ["ros2"] and parts[1:2] in (["launch"], ["run"]), \
+    assert "ros2" in parts, f"{key} 那条命令里没有 `ros2` 这一截：{cmd}"
+    i = parts.index("ros2")
+    assert parts[i + 1:i + 2] in (["launch"], ["run"]), \
         f"{key} 那条命令既不是 launch 也不是 run：{cmd}"
-    return parts[2]
+    return parts[i + 2]
 
 
 def test_清除目标表按名字扫_且把起链的每一条都盖住():
     """★ 判据来自 ticket 22 §八：起链能起的每一条，清除都必须能扫到 ——
     否则"清了之后串口还被占着"这类残留只能靠人肉 `ps`。
-    ★ ticket 14：判据从"默认那五条"扩到**四档合起来**能起的全部（含 `mpc`）。"""
+    ★ ticket 14：判据从"默认那五条"扩到**各档合起来**能起的全部（含 `mpc`）。"""
     keys = [t.key for t in z0.DOWN_TARGETS]
     assert keys[0] == "mavros", "串口的持有者应当排在最前面（最先要看它有没有放开）"
     for key in _chain_choice_keys(z0.CHAIN_BY_KEY["up"]):

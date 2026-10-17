@@ -76,11 +76,13 @@ __all__ = [
     "WARMUP_CYCLES", "FALLBACK_HOLD_FRAMES", "JUMP_DT_FLOOR_S",
     "MODE_OFFBOARD", "STATUS_SOURCE_PERIOD_S",
     "STATE_SOURCE_MOCAP", "STATE_SOURCE_PX4", "STATE_SOURCES", "SAT_TOL_REL",
-    "REFERENCE_SOURCE_HOLD", "REFERENCE_SOURCE_TRAJ", "REFERENCE_SOURCES",
+    "REFERENCE_SOURCE_HOLD", "REFERENCE_SOURCE_TRAJ", "REFERENCE_SOURCE_CONTROL",
+    "REFERENCE_SOURCES",
     "IGNORE_PX", "IGNORE_PY", "IGNORE_PZ", "IGNORE_VX", "IGNORE_VY", "IGNORE_VZ",
     "IGNORE_YAW",
     "StopConfig", "ControlConfig", "Cycle", "NodeCore", "FallbackLadder",
-    "extrapolate_state", "hold_reference", "traj_reference", "traj_reference_fields",
+    "extrapolate_state", "hold_reference", "traj_reference", "absolute_reference",
+    "traj_reference_fields",
     "yaw_from_quat", "pose_to_state",
     "mocap_stamp_s", "px4_stamp_s", "px4_vector_to_enu", "px4_quat_to_enu",
     "px4_pose_to_enu", "saturated_bounds", "frame_is_finite", "solution_usable",
@@ -181,13 +183,19 @@ STATE_SOURCES = (STATE_SOURCE_MOCAP, STATE_SOURCE_PX4)
 #: |---|---|---|
 #: | `hold`（默认） | **参数化的位置保持**：`锚点 + hold_offset`，速度 0、机头 = 锚点机头 | 至今为止的全部实飞（A 档 ticket 09、B 档 ticket 11） |
 #: | `traj` | `/traj/reference`（`mavros_msgs/PositionTarget`，**相对轨迹原点**）⟹ 目标 = **本节点的锚点** + 它 | S5 判据②「三条轨迹」（[ticket 11](../../../.scratch/phase2/issues/11-sitl-tier-b-seam3.md) 的飞） |
+#: | `control` | `/control/target`（**绝对**位置/速度/yaw，ENU/FLU）⟹ 直接用，**不加锚点** | 菜单 9 的模型预测控制档：`control` 当任务总管（票 15） |
 #:
 #: ★ 为什么合成一个封闭集合：参数写错一个字母（`track`）必须**启动即退** —— 否则它会被
 #:   当成"等于 hold"而静静地悬停在原地，而"MPC（模型预测控制）在追一条轨迹"与"它锚在原地"在话题面上
 #:   都是**频率正常、数值有限**的一串角速率（同 `STATE_SOURCES` 的理由）。
 REFERENCE_SOURCE_HOLD = "hold"
 REFERENCE_SOURCE_TRAJ = "traj"
-REFERENCE_SOURCES = (REFERENCE_SOURCE_HOLD, REFERENCE_SOURCE_TRAJ)
+#: ★★ 票 15：`control` 已经把**绝对目标**算好了（原点 + 轨迹 + 起飞斜坡 + 悬停全在它那边）。
+#:   本档只负责"跟着这个目标飞"，**不加锚点、不判轨迹完成** —— 开始键/解锁/切模式/降落
+#:   全部仍是 `control` 的事。★ 这也是后续更多控制方式共用的**唯一接缝**：
+#:   任何新后端只要订阅 `/control/target`，就能替换本档，而 `control`/`traj`/开始键不动。
+REFERENCE_SOURCE_CONTROL = "control"
+REFERENCE_SOURCES = (REFERENCE_SOURCE_HOLD, REFERENCE_SOURCE_TRAJ, REFERENCE_SOURCE_CONTROL)
 
 #: `mavros_msgs/PositionTarget.type_mask` 里**我们用到的**几个"忽略"位。
 #: ★ 本模块的契约是**不 import ROS**（含 `mavros_msgs`）⟹ 这几个数只能抄一份；
@@ -256,6 +264,13 @@ class StopConfig:
     #:   停机条件（离开 OFFBOARD / 掉 armed / 状态源超时）把闸门关上。理由：本节点**不是**
     #:   任务状态机，它不认识"这一趟"是什么；"任务放弃"归 `control`（Phase 1）那一侧。
     traj_stream_gap_s: float = 0.5
+    #: `/control/target` 的**超时**判据 [s]（只有 `reference_source="control"` 才用得上）。
+    #: ★★ **后果与 `traj` 档相反：关闸门，不是冻结。** 这一档的发布方是 `control`，
+    #:   而它同时拿着开始键、解锁、切 OFFBOARD、降落与轨迹原点 —— 它一停就不该再有人
+    #:   替它把飞机稳在最后一个目标上（那是"看着正常、其实任务总管已经没了"的静默失败）。
+    #:   关闸门 ⟹ 本节点停流 ⟹ PX4 在 `COM_OF_LOSS_T` 后自己退出 OFFBOARD，这才是兜底。
+    #: ★ 量级照抄 `traj_stream_gap_s`：`control` 也是 50 Hz ⟹ 0.5 s = 25 帧，远大于抖动。
+    control_target_timeout_s: float = 0.5
     #: ☠️ **`0.75` 是 uXRCE-DDS 载体的旧值（载体换到 `/mavros/state` 后它恒真）** ——
     #: 账与出处见类 docstring 的第二条。**2.5** 与 Phase 1 的 `state_timeout_s` 同值。
     status_timeout_s: float = 2.5
@@ -669,6 +684,32 @@ def traj_reference(x_anchor: np.ndarray, config: ControlConfig, N: int, dt_s: fl
     return out
 
 
+def absolute_reference(config: ControlConfig, N: int, dt_s: float,
+                       p_abs, v_abs, yaw_ref: float) -> np.ndarray:
+    """构造 `(N+1, NX)` 的**绝对**目标参考（`reference_source="control"`，票 15）。
+
+    与 `traj_reference` 的区别只有一条、但很关键：**没有锚点**。`control` 发来的
+    `/control/target` 已经是 ROS/ENU 的绝对点（它自己把轨迹原点、起飞斜坡、悬停点都加好了），
+    这里再叠一个锚点就会把目标整体搬走 —— 而那个错**不会报错**，只会让飞机追一个
+    偏了一截的点（与 `hold_reference` 的 ★★ 是同一族静默失败）。
+
+    ★ 时域外推仍与 `traj_reference` 逐字同源：`p_ref(t_k) = p_abs + v·(k·dt_s)`、
+      速度常量、姿态水平 + 纯偏航。理由（模型的一条精确解）见 `traj_reference` 的 ★★。
+    ★ `p_abs` / `v_abs` 在 `NodeCore.on_control_target` 里已经要求**三轴齐全**：
+      掩码忽略任何一轴 ⟹ 整帧作废（这一档的发布方是我们自己的 `control`，没有
+      "某些轴不归它管"的语义；把 `None` 放进来只会静默变成 0）。
+    """
+    p = np.asarray([float(v) for v in p_abs], dtype=float)
+    v = np.asarray([float(v) for v in v_abs], dtype=float)
+    if p.shape != (3,) or v.shape != (3,):
+        raise ValueError(f"绝对目标必须是三轴齐全，收到 p={p_abs!r} v={v_abs!r}")
+    base = np.concatenate([p, v, yaw_quat(float(yaw_ref))])
+    tau = np.arange(N + 1, dtype=float) * float(dt_s)
+    out = np.tile(base, (N + 1, 1))
+    out[:, :3] += tau[:, None] * v[None, :]
+    return out
+
+
 def hold_feedforward(params: Z0Params, N: int) -> np.ndarray:
     """静止保持参考的**解析前馈** `(N, NU)` —— 使 `f(x_ref, u_ref) = 0`（"参考自己就是模型的一条解"）的那个 `u`。
 
@@ -871,6 +912,17 @@ class NodeCore:
         self.traj_bad_frames = 0           # 其中多少帧被整帧作废
         self.traj_bad_why = ""             # 最后一帧坏的读数（进日志；好帧到来时不清空）
 
+        # —— 绝对目标（票 15，只在 `reference_source == "control"` 时被读）——
+        # ★ 与轨迹参考同一套解析与"坏帧只计数、不覆盖"的纪律；差别是**必须三轴齐全**
+        #   （见 `on_control_target`）。存的是解析后的 `(绝对位置, 绝对速度, yaw)`。
+        self.control_pos: Optional[Tuple[float, float, float]] = None
+        self.control_vel: Optional[Tuple[float, float, float]] = None
+        self.control_yaw: Optional[float] = None
+        self.control_target_at_s: Optional[float] = None
+        self.control_target_frames = 0
+        self.control_bad_frames = 0
+        self.control_bad_why = ""
+
     # ── 输入 ──
     def on_status(self, msg, at_s: float) -> None:
         self.status = msg
@@ -910,6 +962,33 @@ class NodeCore:
         self.traj_vel = v
         self.traj_yaw = yaw
         self.traj_reference_at_s = float(at_s)
+
+    def on_control_target(self, msg, at_s: float) -> None:
+        """`/control/target`（`mavros_msgs/PositionTarget`，票 15）—— 只在 `control` 档订阅。
+
+        ★★ **三轴必须齐全**（位置、速度、yaw 都不能被掩码忽略）：这一档的发布方是我们
+          自己的 `control`，它每次都填满（`type_mask=2496`，位置+速度+yaw 有效）。
+          真出现"某一轴被忽略"只可能是**配置/实现错了**，而把它当 `None` 塞进参考会让
+          那一轴静默变成 0（例如 z=0 ⟹ 目标在地面）。⟹ 整帧作废，理由进日志。
+        ★ 与 `on_traj_reference` 同一条纪律：**坏帧不覆盖**最后一帧好目标。
+        """
+        self.control_target_frames += 1
+        p, v, yaw, bad = traj_reference_fields(msg)
+        if bad is None:
+            missing = [name for name, val in zip("xyz", p) if val is None]
+            missing += [f"v{name}" for name, val in zip("xyz", v) if val is None]
+            if yaw is None:
+                missing.append("yaw")
+            if missing:
+                bad = "绝对目标缺字段：" + "、".join(missing) + "（掩码把它们忽略了）"
+        if bad is not None:
+            self.control_bad_frames += 1
+            self.control_bad_why = bad
+            return
+        self.control_pos = (float(p[0]), float(p[1]), float(p[2]))
+        self.control_vel = (float(v[0]), float(v[1]), float(v[2]))
+        self.control_yaw = float(yaw)
+        self.control_target_at_s = float(at_s)
 
     def on_local_position(self, msg, at_s: float) -> None:
         self.local_position = msg
@@ -992,11 +1071,23 @@ class NodeCore:
             #: 最后一帧坏在哪（好帧**不清空**它）—— "`ref_bad` 在涨"时这是唯一能指出
             #: 是哪一路上游在写非有限值的读数。没有坏帧就是 `null`。
             d["ref_bad_why"] = self.traj_bad_why or None
+        elif self.config.reference_source == REFERENCE_SOURCE_CONTROL:
+            # 绝对目标的取证面（票 15）：与上面同一组键名，读日志的人不必记两套。
+            # ★ 没有 `ref_frozen`：这一档超时是**关闸**，由 `Cycle.reason` 的
+            #   `no_control_target` 回答（"冻结"在这一档不存在）。
+            d["ref_cb"] = self.control_target_frames
+            d["ref_bad"] = self.control_bad_frames
+            d["ref_age_s"] = _num_json(self.control_age(now_s))
+            d["ref_bad_why"] = self.control_bad_why or None
         return d
 
     def traj_age(self, now_s: float) -> float:
         """最近一帧**好的** `/traj/reference` 的龄 [s]（一帧都没到过 = `inf`，同 `age`）。"""
         return self.age(self.traj_reference_at_s, now_s)
+
+    def control_age(self, now_s: float) -> float:
+        """最近一帧**好的** `/control/target` 的龄 [s]（一帧都没到过 = `inf`）。"""
+        return self.age(self.control_target_at_s, now_s)
 
     def traj_frozen(self, now_s: float) -> bool:
         """参考超时 ⟹ **就地停住**（位置不再外推、速度置 0）；见 `StopConfig.traj_stream_gap_s`。
@@ -1138,15 +1229,36 @@ class NodeCore:
             #   —— "缺一帧参考就保持上一个目标，不回退到原点"。停发会让兜底阶梯接管
             #   （hold 10 帧 ⟹ hover），那比"就地停住"激烈得多，而参考丢帧本身是可恢复的。
             ref_frozen = self.traj_frozen(now_s)
+        elif self.config.reference_source == REFERENCE_SOURCE_CONTROL:
+            # ★★ **超时关闸门，不冻结**（票 15）：`/control/target` 的发布方 `control`
+            #   同时拿着开始键、解锁、切 OFFBOARD、降落与轨迹原点 —— 它一停，本节点
+            #   没有任何依据继续替它飞。关闸 ⟹ 停流 ⟹ PX4 的 OFFBOARD 断流保护接管。
+            #   ⛔ 别照抄 `traj` 档的"冻结"：那会让飞机停在最后一个目标上，
+            #   而"任务总管已经没了"在话题面上与"正常悬停"完全一样。
+            if self.control_pos is None:
+                return self._hold("no_control_target", now_s, age_status, age_state,
+                                  detail="还没收到过 /control/target（或收到的全是坏帧）")
+            age_target = self.control_age(now_s)
+            if age_target > stop.control_target_timeout_s:
+                return self._hold(
+                    "no_control_target", now_s, age_status, age_state,
+                    detail=f"目标龄 {age_target:.2f} s > 上限 "
+                           f"{stop.control_target_timeout_s:g} s")
 
         x0 = extrapolate_state(x_meas, self.config.tau_s)
         # ★ 参考从**锚点**起，不从这一拍的测量起（ticket 09；理由与那场 0.9 m/s 的爬升见
         #   `hold_reference` 的 ★★）。锚点在这一拍之前钉/重钉（见 `_update_anchor`）。
-        anchor_event = self._update_anchor(x_meas, now_s)
+        # ★ `control` 档**不钉锚点**：目标是绝对的，锚点既不参与参考、也不该被
+        #   PX4 的 reset counter 搬动（那只会让日志里出现一次没有后果的"重锚"）。
+        anchor_event = "" if self.config.reference_source == REFERENCE_SOURCE_CONTROL \
+            else self._update_anchor(x_meas, now_s)
         if self.config.reference_source == REFERENCE_SOURCE_TRAJ:
             x_ref = traj_reference(self.anchor_state(), self.config, self.horizon,
                                    self.horizon_dt_s, self.traj_pos, self.traj_vel,
                                    self.traj_yaw, freeze=ref_frozen)
+        elif self.config.reference_source == REFERENCE_SOURCE_CONTROL:
+            x_ref = absolute_reference(self.config, self.horizon, self.horizon_dt_s,
+                                       self.control_pos, self.control_vel, self.control_yaw)
         else:
             x_ref = hold_reference(self.anchor_state(), self.config, self.horizon)
 

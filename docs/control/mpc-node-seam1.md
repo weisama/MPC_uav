@@ -547,7 +547,7 @@ python3 -m pytest src/nmpc/test/test_mpc_node.py -q      # 2026-10-10 实测 ≈
 > 下行从 uXRCE-DDS 的 `/fmu/*` 换到 **mavros** ⟹ 三条未决的**前提**都变了。
 > 体例如下：每条**先写新状态**，原文**原样留在**「原文（2026-10-10，uXRCE-DDS 前提）」块里 ——
 > ⛔ 原文是**起因证据**（`MAV_*_CONFIG` 那些读数就是"为什么换载体"的第一手），不许删。
-> **逐条**：① 消解（不再是未决）；② **仍未决**，但换成 mavros 形态；③ 仍成立且**更难办**。
+> **逐条**：① 消解（不再是未决）；② **部分消解**（2026-10-17，票 15：菜单 9 第 2 档「谁解锁/谁切模式」归属 = `control`；**飞行中切换**仍未决），载体换成 mavros 形态；③ 仍成立且**更难办**。
 
 **① ☠️ 已消解：不走 uXRCE-DDS ⟹ 不占串口、不加硬件。**
 
@@ -569,7 +569,16 @@ python3 -m pytest src/nmpc/test/test_mpc_node.py -q      # 2026-10-10 实测 ≈
   "Phase-1 链还在"那一半可以验，(C) 级那一半不行。
 - ⚠️ §E1 当年把它标成"★ Phase 2 阻塞"，但**全仓 `.scratch/` 里没有任何一张票认领它**（`grep -rn UXRCE_DDS_CFG .scratch/` ⟹ 只有 `phase1/15` 的一张对账表提到）。**归属待定。**
 
-**② ☠️ 仍然是未决，但接口换成了 mavros 形态**（三种候选一个没少）。
+**② ★ 2026-10-17（票 15）部分消解：在 `z0.py` 菜单 9 第 2 档的共享流程里，归属 = `control`。**
+
+`control` 是唯一的任务总管：开始键第 1 次上升沿 ⟹ 它请求 `/mavros/cmd/arming` 与
+`/mavros/set_mode`；`mpc_node` 只消费 `/control/target`、发
+`/mavros/setpoint_raw/attitude`，**自己不 arm、不 set_mode**（`reference_source=control` 档）。
+⟹ “谁解锁/谁切模式”在这条链上不再是未决。
+⚠️ **仍未决的是“飞行中从 (A) 换到 (C)”**：没有移交流程，两档仍是起链时二选一；
+且 `offboard_smoke.py` 与 `mpc_node` 仍会抢同一条下行流（见本条下面）。
+
+**原文（换载体后的未决形态）**：
 
 - 接口：`/fmu/in/vehicle_command` → **`/mavros/cmd/arming`**（解锁）+ **`/mavros/set_mode`**（切 OFFBOARD）。
   ★ 这两条现在**已经有一份可用实现**：[`offboard_smoke.py`](../../src/nmpc/nmpc/offboard_smoke.py)

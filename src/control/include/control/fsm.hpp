@@ -325,6 +325,15 @@ struct TrajReference
   double x{0.0};
   double y{0.0};
   double z{0.0};
+  /// 参考速度（ROS/ENU，m/s）—— ★★ 票 15 新增：`output_mode=external` 时它随目标一起
+  ///   发给外部控制器（`/control/target`），当**前馈**用。
+  /// ⚠️ 位置控制（`output_mode=position`）**不消费**这三格：`type_mask=2552` 把速度忽略了，
+  ///   所以这条通路在那档上唯一的后果只是多读三个数 —— 默认 0，行为逐字不变。
+  /// ★ 断流时的处置同位置：`TRACK` 保持上一个目标 ⟹ 速度也必须一起**归零**
+  ///   （不是"保持最后一帧的速度"），否则外部控制器会按那个速度继续外推、自己飞走。
+  double vx{0.0};
+  double vy{0.0};
+  double vz{0.0};
   /// 上一次收到的 `/traj/progress`（0–1）。**跑完之后 `traj` 会一直保持 1.0**。
   /// ⚠️ 它是"最后一次收到的值"，流断的时候**不会**自己归零 ⟹ 判"跑完了"必须配合
   ///   `progress_seen` 与 `track_started_` 两个闩锁（否则上一轮任务留下的 1.0 会让
@@ -578,6 +587,14 @@ struct Decision
   double target_x{0.0};
   double target_y{0.0};
   double target_z{0.0};
+  /// 本帧目标的**速度前馈**（ROS/ENU，m/s）—— ★★ 票 15：只有 `TRACK` 且参考活着时非 0。
+  /// ★ 位置控制那档**不读**它（掩码忽略速度）；它只对 `output_mode=external` 有意义
+  ///   （`/control/target` 的位置 + 速度一起交给外部控制器做模型预测控制的参考）。
+  /// ⚠️ 其余所有阶段都是 0：爬升斜坡的目标本来就在 50 Hz 地自己前进，
+  ///   再叠一份速度前馈等于把同一段位移算两遍。
+  double target_vx{0.0};
+  double target_vy{0.0};
+  double target_vz{0.0};
   /// 本帧 setpoint 的 yaw（ROS/ENU）。★ 起飞前 = 当前机头（不转向），起飞后 = 锁定值。
   double target_yaw{0.0};
   /// 进 `LAND` 的原因是"任务正常走完"而不是失效降级（日志用它区分两种降落）。
@@ -1475,6 +1492,11 @@ inline Decision Fsm::update(const Guards & guards, const Health & health, const 
         d.target_x = traj_x_ + traj.x;
         d.target_y = traj_y_ + traj.y;
         d.target_z = traj_z_ + traj.z;
+        // ★ 票 15：参考速度**逐字转发**（位置加的是原点，速度不用加 —— 原点是常量）。
+        //   外部控制器（今天 = 模型预测控制）用它做前馈；位置那档的掩码会忽略它。
+        d.target_vx = traj.vx;
+        d.target_vy = traj.vy;
+        d.target_vz = traj.vz;
         track_target_x_ = d.target_x;
         track_target_y_ = d.target_y;
         track_target_z_ = d.target_z;

@@ -270,6 +270,10 @@ from rclpy.executors import ExternalShutdownException  # noqa: E402
 from rclpy.node import Node  # noqa: E402
 from rclpy.qos import (DurabilityPolicy, HistoryPolicy, QoSProfile,  # noqa: E402
                        ReliabilityPolicy)
+# ★ `Empty` 只给 `/traj/start` 用（旧的 `reference_source=traj` 档按 `start_traj_reference` 自己发；
+#   票 15 起 `z0.py` 两档都由 `control` 发，本节点在 `reference_source=control` 下不建这个发布者）。
+#   ⚠️ 与 `traj` 订阅的**同一个类型**（`std_msgs/Empty`，见 `traj_node.cpp`）：`traj` 侧零改动。
+from std_msgs.msg import Empty  # noqa: E402
 from visualization_msgs.msg import Marker  # noqa: E402
 
 # ☠️ **这里原本是 `from px4_msgs.msg import OffboardControlMode, VehicleAttitude, …`**
@@ -280,8 +284,9 @@ from visualization_msgs.msg import Marker  # noqa: E402
 # ⛔ 别把 `px4_msgs` 的 import 留着"以防万一"：票面点名的就是"一个没用到的 import 会让
 #   『已经不用 px4_msgs 了』这件事在依赖清单之外看不出来"（`src/nmpc/package.xml` 已撤掉它）。
 from nmpc import NU, sign_map  # noqa: E402
-from nmpc.node_core import (FALLBACK_HOLD_FRAMES, REFERENCE_SOURCE_TRAJ,  # noqa: E402
-                            REFERENCE_SOURCES, STATE_SOURCE_PX4, STATE_SOURCES,
+from nmpc.node_core import (FALLBACK_HOLD_FRAMES, REFERENCE_SOURCE_CONTROL,  # noqa: E402
+                            REFERENCE_SOURCE_TRAJ, REFERENCE_SOURCES,
+                            STATE_SOURCE_PX4, STATE_SOURCES,
                             TAU_MAX_S, TAU_MIN_S,
                             ControlConfig, FallbackLadder, NodeCore, StopConfig,
                             frame_is_finite, hold_feedforward, saturated_bounds,
@@ -342,6 +347,41 @@ TOPIC_MOCAP_VEL = "/mocap/velocity_enu"
 #: 而话题名换了就等于换了一套几何 —— 那种改动该改代码，不该改启动参数（同 `TOPIC_MOCAP` 的理）。
 #: 只有 `reference_source=traj` 时才订阅（同 `state_source` 的条件订阅纪律）。
 TOPIC_TRAJ_REF = "/traj/reference"
+#: ★★ **`control` 发来的绝对目标**（票 15）：`mavros_msgs/PositionTarget`，**ENU/FLU**、
+#: 位置 + 速度 + yaw 全有效（`type_mask=2496`）、50 Hz。只有 `reference_source=control`
+#: 时才订阅（同 `TOPIC_TRAJ_REF` 的条件订阅纪律）。
+#: ★ 与 `/traj/reference` 的**唯一语义差别**：那个是"相对轨迹原点"，这个是"绝对点"
+#:   （`control` 已经把原点、起飞斜坡、悬停点都加好了）⟹ 本节点**不加锚点**。
+#: ⚠️ `coordinate_frame` 字段在这一族内部话题里**只是占位**（与 `/traj/reference` 同一条
+#:   历史口径：`traj_node.cpp` 也填 `FRAME_LOCAL_NED`，而 `control` 按 ENU 读它）。
+#:   权威口径在本行：**值是 ENU/FLU**，两个节点都不解释那个枚举。
+TOPIC_CONTROL_TARGET = "/control/target"
+#: `/traj/start`（`std_msgs/Empty`）—— **参考时钟的零点**（ticket 14 二定）。
+#: ★ 今天两档都由 `control` 在进 `TRACK` 那一刻发（票 15：`reference_source=control` 时
+#:   本节点不参与）。这一条发布路径**只剩旧的 `reference_source=traj` 档**：
+#:   那一档没有 `control` 在场，所以由本节点按 `start_traj_reference`（默认关）自己发。
+TOPIC_TRAJ_START = "/traj/start"
+
+#: ★★ **预流**（`offboard_prestream`）：闸门关着时，**只有**这两个原因下仍然发悬停帧 ——
+#: 它们是"操作者正准备把控制权交过来"的那两个状态（还没解锁 / 解锁了但还在别的模式），
+#: 而 PX4 要"进 OFFBOARD 前 1 s 内持续收到 setpoint"（`COM_OF_LOSS_T`）才肯收。
+#: ⛔ **别把这张名单放宽**：其余每一个关闸原因（`status_stale` / `no_mocap` / `stamp_regress` /
+#:   `pose_jump` / `attitude_jump` / `no_traj_reference` …）都意味着"输入不可信"，
+#:   那时**停流**让 PX4 在 1 s 后把飞机踢出 OFFBOARD 正是我们要保住的那道兜底
+#:   （见 `_gate_closed` 的 ★★）。`no_status` 也不在名单里：那时连"解锁没有、什么模式"都不知道，
+#:   发帧是盲发；而 mavros 一起来就会给出 first 状态 ⟹ 这个窗口只有几秒。
+REASONS_PRESTREAM = ("not_armed", "not_offboard")
+
+#: `start_traj_reference` 的**触发**原因：闸门因为"还没有参考"关着。
+#: ★ 这个原因**蕴含** armed + OFFBOARD + 状态新鲜（判据顺序见 `node_core.cycle`）⟹ 发出去的
+#:   `/traj/start` 只可能落在"操作者已经手动把飞机带进 OFFBOARD、正等参考"这个窗口里。
+REASON_START_TRAJ = "no_traj_reference"
+#: 让它**重新武装**（下一趟还能再发一次）的原因：这三条都表示"这一趟还没开始 / 已经结束"。
+REASONS_REARM_TRAJ_START = ("no_status", "not_armed", "not_offboard")
+#: JSONL 里预流帧的 `fallback` 值。★ 它**不是**兜底阶梯的一档（阶梯是 normal/hold/hover）：
+#: 预流帧出现在"闸门关着"的那条路上，与"求解不可用"是两件事 —— 共用一个词会让复盘时
+#: "这一帧是解坏了还是闸门关着"分不开。
+PHASE_PRESTREAM = "prestream"
 #: ☠️ **闸门源（2026-10-12 换载体，ticket 13 §二③）**：旧值 `/fmu/out/vehicle_status`。
 #: 新载体是 mavros 的 `/mavros/state`（`mavros_msgs/State`）—— 判据见 `node_core.cycle`
 #: （`armed` 且 `mode == "OFFBOARD"`），**1 Hz 定频**这个频率事实决定了 `status_timeout_s` 取 2.5。
@@ -450,12 +490,14 @@ class NodeParams:
     #: A 档：PX4 状态话题（默认是飞控自己的估计；换真值/回放只是改这两个参数）
     px4_position_topic: str = TOPIC_PX4_POS
     px4_attitude_topic: str = TOPIC_PX4_ATT
-    #: ★★ **参考从哪里来**（ticket 17）：`hold`（默认）= 参数化的悬停锚点 + `hold_offset`；
-    #: `traj` = `/traj/reference`（`mavros_msgs/PositionTarget`，与 Phase 1 同一个话题）。
-    #: ☠️ **与 `state_source` 正交**：两档各自独立选（A 档也能飞轨迹、动捕档也能只悬停），
+    #: ★★ **参考从哪里来**（ticket 17 / 票 15）：`hold`（默认）= 参数化的悬停锚点 +
+    #: `hold_offset`；`traj` = `/traj/reference`（**相对**轨迹原点）；`control` =
+    #: `/control/target`（**绝对**位置/速度/yaw，`control` 当任务总管）。
+    #: ☠️ **与 `state_source` 正交**：各档独立选（A 档也能飞轨迹、动捕档也能只悬停），
     #:   所以这里**不合并**成一个"档位"参数 —— 那会造出两个只在某几种组合下成立的档名。
-    #: ⚠️ `traj` 档下 `hold_offset` 必须是 0：那时的目标点是"锚点 + 轨迹给的相对量"，
-    #:   再叠一个偏移就是一个**没人能说清它意味着什么**的平移（校验见 `_validate`）。
+    #: ⚠️ `traj` / `control` 档下 `hold_offset` 必须是 0：前者的目标点是"锚点 + 轨迹给的
+    #:   相对量"、后者是绝对点，再叠一个偏移都是一个**没人能说清它意味着什么**的平移
+    #:   （校验见 `_validate`）。
     reference_source: str = "hold"
     #: `traj` 档：参考**断流**判据 [s] ⟹ **冻结**（位置保持、速度置 0），**不是**停发。
     #: ★ 依据是 Phase 1 的裁定"缺一帧参考就保持上一个目标，不回退到原点"
@@ -467,6 +509,36 @@ class NodeParams:
     #: 取 0.5 s 与 `mocap_timeout_s` / `px4_timeout_s` **同量级**：上游 `traj` 是 50 Hz 发的
     #:   ⟹ 25 拍才判超时，远大于抖动；而它在"上游真挂了"时半秒内就冻住。
     traj_stream_gap_s: float = 0.5
+    #: `control` 档：`/control/target` 的**超时** [s] ⟹ **关闸门**（停流），不是冻结。
+    #: ★★ 理由：这一档的发布方 `control` 同时拿着开始键/解锁/切 OFFBOARD/降落 ——
+    #:   它一停，本节点停流让 PX4 的 OFFBOARD 断流保护接管，才是兜底；
+    #:   冻结会把飞机稳在最后一个目标上，而"任务总管没了"在话题面上与"正常悬停"一样。
+    #: 量级与 `traj_stream_gap_s` 相同（`control` 也是 50 Hz ⟹ 0.5 s = 25 帧）。
+    control_target_timeout_s: float = 0.5
+    #: ★★ **闸门关着时也发悬停帧吗**（ticket 14 二定，**默认关**）。
+    #: 默认关 = 老行为：闸门关着一帧都不发 ⟹ 换载体后 setpoint 就是心跳 ⟹ 持续 > 1 s
+    #: （`COM_OF_LOSS_T`）之后 PX4 **拒绝进 OFFBOARD、也拒绝解锁**。那是 Phase 1 的既有安全网
+    #: （停流 = 明说"我不控制它了"），⛔ **不要为了"顺手"把它默认打开**。
+    #: 打开之后**只在** `REASONS_PRESTREAM` 那两个原因下发一帧**悬停**（`_hover_sp`：零角速率 +
+    #: 悬停推力），别的关闸原因照旧一帧不发 —— 名单与理由见 `REASONS_PRESTREAM`。
+    #: ★ 权限边界（第一手，PX4 1.14.3 `mavlink_receiver.cpp`）：不在 OFFBOARD 时飞控**只**消费
+    #:   这帧里的 `offboard_control_mode`（`:1530-1536`），姿态/角速率 setpoint 那两处都写着
+    #:   "Publish … only once in OFFBOARD"（`:1562` / `:1592`）⟹ 预流**动不了飞机**，
+    #:   它唯一的权限是"让飞控收下我们进 OFFBOARD / 解锁"。
+    #: ⚠️ 那 1 s 的窗口怎么过：闸门真正打开前会有一小段（进 OFFBOARD 了但参考还没来，
+    #:   `no_traj_reference`）—— 那段不在名单里，长度是"`/traj/start` 到第一帧参考"的往返
+    #:   （实测几十毫秒），远小于 1 s；而参考真不来时，让飞控把我们踢出 OFFBOARD 才对。
+    offboard_prestream: bool = False
+    #: ★★ **由本节点发 `/traj/start` 吗**（ticket 14 二定，**默认关**）。
+    #: 默认关 = 老行为：`/traj/start` 只由 `control` 发（它进 `TRACK` 那一刻）。
+    #: ★ 票 15 之后 `z0.py` 两档都起 `control`，**本参数不再由起链打开**；它只留给旧的
+    #:   `reference_source=traj` 档（那一档没有 `control` 在场 ⟹ 没人发 start ⟹ `traj`
+    #:   一帧参考都不发 ⟹ 闸门永远卡在 `no_traj_reference`）。`control` 参考源下直接拒收。
+    #: ★ 只在这一种情形下发（且**只发一次**，见 `_maybe_start_traj`）：闸门因为
+    #:   `no_traj_reference` 关着；重新武装的时机见 `REASONS_REARM_TRAJ_START`。
+    #: ⚠️ `reference_source=hold` 时这个参数**没有意义**（那个原因永远不会出现）⟹ `_validate`
+    #:   现在就拒，不让它静静地待在那里（与 `traj` 档拒 `hold_offset` 同一条纪律）。
+    start_traj_reference: bool = False
     #: 参考点相对**位置保持锚点**的偏移 [m]（ENU）。
     #: ★ 锚点 = 闸门第一次打开那一拍的测量，之后不再移动（ticket 09）⟹ 这是**绝对**目标；
     #:   早期写成"相对当拍测量"的版本会让误差永远关不掉，见 `node_core.hold_reference` 的 ★★。
@@ -520,6 +592,7 @@ class NodeParams:
                 mocap_timeout_s=self.mocap_timeout_s,
                 px4_timeout_s=self.px4_timeout_s,
                 traj_stream_gap_s=self.traj_stream_gap_s,
+                control_target_timeout_s=self.control_target_timeout_s,
                 status_timeout_s=self.status_timeout_s,
                 stop_on_nav_state_exit=self.stop_on_nav_state_exit,
                 stop_on_armed_drop=self.stop_on_armed_drop,
@@ -543,21 +616,28 @@ class NodeParams:
         """
         return ("rate=%g Hz viz=%g Hz | ★状态源=%s（%s）"
                 " | ★参考=%s"
+                " | ★预流=%s / 自发起步=%s"
                 " | τ=%g s 参考偏移(仅hold档)=%s yaw=%s"
                 " | 模型 mass=%g kg hover_thrust=%g ⇒ T_max=%.4f N"
                 " | 垂直偏置 ki_z=%g N/(m·s)%s"
-                " | 停机(mocap>%g s / px4>%g s / status>%g s / 离开 offboard=%s / 掉 armed=%s)"
+                " | 停机(mocap>%g s / px4>%g s / status>%g s / control>%g s"
+                " / 离开 offboard=%s / 掉 armed=%s)"
                 " | 下行=mavros 单频（无独立心跳，理由见模块 docstring）"
                 " | 兜底：保持 %d 拍 → 安全悬停；位姿合理性上限 %g m/s / %g rad/s"
                 % (self.rate_hz, self.viz_hz,
                    self.state_source, self.state_source_desc(),
                    self.reference_source_desc(),
+                   "开（只 " + "/".join(REASONS_PRESTREAM) + " 两档发悬停帧）"
+                   if self.offboard_prestream else "关（闸门关着一帧不发）",
+                   "开（本节点自己发 " + TOPIC_TRAJ_START + "）"
+                   if self.start_traj_reference else "关（只由 control 发）",
                    self.tau_s,
                    tuple(round(float(v), 3) for v in self.hold_offset),
                    "保持当前" if self.keep_yaw else f"{self.hold_yaw_deg:g}°",
                    self.mass, self.hover_thrust, self.z0_params().t_max,
                    self.ki_z, "（关）" if self.ki_z <= 0.0 else "",
                    self.mocap_timeout_s, self.px4_timeout_s, self.status_timeout_s,
+                   self.control_target_timeout_s,
                    self.stop_on_nav_state_exit, self.stop_on_armed_drop,
                    self.fallback_hold_frames, self.mocap_jump_speed_max,
                    self.mocap_jump_rate_max)
@@ -587,6 +667,9 @@ class NodeParams:
         """
         if self.reference_source == REFERENCE_SOURCE_TRAJ:
             return f"{TOPIC_TRAJ_REF}（相对锚点，断流 {self.traj_stream_gap_s:g} s 冻结）"
+        if self.reference_source == REFERENCE_SOURCE_CONTROL:
+            return (f"{TOPIC_CONTROL_TARGET}（绝对目标，超时 "
+                    f"{self.control_target_timeout_s:g} s 关闸）")
         return f"参数化锚点 + 偏移 {tuple(round(float(v), 3) for v in self.hold_offset)}"
 
 
@@ -643,10 +726,29 @@ class MpcNode(Node):
         if params.reference_source == REFERENCE_SOURCE_TRAJ:
             self.sub_traj_ref = self.create_subscription(
                 PositionTarget, TOPIC_TRAJ_REF, self._on_traj_reference, QOS_TRAJ_REF)
+        # ★ 绝对目标（票 15）：与上面互斥的一档。发布方是 `control`（`rclcpp::QoS(10)`，
+        #   50 Hz）⟹ 同一条 `QOS_TRAJ_REF`（reliable / depth 10）。
+        self.sub_control_target = None
+        if params.reference_source == REFERENCE_SOURCE_CONTROL:
+            self.sub_control_target = self.create_subscription(
+                PositionTarget, TOPIC_CONTROL_TARGET, self._on_control_target, QOS_TRAJ_REF)
         # ★ 闸门源：`/mavros/state`（**换过载体**，见 `TOPIC_STATUS`）。QoS 逐项对齐发布方的
         #   `mavros::StateQoS()`，理由（尤其 TRANSIENT_LOCAL 那一条）见 `QOS_SUB_MAVROS_STATE`。
         self.sub_status = self.create_subscription(
             State, TOPIC_STATUS, self._on_status, QOS_SUB_MAVROS_STATE)
+
+        # ★★ `/traj/start` 的**发布者**（ticket 14 二定）：只有 `start_traj_reference` 打开时
+        #    才建 —— 与 `sub_traj_ref` 同一条条件订阅/发布的纪律（默认档里它在
+        #    `ros2 topic list` 上**不该出现**，否则"这个节点会不会去动参考时钟"就没法从话题面回答）。
+        #    ☠️ 老行为（默认关）里本节点**完全不知道**这条话题存在 —— 那是 `control` 的事。
+        self.pub_traj_start = None
+        if params.start_traj_reference:
+            self.pub_traj_start = self.create_publisher(Empty, TOPIC_TRAJ_START, 10)
+        #: `/traj/start` **这一趟**发过没有（只在 `no_traj_reference` 那一拍从 False 变 True，
+        #:  重新武装见 `REASONS_REARM_TRAJ_START`）。★ 必须是个闩：这个原因会**连续几百拍**为真
+        #:  （参考没来之前它一直是它）—— 每拍都发 = 把正在跑的参考时钟反复归零（`traj` 会把
+        #:  `start_time_` 重置成"现在"），症状是飞机**永远走不出轨迹起点**。
+        self._traj_start_sent = False
 
         # —— 下游（飞控）——
         self.pub_rates = self.create_publisher(AttitudeTarget, TOPIC_RATES, QOS_PUB_ATT)
@@ -739,10 +841,17 @@ class MpcNode(Node):
                 f"{TOPIC_STATUS}（可靠/depth 10 + TRANSIENT_LOCAL）"]
         if params.reference_source == REFERENCE_SOURCE_TRAJ:
             subs.append(f"{TOPIC_TRAJ_REF}（可靠/depth 10）")
+        elif params.reference_source == REFERENCE_SOURCE_CONTROL:
+            subs.append(f"{TOPIC_CONTROL_TARGET}（可靠/depth 10，绝对 ENU/FLU）")
+        # ★ 发布那一边**按档列**（同订阅）：`start_traj_reference` 打开时多一条 `/traj/start`，
+        #   而"这个节点会不会去按参考的开始键"正是那一档第一个要回答的问题。
+        pubs = [f"{TOPIC_RATES}（BEST_EFFORT/depth 5 —— 对齐 mavros 的 SensorDataQoS）"]
+        if params.start_traj_reference:
+            pubs.append(f"{TOPIC_TRAJ_START}（可靠/depth 10 —— ★ 只发一次，见 _maybe_start_traj）")
         self.get_logger().info(
-            "接口：订阅 %s；发布 %s（BEST_EFFORT/depth 5 —— 对齐 mavros 的 SensorDataQoS）"
+            "接口：订阅 %s；发布 %s"
             "；★ **没有第二条流**：心跳已随换载体删除（飞控从这条 setpoint 自己派生 "
-            "OffboardControlMode，见模块 docstring）" % (" + ".join(subs), TOPIC_RATES))
+            "OffboardControlMode，见模块 docstring）" % (" + ".join(subs), " + ".join(pubs)))
         if int(params.inject_solve_fail_after_frames) > 0:
             # ★ 用 **error** 级别、并且把"装桨前必须关"写在同一行：这一档一开，
             #   飞机收到的每一帧都是坏解兜底出来的 —— 它只该在台架/SITL 上出现。
@@ -812,6 +921,10 @@ class MpcNode(Node):
         """`/traj/reference`（ticket 17）—— 掩码/非有限的解析在 `core.on_traj_reference` 里。"""
         self.core.on_traj_reference(msg, self._now_s())
 
+    def _on_control_target(self, msg: PositionTarget) -> None:
+        """`/control/target`（票 15）—— 解析与"三轴必须齐全"在 `core.on_control_target` 里。"""
+        self.core.on_control_target(msg, self._now_s())
+
     def _on_status(self, msg: State) -> None:
         """`/mavros/state`（闸门源，☠️ 2026-10-12 换过载体，见 `TOPIC_STATUS`）。
 
@@ -856,13 +969,20 @@ class MpcNode(Node):
         cycle = self.core.cycle(now_s)
         self._last_cycle = cycle
 
+        # ★★ 该不该由**我们**去按 `traj` 的开始键（`start_traj_reference`，默认关，ticket 14 二定）。
+        #    放在这里、闸门判断**之前**：它认的正是"闸门因为还没有参考而关着"这一拍，
+        #    而那一拍什么都不发 —— 顺序反了就得在两条路上各写一遍。
+        #    ★ 它的后果是"下一拍起参考会来"，不是"这一拍发什么"⟹ 与下面闸门分支无关。
+        if self.params.start_traj_reference:
+            self._maybe_start_traj(cycle)
+
         # ☠️ **这里原有一段"① 心跳：无条件（默认）"**（`if heartbeat_always and heartbeat_due:
         # _publish_mode(ts)`）。**整段删除**（ticket 13 §二④，操作者裁定 (a) 收成单频）。
         # ⚠️ 它的后果不是"少发一条消息"那么轻：飞控的 `OffboardControlMode` 是从
         # `SET_ATTITUDE_TARGET` **派生**的 ⟹ 闸门关着 = 心跳也没了（见模块 docstring 的 ★★）。
 
         if cycle.x0 is None:
-            self._gate_closed(now_s, cycle)
+            self._gate_closed(now_s, cycle, ts)
             return
         self._last_gate_reason = ""
 
@@ -999,7 +1119,44 @@ class MpcNode(Node):
         self._df = float(np.clip(self._df + self.params.ki_z * e_z * dt,
                                  -self.z0.t_hover, self.z0.f_max - self.z0.t_hover))
 
-    def _gate_closed(self, now_s: float, cycle) -> None:
+    def _maybe_start_traj(self, cycle) -> None:
+        """`start_traj_reference`（ticket 14 二定）：该由本节点按"开始"时，发一帧 `/traj/start`。
+
+        ★★ 为什么旧的 `reference_source=traj` 档要本节点发它：**那一档 `control` 不在场**，
+          而 `traj` 的"选轨迹"与"开始"是**两条**消息（选只让它准备好并画折线，参考流要等
+          `/traj/start`）⟹ 没人发 start
+          的话，`traj` 一帧参考都不发，闸门**永远**卡在 `no_traj_reference`：飞机停在原地、
+          我们说"在等参考"、而参考那一头在等我们 —— 两边都正常，谁都没错，飞不起来。
+
+        ★ 触发原因只有 `no_traj_reference` 一个，而它**蕴含** armed + OFFBOARD + 状态新鲜
+          （判据顺序见 `node_core.cycle`）⟹ 这一帧只可能落在"操作者已经手动把飞机带进
+          OFFBOARD、正等参考"这个窗口里。**不是**"解锁了就发"：解锁还在别的模式时，那个
+          原因是 `not_offboard`，不发。
+        ⛔ **发一次就够**（`self._traj_start_sent` 闩住）：这个原因会连续几百拍为真，每拍都发
+          = 每 10 ms 把 `traj` 的参考时钟归零一次 ⟹ 参考永远停在轨迹起点，飞机不动。
+          ★ 重新武装见 `REASONS_REARM_TRAJ_START`（解锁掉/离开 OFFBOARD ⟹ 下一趟要再发）。
+        """
+        if self.pub_traj_start is None:
+            return
+        reason = cycle.reason
+        if reason == REASON_START_TRAJ:
+            if not self._traj_start_sent:
+                self._traj_start_sent = True
+                self.pub_traj_start.publish(Empty())
+                self.get_logger().info(
+                    f"★ 已发 {TOPIC_TRAJ_START}（ticket 14：这一档没有 control 去按开始键）——"
+                    " 参考时钟零点 = 现在；等 /traj/reference 到了闸门就会打开")
+            return
+        if reason in REASONS_REARM_TRAJ_START:
+            # ★ 只在**确实闩着**时打日志：这三条原因在起链早期会连续出现，每拍打一行会把日志淹掉。
+            if self._traj_start_sent:
+                self._traj_start_sent = False
+                self.get_logger().info(
+                    f"（{reason}）⟹ {TOPIC_TRAJ_START} 重新武装：下一趟进 OFFBOARD 时会再发一次")
+            return
+        # 其余关闸原因（输入不可信那一族）：**不重新武装也不发** —— 它们不表示"这一趟结束了"。
+
+    def _gate_closed(self, now_s: float, cycle, ts) -> None:
         """闸门关着的一拍：**不求解也不发 setpoint**。
 
         ☠️ 旧版这里跟了一句"（心跳照发，见模块 docstring）"—— **那句现在是错的**，
@@ -1011,18 +1168,39 @@ class MpcNode(Node):
           那两条判据给出的读数（"位移 100.000 m > 允许 0.200 m"）是调阈值的人第一个要问的数，
           而它可能只出现一两拍 —— 被抽帧抽掉就等于没有。
         ★ 这一拍**不积分**（位置误差不可归因），但把时钟推过去（见 `_bias_at_s` 的 ★）。
+
+        ★★ **唯一的例外是预流**（`offboard_prestream`，默认关，ticket 14 二定）：
+          在 `REASONS_PRESTREAM` 那两个原因下**仍然发一帧悬停**（零角速率 + 悬停推力）。
+          为什么必须在这里开这个口子：闸门关着 ⟹ 一帧都不发 ⟹ 换载体后 setpoint 就是心跳
+          ⟹ 操作者想手动带飞机进 OFFBOARD 时，飞控因为"1 s 内没收到 setpoint"**拒绝**，
+          而且拒绝得毫无线索（`/mavros/state` 上 mode 就是不变）。
+          ⛔ **名单绝不能放宽到"所有关闸原因"**：其余每一条都意味着"输入不可信"，
+          那时我们需要的是"停流 ⟹ 飞控 1 s 后把飞机踢出 OFFBOARD"，那才是兜底。
+          ★ 它动不了飞机（第一手 PX4 1.14.3 `mavlink_receiver.cpp:1562` / `:1592`：
+            不在 OFFBOARD 时飞控不消费姿态/角速率 setpoint，:1530-1536 只消费
+            offboard_control_mode）⟹ 这一帧的**唯一权限**是"让飞控收下我们"。
+          ⚠️ 这一帧**只走 `_publish_rates`**，于是 `_last_sp`（"上一帧**可行**指令"）不会被它
+            污染（那个只在 `phase == NORMAL` 时更新）—— 兜底阶梯要的是**求解器给的**帧。
         """
         self._bias_at_s = now_s
         self.ladder.reset()
         self.gated[cycle.reason] = self.gated.get(cycle.reason, 0) + 1
+        if self.params.offboard_prestream and cycle.reason in REASONS_PRESTREAM:
+            self._publish_rates(ts, self._hover_sp, phase=PHASE_PRESTREAM,
+                                note=f"预流（{cycle.reason}）")
         fresh = cycle.reason != self._last_gate_reason
         self._last_gate_reason = cycle.reason
         if fresh or self.ticks % max(1, self.params.log_every) == 0:
             self.get_logger().info(
                 f"t={now_s:.2f}s 闸门关闭（{cycle.reason}）：status 龄 {cycle.age_status_s:.2f}s / "
-                f"状态龄 {cycle.age_state_s:.2f}s ⟹ 不发 setpoint"
+                f"状态龄 {cycle.age_state_s:.2f}s ⟹ "
+                # ★ 这句话必须跟着预流开关走：开着预流时那两个原因下我们是**在发**的，
+                #   照旧说"不发 setpoint"会把下一个人引到错的方向（而日志正是唯一的证据面）。
+                + ("发**悬停**预流帧（这一档开了 offboard_prestream）"
+                   if self.params.offboard_prestream and cycle.reason in REASONS_PRESTREAM
+                   else "不发 setpoint")
                 + (f"；{cycle.detail}" if cycle.detail else "")
-                + "（★ 这一档连心跳一起停：换载体后 setpoint 就是心跳，"
+                + "（★ 停发那一档连心跳一起停：换载体后 setpoint 就是心跳，"
                   "持续超过 COM_OF_LOSS_T 会让飞控拒绝进 OFFBOARD）")
 
     def _normal_frame(self, sol) -> Tuple[Optional[object], Optional[str]]:
@@ -1195,9 +1373,12 @@ class MpcNode(Node):
             "body_rate_y": _jnum(None if sp is None else sp.body_rate_y),
             "body_rate_z": _jnum(None if sp is None else sp.body_rate_z),
             "thrust": _jnum(None if sp is None else sp.thrust),
-            #: ★ 兜底档位（"normal" / "hold" / "hover" / "warmup"）—— 票面要的"这个事件在飞行
+            #: ★ 兜底档位（"normal" / "hold" / "hover" / "warmup" / "prestream"）—— 票面要的"这个事件在飞行
             #: 日志里**可检索**"就是这一列：`grep '"fallback": "hover"'` 能一次捞出全段。
             #: `fallback_note` 是**为什么**（求解器那一行读数 / 映射拒绝的原因）。
+            #: ★ `"prestream"` 是 ticket 14 加的那一档：**闸门关着**但开了预流（见 `_gate_closed`
+            #:   的 ★★）。⚠️ 它**不是**兜底阶梯的一档 —— 与 `"warmup"` 一样，"帧走哪条路"与
+            #:   "解可不可用"是两件事，复盘时别按阶梯的语义去读它。
             "fallback": str(phase),
             "fallback_note": str(note),
             # —— 求解耗时与求解器内部状态 ——
@@ -1488,6 +1669,9 @@ _PARAMS = (
     ("state_source", "mocap", str),
     ("reference_source", "hold", str),
     ("traj_stream_gap_s", 0.5, float),
+    ("control_target_timeout_s", 0.5, float),
+    ("offboard_prestream", False, bool),
+    ("start_traj_reference", False, bool),
     ("px4_position_topic", TOPIC_PX4_POS, str),
     ("px4_attitude_topic", TOPIC_PX4_ATT, str),
     ("hold_offset_x", 0.0, float),
@@ -1533,6 +1717,9 @@ def declare_params(node: Node) -> NodeParams:
         state_source=get("state_source").value,
         reference_source=get("reference_source").value,
         traj_stream_gap_s=get("traj_stream_gap_s").value,
+        control_target_timeout_s=get("control_target_timeout_s").value,
+        offboard_prestream=bool(get("offboard_prestream").value),
+        start_traj_reference=bool(get("start_traj_reference").value),
         px4_position_topic=get("px4_position_topic").value,
         px4_attitude_topic=get("px4_attitude_topic").value,
         hold_offset=(get("hold_offset_x").value, get("hold_offset_y").value,
@@ -1669,16 +1856,30 @@ def _validate(p: NodeParams) -> None:
     if p.reference_source not in REFERENCE_SOURCES:
         raise SystemExit(f"reference_source={p.reference_source!r} 不认识，只能是 "
                          f"{list(REFERENCE_SOURCES)}（hold = 参数化悬停锚点；"
-                         "traj = /traj/reference，见模块 docstring）")
-    # ☠️ `traj` 档下 `hold_offset` **必须**为 0：那时目标点是"锚点 + 轨迹给的相对量"，
-    #    再叠一个偏移就是一个**没人能说清它意味着什么**的平移 —— 它既不是轨迹的一部分，
-    #    也不是锚点的一部分，而在话题面上它表现为"飞机整体偏了一截"，看着像轨迹算错了。
+                         "traj = /traj/reference；control = /control/target，见模块 docstring）")
+    # ☠️ `traj` / `control` 档下 `hold_offset` **必须**为 0：前者的目标点是"锚点 + 轨迹给的
+    #    相对量"、后者是绝对点，再叠一个偏移就是一个**没人能说清它意味着什么**的平移
+    #    —— 它既不是轨迹的一部分，也不是锚点的一部分，而在话题面上它表现为"飞机整体偏了
+    #    一截"，看着像轨迹算错了。
     #    ⚠️ 这条**不是**形式主义：`hold_offset_z` 在 A 档悬停那几场里一直是个非 0 的值，
     #      切档时忘掉它是最自然的操作失误，而后果是**静默的常值位置偏差**。
-    if p.reference_source == REFERENCE_SOURCE_TRAJ and any(float(v) != 0.0 for v in p.hold_offset):
+    if (p.reference_source in (REFERENCE_SOURCE_TRAJ, REFERENCE_SOURCE_CONTROL)
+            and any(float(v) != 0.0 for v in p.hold_offset)):
         raise SystemExit(
-            f"reference_source=traj 时 hold_offset 必须全 0，收到 {p.hold_offset!r}"
-            "（traj 档的目标点 = 锚点 + /traj/reference 给的相对量，见 ticket 17）")
+            f"reference_source={p.reference_source} 时 hold_offset 必须全 0，"
+            f"收到 {p.hold_offset!r}"
+            "（traj 档 = 锚点 + 相对量；control 档 = 绝对目标，见票 15）")
+    # ★★ `start_traj_reference` 只在 `traj` 档有意义（ticket 14 二定）。
+    #    它认的触发原因是 `no_traj_reference` —— `hold` 档下那条路根本不存在
+    #    （参考是自己算的，不需要谁按开始键）⟹ 这个参数在 `hold` 档**永远是死的**。
+    #    ⛔ 同样不许"接受但忽略"：那一档的现场症状是"我明明开了它，参考还是不动"，
+    #    而参考本来就不该由它驱动 —— 两句话都成立，读日志的人会结论到错的地方。
+    if p.start_traj_reference and p.reference_source != REFERENCE_SOURCE_TRAJ:
+        raise SystemExit(
+            f"start_traj_reference=true 只在 reference_source=traj 时才有意义，"
+            f"而现在 reference_source={p.reference_source!r}"
+            "（hold 档的参考是参数化算出来的，没有「等参考」这个状态；"
+            "control 档的 /traj/start 由 control 在进 TRACK 时发 —— 见票 15）")
 
 
 def main(argv=None) -> int:

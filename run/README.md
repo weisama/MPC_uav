@@ -9,9 +9,9 @@ run/z0.py                # 交互菜单：敲数字
 run/z0.py --list         # 只列菜单（不进交互）
 run/z0.py env            # 环境自检（只读）
 run/z0.py check          # 起链核对（只读，约 5 s 一张表）
-run/z0.py up             # ★ 一键启动全部（第 9 项；run/up.sh 是它的一行别名）—— 起前选控制器
-run/z0.py up_manual      # ★ 一键启动到 mocap 为止（第 8 项）—— 起前选控制器，默认手动遥控飞
-run/z0.py mpc            # 只起 MPC（模型预测控制）节点（不进菜单；第 8/9 项的第 3/4 档就是它）
+run/z0.py up             # ★ 一键启动全部（第 9 项；run/up.sh 是它的一行别名）—— 起链前选控制器（两档）
+run/z0.py up_manual      # ★ 一键启动到 mocap 为止（第 8 项）—— 手动遥控飞，**不问**
+run/z0.py mpc            # 只起 MPC（模型预测控制）节点（不进菜单；第 9 项的第 2 档就是它）
 run/z0.py down           # ★ 清除后台节点（第 10 项；run/down.sh 是它的一行别名）
 run/down.sh --dry-run    # 只扫一眼"会停谁"，**一个信号都不发**
 run/z0.py rec_start 3    # ★ 开始录制（第 11 项；场景 1–6，不给号会问一句）
@@ -19,7 +19,7 @@ run/z0.py rec_start 3    # ★ 开始录制（第 11 项；场景 1–6，不给
                          #     （场景 6「任意录制」不倒计时，只有 Ctrl-C 收口）
 run/z0.py rec_status     # 现在在录什么（只读，不进菜单；在**另一个终端**看）
 run/z0.py --dry-run rec_start   # 六条场景与它们会跑的命令全列出来，**一个进程都不起**
-run/z0.py --dry-run up   # 把顺序、每条命令、每步判据全列出来（默认档一整块 + 另外三档各一块），**一条都不起**
+run/z0.py --dry-run up   # 把顺序、每条命令、每步判据全列出来（默认档一整块 + 另外**一**档一块），**一条都不起**
 run/z0.py --dry-run mocap   # 只打印将要执行的命令，**不执行**
 run/z0.py mavros|vrpn|mocap|traj|control   # 单条起（前台）
 run/z0.py bringup|fly|mpc|rec_status|rec_manifest   # 五条**不进菜单**的（见下）；直接点名仍可跑
@@ -49,8 +49,8 @@ source /opt/ros/humble/setup.bash && source ~/mavros_ws/install/setup.bash && so
 | 5 | 起 mocap | 前台 | ★ **起之前要你确认"飞机已摆好、静止"**（阶段 A 原点在节点启动那一刻锁定） |
 | 6 | 起 traj | 前台 | 只发参考、不碰飞控；一帧不发直到被 select + start |
 | 7 | 起 control | 前台 | 台架 T3 用的就是这一条；`MANUAL/INIT` 是正常起始态 |
-| 8 | ★ **一键启动（起前选控制器；默认手动遥控飞）** | 本进程编排 + 前台守着 | 起链前问一句选档（见下节）；**空回车** = mavros → vrpn → mocap **按序**起齐、每步等判据，**不起 `traj`/`control`** ⟹ 没有任何程序在上位控制飞机，起完**直接用遥控器手动起飞** |
-| 9 | ★ **一键启动全部（起前选控制器；默认 offboard 控制）** | 本进程编排 + 前台守着 | 起链前问同一句选档；**空回车** = 把 3→4→5→6→7 五步**按序**起齐（`bench-runbook.md` 的「起链（顺序不能反）」），每步**等判据成立**；起完把**终端让给操作台 `fly.py`** 选轨迹，然后打印核对表 + 起飞提示 |
+| 8 | ★ **一键启动（动捕+mavros，手动遥控飞）** | 本进程编排 + 前台守着 | **不问**（它只有一档）：mavros → vrpn → mocap **按序**起齐、每步等判据，**不起 `traj`/`control`** ⟹ 没有任何程序在上位控制飞机，起完**直接用遥控器手动起飞** |
+| 9 | ★ **一键启动全部（起前选控制器；默认 offboard 控制）** | 本进程编排 + 前台守着 | 起链前问一句选档（**两档，两档都带 `traj`**，见下节）；**空回车** = 把 3→4→5→6→7 五步**按序**起齐（`bench-runbook.md` 的「起链（顺序不能反）」），每步**等判据成立**；起完把**终端让给操作台 `fly.py`** 选轨迹，然后打印核对表 + 起飞提示 |
 | 10 | ★ **清除后台节点** | 本进程编排 | 与第 9 项相反的**另一头**：**按名字扫**（`DOWN_TARGETS`，含 `mpc`）在跑的节点 ⟹ 先摊开清单、问一句 y/N，再按 SIGINT→SIGTERM→SIGKILL 停；停完**再扫一遍**并报串口状态。详见下下节 |
 | 11 | ★ **开始录制（选场景 1–6）** | 本进程编排（起 `ros2 bag record`，**前台占住终端**） | 只**订阅**；选之前只报一行短名单，**选定后、起录之前**把那一场的"起哪条链 + 你要做什么 + 预期话题"整张卡摊开；然后屏幕上走倒计时，**录满 120 s 自己收口**（收口 = SIGINT ⟹ 压包 ⟹ `ros2 bag info` 的**实测帧数**逐条回对预期 ⟹ 写 `session.json` + 重算 `bag/MANIFEST.md`），提前停按 Ctrl-C；首选目录已被占就**问一句**（答 y 换一份带时间戳的新目录）；场景 6 **不倒计时**，只有 Ctrl-C 收口 |
 
@@ -59,8 +59,8 @@ source /opt/ros/humble/setup.bash && source ~/mavros_ws/install/setup.bash && so
 | key | 谁在用 | 位置 |
 |---|---|---|
 | `bringup` | `z0.launch.py` 一键起 mocap+traj+control —— `DOWN_TARGETS` 要从它取包名 | 照 [`bringup/README.md`](../src/bringup/README.md) 手打，或 `run/z0.py bringup`（会问一句 `use_vrpn:=false`） |
-| `fly` | 操作台 —— 第 9 项（offboard / 模型预测控制 + traj 那两档）起齐后**前台**跑它选轨迹 | 那两档里自动起；想单独再跑：`run/z0.py fly` |
-| `mpc` | **模型预测控制节点**（`nmpc` 的 `mpc_node.py`）—— 第 8/9 项的第 3 档（参考源 `hold`）与第 4 档（`traj`，带 `--ros-args -p reference_source:=traj`） | 那两档里自动起；想单独再跑：`run/z0.py mpc`（要追轨迹再手打 `--ros-args -p reference_source:=traj`） |
+| `fly` | 操作台 —— 第 9 项两档起齐后**前台**跑它选轨迹 | 那两档里自动起；想单独再跑：`run/z0.py fly` |
+| `mpc` | **模型预测控制节点**（`nmpc` 的 `mpc_node.py`）—— 第 9 项的第 2 档起它，带上 `--ros-args -p reference_source:=control` + `offboard_prestream:=true`（参考来自 `/control/target`，不再自己发 `/traj/start`）。★ **命令自带 acados 的两个环境变量**（`ACADOS_SOURCE_DIR` / `LD_LIBRARY_PATH`，`env …` 前缀）—— 缺一个它就在建求解器时 `OSError: libacados.so / libhpipm.so`**起不来**（2026-10-17 起链实测死在第 5 步）；外层已经 export 对了就听外层的 | 那一档里自动起；想单独再跑：`run/z0.py mpc`（它**会问**那四条可选参数 —— 两条参考源**互斥**；接 `control` 的目标答 `reference_source_control`） |
 | `rec_status` | 排障：**现在在录什么**（只读：读状态文件 + 按名字扫一眼录制进程） | `run/z0.py rec_status` |
 | `rec_manifest` | 排障：从 `bag/**/session.json` **重算总表**（每次收口都会顺手写一次；手工拷完 `.ulg` 之后也值得跑一次） | `run/z0.py rec_manifest` |
 
@@ -80,42 +80,46 @@ run/z0.py up_manual    # 第 8 项：动捕 + mavros，手动遥控飞
 | 2 | `vrpn_listener` | — | `/vrpn/<刚体>/pose` 有帧（≤30 s；`Z0`/`z0` 都认） |
 | 3 | `mocap` | ★ **要你确认"飞机已摆好、静止、固定？"** | `/mocap/pose_enu` 有帧（≤30 s） |
 
-**尾巴**（起链前问一句「这一趟谁在上位控制飞机」，输数字；**空回车 = 该菜单项的默认档**）：
+**尾巴**（第 9 项起链前问一句「这一趟谁在上位控制飞机」，输数字；**空回车 = 第 1 档**）：
 
-| # | 选什么 | 尾巴 | 第 8 项默认 | 第 9 项默认 |
+| # | 选什么 | 尾巴 | 额外带的参数 | 第 9 项默认 |
 |---|---|---|---|---|
-| 1 | 不起控制器 | —— | ★ | |
-| 2 | offboard 控制（`control`，(A) 级） | `traj` → `control` | | ★ |
-| 3 | **模型预测控制**（`mpc_node.py`，参考源 `hold`） | `mpc`（**不起 traj**） | | |
-| 4 | **模型预测控制**（同前，参考源 `traj`） | `traj` → `mpc` | | |
+| 1 | offboard 控制（`control` 自己发 PX4 setpoint） | `traj` → `control` | ——（`output_mode` 默认 `position`） | ★ |
+| 2 | **模型预测控制**（`mpc_node.py` 发执行器指令） | `traj` → `mpc` → `control` | `control`：`output_mode:=external`；`mpc`：`reference_source:=control` + `offboard_prestream:=true` | |
 
-★ **空回车 = 今天的行为一个字不变**（第 8 项 = 只到 `mocap`；第 9 项 = `+traj/control`）。
-打过别的档，就按选出来的那一档起：
+★ **第 8 项不问**（它只有一档、一版之前的样子）；**第 9 项两档**，**两档的尾巴都含 `traj`**
+（操作者 2026-10-16 的原话「轨迹必须起没得选」⟹ 这是**结构上的事实**，不是提示语）：
+模型预测控制**没有"定点保持（`hold`）、不起 `traj`"那一档了**（一版有过）。
+★ **空回车 = 今天的行为一个字不变**（第 9 项 = `+traj/control`）。两档的**操作流程完全相同**：
+`control` 始终是任务总管（开始键、解锁、切 OFFBOARD、起飞、判稳、轨迹原点、`/traj/start`、降落），
+第 2 档只是把「谁最后给 PX4 发指令」换成 `mpc`。选到第 2 档就按它起：
 
 | 步 | 起什么 | 起之前 | 起来的判据 |
 |---|---|---|---|
-| 4 | `traj`（第 2 / 4 档） | — | **不等**（没 `select` 就一帧不发，等它等于等到天荒地老） |
-| 4′ | `mpc`（第 3 / 4 档） | — | ★ **它自己的启动日志**那一行（≤120 s）—— 闸门关着时它**一帧都不发**，话题面上没有"我起来了"这个事实；等不到就打日志尾巴、**把已起的全部停掉**并返回 1 |
-| 5 | `control`（第 2 档） | — | `/control/state` 有帧（≤30 s） |
-| 6 | **终端让给 `fly.py`**（第 2 / 4 档，前台） | — | 你敲 1/2/3 选轨迹（**起飞前必须选好** —— `control` 进 `TRACK` 那一下要拿去发 `/traj/start`），选完按它的提示退出 |
-| 7 | — | — | 打印核对表 + **起飞提示**（开始键按两下、压住 ≥0.3 s）⟹ 前台守着（**Ctrl-C 一起停**） |
+| 4 | `traj`（两档都有） | — | **不等**（没 `select` 就一帧不发，等它等于等到天荒地老） |
+| 5 | `mpc`（第 2 档） | — | ★ **它自己的启动日志**那一行（≤120 s）—— 闸门关着时它**一帧都不发**（`offboard_prestream` 只发纯悬停帧），话题面上没有"我起来了"这个事实；等不到就打日志尾巴、**把已起的全部停掉**并返回 1 |
+| 5′ | `control`（**两档都有**；第 2 档带 `output_mode:=external`） | — | `/control/state` 有帧（≤30 s） |
+| 6 | **终端让给 `fly.py`**（两档都要，前台） | — | 你敲 1/2/3/4 选轨迹（**起飞前必须选好**），选完按它的提示退出 |
+| 7 | — | — | 打印核对表 + **起飞提示** ⟹ 前台守着（**Ctrl-C 一起停**） |
 
-★★ **选到第 3 / 4 档（模型预测控制）时，「起链」≠「能飞」** —— 剩下的照旧**手打**，本脚本一件都不代做：
+★ **两档的现场动作逐字相同**：选轨迹 → ch6 拨 Offboard → 开始键第 1 次上升沿（解锁 + 起飞）
+→ 判稳后开始键第 2 次上升沿、**松手**（进 `TRACK`、发 `/traj/start`）→ 飞完自动降落。
+两档的区别只在**输出通路**：
 
-1. **解锁 + 切 OFFBOARD**：`mpc_node` 的闸门要求 `armed + mode == "OFFBOARD"`，而它**自己不 arm、
-   不 set_mode**；闸门关着时它**连心跳都没有**（setpoint 就是心跳 ⟹ 持续超过 `COM_OF_LOSS_T`
-   飞控会**拒绝**进 OFFBOARD）。★ 模型预测控制两档**没有 `control`** ⟹ **遥控器开始键在这条链上不起作用**。
-   怎么手打见 [`safety-paths-drill.md`](../docs/control/safety-paths-drill.md) 与
-   [`bench-runbook.md`](../docs/control/bench-runbook.md)。
-2. **起飞**：同样是遥控器/操作者的事。
-3. ⚠️ **第 4 档还差一条 `/traj/start`**：它是 `control` 进 `TRACK` 那一刻**自己发的**，这一档没有
-   `control`（`fly.py` 只发 `/traj/select`）⟹ `traj` **一帧都不发**，模型预测控制只会看到断流、就地冻住
-   （`traj_stream_gap_s = 0.5 s` 的 freeze）。**归属未定**，见票 14 的「这一轮不解决的三件事」②。
-4. `fly.py` 的状态栏（`/control/state`、`/control/traj_progress`）在模型预测控制档下**是空的** ——
-   它显示的是 `control` 自己的状态；选轨迹那一半照常可用。
+- 第 1 档：`control` 直接写 `/mavros/setpoint_raw/local`；
+- 第 2 档：`control` 只写内部绝对目标 `/control/target`（位置 + 速度 + yaw），
+  `mpc_node` 求解后写 `/mavros/setpoint_raw/attitude`。**`control` 一帧都不写 local**，
+  两路 setpoint 不会互相覆盖。`/control/target` 断流 0.5 s ⟹ `mpc_node` 以
+  `no_control_target` 关闸（**零帧**，不是冻结；`hold → hover` 兜底阶梯只管求解不可用）；
+  最后一道是 PX4 自己的 1 s OFFBOARD 丢失保护。
 
-- **日志**：`run/logs/<时间戳>-up/01-mavros.log … 05-control.log`（第 8 项是 `…-up_manual/`；
-  模型预测控制档最后一个是 `…-mpc.log`；已在 `.gitignore` 里）。
+★ 第 2 档仍然保留 `offboard_prestream:=true`：`control` 请求 OFFBOARD 之前的那段预流里，
+`mpc` 还没有参考也要让飞控看见姿态流。它**不 arm、不 set_mode** —— 这两件事仍在 `control`。
+★ `fly.py` 的状态栏在**两档下都正常**（`/control/state`、`/control/traj_progress` 都由 `control` 发）。
+
+- **日志**：`run/logs/<时间戳>-up/01-mavros.log …` —— 第 1 档到 **`05-control.log`**，
+  第 2 档到 **`06-control.log`**（中间多一个 `05-mpc.log`；第 8 项是 `…-up_manual/`；
+  已在 `.gitignore` 里）。
   某步等超时、或**子进程半路自己退了**，就把那个日志的**最后几行**打出来。
 - **Ctrl-C 一起停**：子进程各自成组（`start_new_session`）⟹ 停的时候**整组一起**停
   （先 SIGINT、超时才 SIGKILL）。★ 前台那个 `Ctrl-C` **到不了**子进程（它们自成会话），
@@ -125,7 +129,8 @@ run/z0.py up_manual    # 第 8 项：动捕 + mavros，手动遥控飞
   你退出 `fly.py` 之后脚本接着守着（`Ctrl-C` 又回到"一起停"）。
 - **起飞那一下不代做**（见下节）：脚本只把"按开始键哪两下、压多久"写在屏上。
 - `--dry-run up` / `--dry-run up_manual` **不进入提问**：先把**默认那一档**整条摊开，
-  再另起一块（`── 其他档（起链前问一句，选到才起）──`）把另外三档的命令也摊开。
+  再另起一块（`── 其他档（起链前问一句，选到才起）──`）把另外**那一档**的命令也摊开；
+  ★ 第 8 项只有一档 ⟹ **没有**那一块（明说一句"本链只有一档，起链时**不问**"）。
 
 ## ★ 清除后台节点（第 10 项 / `run/down.sh`）
 
@@ -269,10 +274,13 @@ B 档）要的"真实动捕 rosbag"**从来没录过** —— 2026-09-28 那次�
 
 ★ **两条一键（第 8 / 9 项）都不新开一条"起链用的命令表"**：`up` / `up_manual` 的动作表项 `cmd=None`
 （本进程里编排），它们起的每一条都**只写 key**（公共前缀 `MANUAL_CHAIN` + 选出来的那一档
-`CHAIN_CHOICES[i].tail`；要让终端的那两档另有 `choice.handoff` 把 `fly` 放前台），
+`UP_CHOICES` / `MANUAL_CHOICES` 里选出来的那一档的 `tail`；要让终端的那两档另有
+`choice.handoff` 把 `fly` 放前台），
 命令取自上面那张动作表 ⟹ 下面这套守卫**不用改就盖住它们**。
-★ 第 3 / 4 档新增的 `mpc` 只是**动作表里多一行**（`menu=False`：`ros2 run nmpc mpc_node.py`）——
-它是第 8/9 项唯一一条**不是 `ros2 launch`** 的起链命令。
+★ 第 9 项第 2 档起的 `mpc` 只是**动作表里多一行**（`menu=False`：`env <acados 两个变量>
+ros2 run nmpc mpc_node.py`）—— 它是第 8/9 项唯一一条**不是 `ros2 launch`** 的起链命令。
+★ 那个 `env` 前缀**只设变量、后面仍然只走 `ros2`**：守卫用例专门钉住这一点（别把它放宽成
+"随便什么前缀"——"命令的出口只有 `ros2`"正是那条不变式）。
 
 ★ 这条由 `run/tests/test_z0_menu.py` 的用例盯着：一条扫**动作表**（主命令**与**可选参数的取值，
 不含 `ros2 service call` / `ros2 param set` / `ros2 topic pub` / `ros2 action send_goal`），

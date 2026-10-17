@@ -121,6 +121,15 @@ public:
     offboard_retry_s_ = declare_parameter<double>("offboard_retry_s", 1.0);
     enter_offboard_ = declare_parameter<bool>("enter_offboard", true);
     diag_period_s_ = declare_parameter<double>("diag_period_s", 1.0);
+    // ★★ 票 15：输出后端。默认 `position` = 本节点直接发 `/mavros/setpoint_raw/local`。
+    //   `external` = 本节点只发 `/control/target`（绝对位置 + 速度 + yaw），
+    //   PX4 的 setpoint 由外部控制器（当前是 `mpc_node`）发。
+    //   ⚠️ 开始键 / 解锁 / OFFBOARD / 起飞 / 判稳 / 轨迹原点 / `/traj/start` / 降落**都在本节点**，
+    //      两种后端共用；换后端不改变任务流程。
+    //   ⛔ 不认识的档**在入口处抛**（`parse_output_mode`）—— 默默退回默认档会让
+    //      "我明明配了 external"变成最难查的一类静默失败。
+    output_mode_ = control::parse_output_mode(
+      declare_parameter<std::string>("output_mode", "position"));
     // ⚠️ 这里**曾经有**一个 `yaw` 参数（ticket 05），ticket 08 删掉了 —— 见文件头 ★。
     //   删参数而不是改默认值，是因为"0"这个数本身在这一栈里就是错的（ENU 的 0 = 机头朝东）：
     //   留着它，下一个人只会再踩一次。
@@ -147,6 +156,9 @@ public:
     topics_.traj_start = declare_parameter<std::string>("traj_start_topic", topics_.traj_start);
     topics_.control_traj_progress = declare_parameter<std::string>(
       "control_traj_progress_topic", topics_.control_traj_progress);
+    // ★ 票 15：external 档的绝对目标（内部话题，**不经 mavros**）。
+    topics_.control_target = declare_parameter<std::string>(
+      "control_target_topic", topics_.control_target);
     topics_.set_mode_service = declare_parameter<std::string>(
       "set_mode_service", topics_.set_mode_service);
     topics_.arming_service = declare_parameter<std::string>(
@@ -264,6 +276,8 @@ public:
     px4_config.limits = limits_;
     px4_config.modes.land = land_mode_;
     px4_config.rc_start = rc_start_;
+    // ★★ 票 15：边界层按这个档**只建一条**输出发布者（见 `Px4Interface` 的构造函数）。
+    px4_config.output_mode = output_mode_;
     // ★ ticket 09：完成度的**观测面**（`/control/traj_progress`）挂在边界层那条订阅上（回调），
     //   而不是让节点自己再订阅一遍 —— 理由见 `Px4Config::on_traj_progress`：
     //   两处订阅会让"状态机用的那个数"与"转发出去的那个数"来自两条不同的队列。
@@ -292,9 +306,18 @@ public:
         on_takeoff_request(*res);
       });
 
+    // ★★ 票 15：把"目标最终发给谁"放在启动日志第一屏 —— 这是两种控制平替时**唯一**
+    //   会变的那件事，现场排查"飞机为什么不动"第一个要确认的就是它。
+    const std::string output_desc =
+      (output_mode_ == control::OutputMode::kExternal)
+      ? (std::string(control::to_string(output_mode_)) + "：绝对目标 → " + topics_.control_target +
+        "（PX4 setpoint 由外部控制器发；本节点**不写** " + topics_.setpoint + "）")
+      : (std::string(control::to_string(output_mode_)) + "：本节点 → " + topics_.setpoint);
     RCLCPP_INFO(
       get_logger(),
-      "control 节点启动：setpoint %.1f Hz → %s；/control/state → %s；起飞命令 → %s（std_srvs/Trigger）\n"
+      "control 节点启动：控制循环 %.1f Hz；/control/state → %s；起飞命令 → %s"
+      "（std_srvs/Trigger）\n"
+      "  输出后端：%s\n"
       "  前置流 %.1f s 后%s切 OFFBOARD（重试间隔 %.1f s）；setpoint：位置/机头**全部由状态机给**（无 yaw 参数）\n"
       "  超时判据：state %.1f s（★ 该话题实测 1 Hz）、local_position/velocity %.1f s、mocap %.1f s、rc %.1f s、battery %.1f s\n"
       "  失效判据：低压 < %.1f V、摇杆变化率 > %.1f µs/s（≈ COM_RC_STICK_OV = 20）、"
@@ -308,8 +331,8 @@ public:
       "  ★ WAIT_START 兜底超时 %.1f s（%s）；轨迹参考 %s、完成度 %s → 转发到 %s；重发 /traj/start 的闸门 %.1f s、"
       "参考断流 %.1f s 判 traj_timeout\n"
       "  ★ 解锁：调用 %s **一次**，被拒不重试（登记 %s；上锁交给 PX4 自己的 COM_DISARM_LAND）",
-      setpoint_rate_hz_, topics_.setpoint.c_str(), state_pub_topic.c_str(),
-      takeoff_service_name_.c_str(),
+      setpoint_rate_hz_, state_pub_topic.c_str(), takeoff_service_name_.c_str(),
+      output_desc.c_str(),
       offboard_prestream_s_, enter_offboard_ ? "自动" : "**不**（enter_offboard = false）",
       offboard_retry_s_,
       timeouts_.state_s, timeouts_.local_pos_s, timeouts_.mocap_s,
@@ -403,7 +426,13 @@ private:
     if (d.stream_setpoint) {
       // ★ ticket 08：目标来自状态机（`d.target_*`），**不再**拿"当前位姿"顶替 ——
       //   爬升斜坡 / 悬停点 / 轨迹原点都是它算的。边界层只管发。
-      px4_->publish_setpoint(d.target_x, d.target_y, d.target_z, static_cast<float>(d.target_yaw));
+      // ★★ 票 15：**同一个 `stream_setpoint` 闸门，出口由 `Px4Interface` 按后端选**。
+      //   `fsm.hpp` 不知道"最终由谁执行"，它只决定"现在该不该有一个目标" ——
+      //   这正是两种控制能平替的原因。两档的发布者在构造时**只建一条**
+      //   （`Px4Interface`），所以这里不可能两路同时出血。
+      px4_->publish_target(
+        d.target_x, d.target_y, d.target_z,
+        d.target_vx, d.target_vy, d.target_vz, static_cast<float>(d.target_yaw));
     }
 
     // ★ 进 `TRACK` 的那一帧先把两个"诊断计数"清零（顺序在下面那条脉冲之前：那一帧发出去的
@@ -1328,6 +1357,8 @@ private:
   double offboard_retry_s_{1.0};
   bool enter_offboard_{true};
   double diag_period_s_{1.0};
+  /// ★★ 票 15：输出后端（`position` / `external`）。只影响"目标发给谁"，不影响任务流程。
+  control::OutputMode output_mode_{control::OutputMode::kPosition};
   std::string land_mode_{"AUTO.LAND"};
   /// 起飞命令的服务名（ticket 09 会由遥控器 ch9 的上升沿去调它）。
   std::string takeoff_service_name_{"/control/takeoff"};
@@ -1397,7 +1428,18 @@ private:
 int main(int argc, char ** argv)
 {
   rclcpp::init(argc, argv);
-  rclcpp::spin(std::make_shared<ControlNode>());
+  // ★★ 票 15：`output_mode` 不认识时 `parse_output_mode` 会抛 `std::invalid_argument`。
+  //   在**建节点**这一步接住并打一行清楚的 FATAL（而不是让 std::terminate 打一页栈）——
+  //   台架与现场都会先看到"启动失败：……"，与非 0 退出码一起构成"入口处一声响"。
+  std::shared_ptr<ControlNode> node;
+  try {
+    node = std::make_shared<ControlNode>();
+  } catch (const std::exception & e) {
+    RCLCPP_FATAL(rclcpp::get_logger("control"), "启动失败：%s", e.what());
+    rclcpp::shutdown();
+    return 2;
+  }
+  rclcpp::spin(node);
   rclcpp::shutdown();
   return 0;
 }

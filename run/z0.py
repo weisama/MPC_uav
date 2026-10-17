@@ -30,24 +30,24 @@
      值写在动作表里（`OptionalArg`）—— 有意**不给"随手输一段参数"**的自由，那等于把任意 shell
      片段送进 `bash -c`，与下面这条边界相冲。
 
-★ **两条「一键」**（第 8 / 9 项，ticket 22 §七 / §九）—— ★★ **2026-10-16 起，两条都先问一句
-   「谁在上位控制飞机」**（ticket 14），四档里选一个（命令仍只从 `ACTIONS` 取，见下）：
+★ **两条「一键」**（第 8 / 9 项，ticket 22 §七 / §九）—— 命令仍只从 `ACTIONS` 取（见下）：
 
-   · **第 9 项 `up`**（`run/up.sh`）＝ mavros（带 GCS 桥）→ vrpn → mocap → **选出来的尾巴**
+   · **第 9 项 `up`**（`run/up.sh`）＝ mavros（带 GCS 桥）→ vrpn → mocap **+ 起链前选出来的尾巴**
      **按序起 + 每步等判据**，起完**把终端让给操作台 `fly.py`** 选轨迹，然后打印核对表 +
      起飞提示并前台守着。★ 起什么**只写 key**（`MANUAL_CHAIN` + 选中的那一档的 `tail`）。
-   · **第 8 项 `up_manual`** ＝ 同一张表的**前三条**（到 `mocap` 为止）+ 同一个尾巴
-     —— **默认那一档是"不起控制器"** ⟹ 没有任何程序在上位控制飞机，起完**直接用遥控器手动飞**。
-   · ★ 两条**都不代做"起飞"**：选轨迹是在让出去的前台里敲 1/2/3，起飞是**遥控器开始键**。
-   · 四档：**1 不起控制器** / **2 offboard 控制**（`control`，(A) 级，带 traj）/
-     **3 MPC（模型预测控制）**（`mpc_node.py`，参考源 `hold`，**不起 traj**）/
-     **4 模型预测控制 + traj**（参考源 `traj`）。
+   · **第 8 项 `up_manual`** ＝ 只到 `mocap` 为止、**不问**（2026-10-16 复原，见
+     `.scratch/phase4/issues/14-*.md`）⟹ 没有任何程序在上位控制飞机，起完**直接用遥控器手动飞**。
+   · ★ 两条**都不代做"起飞"**：选轨迹是在让出去的前台里敲 1/2/3/4，起飞是**遥控器开始键**。
+   · 第 9 项的两档（**两档都带 `traj`** —— "轨迹必须起"是结构上的事实，不是提示语）：
+     **1 offboard 控制**（`control` 自己发 PX4 setpoint，`traj → control`，**默认档**）/
+     **2 MPC（模型预测控制）**（`mpc_node.py` 作为 `control` 的输出后端，`traj → mpc → control`）。
      ★ 这个词有歧义（见 `CONTEXT.md` 第一节：PX4 的 `MPC_*` 参数是**位置控制器**的，不是这个）
      ⟹ 指代本项目的控制器时写 `MPC（模型预测控制）` 或全称「模型预测控制」，**不写裸词**。
-     默认值**按菜单项各给一个**（第 8 项 = 1、第 9 项 = 2）⟹ **空回车 = 今天的行为，一个字不变**。
-     ⛔ **选到模型预测控制档 ≠ 能飞**：`mpc_node` 的闸门要求 `armed + OFFBOARD`，而它**自己不 arm、不切模式**
-     （闸门关着时连心跳都没有 —— setpoint 就是心跳）；`/traj/start` 也只有 `control` 会发。
-     ⟹ 那两步**照旧手打**，本脚本**只把"在哪"指出来**（不许在这里加 —— 见下面那条边界）。
+     ★★ **两档的现场动作逐字相同**：`control` 始终是任务总管（开始键、解锁、切 OFFBOARD、起飞、
+     判稳、轨迹原点、`/traj/start`、降落）；第 2 档只是把「谁最后给 PX4 发指令」换成 `mpc_node`。
+     第 2 档的命令带三条开关（`reference_source_control` / `offboard_prestream` /
+     `output_mode_external`）；`start_traj_reference` **不再带**（`/traj/start` 归 `control`）。
+     理由与一手依据见 `.scratch/phase4/issues/15-trajectory-flight-roles.md`。
 
 ★★ **它不提供任何"让飞机动"的入口 —— 解锁 / 起飞 / 切模式 / 改参数 / 发帧，一个都没有。**
    ★ **2026-10-13 的一处口径澄清（票 13 第九轮，操作者裁定）**：菜单里**现在仍然没有**这一类入口，
@@ -130,6 +130,24 @@ FCU_URL = SERIAL_PORT + ":921600"
 #: 把 MAVLink 桥给笔记本上的 QGC 时用的默认地址（第一手：`docs/reference/mocap-setup.md` §5.4 实测口径）。
 #: 现场网段不同就改这里，或用 `Z0_GCS_URL` 覆盖。
 GCS_URL = os.environ.get("Z0_GCS_URL", "udp-b://0.0.0.0:14555@:14550")
+
+#: ★★ acados 的两个环境变量 —— `mpc_node.py` 建 OCP 求解器时**当场要**它们（`ocp.py` 的
+#: `_build_solver` ⟹ `AcadosOcpSolver` ⟹ `ctypes.CDLL(<ACADOS_SOURCE_DIR>/lib/libacados.so)`）。
+#: **2026-10-17 实测**：第 9 项起链死在第五步，两个都在 shell 里没设 ——
+#:
+#: · 缺 `ACADOS_SOURCE_DIR` ⟹ `acados_template` 从**它自己被装在哪**去猜（本机是 `~/refs/acados`，
+#:   那是 **acados 源码树**、`lib/libacados.so` 根本不在）⟹
+#:   `OSError: /home/chen/refs/acados/lib/../lib/libacados.so: cannot open shared object file`；
+#: · 只设它、缺 `LD_LIBRARY_PATH` ⟹ `libacados.so` 打得开，但它依赖的 `libhpipm.so` 找不到
+#:   （同一个 `OSError`，只是文件名不同 —— 这条是票 13 踩过的）。
+#:
+#: ⟹ **写进命令本身**，不靠操作者记着先 export（起链是"一键"，那就得真的是一键）。
+#: `${ACADOS_SOURCE_DIR:-$HOME/acados}`：外层**已经**指对了就听外层的（同
+#: `src/nmpc/test/test_mpc_node.py` 的 `_dut_env()`）；`${LD_LIBRARY_PATH:+:…}` 是为了
+#: **不**在末尾留一个空路径元素（空元素 = 当前目录，ld.so 的规矩）。
+ACADOS_ENV = ("ACADOS_SOURCE_DIR=\"${ACADOS_SOURCE_DIR:-$HOME/acados}\" "
+              "LD_LIBRARY_PATH=\"${ACADOS_SOURCE_DIR:-$HOME/acados}/lib"
+              "${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}\"")
 
 #: `install/` 里应当有的包（全部是 Phase 1 的：动捕源 + 三个节点 + 夹具 + 启动层）。
 EXPECTED_PACKAGES = ("vrpn_listener", "mocap", "traj", "bench", "control", "bringup")
@@ -373,9 +391,97 @@ def sourced_command(inner: str, setups: Optional[Sequence[Path]] = None) -> str:
     return " && ".join(prefixes + [inner])
 
 
+#: 前台子进程收到 Ctrl-C 后给它的**收摊时间**；到点才升级 SIGTERM → SIGKILL。
+FOREGROUND_GRACE_S = 10.0
+
+
 def run_foreground(inner: str) -> int:
-    """在前台跑（Ctrl-C 停它，本脚本收得住 —— 见 `menu_loop`）。"""
-    return subprocess.call(["bash", "-c", sourced_command(inner)])
+    """在前台跑（Ctrl-C 停它，本脚本收得住 —— 见 `menu_loop`）。
+
+    ★ Ctrl-C **不走 `subprocess.call`**：它被 `KeyboardInterrupt` 打断时会
+      `p.kill()`（SIGKILL）子进程（见 [`call_ignoring_sigint`](run/z0.py) 那段第一手）。
+      子进程与我们同一个前台进程组 ⟹ 终端那一下它**自己**也收到了，让它走自己的收摊逻辑
+      （`fly.py` 就是靠这个把节点销毁、`rclpy.shutdown()` 的）；这里先等
+      `FOREGROUND_GRACE_S`，等不到才 SIGTERM → SIGKILL。
+
+    ★ 收摊这段时间里 SIGINT 被挡住（同 `run/rec.py` 的 `_sigint_ignored`）：否则操作者
+      再按一下就会把本进程打死，留下一棵半死不活的子树。⚠️ 升级只发给**直接子进程**
+      （它和我们在同一个进程组里，对整个组发信号会连菜单一起收掉）—— 与修之前
+      `p.kill()` 的范围一样，没有变差。
+    """
+    proc = subprocess.Popen(["bash", "-c", sourced_command(inner)])
+    try:
+        return proc.wait()
+    except KeyboardInterrupt:
+        pass
+    print(f"\n（Ctrl-C：等它自己收摊，最多 {FOREGROUND_GRACE_S:.0f} s）")
+    try:
+        old = signal.signal(signal.SIGINT, signal.SIG_IGN)
+    except (ValueError, OSError):              # 非主线程之类：挡不住也照常走下面的逻辑
+        old = None
+    try:
+        try:
+            return proc.wait(timeout=FOREGROUND_GRACE_S)
+        except subprocess.TimeoutExpired:
+            pass
+        for sig, name in ((signal.SIGTERM, "SIGTERM"), (signal.SIGKILL, "SIGKILL")):
+            print(f"  {name} … ", end="", flush=True)
+            try:
+                proc.send_signal(sig)
+            except ProcessLookupError:
+                print("（它已经退了）")
+                break
+            try:
+                return proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                continue
+        return proc.returncode if proc.returncode is not None else 1
+    finally:
+        if old is not None:
+            signal.signal(signal.SIGINT, old)
+
+
+def call_ignoring_sigint(argv, *, env=None) -> int:
+    """等一个子进程；等待期间收到的 Ctrl-C **只在外壳这一侧被吞掉** —— 只给"外壳等真正的自己"用。
+
+    ⛔ **别退回裸 `subprocess.call`**：Python 3 的 `subprocess.call` 被 `KeyboardInterrupt`
+    打断时会 **`p.kill()`（SIGKILL）子进程**（本机 3.10.12 的 `subprocess.py:347` 就是
+    `with Popen(...) as p:` + `except: p.kill()`）。而 Ctrl-C 发的是**整个前台进程组**
+    ⟹ 外壳与真正的菜单进程会同时收到；菜单进程正要收口，外壳却反手把它 SIGKILL 掉。
+
+    ★★ 第一手（2026-10-17 现场，真的丢了一份 `session.json`）：`rec_start 6` 录到一半
+    按了**一次** Ctrl-C，屏幕上是
+
+        收口中（写缓存 → 压 zstd）… chen@orin-nx:~/ros_ws/run$
+
+    —— 那行后面紧跟着 shell 提示符，`好（SIGINT）`／核对表／`清单已更新` 一行都没有；
+    `bag/<包>.recorder.json` 没被删、录制进程成了孤儿（PPID=1）。包本身是好的
+    （录制进程收到了菜单进程终死前发出的 SIGINT），丢的只是收口记录。
+    离线复现：外层 `subprocess.call(["bash", "-c", "exec python3 child.py"])`，
+    给外层发**一次** SIGINT ⟹ child **直接消失**，外层退出码 130。
+
+    ⛔⛔ **也别退回"先 `signal.signal(SIGINT, SIG_IGN)` 再起子进程"** —— 那是本函数的
+    **上一版**，2026-10-17 当天就在同一台机器上翻车，比它要修的那个 bug 更凶：
+    **被忽略的信号会被子进程继承**（`fork`+`exec` 一路带着），而 CPython **只有当启动时
+    SIGINT 不是 `SIG_IGN` 才装** `KeyboardInterrupt` 处理器 ⟹ 内层菜单从启动起就一直
+    "看不见" Ctrl-C，整个会话都停不下来。现场：`rec_start 6` 已挂两分多钟，操作者按
+    Ctrl-C **毫无反应**；`/proc/<内层 pid>/status` 是 `SigIgn: …0002`（bit 1 = SIGINT
+    被忽略）、`SigCgt: 0`（连 Python 的处理器都没装）—— 与旁边那个正常菜单的
+    `…1001000` / `…4002` 一比就现形。
+
+    ⟹ 先把子进程 **`Popen` 出来**（它拿到**默认**处置），再在父进程这一侧把
+    `KeyboardInterrupt` 吞掉、接着等。父进程不动任何处置，子进程就不可能继承到坏状态；
+    菜单、录制收口、起链的 `Ctrl-C 一起停` 行为都不变（子进程仍在同一个前台进程组）。
+    """
+    proc = subprocess.Popen(argv, env=env)
+    while True:
+        try:
+            return proc.wait()
+        except KeyboardInterrupt:
+            # 外壳这侧收到了；真正的菜单进程**也**收到了（同一个前台进程组）——
+            # 它该收口就收口、该停就停。外壳只负责**别走、更别杀它**。
+            print("\n（Ctrl-C：等它自己收口，别急）", end="", flush=True)
+            continue
 
 
 def ensure_sourced() -> None:
@@ -400,7 +506,9 @@ def ensure_sourced() -> None:
     env = dict(os.environ, Z0_SOURCED="1")
     code = sourced_command(f'exec "{sys.executable}" "{Path(__file__).resolve()}" '
                            + " ".join(f'"{a}"' for a in sys.argv[1:]))
-    sys.exit(subprocess.call(["bash", "-c", code], env=env))
+    # ★ 必须走 `call_ignoring_sigint`（不是裸 `subprocess.call`）：Ctrl-C 同时到外壳与
+    #   子进程，外壳的 `subprocess.call` 会把**正在收口的**子进程 SIGKILL 掉。见那个函数。
+    sys.exit(call_ignoring_sigint(["bash", "-c", code], env=env))
 
 
 # ─────────────────────────── 动作表 ───────────────────────────
@@ -465,16 +573,24 @@ ACTIONS: Tuple[Action, ...] = (
     Action("traj", "起 traj（单独）", "ros2 launch traj traj.launch.py",
            "只发参考、不碰飞控；一帧不发直到被 select + start（start 由 control 发）"),
     Action("control", "起 control（单独）", "ros2 launch control control.launch.py",
-           "台架 T3 就是这么起的；起早了停在 `MANUAL/INIT` 并逐条列出缺什么 —— 那是正常状态"),
-    Action("up_manual", "★ 一键启动（起前选控制器；默认手动遥控飞）", None,
-           "mavros（带 GCS 桥）→ vrpn → mocap 逐段等判据，**尾巴由起链前那一句选**："
-           "1 不起控制器（**默认**，起完直接遥控器手动起飞）/ 2 offboard 控制（+traj+control）/ "
-           "3 模型预测控制（hold，不起 traj）/ 4 模型预测控制 + traj"),
+           "台架 T3 就是这么起的；起早了停在 `MANUAL/INIT` 并逐条列出缺什么 —— 那是正常状态",
+           # ★★ 票 15：只开 `external` 那一条。它是**输出后端**的开关，不动任务流程：
+           #   开始键、解锁、切 OFFBOARD、起飞、判稳、轨迹原点、/traj/start、降落全在本节点。
+           #   ⚠️ 传的是 **launch 参数**（不是 `--ros-args -p`）：这条命令走的是 `ros2 launch`。
+           optionals=(OptionalArg(
+               "output_mode_external",
+               "要让外部控制器（模型预测控制）发执行器指令吗？"
+               "（y ⟹ 追加 output_mode:=external；本节点只发 /control/target）",
+               "output_mode:=external"),)),
+    Action("up_manual", "★ 一键启动（动捕+mavros，手动遥控飞）", None,
+           "mavros（带 GCS 桥）→ vrpn → mocap，逐段等判据；★ **不起 traj/control** ⟹ "
+           "没有任何程序在上位控制飞机，起完**直接遥控器手动起飞**"),
     Action("up", "★ 一键启动全部（起前选控制器；默认 offboard 控制）", None,
            "mavros → vrpn → mocap 逐段等判据，**尾巴由起链前那一句选**："
-           "1 不起控制器 / 2 offboard 控制（**默认**，+traj+control）/ 3 模型预测控制（hold，不起 traj）/ "
-           "4 模型预测控制 + traj；选到带 traj 的档就把**终端让给操作台**选轨迹，"
-           "然后你按**遥控器开始键**（第 1 次 = 解锁起飞、第 2 次 = 进 TRACK）；Ctrl-C 一起停"),
+           "1 offboard 控制（**默认**，+traj+control）/ 2 模型预测控制（+traj+mpc+control，"
+           "mpc 当 control 的输出后端）；两档**都带 traj 与 control**，起完把**终端让给操作台**"
+           "选轨迹，然后你按**遥控器开始键**（第 1 次 = 解锁起飞、第 2 次 = 进 TRACK）；"
+           "Ctrl-C 一起停"),
     Action("down", "★ 清除后台节点（扫 mavros/vrpn/mocap/traj/control/mpc 并停掉）", None,
            "按**名字**扫（`DOWN_TARGETS`）⟹ 别人会话起的同类节点也在清单里；先列清单再问一句 y/N；"
            "先 SIGINT 超时才升级 ⟹ **它不是降落**，空中先按 runbook §1.2 处置"),
@@ -514,7 +630,7 @@ ACTIONS: Tuple[Action, ...] = (
            menu=False),
 
     # ★★ 模型预测控制那一条（ticket 14，2026-10-16）—— **不进菜单**（`menu=False`，不占菜单号）：
-    #   它的入口是第 8 / 9 项起链前那一句「谁在上位控制飞机」的第 3 / 4 档。
+    #   它的入口是第 9 项起链前那一句「谁在上位控制飞机」的第 2 档（二定：只剩两档）。
     #   ★ 为什么**能**进这张表（"没有任何让飞机动的入口"那条边界）：闸门关着时它**一帧都不发**
     #     —— `_tick` 在 `cycle.x0 is None` 时直接 return（不求解、不发 setpoint，见
     #     `mpc_node.py` 的 `_gate_closed`），而闸门要求 `armed + OFFBOARD`，这两件事
@@ -522,14 +638,39 @@ ACTIONS: Tuple[Action, ...] = (
     #   ★ `--ros-args -p` 这个写法照抄 `docs/control/first-flight-config.md` 那条
     #     （`ros2 run nmpc mpc_node.py --ros-args -p tau_s:=0.0`）；⚠️ `preflight_check.py` 的
     #     `-p` 是它**自己** argparse 的选项，两个不是一回事，别互相搬。
-    Action("mpc", "起 MPC（模型预测控制）节点 —— nmpc 的 mpc_node.py", "ros2 run nmpc mpc_node.py",
-           "★ 参考源两档：默认 `hold`（定点保持）；要追 `traj` 的三条轨迹才加下面那条可选参数。"
+    # ★ `env ACADOS_ENV` 那个前缀**必须在**：`mpc_node.py` 起来的头一秒就建求解器，
+    #   两个变量缺一个就是 `OSError: lib*.so: cannot open shared object file`（见 `ACADOS_ENV`）。
+    #   它是"起不来"，不是"飞错了"——所以放在**命令里**，`--dry-run` 也看得见。
+    Action("mpc", "起 MPC（模型预测控制）节点 —— nmpc 的 mpc_node.py",
+           f"env {ACADOS_ENV} ros2 run nmpc mpc_node.py",
+           "★ 四条可选参数（默认一条都不带）—— 两条定参考源（互斥），后两条是开关。"
+           "第 9 项的模型预测控制档打开 `reference_source_control` + `offboard_prestream`；"
+           "`output_mode_external` 加在 **control** 那一条上，不在本动作里。"
            "★ 它在 **armed + OFFBOARD 之前一帧都不发**（闸门关着连心跳都没了 —— setpoint 就是心跳）"
-           "⟹ 起它 ≠ 飞；解锁/切 OFFBOARD 与（traj 档）`/traj/start` 都**不在这里**，见 `operation_manual.md`",
+           "⟹ 起它 ≠ 飞；解锁/切 OFFBOARD **由 control 做**（本动作里没有这类入口），见 `operation_manual.md`",
            optionals=(OptionalArg(
                "reference_source_traj",
-               "要追轨迹吗？（y ⟹ 追加 --ros-args -p reference_source:=traj）",
-               "--ros-args -p reference_source:=traj"),),
+               "要追轨迹吗？（y ⟹ 追加 --ros-args -p reference_source:=traj）"
+               "—— 没有 `control` 的独立档用它（参考是 `/traj/reference`，相对轨迹原点）",
+               "--ros-args -p reference_source:=traj"),
+               OptionalArg(
+               "reference_source_control",
+               "参考由 control 给吗？（y ⟹ 追加 --ros-args -p reference_source:=control）"
+               "—— 第 9 项的模型预测控制档用它：`/control/target` 是**绝对目标**，"
+               "开始键/解锁/轨迹原点/降落全部由 control 负责",
+               "--ros-args -p reference_source:=control"),
+               OptionalArg(
+               "offboard_prestream",
+               "要发前置流吗？（y ⟹ 追加 --ros-args -p offboard_prestream:=true）"
+               "—— 只在未解锁或不在 OFFBOARD 时发纯悬停帧，只为让飞控肯放我们进 OFFBOARD",
+               "--ros-args -p offboard_prestream:=true"),
+               OptionalArg(
+               "start_traj_reference",
+               "要让它自己发 /traj/start 吗？（y ⟹ 追加 --ros-args -p start_traj_reference:=true）"
+               "—— **只给 reference_source=traj 的旧独立档**：在「已解锁 + OFFBOARD + 状态新鲜"
+               "但还没有参考」那一拍发一次 /traj/start（⛔ 不是遥控器开始键 —— 那归 control）；"
+               "第 9 项两档都不打开它",
+               "--ros-args -p start_traj_reference:=true"),),
            menu=False),
 
     # ★★ 下面两条**不进菜单**（`menu=False`，不占菜单号）。操作者 2026-09-23 拍定把菜单里
@@ -563,8 +704,17 @@ READ_ONLY_KEYS: Tuple[str, ...] = tuple(a.key for a in ACTIONS if a.read_only)
 
 
 def optionals_suffix(action: Action, answers: Sequence[bool]) -> str:
-    """把选中的可选参数拼成命令行尾巴（**纯函数**，可离线测）。"""
+    """把选中的可选参数拼成命令行尾巴（**纯函数**，可离线测）。
+
+    ★ 同一个 `-p <名>:=` 只许出现一次：两条参考源是**互斥**的，而 ROS 对命令行里
+      重复的参数只取最后一处、**不报错** ⟹ 两个都答 y 会变成一次静默的"后答的胜出"。
+      入口处一声响（`ValueError`），比现场猜"到底用了哪个参考源"便宜。
+    """
     chosen = [opt.suffix for opt, yes in zip(action.optionals, answers) if yes]
+    names = [s.split("-p ", 1)[1].split(":=", 1)[0] for s in chosen if "-p " in s]
+    dup = sorted({name for name in names if names.count(name) > 1})
+    if dup:
+        raise ValueError(f"同一参数被指定了不止一次：{', '.join(dup)}（互斥开关只能开一个）")
     return (" " + " ".join(chosen)) if chosen else ""
 
 #: 出现这些字样就说明"这个脚本能碰到飞机" —— 安全不变式（测试断言动作表里一条都没有）。
@@ -835,8 +985,9 @@ UP_OPTIONALS: Dict[str, Tuple[str, ...]] = {"mavros": ("gcs_url",)}
 
 # ───────────── 链尾那一格：这一趟「谁在上位控制飞机」（ticket 14，2026-10-16） ─────────────
 #
-# ★ 第 8 / 9 项起链前**问一句**，四档里选一个（输数字，空回车 = 该菜单项的默认档）。
-#   两条链的**公共前缀是 `MANUAL_CHAIN`**（mavros → vrpn → mocap），尾巴由选中的那一档给。
+# ★ **第 9 项**起链前**问一句**（两档，输数字，空回车 = offboard 控制）；**第 8 项不问**
+#   （它只有一档，2026-10-16 复原）。两条链的**公共前缀是 `MANUAL_CHAIN`**
+#   （mavros → vrpn → mocap），尾巴由选中的那一档给。
 # ★ 每一档的 `tail` **只写 key**（命令仍取自 `ACTIONS`）⟹ ticket 22 那条不变式天然盖住它们；
 #   `closing` 是**提示**（起完那几步怎么做），不是命令 —— 它不含任何能送进 `bash -c` 的东西。
 
@@ -858,29 +1009,53 @@ class ControllerChoice:
     extra_optionals: Tuple[str, ...] = ()
 
 
-#: 模型预测控制两档**共同**的那几句（"起它 ≠ 能飞"）—— 先定义，`CHAIN_CHOICES` 两处引用它。
-#: ⛔ **不含任何命令**（"在哪手打"只指文档）：`z0.py` 里不许出现 `ros2 service call` 那类字样
-#: （`FORBIDDEN_IN_COMMANDS` + 那条 AST 用例扫的正是全文件的字符串字面量）。
-#: ★ 这几句的编号**对着票 14「这一轮不解决的三件事」的那个编号**（① 解锁/OFFBOARD、② `/traj/start`、
-#:   ③ 操作台状态栏）⟹ ②③ 只在**起 traj 的那一档**补（另一档没有 traj、也没有操作台）。
-_MPC_CLOSING: Tuple[str, ...] = (
-    "★★ 选到模型预测控制档：**起链 ≠ 能飞** —— 剩下的照旧手打（本脚本一件都不代做）：",
-    "   ① **解锁 + 切 OFFBOARD**：`mpc_node` 的闸门要求 `armed + mode == \"OFFBOARD\"`，"
-    "而它**自己不 arm、不 set_mode**（闸门关着时它连心跳都没有 —— 换载体后 setpoint 就是心跳"
-    " ⟹ 持续超过 `COM_OF_LOSS_T` 会让飞控**拒绝**进 OFFBOARD）。",
-    "      这一档**没有 `control`** ⟹ 遥控器开始键在这条链上**不起作用**（那是 `control` 的 FSM）。"
-    "解锁/切模式怎么手打：`docs/control/safety-paths-drill.md` 与 `docs/control/bench-runbook.md`。",
-    "   ★ 起飞：同样是遥控器/操作者的事，不在本脚本里。",
-)
-
-
-CHAIN_CHOICES: Tuple[ControllerChoice, ...] = (
+#: 菜单 8（`up_manual`）**只有一档** —— 它**不问**（2026-10-16 复原）：起 `mavros → vrpn → mocap`，
+#: 没有任何程序在上位控制飞机。★ 留成"一格档"而不是特判，是为了让 `ask_chain_choice` /
+#: `render_chain` 只有一条代码路（"只有一档就不问"），菜单 8 与菜单 9 的差别只剩**表里有几行**。
+MANUAL_CHOICES: Tuple[ControllerChoice, ...] = (
     ControllerChoice("none", "不起控制器 —— 只到动捕 + mavros，起完直接用遥控器手动飞", (), (
-        "★ 现在**直接用遥控器起飞**就行 —— 这一档**没有** traj/control：",
+        "★ 现在**直接用遥控器起飞**就行 —— 本流程**没有** traj/control：",
         "  没有任何程序在上位控制飞机，飞成什么样全看你手上的杆。",
         "  动捕经 mavros 变成 EKF2 的位置估计（`/mavros/vision_pose/pose`）⟹ 位置信息在，"
         "但**没人替你把杆**。",
     )),
+)
+
+
+#: 模型预测控制档那几句（票 15 之后：**`control` 在场，开始键照常有效**）。
+#: ⛔ **不含任何命令**（"在哪手打"只指文档）：`z0.py` 里不许出现 `ros2 service call` 那类字样
+#: （`FORBIDDEN_IN_COMMANDS` + 那条 AST 用例扫的正是全文件的字符串字面量）。
+#: ★★ 票 15 把这一档从"`control` 不在场、解锁/切模式/开始键全要手打"改成**与 offboard 档同流程**：
+#:   `control` 是唯一任务总管（开始键 / 解锁 / OFFBOARD / 起飞 / 判稳 / 轨迹原点 / `/traj/start` /
+#:   降落），`mpc_node` 只是它的**输出后端** —— 订 `/control/target` 求解，发姿态 setpoint。
+#: ⟹ 操作员看到的两条链**只剩输出那一层不同**，手上的动作完全一样。
+_MPC_CLOSING: Tuple[str, ...] = (
+    "★★ 选到模型预测控制档：**开始键与 offboard 档完全一样** —— 两种控制只是输出后端不同：",
+    "   · `control` 仍是唯一任务总管：开始键 → 解锁 + 切 OFFBOARD + 起飞 + 判稳 + 轨迹原点"
+    " + 发 `/traj/start` + 轨迹超时/降落，全部由它负责；",
+    "   · `mpc_node` 只做一件事：订 `/control/target`（**绝对目标**，位置 + 速度 + yaw）并求解，"
+    "把 `/mavros/setpoint_raw/attitude` 发给飞控；它是本档唯一写 PX4 setpoint 的节点。",
+    "★ 起飞与执行轨迹**都在你手上**（本脚本刻意不代做 —— ticket 22 §二）：",
+    "   ① 选轨迹：刚把终端让给操作台那一步（没选成的话再跑 `ros2 run bringup fly.py`）；",
+    "      ★ **必须起飞前选好** —— `control` 进 `TRACK` 那一下要拿去发 `/traj/start`。",
+    "   ② 起飞/开始轨迹：**遥控器开始键**（开始通道，现场是 CH9）",
+    "      第 1 次上升沿 = 解锁 + 起飞、第 2 次 = 进 `TRACK`（开始执行轨迹）。",
+    "      ⚠️ **每次压住 ≥ 0.3 s 再松**（200 ms 去抖对上 10 Hz 采样，压得太准会按不动）；",
+    "      ⚠️ 上电时它若已停在**高位**，那**不算边沿**（必须先见低位）；",
+    "      ⚠️ 起飞前置里有一条「遥控在线」⟹ 台上没接遥控接收机时**永远解不了锁**（刻意如此）。",
+    "   ③ 操作台 `fly.py` 的状态栏照常可用（`/control/state` 与 `/control/traj_progress`"
+    "仍由 `control` 发）。",
+    "★ 安全边界（两条链一样）：`control` 一旦不再发目标（0.5 s），`mpc_node` **关闸停发** ——"
+    "由 PX4 的 OFFBOARD 失流保护（1 s）接管；它**不会**拿着最后一帧目标一直飞。",
+)
+
+
+#: 菜单 9（`up`）**两档** —— ★★ **两档的尾巴都含 `traj`**：操作者 2026-10-16 的原话是
+#: 「轨迹必须起没得选」⟹ "必起 traj"是**结构上的事实**（写在 `tail` 里），不是提示语；
+#: 一版那条"模型预测控制 + `hold`、不起 traj"的路（第 3 档）按同一次裁定**删掉**。
+#: ★★ 票 15 起**两档的尾巴也都含 `control`**（第 2 档是 `traj → mpc → control`）：
+#:   任务流程只写一遍，`mpc` 退化成 `control` 的一个输出后端 —— 将来的新控制方式照同样形状接。
+UP_CHOICES: Tuple[ControllerChoice, ...] = (
     ControllerChoice("offboard", "offboard 控制（control，(A) 级）—— 起 traj；起完选轨迹 + 按开始键",
                      ("traj", "control"), (
         "★ 起飞与执行轨迹**都在你手上**（本脚本刻意不代做 —— ticket 22 §二）：",
@@ -892,27 +1067,22 @@ CHAIN_CHOICES: Tuple[ControllerChoice, ...] = (
         "      ⚠️ 上电时它若已停在**高位**，那**不算边沿**（必须先见低位）；",
         "      ⚠️ 起飞前置里有一条「遥控在线」⟹ 台上没接遥控接收机时**永远解不了锁**（刻意如此）。",
     ), handoff=UP_HANDOFF),
-    ControllerChoice("mpc_hold",
-                     "MPC（模型预测控制）—— mpc_node.py，参考源 hold；定点保持，不起 traj"
-                     "（阶梯 3 的系绳悬停用这档）",
-                     ("mpc",),
-                     _MPC_CLOSING + (
-        "★ 这一档的参考是 **hold**：闸门第一次打开那一拍的锚点（+ 可选 `hold_offset`），"
-        "**不追轨迹** —— 阶梯 3 的系绳闭环悬停用这一档。",
-    )),
-    ControllerChoice("mpc_traj",
-                     "模型预测控制 —— mpc_node.py，参考源 traj；**起 traj**，起完选轨迹"
+    ControllerChoice("mpc",
+                     "MPC（模型预测控制）—— mpc_node.py 作为 control 的输出后端；"
+                     "**起 traj + mpc + control**，起完选轨迹"
                      "（阶梯 4 飞轨迹用这档）",
-                     ("traj", "mpc"), _MPC_CLOSING + (
-        "★★ 这一档**另有两件**（票 14「这一轮不解决的三件事」的 ② ③）—— 照旧**不代做、也不静默**：",
-        "   ② **`/traj/start` 这一档没有人发**：它是 `control` 进 `TRACK` 那一刻自己发的，而这一档"
-        "     **没有 `control`**（`fly.py` 只发 `/traj/select`）⟹ `traj` 一帧都不发，"
-        "     模型预测控制只会看到断流、就地冻住（`traj_stream_gap_s = 0.5 s` 的 freeze）。"
-        "     原文与理由见 `.scratch/phase4/issues/14-*` 的「这一轮不解决的三件事」②；"
-        "     ⛔ 本脚本**不发**这一条（发帧那条边界），要发请在**另一个终端**按那里的口径手打。",
-        "   ③ **操作台 `fly.py` 的状态栏会是空的**：它显示 `/control/state` 与 `/control/traj_progress`，"
-        "     而这一档**没有 `control`** 在跑 ⟹ 那两格只会停在「还没收到」（**选轨迹**那一半照常可用）。",
-    ), handoff=UP_HANDOFF, extra_optionals=("reference_source_traj",)),
+                     ("traj", "mpc", "control"), _MPC_CLOSING,
+                     handoff=UP_HANDOFF,
+                     # ★★ 票 15 的三条（全部**默认关**，只有这一档打开）：
+                     #   · `reference_source_control` —— mpc 的参考是 `/control/target`（绝对目标）；
+                     #   · `offboard_prestream` —— 进 OFFBOARD 前由 mpc 先发悬停帧（control 这档不写
+                     #     PX4 setpoint，这条流必须有人给）；
+                     #   · `output_mode_external` —— control **只发** `/control/target`，
+                     #     不写 `/mavros/setpoint_raw/local`（两路 setpoint 会互相覆盖）。
+                     # ⛔ `start_traj_reference` **不再带**：`/traj/start` 由 `control` 的 TRACK 分支发
+                     #   （与 offboard 档逐字相同）。两边都发会让参考时钟被归零两次。
+                     extra_optionals=("reference_source_control", "offboard_prestream",
+                                      "output_mode_external")),
 )
 
 
@@ -926,8 +1096,8 @@ class Chain:
 
     key: str                          # 与 `ACTIONS` 的 key 对齐（第 8 / 第 9 项那两条）
     label: str                        # 打印用
-    default_choice: int = 1           # 空回车算哪一档（1 起；编号 = `CHAIN_CHOICES` 里的位次）
-    choices: Tuple[ControllerChoice, ...] = CHAIN_CHOICES
+    choices: Tuple[ControllerChoice, ...]    # ★ 每条链**各自一张表**（第 8 项 1 行、第 9 项 2 行）
+    default_choice: int = 1           # 空回车算哪一档（1 起；编号 = 本链 `choices` 里的位次）
 
     def choice(self, number: int) -> ControllerChoice:
         """第 `number` 档（1 起）。越界 ⟹ 报错，**不许**悄悄退回默认。"""
@@ -950,10 +1120,10 @@ class Chain:
 
 
 CHAINS: Tuple[Chain, ...] = (
-    # ★ 两条链**只差默认档**：第 8 项默认"不起控制器"（= 它今天的样子）、
-    #   第 9 项默认"offboard 控制"（= 它今天的样子）⟹ 空回车的行为与这一版之前**逐字一致**。
-    Chain("up_manual", "一键启动（起前选控制器；默认手动遥控飞）", default_choice=1),
-    Chain("up", "一键启动全部（起前选控制器；默认 offboard 控制）", default_choice=2),
+    # ★ 第 8 项**复原**成一版之前那样：只有一档、不问，起的东西与那时**逐字一致**。
+    Chain("up_manual", "一键启动动捕 + mavros（手动遥控飞）", MANUAL_CHOICES, default_choice=1),
+    # ★ 第 9 项两档，默认 = offboard 控制（= 它今天的样子）⟹ 空回车的行为与这一版之前**逐字一致**。
+    Chain("up", "一键启动全部（起前选控制器；默认 offboard 控制）", UP_CHOICES, default_choice=1),
 )
 
 CHAIN_BY_KEY: Dict[str, Chain] = {c.key: c for c in CHAINS}
@@ -1306,21 +1476,27 @@ def render_chain(chain_key: str) -> str:
 
     ★ 两块分开写是有判据的：默认那一块说的是"起链时**不问**也会发生的事"，
       另外几块是"选到才发生的事"（`OTHER_CHOICES_HEADER` 就是那条分界线）。
+    ★ **只有一档的链（菜单 8）没有第二块** —— 摊出来说"选到别的档"是没有的事。
     """
     chain = CHAIN_BY_KEY[chain_key]
     default = chain.choice(chain.default_choice)
     lines = [f"{chain.label}（`run/z0.py {chain_key}`）—— 本模式**一条都不起**，只是把要发生的事摊开：",
-             f"★ 下面摊开的是**默认那一档（第 {chain.default_choice} 档）**，空回车走的就是它。", ""]
+             f"★ 下面摊开的是**默认那一档（第 {chain.default_choice} 档）**"
+             + ("（本链只有这一档）。" if len(chain.choices) == 1 else "，空回车走的就是它。"), ""]
     lines += _render_steps(chain.steps, chain.handoff,
                            chain.closing + ("★ 收尾：跑起来之后前台守着，**Ctrl-C 一起停**"
                                             "（只停它起的那些）。",),
                            extra_names=default.extra_optionals)
+    others = [(number, choice) for number, choice in enumerate(chain.choices, start=1)
+              if number != chain.default_choice]
+    if not others:                            # ★ 只有一档 ⟹ **没有**「其他档」那一块（菜单 8）
+        lines += ["", f"★ 本链只有一档（第 {chain.default_choice} 档），起链时**不问**。"]
+        return "\n".join(lines)
     lines += ["", OTHER_CHOICES_HEADER, "",
-              f"★ 起链前会问一句「谁在上位控制飞机」（四档）；**空回车 = 第 {chain.default_choice} 档**"
+              f"★ 起链前会问一句「谁在上位控制飞机」（{len(chain.choices)} 档）；"
+              f"**空回车 = 第 {chain.default_choice} 档**"
               "（上面那一块）。选到别的档时，尾巴换成下面这些（起完那几句在起链时印）："]
-    for number, choice in enumerate(chain.choices, start=1):
-        if number == chain.default_choice:
-            continue
+    for number, choice in others:
         lines += ["", f"  [{number}] {choice.title}"]
         lines += ["  " + line for line in _render_steps(
             MANUAL_CHAIN + choice.tail, choice.handoff, (), extra_names=choice.extra_optionals)]
@@ -1432,7 +1608,7 @@ DOWN_TARGETS: Tuple[DownTarget, ...] = (
                r"ros2 launch traj |(/| )traj_node( |$)"),
     DownTarget("control", "control（状态机）",
                r"ros2 launch control |(/| )control_node( |$)"),
-    #: ★ ticket 14：第 8 / 9 项的第 3 / 4 档会起它（`ros2 run nmpc mpc_node.py`）⟹
+    #: ★ ticket 14：第 9 项的第 2 档（模型预测控制）会起它（`ros2 run nmpc mpc_node.py`）⟹
     #: 起链能起的，清除就必须能扫到（判据是下面那条用例：`UP_CHAIN` 每一条都在这里）。
     #: ★ 它是个**可执行文件**（`install(PROGRAMS)`），不是 launch ⟹ 模式里认的是
     #: `lib/nmpc/mpc_node.py` 那个路径尾巴（`(/| )mpc_node.py( |$)`），与 control 那行同形。
@@ -1686,12 +1862,19 @@ def ask_confirm(question: str, default: bool = False) -> bool:
 def ask_chain_choice(chain: "Chain") -> "ControllerChoice":
     """起链前那一句：「这一趟谁在上位控制飞机」—— 输数字，**空回车 = 该菜单项的默认档**。
 
+    ★ **只有一档就不问**（第 8 项，2026-10-16 复原）：直接返回它，屏上照旧把"这一档起什么"
+      打出来（不问 ≠ 不说）。这样菜单 8 的屏与一版之前**逐字一致**，也免得问一句只有一个答案的话。
     ★ 这一问必须在 `ensure_sourced()` **之后**：那一步在没 source 时会把本进程 `exec` 掉重开，
       先问就会把答案丢掉（现象是"问了等于没问"，而且不报错）。
     ★ 打错的**再问一遍**（不猜、不吞）；`EOFError`（管道/重定向）⟹ 走默认 ——
       与 `ask_confirm` 同一条纪律。
     """
     default = chain.default_choice
+    if len(chain.choices) == 1:               # ★ 只有一档 ⟹ 不占操作者的手
+        only = chain.choices[0]
+        print()
+        print(f"★ {chain.label}：这一趟**谁在上位控制飞机**？只有一档，**不问** —— {only.title}")
+        return only
     print()
     print(f"★ {chain.label}：这一趟**谁在上位控制飞机**？")
     for number, option in enumerate(chain.choices, start=1):
@@ -1716,8 +1899,12 @@ def launch_action(action: Action) -> int:
     if action.confirm and not ask_confirm(action.confirm):
         print("已取消。")
         return 1
-    cmd = (action.cmd or "") + optionals_suffix(
-        action, [ask_confirm(opt.prompt) for opt in action.optionals])
+    answers = [ask_confirm(opt.prompt) for opt in action.optionals]
+    try:
+        cmd = (action.cmd or "") + optionals_suffix(action, answers)
+    except ValueError as exc:
+        print(f"  ⛔ {exc} —— 这一趟没有起链。")
+        return 1
     print(f"$ {sourced_command(cmd)}")
     print("（前台跑；Ctrl-C 停它，停完回到菜单）")
     try:

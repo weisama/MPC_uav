@@ -75,6 +75,13 @@ if(BUILD_TESTING)
   #   ⚠️ 它比前三份都长（每条用例都要先真爬完 1 m 再飞一段轨迹），480 s 是实测的 3 倍余量。
   ament_add_pytest_test(test_control_track test/test_control_track.py
     TIMEOUT 480)
+
+  # ★ seam 1（话题边界）：**输出后端 external**（票 15）—— 同一套开始键/起飞/TRACK 流程，
+  #   只是 `control` 不写 `/mavros/setpoint_raw/local`，改写 `/control/target`。
+  #   单独一份的理由：它要断言"那条本地话题**零帧、零发布者**"，与上面几份的夹具
+  #   读取面不同（假飞机这次跟 `/control/target` 走）。
+  ament_add_pytest_test(test_control_external_output test/test_control_external_output.py
+    TIMEOUT 240)
 endif()
 
 ament_package()

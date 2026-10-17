@@ -33,12 +33,22 @@ def generate_launch_description():
         DeclareLaunchArgument(
             'namespace', default_value='',
             description='多机时给实例加命名空间（yaml 里的话题名是绝对路径，不受影响）'),
+        # ★★ 票 15：输出后端。默认 position = 本节点直接发 PX4 setpoint（老行为）。
+        #   external = 只发 /control/target，PX4 setpoint 由外部控制器（mpc）发。
+        #   ⚠️ 它**覆盖 yaml 里的同名字段**（后写的参数表优先），所以 z0 选档时不用另写一份 yaml。
+        DeclareLaunchArgument(
+            'output_mode', default_value='position',
+            description='position = 本节点发 /mavros/setpoint_raw/local；'
+                        'external = 只发 /control/target，由外部控制器发 PX4 setpoint'),
         Node(
             package='control',
             executable='control_node',
             name='control',  # ← 与 yaml 里的 ros__parameters 键对应，不要改
             namespace=LaunchConfiguration('namespace'),
             output='screen',
-            parameters=[LaunchConfiguration('params_file')],
+            parameters=[
+                LaunchConfiguration('params_file'),
+                {'output_mode': LaunchConfiguration('output_mode')},
+            ],
         ),
     ])

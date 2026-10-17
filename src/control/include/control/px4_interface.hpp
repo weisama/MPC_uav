@@ -88,6 +88,12 @@ struct Px4Topics
   /// ⚠️ 与 `/traj/progress` 同名不同域：这条是**我们**对外提供的观测面，值逐字转发
   ///   （见 `Px4Config::on_traj_progress`）。自己重算弧长等于把同一个数算两遍。
   std::string control_traj_progress{"/control/traj_progress"};
+  /// ★★ 票 15：`output_mode=external` 时**我们对外发**的绝对目标（`PositionTarget`，ENU/FLU，
+  ///   位置 + 速度 + yaw，50 Hz）。它**不是**给 PX4 的 —— 消费方是外部控制器
+  ///   （`mpc_node` 的 `reference_source=control`，将来还会有别的后端）。
+  /// ★ 口径：数值与 `/mavros/setpoint_raw/local` **完全同系**（ROS/ENU，z 向上为正，yaw 从 +x
+  ///   逆时针），`coordinate_frame` 只是占位（与 `/traj/reference` 的既有做法逐字一致）。
+  std::string control_target{"/control/target"};
   std::string set_mode_service{"/mavros/set_mode"};
   std::string arming_service{"/mavros/cmd/arming"};
 };
@@ -208,6 +214,29 @@ struct RcStart
   double land_hold_s{1.0};
 };
 
+/// ★★ 票 15：谁把最终指令交给 PX4 —— 是**本节点自己**，还是**外部控制器**。
+///
+/// · `kPosition`（默认）：本节点发 `/mavros/setpoint_raw/local`（位置 + yaw）⟹ 老行为逐字不变。
+/// · `kExternal`：本节点**不发任何 PX4 setpoint**，只把**绝对目标**（位置 + 速度 + yaw）
+///   发到 `/control/target`；由订阅它的外部控制器（如 `mpc_node` 的 `reference_source=control`）
+///   求解并发 `/mavros/setpoint_raw/attitude`。
+///
+/// ★ 为什么是"输出后端"而不是"任务分叉"：开始键、解锁、切 OFFBOARD、起飞、判稳、轨迹原点、
+///   `/traj/start`、降落**全部留在本节点**（`fsm.hpp`）⟹ 加一种新控制方式只需要写一个
+///   "订 `/control/target`、发执行器 setpoint"的节点，本文件与 `fsm.hpp` 都不用改。
+/// ⚠️ 同一时刻**只有一条** PX4 setpoint 话题在被写：两档各自独占一条，绝不同时发。
+enum class OutputMode
+{
+  kPosition,
+  kExternal,
+};
+
+const char * to_string(OutputMode m);
+
+/// 把参数串翻成 `OutputMode`；不认识时抛 `std::invalid_argument`（入口处一声响，
+/// 而不是默默退回默认档 —— 那会让"我明明配了 external"变成现场最难查的一类静默失败）。
+OutputMode parse_output_mode(const std::string & name);
+
 /// `Px4Interface` 的**全部配置**。★ 打包成一个结构体而不是继续往构造函数上加参数：
 /// 这些字段总是一起来（节点把参数读齐了一次性交给边界层），而位置参数一旦超过三四个，
 /// "传错顺序"就变成编译期抓不到的静默 bug（字段全是 POD / 字符串）。
@@ -218,6 +247,8 @@ struct Px4Config
   Limits limits;
   ModeNames modes;
   RcStart rc_start;
+  /// ★★ 票 15：输出后端。默认 `kPosition` = 不改变任何现有行为。
+  OutputMode output_mode{OutputMode::kPosition};
   /// `/traj/progress` 每来一帧调一次（**逐字转发**，不做任何加工）。
   /// ★ 为什么用回调而不是让节点自己再订阅一遍：**新鲜度台账只能有一个出处**
   ///   （`inputs_` 里的 `traj_progress` 也是这份订阅在刷）。两处订阅会出现
@@ -316,6 +347,25 @@ public:
   ///    起飞后目标由状态机给出（爬升斜坡 / 悬停点 / 轨迹原点）。
   ///    ⚠️ 目标由**调用方**（`fsm.hpp` 的 `Decision`）算好 —— 这里只管发，不做任何几何。
   void publish_setpoint(double x, double y, double z, float yaw);
+
+  /// ★★ 票 15：把**绝对目标**发给外部控制器（`/control/target`，`output_mode=external`）。
+  ///
+  /// ★ 值与 `/mavros/setpoint_raw/local` **同系**：ROS/ENU（z 向上为正），yaw 从 +x 逆时针。
+  ///   `coordinate_frame` 填 `FRAME_LOCAL_NED` 只是**占位**（与 `/traj/reference` 的既有做法
+  ///   逐字一致）—— 内部话题的消费者按 ENU/FLU 读，不要按枚举名去换算。
+  /// ★ 掩码 = 2496（忽略加速度三轴 + yaw_rate），⟹ 位置、速度、yaw **三路都有效**。
+  ///   外部控制器拿到的是一条"位置 + 速度"的参考，正好是模型预测控制需要的形状。
+  /// ⚠️ 只在 `output_mode=external` 的链上调用；`position` 档不能碰它（否则会多出一个
+  ///   没人消费的发布者，"飞机不动"时现场会先怀疑那个后端）。
+  void publish_control_target(double x, double y, double z,
+    double vx, double vy, double vz, float yaw);
+
+  /// ★★ 票 15：按构造时选定的 `output_mode` 把目标发到**唯一**一条后端通路。
+  ///
+  /// 调用方（`control_node.cpp`）只表达"现在该有一个目标"，**不判断后端** ——
+  /// 分支收在这里，新增后端时只动本文件，不会在状态机旁边再长出一个 switch。
+  void publish_target(double x, double y, double z,
+    double vx, double vy, double vz, float yaw);
 
   /// 请求切换飞行模式（`custom_mode`，如 `"OFFBOARD"`）。
   /// ⚠️ **`mode_sent == true` 只表示 SET_MODE 消息发出去了，不代表 PX4 接受** ——
@@ -440,6 +490,9 @@ private:
   rclcpp::Publisher<std_msgs::msg::Empty>::SharedPtr traj_start_pub_;
   /// `/control/traj_progress`（ticket 09 的观测面）：逐字转发 `/traj/progress`。
   rclcpp::Publisher<std_msgs::msg::Float32>::SharedPtr control_traj_progress_pub_;
+  /// ★★ 票 15：`/control/target` —— **只在 `output_mode=external` 时创建**。
+  /// `position` 档下为 `nullptr`（话题面上也就没有这个发布者）。
+  rclcpp::Publisher<mavros_msgs::msg::PositionTarget>::SharedPtr control_target_pub_;
   rclcpp::Client<mavros_msgs::srv::SetMode>::SharedPtr set_mode_client_;
   /// 解锁服务（ticket 08 起真的建起来了；台架夹具 `fake_mavros` 早就提供了它）。
   rclcpp::Client<mavros_msgs::srv::CommandBool>::SharedPtr arming_client_;

@@ -24,9 +24,11 @@ import pytest
 from nmpc.model import NX, quat_angle, yaw_quat
 from nmpc.node_core import (FALLBACK_HOLD_FRAMES, IGNORE_PX, IGNORE_PY,
                             IGNORE_PZ, IGNORE_VX, IGNORE_VY, IGNORE_VZ, IGNORE_YAW,
-                            JUMP_DT_FLOOR_S, MODE_OFFBOARD, REFERENCE_SOURCE_TRAJ,
+                            JUMP_DT_FLOOR_S, MODE_OFFBOARD, REFERENCE_SOURCE_CONTROL,
+                            REFERENCE_SOURCE_TRAJ,
                             TAU_DEFAULT_S, WARMUP_CYCLES,
                             ControlConfig, FallbackLadder, NodeCore, StopConfig,
+                            absolute_reference,
                             extrapolate_state, frame_is_finite, hold_feedforward,
                             hold_reference, mocap_stamp_s, pose_to_state, px4_pose_to_enu,
                             px4_quat_to_enu,
@@ -1224,6 +1226,13 @@ def _traj_config(**kw) -> ControlConfig:
     return ControlConfig(reference_source=REFERENCE_SOURCE_TRAJ, stop=stop)
 
 
+def _control_config(**kw) -> ControlConfig:
+    """`control` 档的配置（票 15）—— 与 `traj` 档只差参考源。"""
+    kw.setdefault("warmup_cycles", 0)
+    stop = StopConfig(**kw)
+    return ControlConfig(reference_source=REFERENCE_SOURCE_CONTROL, stop=stop)
+
+
 def test_掩码常量的低位与_位布局对得上():
     """★★ 这一条钉的是**掩码常量的数值本身**（不是"代码读了掩码"）。
 
@@ -1451,6 +1460,100 @@ def test_hold_档完全不理轨迹参考():
     assert cyc.x_ref[0][:3] == pytest.approx(
         [1.0 + cfg.hold_offset[0], 2.0 + cfg.hold_offset[1], 3.0 + cfg.hold_offset[2]])
     assert cyc.x_ref[0][3:6] == pytest.approx([0.0, 0.0, 0.0]), "hold 档的速度恒为 0"
+
+
+def test_绝对目标直接用_不加锚点():
+    """★★ 票 15 的核心口径：`control` 档的目标是**绝对点**，绝不再叠锚点。
+
+    ★ 鉴别力：测量位置故意放在 `(1,2,3)`、目标放在 `(4,5,6)`。若代码照抄了 `traj` 档的
+      "锚点 + 参考"，读数会是 `(1,2,3) + (4,5,6)` 或 `(1,2,3)` 一类的数；只有"直接用目标"
+      才得到 `(4,5,6)`。这个错**不会报错**，只会让整架飞机偏一截（`hold_reference` 的 ★★
+      是同一族静默失败）。
+    """
+    cfg = _control_config(mocap_timeout_s=10.0)
+    core = _core(cfg)
+    core.on_status(_Status(), at_s=0.0)
+    core.on_mocap(_Mocap(position=(1.0, 2.0, 3.0)), at_s=0.0)
+    core.on_control_target(_TrajRef(position=(4.0, 5.0, 6.0),
+                                    velocity=(0.2, -0.1, 0.05), yaw=0.3), at_s=0.0)
+    cyc = core.cycle(0.05)
+    assert cyc.publish
+    assert cyc.x_ref[0][:3] == pytest.approx([4.0, 5.0, 6.0])
+    assert cyc.x_ref[0][3:6] == pytest.approx([0.2, -0.1, 0.05])
+    assert yaw_from_quat(cyc.x_ref[0][6:10]) == pytest.approx(0.3)
+    assert cyc.x_ref[-1][:3] == pytest.approx(
+        [4.0 + 0.2 * N * DT, 5.0 - 0.1 * N * DT, 6.0 + 0.05 * N * DT]), \
+        "绝对目标也按时域步长线性外推（与 traj 参考同一条自洽性）"
+
+
+def test_绝对目标是模型的一条精确解():
+    """与 `test_轨迹参考是模型的一条精确解` 同一条判据，换成绝对参考族。"""
+    from nmpc.model import Z0MultirotorRateModel
+
+    v = np.array([0.35, -0.12, 0.08])
+    yaw = 0.4
+    cfg = ControlConfig(reference_source=REFERENCE_SOURCE_CONTROL)
+    x_ref = absolute_reference(cfg, N, DT, (1.0, 2.0, 3.0), tuple(v), yaw)
+    u_ref = hold_feedforward(P, N)
+    model = Z0MultirotorRateModel(P)
+    for k in range(N):
+        nxt = model.step_rk4(np.asarray(x_ref[k], float), np.asarray(u_ref[k], float), DT)
+        assert nxt == pytest.approx(np.asarray(x_ref[k + 1], float), abs=1e-12), (
+            f"第 {k} 步：绝对参考 + 解析前馈不是模型的解 ⟹ 参考族或 u_ref 算错了")
+
+
+def test_控制目标超时关闸_不是冻结():
+    """★★ 票 15 的安全语义：`control` 一停，本节点**停流**（关闸），不是把飞机冻在原地。
+
+    ★ 与 `test_参考超时冻结` 刻意相反。理由：`control` 同时拿着开始键/解锁/切模式/降落，
+      它失联后继续稳稳地悬停 = "任务总管没了"这件事在话题面上完全看不见；停流让 PX4 的
+      OFFBOARD 断流保护接管，才是兜底。
+    """
+    cfg = _control_config(control_target_timeout_s=0.2, mocap_timeout_s=10.0)
+    core = _core(cfg)
+    core.on_status(_Status(), at_s=0.0)
+    core.on_mocap(_Mocap(position=(1.0, 2.0, 3.0)), at_s=0.0)
+    core.on_control_target(_TrajRef(position=(2.0, 2.0, 3.0)), at_s=0.0)
+    fresh = core.cycle(0.05)
+    assert fresh.publish
+
+    core.on_mocap(_Mocap(position=(1.0, 2.0, 3.0)), at_s=0.5)
+    stale = core.cycle(0.5)                       # 目标龄 0.5 s > 0.2 s
+    assert stale.reason == "no_control_target"
+    assert stale.x0 is None and stale.x_ref is None, "超时必须关闸，而不是拿冻结参考继续发"
+    assert "0.50" in stale.detail and "0.2" in stale.detail, "读数要指得出龄与上限"
+
+
+def test_控制目标缺轴算坏帧_不覆盖上一帧好的():
+    """`/control/target` 必须三轴齐全（位置/速度/yaw）；缺任何一轴 ⟹ 整帧作废。
+
+    ★ 与 `traj` 档不同：那里"忽略某轴"是合法语义（那一轴保持锚点）；这一档的发布方是
+      我们自己的 `control`，每次都填满（`type_mask=2496`）⟹ 出现缺轴只可能是实现错了。
+      把它当 `None` 塞进参考会让那一轴静默变成 0（z=0 = 目标在地面）。
+    """
+    cfg = _control_config(control_target_timeout_s=10.0, mocap_timeout_s=10.0)
+    core = _core(cfg)
+    core.on_status(_Status(), at_s=0.0)
+    core.on_control_target(_TrajRef(position=(2.0, 3.0, 4.0)), at_s=0.0)
+    core.on_control_target(_TrajRef(position=(9.0, 9.0, 9.0), mask=IGNORE_PX), at_s=0.1)
+    d = core.describe_state(0.1)
+    assert d["ref_cb"] == 2 and d["ref_bad"] == 1
+    assert "x" in d["ref_bad_why"]
+    core.on_mocap(_Mocap(position=(0.0, 0.0, 1.0)), at_s=0.1)
+    cyc = core.cycle(0.15)
+    assert cyc.publish
+    assert cyc.x_ref[0][:3] == pytest.approx([2.0, 3.0, 4.0]), \
+        "坏帧不许覆盖上一帧好目标（9,9,9 不能被用上）"
+
+
+def test_控制档一帧目标都没到过_闸门关闭():
+    cfg = _control_config(mocap_timeout_s=10.0)
+    core = _core(cfg)
+    core.on_status(_Status(), at_s=0.0)
+    core.on_mocap(_Mocap(position=(1.0, 2.0, 3.0)), at_s=0.0)
+    cyc = core.cycle(0.05)
+    assert cyc.reason == "no_control_target"
+    assert cyc.x0 is None
 
 
 # ───────────────────────────── 小工具 ─────────────────────────────

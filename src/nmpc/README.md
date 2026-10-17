@@ -80,6 +80,67 @@ python3 src/nmpc/nmpc/offboard_smoke.py --help    # 不经 colcon 也能跑
 
 场景、判据与第一手证据见 [`docs/control/sitl-offboard-smoke.md`](../../docs/control/sitl-offboard-smoke.md)。
 
+## 参考源：`hold` / `traj` / `control`（[票 15](../../.scratch/phase4/issues/15-trajectory-flight-roles.md)）
+
+`-p reference_source:=…` 决定**目标位置从哪来**，三档互斥：
+
+| 档 | 参考从哪来 | 加不加锚点 | 谁在用 |
+|---|---|---|---|
+| `hold`（默认） | `hold_offset`（参数化的固定偏移） | 加 | 台架 / 冒烟 |
+| `traj` | `/traj/reference`（相对量） | 加 | 旧独立档：菜单 9 的两档都**不再选它**；只有单独跑 `run/z0.py mpc` 时仍可手动打开（`reference_source_traj`） |
+| **`control`** | **`/control/target`（绝对量，位置 + 速度 + yaw）** | **不加** | `z0.py` 菜单 9 第 2 档 —— `control` 是任务总管，`mpc` 只做输出后端 |
+
+`control` 档的口径（`node_core.py` 的 `absolute_reference` / `on_control_target`）：
+
+- `/control/target` 是 **ENU / FLU 数值**（与仓库里 `/traj/reference` 一样，`coordinate_frame`
+  字段只是占位，**不做 NED 转换**）；`type_mask` 必须是 **2496**（位置 + 速度 + yaw，
+  忽略加速度与 yaw_rate），与 `control` 侧同一个常量。
+- **目标就是绝对值**：`x_ref = 目标位置`、速度按目标速度线性外推（模型预测控制的前馈）。
+  **不再加锚点** —— 轨迹原点、起飞悬停点、判稳全在 `control` 里算好了。
+- 目标断流 **0.5 s**（`control_target_timeout_s`）⟹ 闸门以 `no_control_target` 关闭，
+  **不是冻结**：冻结等于拿旧目标继续飞，而目标流断掉通常意味着上游任务态变了。
+  **关闸 = 零帧**（`_hold` 返回 `publish=False`），不是"阶梯接管"：`hold → hover` 那条
+  兜底阶梯只处理**求解不可用**，不在这条路上。最后一道是 PX4 的 1 s OFFBOARD 丢失保护。
+- `_validate` 在 `control` 档下要求 `hold_offset` 全 0、拒绝 `start_traj_reference`
+  （后者只在 `reference_source=traj` 有意义）。
+
+★ **`mpc` 仍然不 arm、不 set_mode、不读遥控器**：开始键、解锁、切 `OFFBOARD`、起飞、
+`/traj/start`、降落全部由 `control` 做。第 2 档的链是 `traj → mpc → control`，
+`control` 以 `output_mode=external` 运行（只发 `/control/target`，见
+[`src/control/README.md`](../control/README.md)）。
+
+## `mpc_node.py` 的两条新参数（[票 14](../../.scratch/phase4/issues/14-chain-controller-choice.md) 二定，**默认都关**）
+
+两条都是 2026-10-16 加的，`_PARAMS` 里默认值均为 `False` ⟹ **不传参数时行为与今天逐字一致**
+（"默认关"的活证据是既有用例照旧绿，尤其 `test_未解锁时一帧_setpoint_都没有` —— 不是口头保证）。
+★ 票 15 起 `z0.py` 的模型预测控制档只打开 `offboard_prestream`；`start_traj_reference` 不再由
+`z0.py` 打开（`/traj/start` 归 `control`），但仍保留给 `reference_source=traj` 的旧链：
+
+| 参数 | 默认 | 打开后它做什么 | 谁打开 |
+|---|---|---|---|
+| `offboard_prestream` | `false` | 闸门关着时，**只有** `not_armed` / `not_offboard` 这两个原因下发**一帧纯悬停**（零角速率 + 悬停推力，就是 `__init__` 里那个 `_hover_sp`）；其余关闸原因**照旧零帧** | `z0.py` 的模型预测控制档 ⟹ `--ros-args -p offboard_prestream:=true` |
+| `start_traj_reference` | `false` | 参考源是 `traj` 时，闸门因 `no_traj_reference` 关着那一拍发**一帧** `/traj/start`（`std_msgs/Empty`），**发一次**；理由回到 `no_status` / `not_armed` / `not_offboard` 才重新武装 | **只给旧 `traj` 档手打**；`z0.py` 不再打开它（`control` 档下 `_validate` 直接拒） |
+
+★ **`offboard_prestream` 的权限边界**（第一手，PX4 1.14.3 `mavlink_receiver.cpp`）：不在 `OFFBOARD` 时
+飞控**只**消费这帧里的 `offboard_control_mode`（`:1530-1536`，`:1535` 是那句 `publish`），
+姿态/角速率那两处都写着 "Publish … only once in `OFFBOARD`"（`:1562` / `:1592`）
+⟹ 预流**动不了飞机**，它唯一的权限是"让飞控肯收下我们进 `OFFBOARD` / 解锁"
+（`COM_OF_LOSS_T` 要求进 `OFFBOARD` 前 1 s 内持续有 setpoint）。
+
+⛔ **别把预流那张名单放宽**（`REASONS_PRESTREAM`）：其余每个关闸原因（`status_stale` / `no_mocap` /
+`stamp_regress` / `pose_jump` / `attitude_jump` / `no_traj_reference` …）都意味着"**输入不可信**"，
+那时**停流**、让 PX4 在 1 s 后把飞机踢出 `OFFBOARD`，正是我们要保住的那道兜底。
+`no_status` 也不在名单里（连"解锁没有、什么模式"都不知道，发帧是盲发）。预流帧在 JSONL 里的
+`fallback` 是 `"prestream"` —— 它**不是**兜底阶梯的一档（阶梯是 `normal` / `hold` / `hover`）。
+
+★ `start_traj_reference` **只在 `reference_source=traj` 时有意义**（触发原因 `no_traj_reference`
+在 `hold` 档下永远不会出现）⟹ `_validate` 在 `hold` 档下**当场拒**，不让它静静地待在那里
+（与 `traj` 档拒 `hold_offset` 同一条纪律）。
+
+⚠️ **两条都只发 setpoint，不 arm、不 set_mode、不调服务。** 在 `z0.py` 第 2 档里，这两件事由
+`control` 的 FSM 做（开始键第 1 次上升沿）；`mpc` 自己永远不碰。`run/z0.py` 里不许出现
+arming / set_mode 入口（`FORBIDDEN_IN_COMMANDS` 挡的正是 `ros2 service call`）。
+
 ## 离线 OCP（ticket 04，零 ROS）
 
 ```python
@@ -97,6 +158,15 @@ print(sol.info.line())                      # 数值健康度
 export ACADOS_SOURCE_DIR=$HOME/acados
 export LD_LIBRARY_PATH=$ACADOS_SOURCE_DIR/lib:$LD_LIBRARY_PATH
 ```
+
+★★ **两个缺一不可，且失败长得像"代码坏了"**（2026-10-17 起链实测，票 14）：
+缺 `ACADOS_SOURCE_DIR` ⟹ `acados_template` 从**它自己被装在哪**去猜（本机 = `~/refs/acados`，
+那是**源码树**、没有 `lib/`）⟹ `OSError: …/libacados.so: cannot open shared object file`；
+只设它、缺 `LD_LIBRARY_PATH` ⟹ `libacados.so` 打得开、但它依赖的 `libhpipm.so` 找不到
+（同一个 `OSError`，换个文件名）。两次都发生在 `mpc_node.py` 起来的**头一秒**。
+★ **走 `run/z0.py` 起链时不用你 export**：`mpc` 那条动作的命令自带 `env ACADOS_SOURCE_DIR=…
+LD_LIBRARY_PATH=…` 前缀（见 [`run/README.md`](../../run/README.md)）—— 上面这两行是给
+**手打 `ros2 run nmpc mpc_node.py`** 与**直接跑 pytest** 用的。
 
 第一次 `OfflineOcp()` 会**代码生成 + 编译 C**（几十秒）；之后复用 `$MPC_CODEGEN_DIR`
 （缺省 `~/.cache/mpc-ocp-codegen`，**刻意不放进源码树**）。不带 ROS 直接跑测试：
