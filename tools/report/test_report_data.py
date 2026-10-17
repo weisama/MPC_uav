@@ -258,7 +258,8 @@ def _summary(tag):
 
 @pytest.mark.parametrize("tag,span,ref_start_wall,ref_delay_s", [
     ("R-hover", 39.64167761802673, 1792246130.8921504, 0.007737636566162109),
-    ("R-square", 17.88318920135498, 1792245962.7535696, 0.009085655212402344),
+    # 2026-10-17 票 02 重跑 R-square（wall 时钟随之变化；其他字段口径不变）。
+    ("R-square", 17.88318920135498, 1792249814.6477861, 0.009085655212402344),
     ("R-lemniscate", 26.22361469268799, 1792246042.5870135, 0.010177850723266602),
 ])
 def test_sim_reference_window_starts_after_pre_hold(tag, span, ref_start_wall,
