@@ -1,0 +1,91 @@
+# 07: 第 2 章 项目背景与目标
+
+Status: ready-for-human
+Type: task
+
+**What to build:** `docs/report/chapters/02-background.md`。
+
+**Blocked by:** —
+
+## 内容
+
+- 项目一句话定位：z0 = OddityRC XI35 Pro 152 mm 涵道四旋翼；飞控 MicoAir NxtPX4v2（PX4 1.14.3 系）；
+  Jetson Orin NX 8GB；Nokov 动捕（VRPN）；
+- 目标：模型预测控制接管飞控内置 PID；**分四阶段，每阶段只引入一个新变量**；
+- 四阶段表（Phase 1 offboard 位置、Phase 2 SITL 模型预测控制、Phase 3 整理收口、Phase 4 实机），
+  每阶段写"做了什么 / 控制接口 / 结论"，并指向仓库里的证据；
+- 关键工程约束：室内无 GPS、只用动捕；mavros 是唯一机载链路（uXRCE-DDS 不使用）；
+  控制层级选 (C)（CTBR）而不是 (B)/(D)；
+- 与前后的关系：本章只讲"为什么做、做到哪"，不展开架构（第 5 章）与公式（第 8 章）。
+
+## 来源
+
+- `README.md` 四阶段路线表；
+- `docs/PROJECT.md` §0–1、§6 里程碑、§7 风险；
+- `docs/reference/open-source-survey.md` §0（早期教训）；
+- `.scratch/phase4/spec.md`（阶段收口口径）。
+
+## 检查清单
+
+- [x] 四阶段各有一段结论，且不把"票收口"写成"阶段收口"（按 spec 的实际 Status）
+- [x] 说清 "(C) 级 = 总推力 + 机体三轴角速率"
+- [x] 不重复第 5 章的架构细节、不重复第 8 章的公式
+- [x] 中文母语写作，专有名词保留原文，无裸词 `MPC`
+- [x] 所有关键断言有仓库内链接
+
+## 验收
+
+- 操作者审过才 `done`；审阅记录写进 `## Comments`。
+
+## Comments
+
+### 2026-10-17 —— 初稿完成，转 `ready-for-human`
+
+**本章摘要（≤10 行）**
+
+- 定位 z0：OddityRC XI35 Pro 152 mm 涵道四旋翼 + MicoAir NxtPX4v2（PX4 1.14.3 系）+ Jetson Orin NX 8GB + Nokov 动捕（VRPN）。
+- 目标：MPC（模型预测控制）接管飞控内置 PID；四阶段路线遵循"每阶段只引入一个新变量"（Phase 3 除外）。
+- Phase 1：offboard 位置定点，2026-09-28 真机自由飞一次成（目测、数值未量）；票面无未结，但 spec 仍 `ready-for-agent`。
+- Phase 2：SITL 验证 (C) 级模型预测控制；最高一级验收的四条判据有数值结论；票面无未结，spec 仍 `ready-for-agent`。
+- Phase 3：整理与收尾，spec `done`（2026-10-09）。
+- Phase 4：四项前置测量（部分未完成）+ 四级阶梯；阶梯 2 未达标、操作者裁定跳过；自由飞三条轨迹完成；spec `done`（2026-10-17，裁定收口，5 张 `wontfix`）。
+- 三条关键约束：室内无 GPS（动捕唯一位置源）；mavros 是唯一机载链路（uXRCE-DDS 不使用）；控制层级选 (C) = 总推力 + 机体三轴角速率。
+- 与后续章节的分工：架构见第 5 章、公式见第 8 章、方法见第 9 章、图与读数见第 10 章。
+
+**引用 / 证据清单**
+
+- `README.md`（项目基础信息、四阶段路线）
+- `docs/PROJECT.md` §1.1、§4.1、§4.2
+- `docs/reference/refs-manifest.md` §2.5(d)
+- `docs/reference/open-source-survey.md` §0
+- `docs/reference/params-changes.md` §I.1
+- `docs/reference/mocap-setup.md`
+- `docs/control/mpc-roadmap.md` §1
+- `docs/control/ladder-acceptance-criteria.md` §5.1
+- `CONTEXT.md`（CTBR、`(C)` 方案）
+- `.scratch/phase1/spec.md`、`phase1/issues/09`
+- `.scratch/phase2/spec.md`、`phase2/issues/11`
+- `.scratch/phase3/spec.md`、`phase3/issues/04`
+- `.scratch/phase4/spec.md`、`phase4/issues/01`、`02`、`03`、`04`、`09`、`13`、`14`、`15`、`16`
+- `bag/README.md`
+
+**字数**：中文 2999 字，总字符 7805（含链接与标点）。
+
+**未确定项 / 请操作者留意**
+
+1. **术语写法**：`phase5/spec.md` §8 写"首次出现写'模型预测控制（MPC）'"，但仓库现有守卫 `RE_BARE_MPC`（`run/tests/test_z0_menu.py:204`）会把这种写法误报为裸词；`CONTEXT.md:19` 与守卫的合规形式是 `MPC（模型预测控制）`。本章按后者写，正文其余处一律用"模型预测控制"。若你要求严格按 spec 的字面顺序，需要同时改守卫。
+2. **Phase 1/2 的状态**：本章按 spec 的实际 `Status` 写"阶段未收口"。若之后有人把这两张 spec 翻成 `done`，本章 2.2.1、2.2.2 与表 2-1 的三处说法会过期，需要一并更新。
+3. **Phase 4 的阶梯 2**：本章如实写"未达标、裁定跳过"，依据是票 09 与判据页 §5.1 的豁免记录；未把它写成"全阶梯通过"。
+4. **不写入具体读数**：跟踪误差、求解耗时等属第 10 章；本章只写状态与缺口，不复述数值，避免与结果表漂移。
+5. **README 四阶段表**：按 spec 本轮不动；若装配票 16 之后补 Phase 5 行，本章链接仍指向同一文件，不需要改。
+
+**2026-10-17 code review 复核记录**
+
+6 条意见逐条回第一手核实后全部成立，已改：
+
+1. Phase 2 SITL 的 (C) 级载体是 px4_msgs/uXRCE-DDS（`/fmu/in/vehicle_rates_setpoint`），Phase 4 票 13（2026-10-12）才换成 mavros；已在表 2-1 与 2.3.2 写明。
+2. 四项前置测量并非全部完成：外参 xy 未测、z 前提未证、飞控参数未读回、倾斜段判据未跑；电机位置是推得值。已在 2.2.4 如实写出并链到票 01/02/03。
+3. seam 3 的状态源是「SITL 真值 ⊕ 包里提取的噪声/延迟」，不是把录好的帧直接当测量流；已改。
+4. 5 张 `wontfix` 不都是「裁定收、不做了」：票 14 是「被票 15 取代后收口」；已改并补齐票 01/04 的缺口指向。
+5. 删掉阶梯 2 的 0.165 m / 0.97 m 硬编码读数，改为定性描述并指向票 09 与第 10 章。
+6. 判据口径从「都有数值结论」改为「都有结论（不都是通过，含未通过项）」；已改表 2-1 与 2.2.2。
