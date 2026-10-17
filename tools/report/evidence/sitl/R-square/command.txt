@@ -1,0 +1,17 @@
+# R-square —— 票 02 nominal SITL（reproduce）
+# 终端 A（先起中间件；与三趟共用）
+ROS_DOMAIN_ID=55 ros2 launch bringup mavros.launch.py fcu_url:=udp://:14540@127.0.0.1:14580
+
+# 终端 B（先 source 工作空间）
+source /opt/ros/humble/setup.bash
+source ~/mavros_ws/install/setup.bash
+source ~/px4_msgs_ws/install/setup.bash
+source install/setup.bash
+export ROS_DOMAIN_ID=55
+python3 tools/report/evidence/sitl/run_nominal_sitl.py --tag R-square --model tools/report/evidence/sitl/models/R-square-model.json --reference-source traj --mismatch none --hold-s 56 --ref-hold-s 30 --outdir /tmp/phase5-sitl/R-square --json tools/report/evidence/sitl/R-square/R-square-summary.json --debug-dump tools/report/evidence/sitl/R-square/R-square-console.log
+
+# 原始 DUT JSONL 抽求解汇总（跑完、删原始日志之前）
+python3 tools/report/evidence/sitl/extract_solver_summary.py --jsonl /tmp/phase5-sitl/R-square/R-square-dut.jsonl --tag R-square --out tools/report/evidence/sitl/R-square/solver-summary.json
+
+# 参考模型：tools/report/evidence/sitl/models/R-square-model.json（sha256 e8b7b8844049988be99a2e0ec2dd5a472dbbb439d987861b6ca377bd0f238641）
+# 参考包：bag/4_traj2_square（逐字取自该包 /traj/reference）

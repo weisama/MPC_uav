@@ -1,0 +1,45 @@
+{
+ "tag": "R-square",
+ "source": "原始 DUT JSONL（未入库；脚本见同目录 extract_solver_summary.py）",
+ "n_frames": 5627,
+ "bad_lines": 0,
+ "n_solved": 5474,
+ "fallback_dist": {
+  "prestream": 153,
+  "warmup": 10,
+  "normal": 5464
+ },
+ "solve_ms_all_solved": {
+  "n": 5474,
+  "mean": 3.267,
+  "p50": 3.181,
+  "p95": 4.056,
+  "max": 23.287,
+  "min": 2.088
+ },
+ "solve_ms_steady": {
+  "n": 5464,
+  "mean": 3.265,
+  "p50": 3.181,
+  "p95": 4.05,
+  "max": 23.287,
+  "min": 2.088
+ },
+ "warmup": {
+  "n": 10,
+  "first_solved_ms": 7.563
+ },
+ "degraded_frames": 0,
+ "solve_failed_frames": 0,
+ "solve_ok_missing_frames": 153,
+ "saturation": {
+  "frames_with_sat": 0,
+  "by_name": {}
+ },
+ "notes": [
+  "solve_ms 只统计真的解过的拍（prestream 档不解、不在内）",
+  "p95 用最近秩 arr[ceil(0.95*n)-1]",
+  "solve_ms_steady = 去掉 fallback=='warmup' 的拍（D6 的口径）",
+  "sat 为空列表 = 一拍都没顶到约束（node_core.saturated_bounds 的生产阈值）"
+ ]
+}

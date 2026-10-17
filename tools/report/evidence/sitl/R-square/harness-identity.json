@@ -1,0 +1,219 @@
+{
+ "这是什么": "票 02 的一趟 nominal SITL（`--reference-source traj`）跑完之后写下的 **这次运行自身的身份** —— 参考 / 被控对象 / 控制器 / 夹具，逐项 sha256。",
+ "★ 哈希时机": "跑完之后、未再改动下列文件时现算（脚本 write_harness_identity.py）；`src/nmpc/` 在跑前跑后都是 HEAD 内容（见 `git.src_nmpc_dirty` 为空）。",
+ "tag": "R-square",
+ "运行命令": {
+  "中间件（另一个终端，先起）": "ROS_DOMAIN_ID=55 ros2 launch bringup mavros.launch.py fcu_url:=udp://:14540@127.0.0.1:14580",
+  "跑本场": "python3 tools/report/evidence/sitl/run_nominal_sitl.py --tag R-square --model tools/report/evidence/sitl/models/R-square-model.json --reference-source traj --mismatch none --hold-s 56 --ref-hold-s 30 --outdir /tmp/phase5-sitl/R-square --json tools/report/evidence/sitl/R-square/R-square-summary.json --debug-dump tools/report/evidence/sitl/R-square/R-square-console.log",
+  "求解汇总抽取": "python3 tools/report/evidence/sitl/extract_solver_summary.py --jsonl /tmp/phase5-sitl/R-square/R-square-dut.jsonl --tag R-square --out tools/report/evidence/sitl/R-square/solver-summary.json"
+ },
+ "git": {
+  "head": "1187db5f49394594a96a46add87f799bb2584f73",
+  "src_nmpc_dirty": "",
+  "本票范围外的改动": "共享工作树里还有别的票/并行会话的在制品 （`.scratch/phase5/` 其余票、`docs/report/chapters/` 等）；本票只新增 `tools/report/evidence/sitl/**` 并改本票文件。"
+ },
+ "nominal": {
+  "mismatch": "none",
+  "plant_param": "z0.param",
+  "mismatch_markers": [],
+  "说明": "`--mismatch none` ⟹ 被控对象 = 标称 z0.param；没有 `mass+30` / `thrust±30` 之类的失配 overlay。`mismatch_markers` 从 `mismatch` / `plant_param` / `params` 现算（空表 = 真没有，不是写死的）。"
+ },
+ "参考模型": {
+  "path": "tools/report/evidence/sitl/models/R-square-model.json",
+  "sha256": "e8b7b8844049988be99a2e0ec2dd5a472dbbb439d987861b6ca377bd0f238641",
+  "bag": "bag/4_traj2_square",
+  "segment": {
+   "t0_s": 1791452671.9686804,
+   "t1_s": 1791452680.0088482,
+   "how": "AUTO/TRACK 那一窗（由 /control/state 的迁移推出来）",
+   "n_frames": 1583,
+   "duration_s": 7.959246397018433
+  },
+  "reference": {
+   "n": 895,
+   "span_s": 17.88318920135498
+  }
+ },
+ "参考包（逐字来源）": {
+  "bag/4_traj2_square/4_traj2_square_0.db3.zstd": {
+   "sha256": "4dde2d41890c59ff713bec26d02ded09af84bfc790dca405203ae14b4a969f67",
+   "size": 11431054
+  },
+  "bag/4_traj2_square/metadata.yaml": {
+   "sha256": "4f3232b5fda8f1c61aaee9b6a85497222aa3ff17eb28b1bb3fca918de0bd6266",
+   "size": 77790
+  }
+ },
+ "被控对象": {
+  "参数文件": {
+   "tools/px4-sitl/z0-plant/params/z0.param": {
+    "sha256": "94e64ec84734b1242b8b8ef165185e31e4c6b2aeba5cc97714ec5bf8b215cfef",
+    "size": 953
+   }
+  },
+  "机型": {
+   "tools/px4-sitl/z0-plant/airframes/10046_sihsim_z0": {
+    "sha256": "49a4ecb0b2425571ddb9dd6f6a6451b28ef8062b80e98c6ce8e30db098500d80",
+    "size": 2559
+   }
+  },
+  "真源": {
+   "tools/px4-sitl/z0-plant/plant_spec.py": {
+    "sha256": "a673b85cb310773ab9f1141e7a9fd59912c67006e18219ec5141de9d8407ddf3",
+    "size": 23600
+   }
+  },
+  "悬停折算（从 z0.param 现算）": {
+   "mass_kg": 0.75,
+   "t_max_total_n": 46.3028,
+   "hover_thrust": 0.1588996777732664,
+   "t_hover_n": 7.3575
+  }
+ },
+ "控制器参数（DUT 实跑值；DUT 未用命令行覆盖任何一项）": {
+  "mass_kg": 0.75,
+  "hover_thrust": 0.1589,
+  "t_max_n": 46.3027,
+  "roll_rate_max_radps": 3.84,
+  "pitch_rate_max_radps": 3.84,
+  "yaw_rate_max_radps": 6.28,
+  "f_max_n": 11.8,
+  "来源": "/home/chen/ros_ws/src/nmpc/nmpc/params.py（sha256 见下；DUT 未用命令行覆盖任何一项 ⟹ 值 = 节点默认）"
+ },
+ "控制器（DUT 实际 import 的）": {
+  "src/nmpc/nmpc/__init__.py": {
+   "sha256": "afa4d8abfaefb42fe88c26d3ea90ef9859529f3e1d6299f3a8b8c307a2b15d2b",
+   "size": 3739
+  },
+  "src/nmpc/nmpc/commands.py": {
+   "sha256": "3aafee4a9d0426b76d0d0e9be5cb1285c187ce1a43e20eb9b59a26d64d92ba12",
+   "size": 7133
+  },
+  "src/nmpc/nmpc/model.py": {
+   "sha256": "65f5565a1490489369ffd465fc079fdbb499b7d898df289204fb2c677d534f61",
+   "size": 9263
+  },
+  "src/nmpc/nmpc/mpc_node.py": {
+   "sha256": "844f2713bae4307a1d91404e640fc0344c81ab41eb859e41194f3a8c85ee9769",
+   "size": 145616
+  },
+  "src/nmpc/nmpc/node_core.py": {
+   "sha256": "5c72c65dce19382b5bcb6aa3ae50f606e6879d993ab8a7b1769998035de26c77",
+   "size": 105702
+  },
+  "src/nmpc/nmpc/ocp.py": {
+   "sha256": "74fbdfac4c1c542a3d927b179c0b6d762418074618a751ca464d4e162a92075f",
+   "size": 26808
+  },
+  "src/nmpc/nmpc/offboard_smoke.py": {
+   "sha256": "52a366b2f1e894559558a4e18b0a171820e190a2dc2fb2b410cc13521a813c32",
+   "size": 31127
+  },
+  "src/nmpc/nmpc/params.py": {
+   "sha256": "2897ded6c57a772b495ec60e2ffcb55910241631ab1ec3961acd44e21cf1eacf",
+   "size": 15390
+  },
+  "src/nmpc/nmpc/preflight_check.py": {
+   "sha256": "d3272df1a61b7b80524708ec1305cb11d67da6cc0a3e9bf3e4c4ebb2a235900d",
+   "size": 40045
+  },
+  "src/nmpc/nmpc/sign_map.py": {
+   "sha256": "28367da7819177a0b3abe6431c9c0580fc5e9a91f581bb98ced3d8105ee0127a",
+   "size": 8952
+  },
+  "src/nmpc/nmpc/timing.py": {
+   "sha256": "335f7ccde0eab8827e3af2225a1d55ae0046defd91c3210eca5f8c0120b6f625",
+   "size": 8782
+  }
+ },
+ "DUT 入口脚本（ros2 run 按 install/ 找）": {
+  "install/nmpc/lib/nmpc/mpc_node.py": {
+   "sha256": "844f2713bae4307a1d91404e640fc0344c81ab41eb859e41194f3a8c85ee9769",
+   "注": "symlink → src/nmpc/nmpc/mpc_node.py（同一次 build 装出来的），与上表那份逐字节同源"
+  }
+ },
+ "harness / 判层 / 夹具": {
+  "tools/px4-sitl/verify_tier_b_seam3.py": {
+   "sha256": "5f7f6e3b3a0b5ccac7713d6b9b4e9d073244b35af54b83b8c948a470c1ce8f42",
+   "size": 114452
+  },
+  "tools/px4-sitl/verify_offboard_smoke.py": {
+   "sha256": "022b8fd3961e390474c1f802f0ee517165174072ece5c4f968b7d555616921ec",
+   "size": 92303
+  },
+  "tools/px4-sitl/verify_tier_a_hover.py": {
+   "sha256": "976c98c589b79b153d21eb1a62f23749809805d6d6c5cd09b0d30a96b4284146",
+   "size": 136203
+  },
+  "tools/px4-sitl/mocap_replay.py": {
+   "sha256": "004f2799777b2d58e5c93d4261af1f8d9bc8a8c06c8e1da2fcbae99fe95b4e40",
+   "size": 30920
+  },
+  "tools/px4-sitl/mocap_model.py": {
+   "sha256": "bef82cdd63148e459ffb8df3aa318f76572b56f093649a62b972c0b0f1f5e50d",
+   "size": 26511
+  },
+  "tools/px4-sitl/z0-plant/plant_spec.py": {
+   "sha256": "a673b85cb310773ab9f1141e7a9fd59912c67006e18219ec5141de9d8407ddf3",
+   "size": 23600
+  },
+  "tools/report/evidence/sitl/build_hover_model.py": {
+   "sha256": "cc6b4a551f7947062253496810f7538c27cb7c1e9dfac128d4756035afddcb3e",
+   "size": 2830
+  },
+  "tools/report/evidence/sitl/run_nominal_sitl.py": {
+   "sha256": "3f994821db66f80d99c69e061d3a9b4a696c3564187bec1668e63c988ddf5426",
+   "size": 5732
+  },
+  "tools/report/evidence/sitl/extract_solver_summary.py": {
+   "sha256": "671a52d41c9e873049280b23a8fcfd561588039fe7d03c27a4a72221d08607d9",
+   "size": 5647
+  },
+  "tools/report/evidence/sitl/write_harness_identity.py": {
+   "sha256": "bb767529e9c96834f99275fc9523f8b94b5c1e3fa7c68bf091beea13b9de2431",
+   "size": 13830
+  }
+ },
+ "三处代码适配（本轮新增，全部在 run_nominal_sitl.py；共享 harness 一行未改）": {
+  "offboard_prestream:=true": "给 DUT 参数补的。票 13 换到 mavros 后，DUT 只认 `mode == OFFBOARD`、PX4 又要先收到 setpoint 才进 OFFBOARD ⟹ 互等；实飞那档同样用 prestream 破局。",
+  "mode → nav_state 合成": "在 `Dut.frames()` 上补的。票 13 之后 JSONL 写 `mode`（字符串）而没有 `nav_state`（整数），而判据② 的「不失控」读 `nav_state == 14` ⟹ 不补会结构性读成 False。只补判据层的键，原始 JSONL 不动。",
+  "FRAME_KEYS 追加 thrust / body_rate_* / mode": "旧键 `thrust_body_z` 在新载体里不存在 ⟹ summary 的推力列会全空，而票 01 要从 `thrust` 换 `u_thrust_n`。"
+ },
+ "模型生成的绕过（只在悬停那支）": {
+  "build_hover_model.py": "bag/3_traj1_hover 录到 TRACK 中途截断 ⟹ mocap_model.track_window() 返回零长窗口、noise_sigma() 抛 ValueError。包装只把窗口终点改成包尾，其余逐字复用 build_model()。"
+ },
+ "中间件（与旧 B 档的不同）": {
+  "mavros": "2.15.1（源码建于 ~/mavros_ws）",
+  "fcu_url": "udp://:14540@127.0.0.1:14580",
+  "launch": {
+   "src/bringup/launch/mavros.launch.py": {
+    "sha256": "093747e86dbe840196923feb77b04e8dd794486f812a659e487ebdfa572770fe",
+    "size": 3596
+   }
+  },
+  "thrust_scaling": "1.0（mavros_set_thrust_scaling.py 读回核对过；见 src/bringup/scripts/mavros_set_thrust_scaling.py）",
+  "ROS_DOMAIN_ID": 55
+ },
+ "本场参数（obs 里的原样）": {
+  "params": [
+   "log_file:=/tmp/phase5-sitl/R-square/R-square-dut.jsonl",
+   "state_source:=mocap",
+   "hold_offset_x:=0.0",
+   "hold_offset_y:=0.0",
+   "hold_offset_z:=0.0",
+   "reference_source:=traj",
+   "rate_hz:=100.0",
+   "offboard_prestream:=true"
+  ],
+  "hold_s": 56.0,
+  "ref_hold_s": 30.0,
+  "ref_z_offset_m": 1.0,
+  "rate_hz": 100.0
+ },
+ "产物": {
+  "summary": "tools/report/evidence/sitl/R-square/R-square-summary.json（含 frames 与 truth；票 01 的输入）",
+  "solver-summary": "tools/report/evidence/sitl/R-square/solver-summary.json",
+  "console": "tools/report/evidence/sitl/R-square/R-square-console.log",
+  "原始 DUT JSONL": "/tmp/phase5-sitl/R-square/R-square-dut.jsonl（**未入库**）"
+ }
+}

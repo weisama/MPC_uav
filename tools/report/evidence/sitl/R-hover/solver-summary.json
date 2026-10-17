@@ -1,0 +1,45 @@
+{
+ "tag": "R-hover",
+ "source": "原始 DUT JSONL（未入库；脚本见同目录 extract_solver_summary.py）",
+ "n_frames": 7885,
+ "bad_lines": 0,
+ "n_solved": 7797,
+ "fallback_dist": {
+  "prestream": 88,
+  "warmup": 5,
+  "normal": 7792
+ },
+ "solve_ms_all_solved": {
+  "n": 7797,
+  "mean": 3.127,
+  "p50": 3.154,
+  "p95": 3.624,
+  "max": 20.138,
+  "min": 2.049
+ },
+ "solve_ms_steady": {
+  "n": 7792,
+  "mean": 3.126,
+  "p50": 3.154,
+  "p95": 3.624,
+  "max": 20.138,
+  "min": 2.049
+ },
+ "warmup": {
+  "n": 5,
+  "first_solved_ms": 11.44
+ },
+ "degraded_frames": 0,
+ "solve_failed_frames": 0,
+ "solve_ok_missing_frames": 88,
+ "saturation": {
+  "frames_with_sat": 0,
+  "by_name": {}
+ },
+ "notes": [
+  "solve_ms 只统计真的解过的拍（prestream 档不解、不在内）",
+  "p95 用最近秩 arr[ceil(0.95*n)-1]",
+  "solve_ms_steady = 去掉 fallback=='warmup' 的拍（D6 的口径）",
+  "sat 为空列表 = 一拍都没顶到约束（node_core.saturated_bounds 的生产阈值）"
+ ]
+}

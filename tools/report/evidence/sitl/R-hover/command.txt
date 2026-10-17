@@ -1,0 +1,17 @@
+# R-hover —— 票 02 nominal SITL（reproduce）
+# 终端 A（先起中间件；与三趟共用）
+ROS_DOMAIN_ID=55 ros2 launch bringup mavros.launch.py fcu_url:=udp://:14540@127.0.0.1:14580
+
+# 终端 B（先 source 工作空间）
+source /opt/ros/humble/setup.bash
+source ~/mavros_ws/install/setup.bash
+source ~/px4_msgs_ws/install/setup.bash
+source install/setup.bash
+export ROS_DOMAIN_ID=55
+python3 tools/report/evidence/sitl/run_nominal_sitl.py --tag R-hover --model tools/report/evidence/sitl/models/R-hover-model.json --reference-source traj --mismatch none --hold-s 78 --ref-hold-s 30 --outdir /tmp/phase5-sitl/R-hover --json tools/report/evidence/sitl/R-hover/R-hover-summary.json --debug-dump tools/report/evidence/sitl/R-hover/R-hover-console.log
+
+# 原始 DUT JSONL 抽求解汇总（跑完、删原始日志之前）
+python3 tools/report/evidence/sitl/extract_solver_summary.py --jsonl /tmp/phase5-sitl/R-hover/R-hover-dut.jsonl --tag R-hover --out tools/report/evidence/sitl/R-hover/solver-summary.json
+
+# 参考模型：tools/report/evidence/sitl/models/R-hover-model.json（sha256 c3566acc58271a477b130b5dc6ac70739918d2d107d93b748ae347c2d23a8707）
+# 参考包：bag/3_traj1_hover（逐字取自该包 /traj/reference）
