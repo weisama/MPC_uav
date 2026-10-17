@@ -1,6 +1,6 @@
 # Phase 4 Spec —— MPC（模型预测控制）实机飞行
 
-Status: ready-for-human
+Status: done
 
 > **范围**：把 Phase 2 在 SITL 里验证过的 MPC（模型预测控制）节点**搬上 z0 实飞**，控制层级仍是 **(C) 级 CTBR**。
 > **节点代码不重写** —— 本阶段的工作量几乎全在"把未知量变成已知量"和"分级试飞"上。
@@ -430,3 +430,21 @@ Phase 1 / Phase 2 的 seam 1 形态；Phase 1 的实机验证顺序（拆桨 →
 ★ **合并后沿用 `13` 这个号**（号段接在 `12` 后面不留空）：⚠️ **号沿用 ≠ 内容沿用** ——
 原来那张 `13` 是"口径冻结"，现在它是本票的 **§一**，别拿旧提交里的文件名对号。
 **本阶段仍未结的旧票**不抄在这里 —— 现算：见 [`docs/agents/issue-tracker.md`](../../docs/agents/issue-tracker.md)。
+
+### 2026-10-17 —— 票面收口状态（按操作者裁定）
+
+**操作者 2026-10-17「全都收工」** ⟹ 本 spec `Status: done`。
+★ 这是「**按裁定收口**」，不是「每一项都做过」；缺口无证据作锚，见各票与
+[16](issues/16-ladder3-and-4-closeout-gaps.md)。
+
+- 最后一张未结票 [01](issues/01-geometry-and-extrinsics.md) 由操作者裁定切 `wontfix`：
+  电机/桨映射组「**裁定收口为 `wontfix`**」；外参倾斜实飞判据「**裁定不做，记录缺口**」。
+  未做项**没有证据作锚**，逐项状态见票 01 票首与文末 Comments。
+- [10](issues/10-ladder-closed-loop-and-free-flight.md) 的三条判据口径同日裁定：
+  阶梯 3 ③ = **悬停末 30 s 稳态窗**；阶梯 4 ② = **轨迹飞行段**；
+  判据页 §2.1 = **按启动行 `参考=` 选口径**。修订行见
+  [`ladder-acceptance-criteria.md`](../../docs/control/ladder-acceptance-criteria.md) §7.2 **F/G/H**。
+- ⟹ 本 spec 名下 **16 张票全部为 `done` 或 `wontfix`**（现算：`done` 11 张；
+  `wontfix` 5 张 —— `01/04/09/14/16`）。
+  ★ 这是「**按裁定收口**」，**不等于每一项都做过**；缺口记录在各票与
+  [16](issues/16-ladder3-and-4-closeout-gaps.md)。
