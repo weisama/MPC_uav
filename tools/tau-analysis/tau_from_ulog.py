@@ -425,12 +425,16 @@ def main() -> int:
         print(f"★ 主口径 A 的相关峰只有 r = {a_res['r_peak']:+.3f} ⟹ 两条序列根本没对上，"
               "\n  这段飞行对 τ **不够有激励**（或坐标系约定不符）。不要拿它当结论，"
               "\n  换一段机动更丰富的日志，或把结论写成「未量出」。")
+    elif math.isnan(a_res["seg_span_s"]):
+        print(f"✓ 主口径 A：τ = {a_res['tau_s'] * 1e3:+.1f} ms，r = {a_res['r_peak']:+.3f}；"
+              "\n  ⚠ 分段一段都没成（窗口扣掉 warmup 后每段 < 2 s）⟹ **只有单段读数，缺分段复现**。"
+              "\n  要判「稳不稳」请把窗口放宽到 ≥ 3×2 s 再跑一次。")
     elif a_res["seg_span_s"] > gate:
         print(f"★ 主口径 A 分段散得厉害（极差 {a_res['seg_span_s'] * 1e3:.0f} ms > 门槛 "
               f"{gate * 1e3:.0f} ms）⟹ 整段给的那个 τ 里混着**没有激励的时段**，"
               "\n  别单独用。逐段看哪几段有激励，或缩小窗口只留有激励的那一段再量。")
     else:
-        print(f"✓ 主口径 A：τ = {a_res['lag_s'] * 1e3:+.1f} ms，r = {a_res['r_peak']:+.3f}，"
+        print(f"✓ 主口径 A：τ = {a_res['tau_s'] * 1e3:+.1f} ms，r = {a_res['r_peak']:+.3f}，"
               f"分段极差 {a_res['seg_span_s'] * 1e3:.0f} ms（在门槛 {gate * 1e3:.0f} ms 内）"
               f"⟹ 可采信。")
 

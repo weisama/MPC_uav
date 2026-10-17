@@ -1,0 +1,922 @@
+{
+  "scenario": 6,
+  "slug": "6_free__20261017-020757",
+  "title": "任意录制 —— 轨迹 4（起飞）· 模型预测控制",
+  "chain": "any",
+  "dir": "bag/6_free__20261017-020757",
+  "started_utc": "2026-10-17T02:08:00Z",
+  "started_local": "2026-10-17 02:08:00",
+  "include_regex": "^/(mavros|mocap|traj|control|vrpn)/",
+  "exclude_regex": "",
+  "compression": "file/zstd",
+  "argv": [
+    "ros2",
+    "bag",
+    "record",
+    "-o",
+    "/home/chen/ros_ws/bag/6_free__20261017-020757",
+    "-e",
+    "^/(mavros|mocap|traj|control|vrpn)/",
+    "--compression-mode",
+    "file",
+    "--compression-format",
+    "zstd"
+  ],
+  "log": "bag/6_free__20261017-020757.log",
+  "pid": null,
+  "git_head": null,
+  "git_dirty": null,
+  "ros_domain_id": null,
+  "reconstructed": "由 `run/z0.py rec_adopt` 事后重建：这份包的 `session.json` 在 2026-10-17 那次收口里**没写成**（`rosbag2` 那边 `Opened database` → `Recording stopped` 都在，缺的是**收口之后**写 `session.json` 那一段）。起录时刻取自`.log` 里 `Opened database` 那一行（rosbag2 自己报的写盘时刻）；`stopped_utc` 与 `stop_signal` 取自 `.log` 的 `Opened database` → `Recording stopped` 跨度 65.6 s（`adopt_stop_signal` 反推）；**pid、git_head、git_dirty、ros_domain_id 取不到，一律 null —— 不猜**。包本身没有被这一层改动过（sha256 是现在现算的）。",
+  "stopped_utc": "2026-10-17T02:09:05Z",
+  "stop_signal": "SIGINT（自由录 · 场景 6 不倒计时 ⟹ 只可能是人按的 Ctrl-C —— 事后从 `.log` 开→停 65.6 s 反推）",
+  "closed_cleanly": true,
+  "duration_s": 64.271549052,
+  "size_text": "11.5 MiB",
+  "messages": 298675,
+  "files": [
+    "6_free__20261017-020757_0.db3.zstd"
+  ],
+  "topics": [
+    {
+      "topic": "/mavros/sim_state/attitude",
+      "type": "sensor_msgs/msg/Imu",
+      "count": 0
+    },
+    {
+      "topic": "/mavros/sim_state/acceleration",
+      "type": "geometry_msgs/msg/Vector3Stamped",
+      "count": 0
+    },
+    {
+      "topic": "/mavros/estimator_status",
+      "type": "mavros_msgs/msg/EstimatorStatus",
+      "count": 71
+    },
+    {
+      "topic": "/mavros/mission/reached",
+      "type": "mavros_msgs/msg/WaypointReached",
+      "count": 0
+    },
+    {
+      "topic": "/mavros/terrain/request",
+      "type": "mavros_msgs/msg/TerrainRequest",
+      "count": 0
+    },
+    {
+      "topic": "/mavros/battery",
+      "type": "sensor_msgs/msg/BatteryState",
+      "count": 31
+    },
+    {
+      "topic": "/mavros/tunnel/out",
+      "type": "mavros_msgs/msg/Tunnel",
+      "count": 0
+    },
+    {
+      "topic": "/mavros/statustext/recv",
+      "type": "mavros_msgs/msg/StatusText",
+      "count": 0
+    },
+    {
+      "topic": "/mavros/sys_status",
+      "type": "mavros_msgs/msg/SysStatus",
+      "count": 315
+    },
+    {
+      "topic": "/mavros/terrain/report",
+      "type": "mavros_msgs/msg/TerrainReport",
+      "count": 0
+    },
+    {
+      "topic": "/mavros/vfr_hud",
+      "type": "mavros_msgs/msg/VfrHud",
+      "count": 611
+    },
+    {
+      "topic": "/mavros/wind_estimation",
+      "type": "geometry_msgs/msg/TwistWithCovarianceStamped",
+      "count": 0
+    },
+    {
+      "topic": "/mavros/time_reference",
+      "type": "sensor_msgs/msg/TimeReference",
+      "count": 0
+    },
+    {
+      "topic": "/mavros/state",
+      "type": "mavros_msgs/msg/State",
+      "count": 71
+    },
+    {
+      "topic": "/mavros/setpoint_raw/target_global",
+      "type": "mavros_msgs/msg/GlobalPositionTarget",
+      "count": 0
+    },
+    {
+      "topic": "/mavros/mission/waypoints",
+      "type": "mavros_msgs/msg/WaypointList",
+      "count": 1
+    },
+    {
+      "topic": "/mavros/setpoint_raw/target_attitude",
+      "type": "mavros_msgs/msg/AttitudeTarget",
+      "count": 607
+    },
+    {
+      "topic": "/mavros/log_transfer/raw/log_entry",
+      "type": "mavros_msgs/msg/LogEntry",
+      "count": 0
+    },
+    {
+      "topic": "/mavros/px4flow/ground_distance",
+      "type": "sensor_msgs/msg/Range",
+      "count": 0
+    },
+    {
+      "topic": "/mavros/param/event",
+      "type": "mavros_msgs/msg/ParamEvent",
+      "count": 0
+    },
+    {
+      "topic": "/mavros/global_position/local",
+      "type": "nav_msgs/msg/Odometry",
+      "count": 0
+    },
+    {
+      "topic": "/mavros/extended_state",
+      "type": "mavros_msgs/msg/ExtendedState",
+      "count": 315
+    },
+    {
+      "topic": "/mavros/gimbal_control/manager/info",
+      "type": "mavros_msgs/msg/GimbalManagerInformation",
+      "count": 0
+    },
+    {
+      "topic": "/mavros/mount_control/status",
+      "type": "geometry_msgs/msg/Vector3Stamped",
+      "count": 0
+    },
+    {
+      "topic": "/mavros/local_position/velocity_local",
+      "type": "geometry_msgs/msg/TwistStamped",
+      "count": 1835
+    },
+    {
+      "topic": "/mavros/geofence/fences",
+      "type": "mavros_msgs/msg/WaypointList",
+      "count": 1
+    },
+    {
+      "topic": "/mavros/rc/in",
+      "type": "mavros_msgs/msg/RCIn",
+      "count": 1223
+    },
+    {
+      "topic": "/mavros/px4flow/temperature",
+      "type": "sensor_msgs/msg/Temperature",
+      "count": 0
+    },
+    {
+      "topic": "/mavros/hil/actuator_controls",
+      "type": "mavros_msgs/msg/HilActuatorControls",
+      "count": 0
+    },
+    {
+      "topic": "/mavros/rc/out",
+      "type": "mavros_msgs/msg/RCOut",
+      "count": 611
+    },
+    {
+      "topic": "/mavros/debug_value/debug_vector",
+      "type": "mavros_msgs/msg/DebugValue",
+      "count": 0
+    },
+    {
+      "topic": "/mavros/debug_value/debug_float_array",
+      "type": "mavros_msgs/msg/DebugValue",
+      "count": 0
+    },
+    {
+      "topic": "/mavros/imu/temperature_imu",
+      "type": "sensor_msgs/msg/Temperature",
+      "count": 950
+    },
+    {
+      "topic": "/vrpn/U_Tracker4/pose",
+      "type": "geometry_msgs/msg/PoseStamped",
+      "count": 0
+    },
+    {
+      "topic": "/vrpn/b0_Marker1/twist",
+      "type": "geometry_msgs/msg/TwistStamped",
+      "count": 0
+    },
+    {
+      "topic": "/vrpn/U_Tracker2/accel",
+      "type": "geometry_msgs/msg/AccelStamped",
+      "count": 0
+    },
+    {
+      "topic": "/vrpn/U_Tracker4/twist",
+      "type": "geometry_msgs/msg/TwistStamped",
+      "count": 0
+    },
+    {
+      "topic": "/vrpn/z0_Marker1/accel",
+      "type": "geometry_msgs/msg/AccelStamped",
+      "count": 12453
+    },
+    {
+      "topic": "/vrpn/z0_Marker1/pose",
+      "type": "geometry_msgs/msg/PoseStamped",
+      "count": 12454
+    },
+    {
+      "topic": "/vrpn/U_Tracker1/twist",
+      "type": "geometry_msgs/msg/TwistStamped",
+      "count": 0
+    },
+    {
+      "topic": "/vrpn/z0_Marker3/accel",
+      "type": "geometry_msgs/msg/AccelStamped",
+      "count": 12453
+    },
+    {
+      "topic": "/vrpn/z0_Marker2/pose",
+      "type": "geometry_msgs/msg/PoseStamped",
+      "count": 12454
+    },
+    {
+      "topic": "/vrpn/U_Tracker1/accel",
+      "type": "geometry_msgs/msg/AccelStamped",
+      "count": 0
+    },
+    {
+      "topic": "/vrpn/z0_Marker4/accel",
+      "type": "geometry_msgs/msg/AccelStamped",
+      "count": 12453
+    },
+    {
+      "topic": "/vrpn/z0_Marker5/pose",
+      "type": "geometry_msgs/msg/PoseStamped",
+      "count": 12450
+    },
+    {
+      "topic": "/vrpn/VRPN_Control/pose",
+      "type": "geometry_msgs/msg/PoseStamped",
+      "count": 0
+    },
+    {
+      "topic": "/mavros/gpsstatus/gps2/rtk",
+      "type": "mavros_msgs/msg/GPSRTK",
+      "count": 0
+    },
+    {
+      "topic": "/vrpn/z0_Marker3/pose",
+      "type": "geometry_msgs/msg/PoseStamped",
+      "count": 12457
+    },
+    {
+      "topic": "/vrpn/U_Tracker8/accel",
+      "type": "geometry_msgs/msg/AccelStamped",
+      "count": 0
+    },
+    {
+      "topic": "/mavros/target_actuator_control",
+      "type": "mavros_msgs/msg/ActuatorControl",
+      "count": 0
+    },
+    {
+      "topic": "/vrpn/b0_Marker1/pose",
+      "type": "geometry_msgs/msg/PoseStamped",
+      "count": 0
+    },
+    {
+      "topic": "/mavros/altitude",
+      "type": "mavros_msgs/msg/Altitude",
+      "count": 613
+    },
+    {
+      "topic": "/mavros/adsb/vehicle",
+      "type": "mavros_msgs/msg/ADSBVehicle",
+      "count": 0
+    },
+    {
+      "topic": "/mavros/esc_status/status",
+      "type": "mavros_msgs/msg/ESCStatus",
+      "count": 0
+    },
+    {
+      "topic": "/mavros/local_position/accel",
+      "type": "geometry_msgs/msg/AccelWithCovarianceStamped",
+      "count": 0
+    },
+    {
+      "topic": "/vrpn/z0/twist",
+      "type": "geometry_msgs/msg/TwistStamped",
+      "count": 12460
+    },
+    {
+      "topic": "/vrpn/z0_Marker5/twist",
+      "type": "geometry_msgs/msg/TwistStamped",
+      "count": 12459
+    },
+    {
+      "topic": "/mavros/gpsstatus/gps2/raw",
+      "type": "mavros_msgs/msg/GPSRAW",
+      "count": 0
+    },
+    {
+      "topic": "/mavros/sim_state/velocity_local",
+      "type": "geometry_msgs/msg/TwistStamped",
+      "count": 0
+    },
+    {
+      "topic": "/vrpn/z0_Marker4/twist",
+      "type": "geometry_msgs/msg/TwistStamped",
+      "count": 12459
+    },
+    {
+      "topic": "/vrpn/U_Tracker4/accel",
+      "type": "geometry_msgs/msg/AccelStamped",
+      "count": 0
+    },
+    {
+      "topic": "/vrpn/b0_Marker1/accel",
+      "type": "geometry_msgs/msg/AccelStamped",
+      "count": 0
+    },
+    {
+      "topic": "/mavros/sim_state/velocity_body",
+      "type": "geometry_msgs/msg/TwistStamped",
+      "count": 0
+    },
+    {
+      "topic": "/vrpn/U_Tracker5/accel",
+      "type": "geometry_msgs/msg/AccelStamped",
+      "count": 0
+    },
+    {
+      "topic": "/vrpn/b0_Marker3/pose",
+      "type": "geometry_msgs/msg/PoseStamped",
+      "count": 0
+    },
+    {
+      "topic": "/vrpn/z0_Marker5/accel",
+      "type": "geometry_msgs/msg/AccelStamped",
+      "count": 12465
+    },
+    {
+      "topic": "/vrpn/U_Tracker10/accel",
+      "type": "geometry_msgs/msg/AccelStamped",
+      "count": 0
+    },
+    {
+      "topic": "/mavros/debug_value/debug",
+      "type": "mavros_msgs/msg/DebugValue",
+      "count": 0
+    },
+    {
+      "topic": "/vrpn/b0_Marker3/twist",
+      "type": "geometry_msgs/msg/TwistStamped",
+      "count": 0
+    },
+    {
+      "topic": "/vrpn/U_Tracker5/twist",
+      "type": "geometry_msgs/msg/TwistStamped",
+      "count": 0
+    },
+    {
+      "topic": "/vrpn/z0_Marker1/twist",
+      "type": "geometry_msgs/msg/TwistStamped",
+      "count": 12469
+    },
+    {
+      "topic": "/mavros/imu/data_raw",
+      "type": "sensor_msgs/msg/Imu",
+      "count": 3062
+    },
+    {
+      "topic": "/mavros/gpsstatus/gps1/rtk",
+      "type": "mavros_msgs/msg/GPSRTK",
+      "count": 0
+    },
+    {
+      "topic": "/vrpn/z0/accel",
+      "type": "geometry_msgs/msg/AccelStamped",
+      "count": 12477
+    },
+    {
+      "topic": "/vrpn/U_Tracker3/twist",
+      "type": "geometry_msgs/msg/TwistStamped",
+      "count": 0
+    },
+    {
+      "topic": "/mavros/timesync_status",
+      "type": "mavros_msgs/msg/TimesyncStatus",
+      "count": 0
+    },
+    {
+      "topic": "/mavros/local_position/odom",
+      "type": "nav_msgs/msg/Odometry",
+      "count": 1836
+    },
+    {
+      "topic": "/mavros/status_event",
+      "type": "mavros_msgs/msg/StatusEvent",
+      "count": 2
+    },
+    {
+      "topic": "/mavros/manual_control/control",
+      "type": "mavros_msgs/msg/ManualControl",
+      "count": 0
+    },
+    {
+      "topic": "/mavros/imu/static_pressure",
+      "type": "sensor_msgs/msg/FluidPressure",
+      "count": 950
+    },
+    {
+      "topic": "/traj/select",
+      "type": "std_msgs/msg/UInt8",
+      "count": 0
+    },
+    {
+      "topic": "/mavros/vision_pose/pose",
+      "type": "geometry_msgs/msg/PoseStamped",
+      "count": 12705
+    },
+    {
+      "topic": "/vrpn/U_Tracker7/pose",
+      "type": "geometry_msgs/msg/PoseStamped",
+      "count": 0
+    },
+    {
+      "topic": "/vrpn/z0_Marker2/accel",
+      "type": "geometry_msgs/msg/AccelStamped",
+      "count": 12458
+    },
+    {
+      "topic": "/mavros/gimbal_control/manager/status",
+      "type": "mavros_msgs/msg/GimbalManagerStatus",
+      "count": 0
+    },
+    {
+      "topic": "/mavros/imu/data",
+      "type": "sensor_msgs/msg/Imu",
+      "count": 3059
+    },
+    {
+      "topic": "/vrpn/b0_Marker4/accel",
+      "type": "geometry_msgs/msg/AccelStamped",
+      "count": 0
+    },
+    {
+      "topic": "/traj/progress",
+      "type": "std_msgs/msg/Float32",
+      "count": 2777
+    },
+    {
+      "topic": "/vrpn/b0_Marker3/accel",
+      "type": "geometry_msgs/msg/AccelStamped",
+      "count": 0
+    },
+    {
+      "topic": "/mocap/velocity_enu",
+      "type": "geometry_msgs/msg/TwistStamped",
+      "count": 12698
+    },
+    {
+      "topic": "/mavros/nav_controller_output/output",
+      "type": "mavros_msgs/msg/NavControllerOutput",
+      "count": 0
+    },
+    {
+      "topic": "/vrpn/U_Tracker3/pose",
+      "type": "geometry_msgs/msg/PoseStamped",
+      "count": 0
+    },
+    {
+      "topic": "/mavros/esc_status/info",
+      "type": "mavros_msgs/msg/ESCInfo",
+      "count": 0
+    },
+    {
+      "topic": "/mavros/global_position/raw/satellites",
+      "type": "std_msgs/msg/UInt32",
+      "count": 0
+    },
+    {
+      "topic": "/vrpn/z0_Marker2/twist",
+      "type": "geometry_msgs/msg/TwistStamped",
+      "count": 12466
+    },
+    {
+      "topic": "/vrpn/U_Tracker0/pose",
+      "type": "geometry_msgs/msg/PoseStamped",
+      "count": 0
+    },
+    {
+      "topic": "/mocap/pose_enu",
+      "type": "geometry_msgs/msg/PoseStamped",
+      "count": 12702
+    },
+    {
+      "topic": "/vrpn/U_Tracker10/twist",
+      "type": "geometry_msgs/msg/TwistStamped",
+      "count": 0
+    },
+    {
+      "topic": "/vrpn/z0_Marker3/twist",
+      "type": "geometry_msgs/msg/TwistStamped",
+      "count": 12454
+    },
+    {
+      "topic": "/vrpn/U_Tracker0/twist",
+      "type": "geometry_msgs/msg/TwistStamped",
+      "count": 0
+    },
+    {
+      "topic": "/vrpn/z0/pose",
+      "type": "geometry_msgs/msg/PoseStamped",
+      "count": 12467
+    },
+    {
+      "topic": "/vrpn/VRPN_Control/accel",
+      "type": "geometry_msgs/msg/AccelStamped",
+      "count": 0
+    },
+    {
+      "topic": "/vrpn/U_Tracker3/accel",
+      "type": "geometry_msgs/msg/AccelStamped",
+      "count": 0
+    },
+    {
+      "topic": "/mavros/sim_state/global_position",
+      "type": "sensor_msgs/msg/NavSatFix",
+      "count": 0
+    },
+    {
+      "topic": "/mavros/local_position/velocity_body",
+      "type": "geometry_msgs/msg/TwistStamped",
+      "count": 1836
+    },
+    {
+      "topic": "/mavros/trajectory/desired",
+      "type": "mavros_msgs/msg/Trajectory",
+      "count": 0
+    },
+    {
+      "topic": "/vrpn/b0/pose",
+      "type": "geometry_msgs/msg/PoseStamped",
+      "count": 0
+    },
+    {
+      "topic": "/vrpn/U_Tracker9/accel",
+      "type": "geometry_msgs/msg/AccelStamped",
+      "count": 0
+    },
+    {
+      "topic": "/mavros/mag_calibration/status",
+      "type": "std_msgs/msg/UInt8",
+      "count": 0
+    },
+    {
+      "topic": "/vrpn/U_Tracker10/pose",
+      "type": "geometry_msgs/msg/PoseStamped",
+      "count": 0
+    },
+    {
+      "topic": "/vrpn/U_Tracker6/twist",
+      "type": "geometry_msgs/msg/TwistStamped",
+      "count": 0
+    },
+    {
+      "topic": "/mavros/mag_calibration/report",
+      "type": "mavros_msgs/msg/MagnetometerReporter",
+      "count": 0
+    },
+    {
+      "topic": "/vrpn/U_Tracker8/pose",
+      "type": "geometry_msgs/msg/PoseStamped",
+      "count": 0
+    },
+    {
+      "topic": "/vrpn/U_Tracker9/twist",
+      "type": "geometry_msgs/msg/TwistStamped",
+      "count": 0
+    },
+    {
+      "topic": "/vrpn/U_Tracker7/twist",
+      "type": "geometry_msgs/msg/TwistStamped",
+      "count": 0
+    },
+    {
+      "topic": "/mavros/mount_control/orientation",
+      "type": "geometry_msgs/msg/Quaternion",
+      "count": 0
+    },
+    {
+      "topic": "/vrpn/b0/accel",
+      "type": "geometry_msgs/msg/AccelStamped",
+      "count": 0
+    },
+    {
+      "topic": "/vrpn/U_Tracker8/twist",
+      "type": "geometry_msgs/msg/TwistStamped",
+      "count": 0
+    },
+    {
+      "topic": "/vrpn/U_Tracker2/twist",
+      "type": "geometry_msgs/msg/TwistStamped",
+      "count": 0
+    },
+    {
+      "topic": "/mavros/radio_status",
+      "type": "mavros_msgs/msg/RadioStatus",
+      "count": 0
+    },
+    {
+      "topic": "/vrpn/b0_Marker4/twist",
+      "type": "geometry_msgs/msg/TwistStamped",
+      "count": 0
+    },
+    {
+      "topic": "/mavros/local_position/velocity_body_cov",
+      "type": "geometry_msgs/msg/TwistWithCovarianceStamped",
+      "count": 0
+    },
+    {
+      "topic": "/vrpn/U_Tracker9/pose",
+      "type": "geometry_msgs/msg/PoseStamped",
+      "count": 0
+    },
+    {
+      "topic": "/vrpn/U_Tracker6/accel",
+      "type": "geometry_msgs/msg/AccelStamped",
+      "count": 0
+    },
+    {
+      "topic": "/vrpn/z0_Marker4/pose",
+      "type": "geometry_msgs/msg/PoseStamped",
+      "count": 12453
+    },
+    {
+      "topic": "/vrpn/VRPN_Control/twist",
+      "type": "geometry_msgs/msg/TwistStamped",
+      "count": 0
+    },
+    {
+      "topic": "/mavros/cam_imu_sync/cam_imu_stamp",
+      "type": "mavros_msgs/msg/CamIMUStamp",
+      "count": 0
+    },
+    {
+      "topic": "/vrpn/b0/twist",
+      "type": "geometry_msgs/msg/TwistStamped",
+      "count": 0
+    },
+    {
+      "topic": "/vrpn/U_Tracker1/pose",
+      "type": "geometry_msgs/msg/PoseStamped",
+      "count": 0
+    },
+    {
+      "topic": "/mavros/global_position/gp_origin",
+      "type": "geographic_msgs/msg/GeoPointStamped",
+      "count": 0
+    },
+    {
+      "topic": "/vrpn/b0_Marker2/twist",
+      "type": "geometry_msgs/msg/TwistStamped",
+      "count": 0
+    },
+    {
+      "topic": "/mavros/gimbal_control/device/attitude_status",
+      "type": "mavros_msgs/msg/GimbalDeviceAttitudeStatus",
+      "count": 0
+    },
+    {
+      "topic": "/mavros/setpoint_raw/attitude",
+      "type": "mavros_msgs/msg/AttitudeTarget",
+      "count": 6238
+    },
+    {
+      "topic": "/vrpn/b0_Marker2/accel",
+      "type": "geometry_msgs/msg/AccelStamped",
+      "count": 0
+    },
+    {
+      "topic": "/mavros/optical_flow/raw/optical_flow",
+      "type": "mavros_msgs/msg/OpticalFlow",
+      "count": 0
+    },
+    {
+      "topic": "/vrpn/b0_Marker4/pose",
+      "type": "geometry_msgs/msg/PoseStamped",
+      "count": 0
+    },
+    {
+      "topic": "/mavros/optical_flow/ground_distance",
+      "type": "sensor_msgs/msg/Range",
+      "count": 0
+    },
+    {
+      "topic": "/vrpn/U_Tracker6/pose",
+      "type": "geometry_msgs/msg/PoseStamped",
+      "count": 0
+    },
+    {
+      "topic": "/mavros/global_position/global",
+      "type": "sensor_msgs/msg/NavSatFix",
+      "count": 0
+    },
+    {
+      "topic": "/mavros/hil/controls",
+      "type": "mavros_msgs/msg/HilControls",
+      "count": 0
+    },
+    {
+      "topic": "/mavros/global_position/compass_hdg",
+      "type": "std_msgs/msg/Float64",
+      "count": 0
+    },
+    {
+      "topic": "/mavros/setpoint_trajectory/desired",
+      "type": "nav_msgs/msg/Path",
+      "count": 0
+    },
+    {
+      "topic": "/mavros/home_position/home",
+      "type": "mavros_msgs/msg/HomePosition",
+      "count": 0
+    },
+    {
+      "topic": "/mavros/imu/mag",
+      "type": "sensor_msgs/msg/MagneticField",
+      "count": 0
+    },
+    {
+      "topic": "/vrpn/U_Tracker5/pose",
+      "type": "geometry_msgs/msg/PoseStamped",
+      "count": 0
+    },
+    {
+      "topic": "/mavros/global_position/raw/gps_vel",
+      "type": "geometry_msgs/msg/TwistStamped",
+      "count": 0
+    },
+    {
+      "topic": "/mavros/local_position/pose_cov",
+      "type": "geometry_msgs/msg/PoseWithCovarianceStamped",
+      "count": 0
+    },
+    {
+      "topic": "/mavros/setpoint_raw/target_local",
+      "type": "mavros_msgs/msg/PositionTarget",
+      "count": 0
+    },
+    {
+      "topic": "/vrpn/U_Tracker2/pose",
+      "type": "geometry_msgs/msg/PoseStamped",
+      "count": 0
+    },
+    {
+      "topic": "/mavros/local_position/pose",
+      "type": "geometry_msgs/msg/PoseStamped",
+      "count": 1837
+    },
+    {
+      "topic": "/mavros/landing_target/pose_in",
+      "type": "geometry_msgs/msg/PoseStamped",
+      "count": 0
+    },
+    {
+      "topic": "/traj/marker",
+      "type": "visualization_msgs/msg/Marker",
+      "count": 2842
+    },
+    {
+      "topic": "/vrpn/U_Tracker7/accel",
+      "type": "geometry_msgs/msg/AccelStamped",
+      "count": 0
+    },
+    {
+      "topic": "/mavros/landing_target/lt_marker",
+      "type": "geometry_msgs/msg/Vector3Stamped",
+      "count": 0
+    },
+    {
+      "topic": "/mavros/odometry/in",
+      "type": "nav_msgs/msg/Odometry",
+      "count": 1835
+    },
+    {
+      "topic": "/vrpn/U_Tracker0/accel",
+      "type": "geometry_msgs/msg/AccelStamped",
+      "count": 0
+    },
+    {
+      "topic": "/vrpn/b0_Marker2/pose",
+      "type": "geometry_msgs/msg/PoseStamped",
+      "count": 0
+    },
+    {
+      "topic": "/mavros/gpsstatus/gps1/raw",
+      "type": "mavros_msgs/msg/GPSRAW",
+      "count": 0
+    },
+    {
+      "topic": "/mavros/imu/diff_pressure",
+      "type": "sensor_msgs/msg/FluidPressure",
+      "count": 0
+    },
+    {
+      "topic": "/mavros/gimbal_control/device/info",
+      "type": "mavros_msgs/msg/GimbalDeviceInformation",
+      "count": 0
+    },
+    {
+      "topic": "/mavros/debug_value/named_value_int",
+      "type": "mavros_msgs/msg/DebugValue",
+      "count": 0
+    },
+    {
+      "topic": "/mavros/px4flow/raw/optical_flow_rad",
+      "type": "mavros_msgs/msg/OpticalFlowRad",
+      "count": 0
+    },
+    {
+      "topic": "/mavros/global_position/gp_lp_offset",
+      "type": "geometry_msgs/msg/PoseStamped",
+      "count": 0
+    },
+    {
+      "topic": "/mavros/rallypoint/rallypoints",
+      "type": "mavros_msgs/msg/WaypointList",
+      "count": 1
+    },
+    {
+      "topic": "/mavros/imu/temperature_baro",
+      "type": "sensor_msgs/msg/Temperature",
+      "count": 0
+    },
+    {
+      "topic": "/traj/start",
+      "type": "std_msgs/msg/Empty",
+      "count": 1
+    },
+    {
+      "topic": "/mavros/gps_rtk/rtk_baseline",
+      "type": "mavros_msgs/msg/RTKBaseline",
+      "count": 0
+    },
+    {
+      "topic": "/traj/reference",
+      "type": "mavros_msgs/msg/PositionTarget",
+      "count": 2778
+    },
+    {
+      "topic": "/mavros/log_transfer/raw/log_data",
+      "type": "mavros_msgs/msg/LogData",
+      "count": 0
+    },
+    {
+      "topic": "/mavros/camera/image_captured",
+      "type": "mavros_msgs/msg/CameraImageCaptured",
+      "count": 0
+    },
+    {
+      "topic": "/mavros/global_position/raw/fix",
+      "type": "sensor_msgs/msg/NavSatFix",
+      "count": 0
+    },
+    {
+      "topic": "/mavros/esc_telemetry/telemetry",
+      "type": "mavros_msgs/msg/ESCTelemetry",
+      "count": 0
+    },
+    {
+      "topic": "/mavros/global_position/rel_alt",
+      "type": "std_msgs/msg/Float64",
+      "count": 0
+    },
+    {
+      "topic": "/mavros/debug_value/named_value_float",
+      "type": "mavros_msgs/msg/DebugValue",
+      "count": 0
+    }
+  ],
+  "missing_expected": [],
+  "sha256": "20082507b6b827c3fcd2c22b89893688568551c99e3314bcd68d0b64d2e05b59",
+  "info_text": "Files:             6_free__20261017-020757_0.db3.zstd\nBag size:          11.5 MiB\nStorage id:        sqlite3\nDuration:          64.271549052s\nStart:             Oct 17 2026 02:08:00.585257567 (1792202880.585257567)\nEnd:               Oct 17 2026 02:09:04.856806619 (1792202944.856806619)\nMessages:          298675\nTopic information: Topic: /mavros/sim_state/attitude | Type: sensor_msgs/msg/Imu | Count: 0 | Serialization Format: cdr\n                   Topic: /mavros/sim_state/acceleration | Type: geometry_msgs/msg/Vector3Stamped | Count: 0 | Serialization Format: cdr\n                   Topic: /mavros/estimator_status | Type: mavros_msgs/msg/EstimatorStatus | Count: 71 | Serialization Format: cdr\n                   Topic: /mavros/mission/reached | Type: mavros_msgs/msg/WaypointReached | Count: 0 | Serialization Format: cdr\n                   Topic: /mavros/terrain/request | Type: mavros_msgs/msg/TerrainRequest | Count: 0 | Serialization Format: cdr\n                   Topic: /mavros/battery | Type: sensor_msgs/msg/BatteryState | Count: 31 | Serialization Format: cdr\n                   Topic: /mavros/tunnel/out | Type: mavros_msgs/msg/Tunnel | Count: 0 | Serialization Format: cdr\n                   Topic: /mavros/statustext/recv | Type: mavros_msgs/msg/StatusText | Count: 0 | Serialization Format: cdr\n                   Topic: /mavros/sys_status | Type: mavros_msgs/msg/SysStatus | Count: 315 | Serialization Format: cdr\n                   Topic: /mavros/terrain/report | Type: mavros_msgs/msg/TerrainReport | Count: 0 | Serialization Format: cdr\n                   Topic: /mavros/vfr_hud | Type: mavros_msgs/msg/VfrHud | Count: 611 | Serialization Format: cdr\n                   Topic: /mavros/wind_estimation | Type: geometry_msgs/msg/TwistWithCovarianceStamped | Count: 0 | Serialization Format: cdr\n                   Topic: /mavros/time_reference | Type: sensor_msgs/msg/TimeReference | Count: 0 | Serialization Format: cdr\n                   Topic: /mavros/state | Type: mavros_msgs/msg/State | Count: 71 | Serialization Format: cdr\n                   Topic: /mavros/setpoint_raw/target_global | Type: mavros_msgs/msg/GlobalPositionTarget | Count: 0 | Serialization Format: cdr\n                   Topic: /mavros/mission/waypoints | Type: mavros_msgs/msg/WaypointList | Count: 1 | Serialization Format: cdr\n                   Topic: /mavros/setpoint_raw/target_attitude | Type: mavros_msgs/msg/AttitudeTarget | Count: 607 | Serialization Format: cdr\n                   Topic: /mavros/log_transfer/raw/log_entry | Type: mavros_msgs/msg/LogEntry | Count: 0 | Serialization Format: cdr\n                   Topic: /mavros/px4flow/ground_distance | Type: sensor_msgs/msg/Range | Count: 0 | Serialization Format: cdr\n                   Topic: /mavros/param/event | Type: mavros_msgs/msg/ParamEvent | Count: 0 | Serialization Format: cdr\n                   Topic: /mavros/global_position/local | Type: nav_msgs/msg/Odometry | Count: 0 | Serialization Format: cdr\n                   Topic: /mavros/extended_state | Type: mavros_msgs/msg/ExtendedState | Count: 315 | Serialization Format: cdr\n                   Topic: /mavros/gimbal_control/manager/info | Type: mavros_msgs/msg/GimbalManagerInformation | Count: 0 | Serialization Format: cdr\n                   Topic: /mavros/mount_control/status | Type: geometry_msgs/msg/Vector3Stamped | Count: 0 | Serialization Format: cdr\n                   Topic: /mavros/local_position/velocity_local | Type: geometry_msgs/msg/TwistStamped | Count: 1835 | Serialization Format: cdr\n                   Topic: /mavros/geofence/fences | Type: mavros_msgs/msg/WaypointList | Count: 1 | Serialization Format: cdr\n                   Topic: /mavros/rc/in | Type: mavros_msgs/msg/RCIn | Count: 1223 | Serialization Format: cdr\n                   Topic: /mavros/px4flow/temperature | Type: sensor_msgs/msg/Temperature | Count: 0 | Serialization Format: cdr\n                   Topic: /mavros/hil/actuator_controls | Type: mavros_msgs/msg/HilActuatorControls | Count: 0 | Serialization Format: cdr\n                   Topic: /mavros/rc/out | Type: mavros_msgs/msg/RCOut | Count: 611 | Serialization Format: cdr\n                   Topic: /mavros/debug_value/debug_vector | Type: mavros_msgs/msg/DebugValue | Count: 0 | Serialization Format: cdr\n                   Topic: /mavros/debug_value/debug_float_array | Type: mavros_msgs/msg/DebugValue | Count: 0 | Serialization Format: cdr\n                   Topic: /mavros/imu/temperature_imu | Type: sensor_msgs/msg/Temperature | Count: 950 | Serialization Format: cdr\n                   Topic: /vrpn/U_Tracker4/pose | Type: geometry_msgs/msg/PoseStamped | Count: 0 | Serialization Format: cdr\n                   Topic: /vrpn/b0_Marker1/twist | Type: geometry_msgs/msg/TwistStamped | Count: 0 | Serialization Format: cdr\n                   Topic: /vrpn/U_Tracker2/accel | Type: geometry_msgs/msg/AccelStamped | Count: 0 | Serialization Format: cdr\n                   Topic: /vrpn/U_Tracker4/twist | Type: geometry_msgs/msg/TwistStamped | Count: 0 | Serialization Format: cdr\n                   Topic: /vrpn/z0_Marker1/accel | Type: geometry_msgs/msg/AccelStamped | Count: 12453 | Serialization Format: cdr\n                   Topic: /vrpn/z0_Marker1/pose | Type: geometry_msgs/msg/PoseStamped | Count: 12454 | Serialization Format: cdr\n                   Topic: /vrpn/U_Tracker1/twist | Type: geometry_msgs/msg/TwistStamped | Count: 0 | Serialization Format: cdr\n                   Topic: /vrpn/z0_Marker3/accel | Type: geometry_msgs/msg/AccelStamped | Count: 12453 | Serialization Format: cdr\n                   Topic: /vrpn/z0_Marker2/pose | Type: geometry_msgs/msg/PoseStamped | Count: 12454 | Serialization Format: cdr\n                   Topic: /vrpn/U_Tracker1/accel | Type: geometry_msgs/msg/AccelStamped | Count: 0 | Serialization Format: cdr\n                   Topic: /vrpn/z0_Marker4/accel | Type: geometry_msgs/msg/AccelStamped | Count: 12453 | Serialization Format: cdr\n                   Topic: /vrpn/z0_Marker5/pose | Type: geometry_msgs/msg/PoseStamped | Count: 12450 | Serialization Format: cdr\n                   Topic: /vrpn/VRPN_Control/pose | Type: geometry_msgs/msg/PoseStamped | Count: 0 | Serialization Format: cdr\n                   Topic: /mavros/gpsstatus/gps2/rtk | Type: mavros_msgs/msg/GPSRTK | Count: 0 | Serialization Format: cdr\n                   Topic: /vrpn/z0_Marker3/pose | Type: geometry_msgs/msg/PoseStamped | Count: 12457 | Serialization Format: cdr\n                   Topic: /vrpn/U_Tracker8/accel | Type: geometry_msgs/msg/AccelStamped | Count: 0 | Serialization Format: cdr\n                   Topic: /mavros/target_actuator_control | Type: mavros_msgs/msg/ActuatorControl | Count: 0 | Serialization Format: cdr\n                   Topic: /vrpn/b0_Marker1/pose | Type: geometry_msgs/msg/PoseStamped | Count: 0 | Serialization Format: cdr\n                   Topic: /mavros/altitude | Type: mavros_msgs/msg/Altitude | Count: 613 | Serialization Format: cdr\n                   Topic: /mavros/adsb/vehicle | Type: mavros_msgs/msg/ADSBVehicle | Count: 0 | Serialization Format: cdr\n                   Topic: /mavros/esc_status/status | Type: mavros_msgs/msg/ESCStatus | Count: 0 | Serialization Format: cdr\n                   Topic: /mavros/local_position/accel | Type: geometry_msgs/msg/AccelWithCovarianceStamped | Count: 0 | Serialization Format: cdr\n                   Topic: /vrpn/z0/twist | Type: geometry_msgs/msg/TwistStamped | Count: 12460 | Serialization Format: cdr\n                   Topic: /vrpn/z0_Marker5/twist | Type: geometry_msgs/msg/TwistStamped | Count: 12459 | Serialization Format: cdr\n                   Topic: /mavros/gpsstatus/gps2/raw | Type: mavros_msgs/msg/GPSRAW | Count: 0 | Serialization Format: cdr\n                   Topic: /mavros/sim_state/velocity_local | Type: geometry_msgs/msg/TwistStamped | Count: 0 | Serialization Format: cdr\n                   Topic: /vrpn/z0_Marker4/twist | Type: geometry_msgs/msg/TwistStamped | Count: 12459 | Serialization Format: cdr\n                   Topic: /vrpn/U_Tracker4/accel | Type: geometry_msgs/msg/AccelStamped | Count: 0 | Serialization Format: cdr\n                   Topic: /vrpn/b0_Marker1/accel | Type: geometry_msgs/msg/AccelStamped | Count: 0 | Serialization Format: cdr\n                   Topic: /mavros/sim_state/velocity_body | Type: geometry_msgs/msg/TwistStamped | Count: 0 | Serialization Format: cdr\n                   Topic: /vrpn/U_Tracker5/accel | Type: geometry_msgs/msg/AccelStamped | Count: 0 | Serialization Format: cdr\n                   Topic: /vrpn/b0_Marker3/pose | Type: geometry_msgs/msg/PoseStamped | Count: 0 | Serialization Format: cdr\n                   Topic: /vrpn/z0_Marker5/accel | Type: geometry_msgs/msg/AccelStamped | Count: 12465 | Serialization Format: cdr\n                   Topic: /vrpn/U_Tracker10/accel | Type: geometry_msgs/msg/AccelStamped | Count: 0 | Serialization Format: cdr\n                   Topic: /mavros/debug_value/debug | Type: mavros_msgs/msg/DebugValue | Count: 0 | Serialization Format: cdr\n                   Topic: /vrpn/b0_Marker3/twist | Type: geometry_msgs/msg/TwistStamped | Count: 0 | Serialization Format: cdr\n                   Topic: /vrpn/U_Tracker5/twist | Type: geometry_msgs/msg/TwistStamped | Count: 0 | Serialization Format: cdr\n                   Topic: /vrpn/z0_Marker1/twist | Type: geometry_msgs/msg/TwistStamped | Count: 12469 | Serialization Format: cdr\n                   Topic: /mavros/imu/data_raw | Type: sensor_msgs/msg/Imu | Count: 3062 | Serialization Format: cdr\n                   Topic: /mavros/gpsstatus/gps1/rtk | Type: mavros_msgs/msg/GPSRTK | Count: 0 | Serialization Format: cdr\n                   Topic: /vrpn/z0/accel | Type: geometry_msgs/msg/AccelStamped | Count: 12477 | Serialization Format: cdr\n                   Topic: /vrpn/U_Tracker3/twist | Type: geometry_msgs/msg/TwistStamped | Count: 0 | Serialization Format: cdr\n                   Topic: /mavros/timesync_status | Type: mavros_msgs/msg/TimesyncStatus | Count: 0 | Serialization Format: cdr\n                   Topic: /mavros/local_position/odom | Type: nav_msgs/msg/Odometry | Count: 1836 | Serialization Format: cdr\n                   Topic: /mavros/status_event | Type: mavros_msgs/msg/StatusEvent | Count: 2 | Serialization Format: cdr\n                   Topic: /mavros/manual_control/control | Type: mavros_msgs/msg/ManualControl | Count: 0 | Serialization Format: cdr\n                   Topic: /mavros/imu/static_pressure | Type: sensor_msgs/msg/FluidPressure | Count: 950 | Serialization Format: cdr\n                   Topic: /traj/select | Type: std_msgs/msg/UInt8 | Count: 0 | Serialization Format: cdr\n                   Topic: /mavros/vision_pose/pose | Type: geometry_msgs/msg/PoseStamped | Count: 12705 | Serialization Format: cdr\n                   Topic: /vrpn/U_Tracker7/pose | Type: geometry_msgs/msg/PoseStamped | Count: 0 | Serialization Format: cdr\n                   Topic: /vrpn/z0_Marker2/accel | Type: geometry_msgs/msg/AccelStamped | Count: 12458 | Serialization Format: cdr\n                   Topic: /mavros/gimbal_control/manager/status | Type: mavros_msgs/msg/GimbalManagerStatus | Count: 0 | Serialization Format: cdr\n                   Topic: /mavros/imu/data | Type: sensor_msgs/msg/Imu | Count: 3059 | Serialization Format: cdr\n                   Topic: /vrpn/b0_Marker4/accel | Type: geometry_msgs/msg/AccelStamped | Count: 0 | Serialization Format: cdr\n                   Topic: /traj/progress | Type: std_msgs/msg/Float32 | Count: 2777 | Serialization Format: cdr\n                   Topic: /vrpn/b0_Marker3/accel | Type: geometry_msgs/msg/AccelStamped | Count: 0 | Serialization Format: cdr\n                   Topic: /mocap/velocity_enu | Type: geometry_msgs/msg/TwistStamped | Count: 12698 | Serialization Format: cdr\n                   Topic: /mavros/nav_controller_output/output | Type: mavros_msgs/msg/NavControllerOutput | Count: 0 | Serialization Format: cdr\n                   Topic: /vrpn/U_Tracker3/pose | Type: geometry_msgs/msg/PoseStamped | Count: 0 | Serialization Format: cdr\n                   Topic: /mavros/esc_status/info | Type: mavros_msgs/msg/ESCInfo | Count: 0 | Serialization Format: cdr\n                   Topic: /mavros/global_position/raw/satellites | Type: std_msgs/msg/UInt32 | Count: 0 | Serialization Format: cdr\n                   Topic: /vrpn/z0_Marker2/twist | Type: geometry_msgs/msg/TwistStamped | Count: 12466 | Serialization Format: cdr\n                   Topic: /vrpn/U_Tracker0/pose | Type: geometry_msgs/msg/PoseStamped | Count: 0 | Serialization Format: cdr\n                   Topic: /mocap/pose_enu | Type: geometry_msgs/msg/PoseStamped | Count: 12702 | Serialization Format: cdr\n                   Topic: /vrpn/U_Tracker10/twist | Type: geometry_msgs/msg/TwistStamped | Count: 0 | Serialization Format: cdr\n                   Topic: /vrpn/z0_Marker3/twist | Type: geometry_msgs/msg/TwistStamped | Count: 12454 | Serialization Format: cdr\n                   Topic: /vrpn/U_Tracker0/twist | Type: geometry_msgs/msg/TwistStamped | Count: 0 | Serialization Format: cdr\n                   Topic: /vrpn/z0/pose | Type: geometry_msgs/msg/PoseStamped | Count: 12467 | Serialization Format: cdr\n                   Topic: /vrpn/VRPN_Control/accel | Type: geometry_msgs/msg/AccelStamped | Count: 0 | Serialization Format: cdr\n                   Topic: /vrpn/U_Tracker3/accel | Type: geometry_msgs/msg/AccelStamped | Count: 0 | Serialization Format: cdr\n                   Topic: /mavros/sim_state/global_position | Type: sensor_msgs/msg/NavSatFix | Count: 0 | Serialization Format: cdr\n                   Topic: /mavros/local_position/velocity_body | Type: geometry_msgs/msg/TwistStamped | Count: 1836 | Serialization Format: cdr\n                   Topic: /mavros/trajectory/desired | Type: mavros_msgs/msg/Trajectory | Count: 0 | Serialization Format: cdr\n                   Topic: /vrpn/b0/pose | Type: geometry_msgs/msg/PoseStamped | Count: 0 | Serialization Format: cdr\n                   Topic: /vrpn/U_Tracker9/accel | Type: geometry_msgs/msg/AccelStamped | Count: 0 | Serialization Format: cdr\n                   Topic: /mavros/mag_calibration/status | Type: std_msgs/msg/UInt8 | Count: 0 | Serialization Format: cdr\n                   Topic: /vrpn/U_Tracker10/pose | Type: geometry_msgs/msg/PoseStamped | Count: 0 | Serialization Format: cdr\n                   Topic: /vrpn/U_Tracker6/twist | Type: geometry_msgs/msg/TwistStamped | Count: 0 | Serialization Format: cdr\n                   Topic: /mavros/mag_calibration/report | Type: mavros_msgs/msg/MagnetometerReporter | Count: 0 | Serialization Format: cdr\n                   Topic: /vrpn/U_Tracker8/pose | Type: geometry_msgs/msg/PoseStamped | Count: 0 | Serialization Format: cdr\n                   Topic: /vrpn/U_Tracker9/twist | Type: geometry_msgs/msg/TwistStamped | Count: 0 | Serialization Format: cdr\n                   Topic: /vrpn/U_Tracker7/twist | Type: geometry_msgs/msg/TwistStamped | Count: 0 | Serialization Format: cdr\n                   Topic: /mavros/mount_control/orientation | Type: geometry_msgs/msg/Quaternion | Count: 0 | Serialization Format: cdr\n                   Topic: /vrpn/b0/accel | Type: geometry_msgs/msg/AccelStamped | Count: 0 | Serialization Format: cdr\n                   Topic: /vrpn/U_Tracker8/twist | Type: geometry_msgs/msg/TwistStamped | Count: 0 | Serialization Format: cdr\n                   Topic: /vrpn/U_Tracker2/twist | Type: geometry_msgs/msg/TwistStamped | Count: 0 | Serialization Format: cdr\n                   Topic: /mavros/radio_status | Type: mavros_msgs/msg/RadioStatus | Count: 0 | Serialization Format: cdr\n                   Topic: /vrpn/b0_Marker4/twist | Type: geometry_msgs/msg/TwistStamped | Count: 0 | Serialization Format: cdr\n                   Topic: /mavros/local_position/velocity_body_cov | Type: geometry_msgs/msg/TwistWithCovarianceStamped | Count: 0 | Serialization Format: cdr\n                   Topic: /vrpn/U_Tracker9/pose | Type: geometry_msgs/msg/PoseStamped | Count: 0 | Serialization Format: cdr\n                   Topic: /vrpn/U_Tracker6/accel | Type: geometry_msgs/msg/AccelStamped | Count: 0 | Serialization Format: cdr\n                   Topic: /vrpn/z0_Marker4/pose | Type: geometry_msgs/msg/PoseStamped | Count: 12453 | Serialization Format: cdr\n                   Topic: /vrpn/VRPN_Control/twist | Type: geometry_msgs/msg/TwistStamped | Count: 0 | Serialization Format: cdr\n                   Topic: /mavros/cam_imu_sync/cam_imu_stamp | Type: mavros_msgs/msg/CamIMUStamp | Count: 0 | Serialization Format: cdr\n                   Topic: /vrpn/b0/twist | Type: geometry_msgs/msg/TwistStamped | Count: 0 | Serialization Format: cdr\n                   Topic: /vrpn/U_Tracker1/pose | Type: geometry_msgs/msg/PoseStamped | Count: 0 | Serialization Format: cdr\n                   Topic: /mavros/global_position/gp_origin | Type: geographic_msgs/msg/GeoPointStamped | Count: 0 | Serialization Format: cdr\n                   Topic: /vrpn/b0_Marker2/twist | Type: geometry_msgs/msg/TwistStamped | Count: 0 | Serialization Format: cdr\n                   Topic: /mavros/gimbal_control/device/attitude_status | Type: mavros_msgs/msg/GimbalDeviceAttitudeStatus | Count: 0 | Serialization Format: cdr\n                   Topic: /mavros/setpoint_raw/attitude | Type: mavros_msgs/msg/AttitudeTarget | Count: 6238 | Serialization Format: cdr\n                   Topic: /vrpn/b0_Marker2/accel | Type: geometry_msgs/msg/AccelStamped | Count: 0 | Serialization Format: cdr\n                   Topic: /mavros/optical_flow/raw/optical_flow | Type: mavros_msgs/msg/OpticalFlow | Count: 0 | Serialization Format: cdr\n                   Topic: /vrpn/b0_Marker4/pose | Type: geometry_msgs/msg/PoseStamped | Count: 0 | Serialization Format: cdr\n                   Topic: /mavros/optical_flow/ground_distance | Type: sensor_msgs/msg/Range | Count: 0 | Serialization Format: cdr\n                   Topic: /vrpn/U_Tracker6/pose | Type: geometry_msgs/msg/PoseStamped | Count: 0 | Serialization Format: cdr\n                   Topic: /mavros/global_position/global | Type: sensor_msgs/msg/NavSatFix | Count: 0 | Serialization Format: cdr\n                   Topic: /mavros/hil/controls | Type: mavros_msgs/msg/HilControls | Count: 0 | Serialization Format: cdr\n                   Topic: /mavros/global_position/compass_hdg | Type: std_msgs/msg/Float64 | Count: 0 | Serialization Format: cdr\n                   Topic: /mavros/setpoint_trajectory/desired | Type: nav_msgs/msg/Path | Count: 0 | Serialization Format: cdr\n                   Topic: /mavros/home_position/home | Type: mavros_msgs/msg/HomePosition | Count: 0 | Serialization Format: cdr\n                   Topic: /mavros/imu/mag | Type: sensor_msgs/msg/MagneticField | Count: 0 | Serialization Format: cdr\n                   Topic: /vrpn/U_Tracker5/pose | Type: geometry_msgs/msg/PoseStamped | Count: 0 | Serialization Format: cdr\n                   Topic: /mavros/global_position/raw/gps_vel | Type: geometry_msgs/msg/TwistStamped | Count: 0 | Serialization Format: cdr\n                   Topic: /mavros/local_position/pose_cov | Type: geometry_msgs/msg/PoseWithCovarianceStamped | Count: 0 | Serialization Format: cdr\n                   Topic: /mavros/setpoint_raw/target_local | Type: mavros_msgs/msg/PositionTarget | Count: 0 | Serialization Format: cdr\n                   Topic: /vrpn/U_Tracker2/pose | Type: geometry_msgs/msg/PoseStamped | Count: 0 | Serialization Format: cdr\n                   Topic: /mavros/local_position/pose | Type: geometry_msgs/msg/PoseStamped | Count: 1837 | Serialization Format: cdr\n                   Topic: /mavros/landing_target/pose_in | Type: geometry_msgs/msg/PoseStamped | Count: 0 | Serialization Format: cdr\n                   Topic: /traj/marker | Type: visualization_msgs/msg/Marker | Count: 2842 | Serialization Format: cdr\n                   Topic: /vrpn/U_Tracker7/accel | Type: geometry_msgs/msg/AccelStamped | Count: 0 | Serialization Format: cdr\n                   Topic: /mavros/landing_target/lt_marker | Type: geometry_msgs/msg/Vector3Stamped | Count: 0 | Serialization Format: cdr\n                   Topic: /mavros/odometry/in | Type: nav_msgs/msg/Odometry | Count: 1835 | Serialization Format: cdr\n                   Topic: /vrpn/U_Tracker0/accel | Type: geometry_msgs/msg/AccelStamped | Count: 0 | Serialization Format: cdr\n                   Topic: /vrpn/b0_Marker2/pose | Type: geometry_msgs/msg/PoseStamped | Count: 0 | Serialization Format: cdr\n                   Topic: /mavros/gpsstatus/gps1/raw | Type: mavros_msgs/msg/GPSRAW | Count: 0 | Serialization Format: cdr\n                   Topic: /mavros/imu/diff_pressure | Type: sensor_msgs/msg/FluidPressure | Count: 0 | Serialization Format: cdr\n                   Topic: /mavros/gimbal_control/device/info | Type: mavros_msgs/msg/GimbalDeviceInformation | Count: 0 | Serialization Format: cdr\n                   Topic: /mavros/debug_value/named_value_int | Type: mavros_msgs/msg/DebugValue | Count: 0 | Serialization Format: cdr\n                   Topic: /mavros/px4flow/raw/optical_flow_rad | Type: mavros_msgs/msg/OpticalFlowRad | Count: 0 | Serialization Format: cdr\n                   Topic: /mavros/global_position/gp_lp_offset | Type: geometry_msgs/msg/PoseStamped | Count: 0 | Serialization Format: cdr\n                   Topic: /mavros/rallypoint/rallypoints | Type: mavros_msgs/msg/WaypointList | Count: 1 | Serialization Format: cdr\n                   Topic: /mavros/imu/temperature_baro | Type: sensor_msgs/msg/Temperature | Count: 0 | Serialization Format: cdr\n                   Topic: /traj/start | Type: std_msgs/msg/Empty | Count: 1 | Serialization Format: cdr\n                   Topic: /mavros/gps_rtk/rtk_baseline | Type: mavros_msgs/msg/RTKBaseline | Count: 0 | Serialization Format: cdr\n                   Topic: /traj/reference | Type: mavros_msgs/msg/PositionTarget | Count: 2778 | Serialization Format: cdr\n                   Topic: /mavros/log_transfer/raw/log_data | Type: mavros_msgs/msg/LogData | Count: 0 | Serialization Format: cdr\n                   Topic: /mavros/camera/image_captured | Type: mavros_msgs/msg/CameraImageCaptured | Count: 0 | Serialization Format: cdr\n                   Topic: /mavros/global_position/raw/fix | Type: sensor_msgs/msg/NavSatFix | Count: 0 | Serialization Format: cdr\n                   Topic: /mavros/esc_telemetry/telemetry | Type: mavros_msgs/msg/ESCTelemetry | Count: 0 | Serialization Format: cdr\n                   Topic: /mavros/global_position/rel_alt | Type: std_msgs/msg/Float64 | Count: 0 | Serialization Format: cdr\n                   Topic: /mavros/debug_value/named_value_float | Type: mavros_msgs/msg/DebugValue | Count: 0 | Serialization Format: cdr",
+  "flight": {
+    "trajectory": 4,
+    "name": "起飞（轨迹原点升到 0.2 m 后悬停）",
+    "control": "模型预测控制（独立档 reference_source=traj；早于票 15 的统一流程）",
+    "source": "操作者 2026-10-17 指定",
+    "evidence": "/traj/reference：x/y 恒 0，z 0 → 0.20 m"
+  }
+}

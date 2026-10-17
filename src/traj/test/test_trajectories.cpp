@@ -1,4 +1,4 @@
-// 接缝 2（纯函数）单测：三条轨迹的**几何、尺寸、限速、完成度**。
+// 接缝 2（纯函数）单测：四条轨迹的**几何、尺寸、限速、完成度**。
 //
 // 为什么这些断言值得写（而不是"飞起来看看"）：
 //   ① 形状与尺寸有**精确解**可对 —— 边长 1 m 的正方形周长必然是 4.0 m、8 字（a = 1.0，
@@ -330,17 +330,109 @@ TEST(Lemniscate, 完成度单调不减且首尾为_0_与_1)
 }
 
 // ——————————————————————————————————————————————————————————————
-// 三条轨迹共有的不变量
+// ④ 起飞：从轨迹原点匀速升到 takeoff_height_m，到顶后停在那儿
 // ——————————————————————————————————————————————————————————————
 
-/// §5.2 的硬要求：任一时刻速度都不超过限速。三条轨迹一起扫。
-TEST(限速, 三条轨迹全程不超过限速)
+/// 斜坡的**形状**：z(0) = 0、到顶那一刻正好是 h、之后恒为 h；v 在斜坡内是 +v、到顶后归 0。
+TEST(Takeoff, 斜坡_从原点升到高度_到顶后停住)
+{
+  const traj::Takeoff to(60.0, 0.2, 0.2);
+  EXPECT_DOUBLE_EQ(to.ramp_duration(), 1.0);       // 0.2 m @ 0.2 m/s
+  EXPECT_DOUBLE_EQ(to.duration(), 60.0);           // 时长沿用 hover_duration_s
+
+  EXPECT_DOUBLE_EQ(to.at(0.0).p.z, 0.0);           // ★ 零点 = 轨迹原点 —— "起飞"的物理含义
+  EXPECT_DOUBLE_EQ(to.at(0.0).p.x, 0.0);
+  EXPECT_DOUBLE_EQ(to.at(0.0).p.y, 0.0);
+  EXPECT_NEAR(to.at(0.5).p.z, 0.1, 1e-12);         // 斜坡中点 = 一半
+  EXPECT_DOUBLE_EQ(to.at(1.0).p.z, 0.2);           // 到顶
+  EXPECT_DOUBLE_EQ(to.at(30.0).p.z, 0.2);          // 到顶之后停在那儿
+  EXPECT_DOUBLE_EQ(to.at(600.0).p.z, 0.2);
+
+  EXPECT_DOUBLE_EQ(to.at(0.5).v.z, 0.2);           // 斜坡内 = 爬升速率
+  EXPECT_DOUBLE_EQ(to.at(1.0).v.z, 0.0);           // 到顶：速度归零
+  EXPECT_DOUBLE_EQ(to.at(30.0).v.z, 0.0);
+  EXPECT_DOUBLE_EQ(to.at(0.5).v.x, 0.0);           // 水平两轴恒为 0（起飞不横着走）
+  EXPECT_DOUBLE_EQ(to.at(30.0).v.y, 0.0);
+}
+
+/// ★ 用**有限差分**独立量一遍"位置实际走多快"（不是读它自己报告的 v）—— 与 Lemniscate
+/// 那条同一把尺：报告的 v 与位置差分不一致时，只有差分能看出来。
+TEST(Takeoff, 有限差分证实斜坡内匀速_到顶后完全停住)
+{
+  const traj::Takeoff to(60.0, 0.2, 0.2);
+  const double dt = 1e-5;
+  for (double t = 1e-3; t < 0.999; t += 0.01) {
+    const double dz = (to.at(t + dt).p.z - to.at(t).p.z) / dt;
+    EXPECT_NEAR(dz, 0.2, 1e-9) << "t = " << t;     // 斜坡内：实际爬升速率 = takeoff_speed_ms
+  }
+  for (double t = 1.0; t <= 60.0; t += 1.0) {
+    const double dz = (to.at(t + dt).p.z - to.at(t).p.z) / dt;
+    EXPECT_DOUBLE_EQ(dz, 0.0) << "t = " << t;      // 到顶之后：一点都没动
+  }
+}
+
+/// 完成度**按时长**走（不是"爬到顶就算 1"）。★ 这条不是形式主义：`control` 那条
+/// `progress ≥ 1 ⟹ LAND` 就压在这上面 —— 若做成"斜坡走完 = 1"，20 cm 一起飞就被判成跑完了。
+TEST(Takeoff, 完成度按时长走而不是按斜坡走)
+{
+  const traj::Takeoff to(60.0, 0.2, 0.2);
+  EXPECT_DOUBLE_EQ(to.at(0.0).progress, 0.0);
+  EXPECT_NEAR(to.at(30.0).progress, 0.5, 1e-12);
+  EXPECT_NEAR(to.at(1.0).progress, 1.0 / 60.0, 1e-12);   // 到顶那一刻：才走了 1/60
+  EXPECT_DOUBLE_EQ(to.at(60.0).progress, 1.0);
+  EXPECT_DOUBLE_EQ(to.at(600.0).progress, 1.0);          // 跑完保持 1
+  EXPECT_DOUBLE_EQ(to.at(-1.0).progress, 0.0);           // t < 0 夹到 0
+  EXPECT_DOUBLE_EQ(to.at(-1.0).p.z, 0.0);
+}
+
+/// 几何采样 = 起止两点（RViz 画一条竖线）。按几何采样，`points` 对它无意义。
+TEST(Takeoff, 几何采样是起止两点)
+{
+  const traj::Takeoff to(60.0, 0.2, 0.2);
+  const std::vector<Vec3> path = to.path(201);
+  ASSERT_EQ(path.size(), 2u);
+  EXPECT_DOUBLE_EQ(path[0].x, 0.0);
+  EXPECT_DOUBLE_EQ(path[0].y, 0.0);
+  EXPECT_DOUBLE_EQ(path[0].z, 0.0);
+  EXPECT_DOUBLE_EQ(path[1].z, 0.2);
+}
+
+/// 退化与负值：h = 0（原地不动）、h < 0（往下走，符号跟着走）、时长/速度非正（夹住）
+/// —— 都不许崩、不许 NaN、`duration()` 必须 > 0。
+TEST(Takeoff, 零高度与负高度与非法速度都不崩)
+{
+  const traj::Takeoff flat(10.0, 0.0, 0.2);
+  EXPECT_DOUBLE_EQ(flat.ramp_duration(), 0.0);
+  EXPECT_DOUBLE_EQ(flat.at(5.0).p.z, 0.0);
+  EXPECT_DOUBLE_EQ(flat.at(5.0).v.z, 0.0);
+
+  const traj::Takeoff down(10.0, -0.2, 0.2);       // 负高度 = 往下
+  EXPECT_DOUBLE_EQ(down.ramp_duration(), 1.0);
+  EXPECT_DOUBLE_EQ(down.at(0.5).v.z, -0.2);
+  EXPECT_NEAR(down.at(1.0).p.z, -0.2, 1e-12);
+
+  const traj::Takeoff bad(0.0, 0.2, 0.0);
+  EXPECT_GT(bad.duration(), 0.0);
+  EXPECT_GT(bad.ramp_duration(), 0.0);
+  EXPECT_TRUE(std::isfinite(bad.at(0.5).p.z));
+  EXPECT_TRUE(std::isfinite(bad.at(0.5).v.z));
+  EXPECT_TRUE(std::isfinite(bad.at(0.5).progress));
+}
+
+// ——————————————————————————————————————————————————————————————
+// 四条轨迹共有的不变量
+// ——————————————————————————————————————————————————————————————
+
+/// §5.2 的硬要求：任一时刻速度都不超过限速。四条轨迹一起扫。
+/// ★ 轨迹 4（起飞）在这里靠的是它**自己的** `takeoff_speed_ms`（0.2 ≤ 0.5）：爬升速率也是一条速度，
+///   同样受这条约束 —— 节点侧对 "takeoff_speed_ms > max_speed_ms" 会告警（`warn_about_parameters`）。
+TEST(限速, 四条轨迹全程不超过限速)
 {
   const double speed = 0.5;
   const Params params;  // 默认参数：0.5 m/s
   ASSERT_DOUBLE_EQ(params.max_speed_ms, speed);
 
-  for (const Kind kind : {Kind::kHover, Kind::kSquare, Kind::kLemniscate}) {
+  for (const Kind kind : {Kind::kHover, Kind::kSquare, Kind::kLemniscate, Kind::kTakeoff}) {
     const std::unique_ptr<traj::Trajectory> tr = traj::make(kind, params);
     ASSERT_NE(tr, nullptr);
     const int n = 20000;
@@ -385,7 +477,7 @@ TEST(参数, 非法参数被夹住而不是产生_nan_或零时长)
     /*square_side_m=*/-1.0,
     /*lemniscate_a_m=*/0.0,
     /*height_offset_m=*/0.0};
-  for (const Kind kind : {Kind::kHover, Kind::kSquare, Kind::kLemniscate}) {
+  for (const Kind kind : {Kind::kHover, Kind::kSquare, Kind::kLemniscate, Kind::kTakeoff}) {
     const std::unique_ptr<traj::Trajectory> tr = traj::make(kind, bad);
     ASSERT_NE(tr, nullptr);
     EXPECT_GT(tr->duration(), 0.0) << traj::to_string(kind);
@@ -406,7 +498,7 @@ TEST(参数, 非法参数被夹住而不是产生_nan_或零时长)
 // 编号（`/traj/select` 的取值口径）
 // ——————————————————————————————————————————————————————————————
 
-TEST(编号, 1_2_3_对应三条轨迹)
+TEST(编号, 1_2_3_4_对应四条轨迹)
 {
   Kind k{};
   ASSERT_TRUE(traj::parse_kind(1, k));
@@ -415,20 +507,24 @@ TEST(编号, 1_2_3_对应三条轨迹)
   EXPECT_EQ(k, Kind::kSquare);
   ASSERT_TRUE(traj::parse_kind(3, k));
   EXPECT_EQ(k, Kind::kLemniscate);
+  ASSERT_TRUE(traj::parse_kind(4, k));      // ★ 2026-10-16：起飞
+  EXPECT_EQ(k, Kind::kTakeoff);
 
   EXPECT_STREQ(traj::to_string(Kind::kHover), "hover");
   EXPECT_STREQ(traj::to_string(Kind::kSquare), "square");
   EXPECT_STREQ(traj::to_string(Kind::kLemniscate), "lemniscate");
+  EXPECT_STREQ(traj::to_string(Kind::kTakeoff), "takeoff");
   EXPECT_EQ(static_cast<unsigned char>(Kind::kHover), 1u);  // ★ 数值就是话题上的数字
   EXPECT_EQ(static_cast<unsigned char>(Kind::kSquare), 2u);
   EXPECT_EQ(static_cast<unsigned char>(Kind::kLemniscate), 3u);
+  EXPECT_EQ(static_cast<unsigned char>(Kind::kTakeoff), 4u);  // ★ 不是 0：0 是"清空"
 }
 
 TEST(编号, 0_与越界值被拒绝)
 {
   Kind k{};
-  EXPECT_FALSE(traj::parse_kind(0, k));  // 0 在节点侧另有含义：清空
-  EXPECT_FALSE(traj::parse_kind(4, k));
+  EXPECT_FALSE(traj::parse_kind(0, k));  // 0 在节点侧另有含义：清空（★ 起飞因此取 4）
+  EXPECT_FALSE(traj::parse_kind(5, k));
   EXPECT_FALSE(traj::parse_kind(255, k));
 }
 
@@ -443,6 +539,14 @@ TEST(工厂, make_对每个编号都返回对应类型与高度偏移)
     EXPECT_DOUBLE_EQ(tr->at(0.0).p.z, 0.4) << traj::to_string(kind);
     EXPECT_DOUBLE_EQ(tr->at(tr->duration()).progress, 1.0);
   }
+  // ★★ 轨迹 4（起飞）**不参与** height_offset_m：它是"从轨迹原点往上爬"，
+  //   零点必须是 0（否则"起飞 20 cm"这句话就不成立了 —— 会变成 20 cm + 偏移）。
+  const std::unique_ptr<traj::Trajectory> to = traj::make(Kind::kTakeoff, p);
+  ASSERT_NE(to, nullptr);
+  EXPECT_EQ(to->kind(), Kind::kTakeoff);
+  EXPECT_DOUBLE_EQ(to->at(0.0).p.z, 0.0) << "起飞必须从轨迹原点出发，不能带 height_offset_m";
+  EXPECT_DOUBLE_EQ(to->at(to->duration()).p.z, p.takeoff_height_m);
+  EXPECT_DOUBLE_EQ(to->at(to->duration()).progress, 1.0);
 }
 
 }  // namespace

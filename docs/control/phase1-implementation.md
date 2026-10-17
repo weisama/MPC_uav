@@ -55,7 +55,7 @@ src/
 │   ├── test/test_traj_node.py         ← ★ 节点级（seam 1，11 例）：只断言话题边界
 │   ├── config/traj.yaml               ← 三条轨迹的参数 + 速率 + RViz
 │   ├── launch/traj.launch.py
-│   └── README.md                      ← 参数表 + 怎么用 1/2/3 选轨迹 + 它**不发** setpoint
+│   └── README.md                      ← 参数表 + 怎么用 1/2/3/4 选轨迹 + 它**不发** setpoint
 │
 ├── control/                           ✅ 已实现（2026-09-23，ticket 05+06+08+09）—— 起飞→悬停→等开始键→跟踪→自动降落
 │                                      （Phase 2 的 MPC（模型预测控制）节点也放这里）
@@ -89,7 +89,7 @@ src/
 ├── bringup/                           ✅ 已实现（2026-09-23，ticket 09）
 │   ├── launch/z0.launch.py            ← 一键起 mocap+traj+control（`use_mavros:=true` 再带上 mavros）
 │   ├── launch/mavros.launch.py        ← 薄封装上游 `px4.launch`（不是自己重写）
-│   ├── scripts/fly.py                 ← ★ 操作台：输入 1/2/3 选轨迹，实时显示状态与完成度
+│   ├── scripts/fly.py                 ← ★ 操作台：输入 1/2/3/4 选轨迹，实时显示状态与完成度
 │   └── README.md                      ← ★ 运行手册：启动顺序的**唯一**一条硬约束 + 排障表
 │
 │   ⚠️ **当初图纸里的 `config/mavros_z0.yaml` 没有被采用** —— 上游 `px4.launch` 把 `config_yaml`
@@ -150,7 +150,7 @@ src/
 
 | 方向 | 话题 | 类型 | 说明 |
 |---|---|---|---|
-| 订阅 | `/traj/select` | `std_msgs/UInt8` | **选轨迹：1/2/3**（`0` = 清空）。由 `fly.py` 或手打 `ros2 topic pub` 发 |
+| 订阅 | `/traj/select` | `std_msgs/UInt8` | **选轨迹：1/2/3/4**（`0` = 清空）。由 `fly.py` 或手打 `ros2 topic pub` 发 |
 | 订阅 | `/traj/start` | `std_msgs/Empty` | ★ **开始跑**。与 `/traj/select` **分开**（见下） |
 | 发布 | `/traj/reference` | `mavros_msgs/PositionTarget` | ★ 参考轨迹，**50 Hz**，**相对轨迹原点**；`type_mask = 2496`（位置+速度+yaw）、`frame_id = "traj_origin"` |
 | 发布 | `/traj/progress` | `std_msgs/Float32` | 完成度 0–1 |
@@ -923,7 +923,15 @@ z0 走 **(A) 级**：推力由 PX4 生成，我们发的是**位置/速度 setpo
 不显式要求 `velocity_valid` 的话判稳会**立刻**通过。`Odometry` 把 `position_valid` 与
 `velocity_valid` **分列**（两条独立订阅，启动时可能只到了一条）。
 
-### 5.2 三条轨迹（已定，都在 §3.3 的轨迹原点、同一个**局部系**下定义）
+### 5.2 四条轨迹（已定，都在 §3.3 的轨迹原点、同一个**局部系**下定义）
+
+> ★ **2026-10-16（[票 14](../../.scratch/phase4/issues/14-chain-controller-choice.md) 二定）新增第 4 条「起飞」**：
+> `z(t) = h · clamp01(t / (h/v))`，`h = takeoff_height_m`（默认 **0.2 m**）、`v = takeoff_speed_ms`
+> （默认 0.2 m/s）⟹ 0.2 m 用 1.0 s 到顶，之后**停在那儿**走完 `hover_duration_s`。
+> 它**不参与** `height_offset_m`（从轨迹原点往上爬，再加偏移没有意义），用的是爬升速率而不是
+> `max_speed_ms`（那个是全速上限）。**轨迹 1 / 2 / 3 的输出一个字节都没改**（操作者当天的原话就是
+> 「不要修改轨迹 1 的东西」）。编号取 **4 不是 0** —— `/traj/select` 的 `0 = 清空` 是既有语义。
+> 口径与逐条理由：[`src/traj/README.md`](../../src/traj/README.md)。
 
 > ★★ **2026-10-08 操作者裁定：轨迹 3 的 8 字放大到原本的 2 倍**（`a`: 0.5 → **1.0 m**）。
 > 本节下面的数值**已按这条裁定更新**为：宽 **2.0 m** × 高 **1.0 m**、周长 **≈6.10 m**、一圈 **≈12.2 s**。
@@ -947,6 +955,7 @@ z0 走 **(A) 级**：推力由 PX4 生成，我们发的是**位置/速度 setpo
 | **1** | 原地悬停 | 目标恒为原点，高度 1.0 m | — |
 | **2** | 正方形 | 边长 **1.0 m**：`(0,0) → (1,0) → (1,1) → (0,1) → (0,0)` unit: m | ≤0.5 m/s |
 | **3** | 八字 | Gerono 双纽线，a = **1.0 m**（★ 2026-10-08 由 0.5 放大）：<br>`x(t) = a·sin(t)`，`y(t) = a·sin(t)·cos(t)`，`t: 0→2π` | ≤0.5 m/s |
+| **4** | **起飞**（★ 2026-10-16 票 14 加，Phase 4） | 从轨迹原点**匀速直上** `takeoff_height_m`（默认 **0.2 m**），到顶后**停在那儿**；`z(0) = 0`、**不参与** `height_offset_m` | `takeoff_speed_ms`（默认 0.2 m/s，**不是** ≤0.5 那条全速上限） |
 
 **★ 关于八字的实际尺寸**（数值积分算出来的，不是估的）：
 
@@ -1133,9 +1142,11 @@ z0 走 **(A) 级**：推力由 PX4 生成，我们发的是**位置/速度 setpo
 
 **`traj`（ticket 07）同样是两层**，`colcon test --packages-up-to traj` = **31 例**全绿
 （seam 2 的 20 + seam 1 的 11；★ 它的 seam 1 也用 `bench` 夹具，所以同样要 `--packages-up-to`）：
+☠️ **31 / 20 / 11 是 2026-09-24 的快照**（票 14 加第 4 条轨迹后是 **38**、26 + 12 —— 现算见
+[`src/traj/README.md`](../../src/traj/README.md) 的「测试」一节，别照抄本行）。
 
 - **seam 2**（`traj/test/test_trajectories.cpp`，零 ROS，20 例）：三条几何的形状/尺寸/闭合、
-  弧长均匀性（有限差分量速度波纹）、**限速扫过三条轨迹**、周长（含一条独立的 Simpson 法交叉核对）。
+  弧长均匀性（有限差分量速度波纹）、**限速扫过四条轨迹**、周长（含一条独立的 Simpson 法交叉核对）。
 - **seam 1**（`traj/test/test_traj_node.py`，11 例）：`select` 与 `start` 的语义（**选了不 start ⟹ 一帧都不发**，
   且配了正控）、消息口径（`type_mask = 2496`、`FRAME_LOCAL_NED`、`frame_id`、恒定 yaw）、
   50 Hz **窗口**频率、正方形四条边且跑完停回原点、8 字的幅度与"偏扁"不变式（`max(x)/max(y) ≈ 2`）、

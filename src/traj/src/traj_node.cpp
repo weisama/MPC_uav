@@ -1,4 +1,4 @@
-// traj 节点：把三条解析轨迹按 50 Hz 采成**参考流**发出去。
+// traj 节点：把四条解析轨迹按 50 Hz 采成**参考流**发出去。
 //
 // 职责边界（这条边界是刻意的，改之前先读 docs/control/phase1-implementation.md §2）：
 //   本节点 **只发参考**：不发 setpoint、不解锁、不进 OFFBOARD、不碰飞控。
@@ -7,7 +7,7 @@
 //      （ticket 07 的验收判据之一，不需要动捕、不需要飞控、不需要解锁）。
 //
 // 话题：
-//   ← `/traj/select`  (std_msgs/UInt8)   1 = 悬停 / 2 = 正方形 / 3 = 8 字 / **0 = 清空**
+//   ← `/traj/select`  (std_msgs/UInt8)   1 = 悬停 / 2 = 正方形 / 3 = 8 字 / 4 = 起飞 / **0 = 清空**
 //   ← `/traj/start`   (std_msgs/Empty)   ★ **参考时钟的零点**
 //   → `/traj/reference` (mavros_msgs/PositionTarget) 50 Hz，**相对轨迹原点**
 //   → `/traj/progress`  (std_msgs/Float32)           完成度 0–1
@@ -95,6 +95,10 @@ public:
     params_.square_side_m = declare_parameter<double>("square_side_m", 1.0);
     params_.lemniscate_a_m = declare_parameter<double>("lemniscate_a_m", 1.0);
     params_.height_offset_m = declare_parameter<double>("height_offset_m", 0.0);
+    // ★ 轨迹 4（起飞）的两个参数。⚠️ 它们是**轨迹参数**，不是"运行时可改的输入" ——
+    //   要改就改 yaml / 重启本节点（`/traj/select 4` 只负责选它，不负责改它）。
+    params_.takeoff_height_m = declare_parameter<double>("takeoff_height_m", 0.2);
+    params_.takeoff_speed_ms = declare_parameter<double>("takeoff_speed_ms", 0.2);
 
     const double rate_hz = declare_parameter<double>("rate_hz", 50.0);
     marker_period_s_ = declare_parameter<double>("marker_period_s", 1.0);
@@ -127,7 +131,7 @@ public:
       "traj 节点启动：\n"
       "  发布 %s（%.1f Hz，**相对轨迹原点**、限速 %.2f m/s）\n"
       "  发布 %s（完成度 0–1）、%s（RViz）\n"
-      "  订阅 %s（1/2/3 选轨迹，0 清空）、%s（开始）\n"
+      "  订阅 %s（1/2/3/4 选轨迹，0 清空）、%s（开始）\n"
       "  ★ 本节点只发参考：不发 setpoint、不解锁、不进 OFFBOARD —— 那是 control 的事\n"
       "  ★⚠ 参考是**相对轨迹原点**的（轨迹原点 ≈ HOVER 稳定时的 EKF2 位置，≠ 动捕原点）。\n"
       "      千万不要把 %s 直接 remap 到 mavros 的 setpoint 上 —— 那会让飞机朝动捕原点附近去。\n"
@@ -147,7 +151,7 @@ public:
       select_kind(kind, /*by_parameter=*/true);
     } else if (startup_kind != 0) {
       RCLCPP_WARN(
-        get_logger(), "startup_kind = %d 无效（只有 1/2/3 有意义，0 = 不自动选）—— 忽略",
+        get_logger(), "startup_kind = %d 无效（只有 1/2/3/4 有意义，0 = 不自动选）—— 忽略",
         startup_kind);
     }
   }
@@ -178,6 +182,29 @@ private:
         "max_speed_ms = %.3f 非法（必须 > 0）—— 纯函数层会夹住它，但时长会变得没有物理意义。",
         params_.max_speed_ms);
     }
+    // —— 轨迹 4（起飞）——
+    // ★ 爬升速率也受 §5.2 那条限速的约束（它是一条"速度上限"，不限于平面轨迹）：
+    //   不拦，但超了必须让人看见。
+    if (params_.takeoff_speed_ms > params_.max_speed_ms) {
+      RCLCPP_WARN(
+        get_logger(),
+        "⚠️ takeoff_speed_ms = %.2f 超过 max_speed_ms = %.2f —— 起飞的爬升速率也受"
+        "§5.2 那条限速约束（见 traj.yaml 里 takeoff_speed_ms 的注释）。",
+        params_.takeoff_speed_ms, params_.max_speed_ms);
+    }
+    if (params_.takeoff_speed_ms <= 0.0) {
+      RCLCPP_ERROR(
+        get_logger(),
+        "takeoff_speed_ms = %.3f 非法（必须 > 0）—— 纯函数层会夹住它，但爬升时长会变得没有物理意义。",
+        params_.takeoff_speed_ms);
+    }
+    if (params_.takeoff_height_m <= 0.0) {
+      RCLCPP_WARN(
+        get_logger(),
+        "⚠️ takeoff_height_m = %.3f 非正 —— 轨迹 4（起飞）会**原地不动**（z 恒为该值）。"
+        "要「起飞 20 cm」就该是 0.2（默认值）。",
+        params_.takeoff_height_m);
+    }
     if (params_.hover_duration_s <= 0.0) {
       RCLCPP_ERROR(
         get_logger(),
@@ -204,7 +231,8 @@ private:
     if (!traj::parse_kind(msg->data, kind)) {
       // ★ 无效值**保持当前轨迹不动**：突然清空比"没反应"更危险（操作者多半是敲错了）。
       RCLCPP_WARN(
-        get_logger(), "忽略无效的 %s = %u（只有 1 = 悬停 / 2 = 正方形 / 3 = 8 字，0 = 清空）",
+        get_logger(), "忽略无效的 %s = %u（只有 1 = 悬停 / 2 = 正方形 / 3 = 8 字 / 4 = 起飞，"
+        "0 = 清空）",
         select_topic_.c_str(), msg->data);
       return;
     }
@@ -225,13 +253,16 @@ private:
     logged_done_ = false;
     publish_path_marker(now());  // 折线立刻可看：满足"RViz 核对形状"的判据，不必等开始
 
+    // ★ 报出去的"速度"要跟着轨迹走：起飞用的是 takeoff_speed_ms，不是平面轨迹的限速。
+    const double shown_speed_ms =
+      kind == traj::Kind::kTakeoff ? params_.takeoff_speed_ms : params_.max_speed_ms;
     RCLCPP_INFO(
       get_logger(),
-      "%s %s：时长 %.2f s（限速 %.2f m/s）%s\n"
+      "%s %s：时长 %.2f s（速度 %.2f m/s）%s\n"
       "  ★ 现在**还没有开始**：参考流要等 %s 才发 —— 若选中的瞬间就开跑，"
       "control 进 TRACK 时参考已经到中段了，飞机会被猛地拽一下。",
       by_parameter ? "（来自 startup_kind 参数）已选" : "已选", traj::to_string(kind),
-      trajectory_->duration(), params_.max_speed_ms, describe_shape(kind).c_str(),
+      trajectory_->duration(), shown_speed_ms, describe_shape(kind).c_str(),
       start_topic_.c_str());
   }
 
@@ -254,7 +285,7 @@ private:
   {
     if (!trajectory_) {
       RCLCPP_WARN(
-        get_logger(), "收到 %s 但**还没有选轨迹**（先发 %s = 1/2/3）—— 忽略",
+        get_logger(), "收到 %s 但**还没有选轨迹**（先发 %s = 1/2/3/4）—— 忽略",
         start_topic_.c_str(), select_topic_.c_str());
       return;
     }
@@ -436,6 +467,13 @@ private:
         return "  形状：8 字，宽 " + num(2.0 * params_.lemniscate_a_m) + " m、高 " +
                num(params_.lemniscate_a_m) + " m（★ y 幅度只有 x 的一半 = Gerono 双纽线天然偏扁）；周长 " +
                num(perimeter_m) + " m";
+      case traj::Kind::kTakeoff:
+        // ★ 这条**不能**套上面那个 perimeter_m（= 时长 × max_speed_ms）：起飞的时长沿用
+        //   hover_duration_s、速度用 takeoff_speed_ms，两者都不是"周长 ÷ 限速"那个口径。
+        return "  形状：从**轨迹原点（地面）**匀速直上 " + num(params_.takeoff_height_m) +
+               " m（爬升 " + num(params_.takeoff_speed_ms) + " m/s ⟹ " +
+               num(std::abs(params_.takeoff_height_m) / params_.takeoff_speed_ms) +
+               " s 到顶，到顶后停在那儿）；★ 不参与 height_offset_m";
     }
     return {};
   }

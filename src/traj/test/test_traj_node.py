@@ -332,6 +332,78 @@ def test_悬停_位置恒在原点_完成度按时长走完():
         assert len(rec.refs) > n, "跑完之后参考就停发了 —— control 会失去参考流"
 
 
+def test_起飞_在话题上是一条斜坡_到顶后停住():
+    """★ 轨迹 4（ticket 14 二定）：从**轨迹原点**升到 `takeoff_height_m`，然后停在那儿。
+
+    ★ 速度一律用**位置差分**独立量（同 `speed_from_refs` 的理由）：节点报告出来的 `velocity`
+      与位置是同一个东西的两种说法，只有差分是独立证据。
+    ★ 时长压到 2 s：本条要看的"到顶那一刻还没跑完"没必要等 60 s。
+    """
+    height, speed, duration = 0.2, 0.2, 2.0
+    with Scenario(dut=DUT, mocap=False,
+                  params={"takeoff_height_m": height, "takeoff_speed_ms": speed,
+                          "hover_duration_s": duration}) as sc:
+        rec, cmd = TrajRecorder(sc.node, sc.t), TrajCommander(sc.node)
+        wait_dut_up(sc)
+        cmd.select(4)
+        cmd.start(sc=sc)
+        sc.wait_for(lambda: len(rec.refs) >= 5, timeout_s=10.0,
+                    message="选了 4 也发了 start，参考还是没流出来（4 进 parse_kind 了吗？）")
+        # ★★ 必须等**整条**跑完再分析：只等"来了 5 帧"就下手，拿到的是 0.08 s 的数据 ——
+        #    那时还在斜坡脚下，下面每一段判据都会**空着通过**（爬升段一帧都没有）。
+        sc.wait_for(lambda: any(v >= 1.0 for v in rec.progress_since(0)), timeout_s=12.0,
+                    message="完成度没走到 1.0（时长只给了 2 s）")
+
+        refs = rec.refs_since(0)
+        zs = [m.position.z for _, m in refs]
+
+        # ① 零点 = 轨迹原点：第一帧必须还在**起点附近**，不是一上来就在高度上。
+        #    容差 0.02 m = 斜坡里 0.1 s 的量 —— start 到第一帧之间不可能有更长的空档
+        #    （50 Hz，而且 recorder 的订阅在 cmd.start 之前就已匹配，见 wait_dut_up）。
+        assert zs[0] == pytest.approx(0.0, abs=0.1 * speed), (
+            f"起飞的第一帧 z = {zs[0]}，离轨迹原点太远 —— 零点错了 ⟹ "
+            "「起飞 20 cm」会变成别的意思")
+        assert zs == sorted(zs), "起飞过程中 z 回退了（那不是斜坡，是抖动）"
+
+        # ② 爬升段（只取斜坡内部，避开两个折点）：差分速度 ≈ takeoff_speed_ms
+        climbing = [i for i, z in enumerate(zs) if 0.02 < z < height - 0.02]
+        assert len(climbing) >= 3, (
+            f"斜坡内部只有 {len(climbing)} 帧 —— 要么没在爬，要么这条斜坡短到看不见"
+            f"（z 尾部：{zs[-5:]}）")
+        for i in climbing:
+            v = speed_from_refs(refs, i)
+            assert v == pytest.approx(speed, abs=SPEED_TOL), (
+                f"第 {i} 帧（z = {zs[i]:.4f}）的实际爬升速度是 {v:.3f} m/s，不是 {speed}")
+            # ★ 差分只是位置的说法；**上报的 velocity** 是另一份、且是下游真正吃进去的那份
+            #   （模型预测控制档把它当速度参考）⟹ 两份都要对，不能只对一份。
+            assert refs[i][1].velocity.z == pytest.approx(speed, abs=SPEED_TOL), (
+                f"第 {i} 帧上报的 velocity.z = {refs[i][1].velocity.z}，不是 {speed}"
+                "（位置对了、速度参考却是 0 或别的值）")
+
+        # ③ 到顶：正好停在 height（**不越界**），之后一直停在那儿、速度归 0
+        top = next(i for i, z in enumerate(zs) if z >= height - 1e-9)
+        assert max(zs) == pytest.approx(height, abs=1e-9), (
+            f"z 的最大值是 {max(zs)}，越过了 takeoff_height_m = {height}")
+        for i in range(top + 1, len(zs) - 1):
+            assert zs[i] == pytest.approx(height, abs=1e-9), f"第 {i} 帧掉出了高度：{zs[i]}"
+            assert speed_from_refs(refs, i) == pytest.approx(0.0, abs=SPEED_TOL), (
+                f"到顶之后第 {i} 帧还在动：{speed_from_refs(refs, i):.4f} m/s")
+            assert refs[i][1].velocity.z == pytest.approx(0.0, abs=SPEED_TOL), (
+                f"到顶之后第 {i} 帧仍在上报 velocity.z = {refs[i][1].velocity.z}")
+
+        # ④ 完成度**按时长**走：到顶那一刻只走了斜坡那一截（≈ h/v/duration），远没有跑完。
+        #    完成度走的是**另一条话题**（`/traj/progress`），按**到达时刻**配对 ——
+        #    同一个 tick 里两条 payload 前后脚发出，0.1 s 的窗口足够圈住那一拍。
+        top_at = refs[top][0]
+        near = [v for at, v in rec.progress if abs(at - top_at) <= 0.1]
+        assert near, f"到顶那一拍（t = {top_at:.2f} s）前后没有完成度帧"
+        assert max(near) == pytest.approx((height / speed) / duration, abs=0.15), (
+            f"到顶那一刻完成度是 {max(near)}，按\"时长 2 s、斜坡 1 s\"应该是 "
+            f"{(height / speed) / duration} —— 1.0 意味着完成度被做成按斜坡走"
+            "（`control` 那条 `progress ≥ 1 ⟹ LAND` 会在起飞刚结束时就触发），"
+            "0.0 意味着完成度压根没在走")
+
+
 def test_正方形_四条边与限速_在话题上真的成立():
     with Scenario(dut=DUT, mocap=False) as sc:
         rec, cmd = TrajRecorder(sc.node, sc.t), TrajCommander(sc.node)

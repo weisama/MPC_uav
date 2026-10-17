@@ -9,12 +9,15 @@
 //   本文件里所有量都在**轨迹原点系**里，且是 **ROS/ENU 口径**：x 东、y 北、**z 向上为正**。
 //   · **轨迹原点 ≠ 动捕原点**：它是 `control` 在 HOVER 判定稳定那一刻记录的 EKF2 位置
 //     （docs/control/phase1-implementation.md §3.3）。两者之间可能有常值偏移。
-//   · 三条轨迹都从 (0, 0, height) 出发 —— 也就是"从当前悬停点开始"，**不加任何绝对偏移**。
-//     ★ 把相对量变成绝对位置（加上轨迹原点）是 `control` 的事，**只此一处**：
-//       本文件吐相对量、`control` 持原点，免得两处各存一份原点而慢慢不一致。
+//   · 三条**平面**轨迹（悬停/正方形/8 字）都从 (0, 0, height) 出发 —— 也就是"从当前悬停点开始"，
+//     **不加任何绝对偏移**；第 4 条（起飞）从 **(0, 0, 0)** 出发 = 从轨迹原点往上爬（见 `Takeoff`）。
+//     ★ 把相对量变成绝对位置（加上轨迹原点）是**持有原点那一方**的事，`control` 与
+//       `mpc_node`（`traj_reference` 的锚点 + 参考）各算各的，但**只在自己那一处**：
+//       本文件只吐相对量，免得三处各存一份原点而慢慢不一致。
 //   · `height` 默认 0 = 轨迹平面就是悬停高度。§5.2 那句"高度 1.0 m"由**轨迹原点自带**
 //     （那个点本来就是起飞到 1 m 之后的悬停点），**不是在这里再抬 1 m** ——
-//      照"绝对高度"理解而在这里加 1.0，飞机会爬到 2 m。要显式偏移就用 height_offset_m。
+//      照"绝对高度"理解而在这里加 1.0，飞机会爬到 2 m。要显式偏移就用 height_offset_m
+//      （⚠️ 第 4 条不参与它，理由见 `Takeoff`）。
 //
 // ★ 生成逻辑不依赖任何"当前状态"：给定 (轨迹编号, 参数) 与时刻 t，输出唯一确定。
 
@@ -60,12 +63,15 @@ struct Reference
   double progress{0.0};  ///< 完成度 0–1（1 = 跑完；跑完之后**保持 1**）
 };
 
-/// 三条轨迹的编号。★ 数值就是 `/traj/select` 上发的那个数字，**不要重排**。
+/// 四条轨迹的编号。★ 数值就是 `/traj/select` 上发的那个数字，**不要重排**。
+/// ★ 第 4 条为什么不叫 0：`/traj/select` 的 **0 = 清空**（见 `parse_kind` 与节点侧 `on_select`），
+///   那个号一个字节都不动 ⟹ 新轨迹取下一个空号（2026-10-16 操作者裁定）。
 enum class Kind : unsigned char
 {
   kHover = 1,        ///< 原地悬停：目标恒为 (0,0,z)
   kSquare = 2,       ///< 正方形：边长 square_side_m
   kLemniscate = 3,   ///< 8 字：Gerono 双纽线，x 幅值 = lemniscate_a_m
+  kTakeoff = 4,      ///< 起飞：从轨迹原点匀速升到 takeoff_height_m，然后停在那儿
 };
 
 const char * to_string(Kind k);
@@ -88,7 +94,19 @@ struct Params
   double square_side_m{1.0};       ///< 轨迹 2 的边长 [m]
   double lemniscate_a_m{1.0};      ///< 轨迹 3 的幅度 [m]（x 的半幅；y 的半幅只有它的一半）。
                                    ///< ★ 2026-10-08 由 0.5 放大到 1.0（原本的 2 倍），见 traj.yaml。
-  double height_offset_m{0.0};     ///< 轨迹平面相对轨迹原点的高度偏移 [m]，默认 0（见文件头）
+  double height_offset_m{0.0};     ///< 轨迹平面相对轨迹原点的高度偏移 [m]，默认 0（见文件头）。
+                                   ///< ⚠️ **轨迹 4（起飞）不参与这一条** —— 它是从轨迹原点往上爬，
+                                   ///<   再加偏移没有意义（见 `Takeoff` 的注释与 traj.yaml）。
+
+  /// 轨迹 4 升到多高 [m]，**相对轨迹原点**（不是绝对高度）。默认 0.2 = "起飞 20 cm"。
+  /// ★ 2026-10-16 操作者裁定**写死 0.2**（起链时**不问**操作者）：要改就改这里的默认值或 traj.yaml。
+  double takeoff_height_m{0.2};
+
+  /// 轨迹 4 的**爬升速率** [m/s]。默认 0.2 ⟹ 20 cm 用 1.0 s。
+  /// ★ 单独一条而不是复用 `max_speed_ms`（0.5）：那是三条"平面轨迹"的限速上限，
+  ///   按它爬 20 cm 只要 0.4 s —— 起飞要的是"看得见的匀速上升"，不是"冲到顶"。
+  ///   ⚠️ 节点侧会核对它 ≤ `max_speed_ms`（超了告警，见 `warn_about_parameters`）。
+  double takeoff_speed_ms{0.2};
 };
 
 // ——————————————————————————————————————————————————————————————
@@ -377,6 +395,76 @@ private:
 };
 
 // ——————————————————————————————————————————————————————————————
+// ④ 起飞：从轨迹原点匀速升到 takeoff_height_m，到顶后停在那儿
+// ——————————————————————————————————————————————————————————————
+
+/// `z(t) = h · clamp01(t / (|h|/v))`，`v = takeoff_speed_ms`；到顶后 `ż = 0`、位置恒为 `h`。
+///
+/// ★★ **零点就是轨迹原点**（与本文件其它三条同一条纪律）：`z(0) = 0`。对"起飞"这条轨迹来说，
+///   轨迹原点在**地面上**（对模型预测控制档 = 闸门第一次打开那一拍的锚点）⟹ `z` 就是**离地高度**，
+///   `h = 0.2` 的物理含义正是"起飞 20 cm"。⛔ 别把它读成"绝对高度"或"悬停点之上的偏移"。
+///
+/// ★ **斜坡而不是一步到位**（2026-10-16 操作者在这两条里选的）：升速**有界**（= `takeoff_speed_ms`），
+///   与 §5.2 那条限速同取向；一步到位等于把爬升速率交给闭环自己定，而"起飞"这一步
+///   恰恰是最不该让控制器即兴发挥的那一步。
+///
+/// ★ **不参与 `height_offset_m`**：与 `Hover` / `Square` / `Lemniscate` 的差别就在这一处 ——
+///   那三条是"某个高度的平面轨迹"（偏移有意义），这一条是"从原点往上爬"（偏移只会让人困惑）。
+///
+/// ★ **到顶之后就是悬停** ⟹ 时长沿用 `hover_duration_s`（不另开一条参数），`progress` 同悬停：
+///   按时长线性走到 1（**不是**按斜坡走完就算 1）—— 这样"跑完"仍然等于"这一档的时长到了"，
+///   与其它三条的语义一致，`control` 那条 `progress ≥ 1 ⟹ LAND` 也不会在爬升刚结束时触发。
+class Takeoff : public Trajectory
+{
+public:
+  /// @param duration_s 完成度从 0 走到 1 的时长 [s]（节点侧传 `hover_duration_s`）
+  /// @param height_m 升到多高 [m]，**相对轨迹原点**；负值 = 降到地平面以下（允许，符号跟着走）
+  /// @param climb_speed_ms 爬升速率 [m/s]（非正值被夹住，不让进度除法出现 0）
+  explicit Takeoff(double duration_s, double height_m, double climb_speed_ms)
+  : duration_(duration_s > 0.0 ? duration_s : kMinDuration),
+    height_(height_m),
+    speed_(climb_speed_ms > 0.0 ? climb_speed_ms : kMinSpeed),
+    ramp_s_(std::abs(height_m) / speed_)
+  {
+  }
+
+  Reference at(double t_s) const override
+  {
+    Reference r;
+    const double t = t_s < 0.0 ? 0.0 : t_s;   // 与其它三条同一条口径：t < 0 视作 0
+    if (t >= ramp_s_) {
+      r.p = Vec3{0.0, 0.0, height_};          // 到顶：停在那儿（v 保持 0）
+    } else {
+      r.p = Vec3{0.0, 0.0, height_ * (t / ramp_s_)};
+      r.v = Vec3{0.0, 0.0, height_ >= 0.0 ? speed_ : -speed_};
+    }
+    r.progress = detail::clamp01(t / duration_);
+    return r;
+  }
+
+  double duration() const override {return duration_;}
+  Kind kind() const override {return Kind::kTakeoff;}
+
+  /// 爬升用了多久 [s]（`|h|/v`；`h = 0` 时是 0）。测试与日志用 —— 与 `Lemniscate::perimeter()`
+  /// 同一个理由：把"算出来的"亮出来，免得有人以为它写死在别处。
+  double ramp_duration() const {return ramp_s_;}
+
+  /// 起止两点（LINE_STRIP 画竖线）。★ 按几何采样：`points` 对它无意义（形状就是这一段）。
+  std::vector<Vec3> path(int) const override
+  {
+    return {Vec3{0.0, 0.0, 0.0}, Vec3{0.0, 0.0, height_}};
+  }
+
+private:
+  static constexpr double kMinDuration = 1e-3;
+  static constexpr double kMinSpeed = 1e-6;
+  double duration_;
+  double height_;
+  double speed_;
+  double ramp_s_;   // = |height_| / speed_（构造时算一次；h = 0 ⟹ 0 ⟹ at() 走"到顶"那一支）
+};
+
+// ——————————————————————————————————————————————————————————————
 // 编号 → 轨迹：参数到行为的映射**只在这一处**
 // ——————————————————————————————————————————————————————————————
 
@@ -391,6 +479,10 @@ inline std::unique_ptr<Trajectory> make(Kind kind, const Params & params)
     case Kind::kLemniscate:
       return std::make_unique<Lemniscate>(
         params.lemniscate_a_m, params.max_speed_ms, params.height_offset_m);
+    case Kind::kTakeoff:
+      // ★ 时长沿用 hover_duration_s（到顶之后就是悬停）；height_offset_m 这条**不传**（见 Takeoff 的注释）
+      return std::make_unique<Takeoff>(
+        params.hover_duration_s, params.takeoff_height_m, params.takeoff_speed_ms);
   }
   return nullptr;  // 不可达：上面的 switch 覆盖了全部枚举
 }
@@ -401,6 +493,7 @@ inline const char * to_string(Kind k)
     case Kind::kHover:      return "hover";
     case Kind::kSquare:     return "square";
     case Kind::kLemniscate: return "lemniscate";
+    case Kind::kTakeoff:    return "takeoff";
   }
   return "?";
 }
@@ -411,7 +504,8 @@ inline bool parse_kind(unsigned char value, Kind & out)
     case 1: out = Kind::kHover;      return true;
     case 2: out = Kind::kSquare;     return true;
     case 3: out = Kind::kLemniscate; return true;
-    default: return false;
+    case 4: out = Kind::kTakeoff;    return true;
+    default: return false;   // ★ 0 落在这里 = 清空，节点侧另有分支（`on_select`）
   }
 }
 

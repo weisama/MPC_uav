@@ -5,7 +5,7 @@
 
 ```
 ros2 launch bringup z0.launch.py          # 一键：mocap + traj + control（+ 可选 vrpn_listener / mavros）
-ros2 run    bringup fly.py                # 操作台：选轨迹 1/2/3 + 实时看状态与完成度
+ros2 run    bringup fly.py                # 操作台：选轨迹 1/2/3/4 + 实时看状态与完成度
 ros2 launch bringup mavros.launch.py      # 单独起 mavros（上游 px4.launch 的薄包装）
 ```
 
@@ -17,7 +17,7 @@ ros2 launch bringup mavros.launch.py      # 单独起 mavros（上游 px4.launch
 ★ 要**一条命令起齐**（mavros 带 GCS 桥 → vrpn → mocap → traj + control，顺序起，起完把终端让给
 本包的操作台 `fly.py` 选轨迹）：菜单 **9= 一键启动全部（起前选控制器；默认 offboard 控制）** 或 `run/up.sh`
 —— 它同样**不含**下面那两步的入口（起飞仍是你按遥控器开始键）。
-★ 只想**手动遥控飞**（不跑轨迹）：菜单 **8= 一键启动（起前选控制器；默认手动遥控飞）**（`run/z0.py up_manual`）
+★ 只想**手动遥控飞**（不跑轨迹）：菜单 **8= 一键启动（动捕+mavros，手动遥控飞）**（`run/z0.py up_manual`）
 —— 到 `mocap` 为止，**不起**本包的 `traj`/`control`。
 ★ 要**反过来停掉它们**（起链那个终端已经关了、只好按名字找）：菜单 **10= 清除后台节点（扫 mavros/vrpn/mocap/traj/control/mpc 并停掉）** 或 `run/down.sh`
 —— ⚠️ 那是**停进程、不是降落**，飞机在空中时先按 [`operation_manual.md`](../../operation_manual.md) §1.2 处置。
@@ -95,7 +95,7 @@ ros2 run bringup fly.py
 
 ## 起完之后**还差两步**（刻意不自动化）
 
-1. `ros2 run bringup fly.py` 选轨迹（1/2/3）。
+1. `ros2 run bringup fly.py` 选轨迹（1/2/3/4）。
    ⚠️ 轨迹**必须在起飞前选好**；运行中重选也支持（`control` 会保持上一个目标并按 `traj_stream_gap_s`
    的闸门重发 `/traj/start`），但那是有意的例外，不是常规流程。
 2. **遥控器开始键**：第 1 次上升沿 = 解锁 + 起飞，第 2 次**松手**的那一刻 = 进 `TRACK`（§H.5）。
