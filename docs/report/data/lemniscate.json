@@ -1,0 +1,348 @@
+{
+  "scene": "lemniscate",
+  "label": "8 字",
+  "generated_by": "python3 tools/report/build.py --scene lemniscate",
+  "grid": {
+    "hz": 100.0,
+    "n": 1222,
+    "common_end_s": 12.202110528945923,
+    "common_end_reason": "四源完成时刻取最小：mpc_real = 12.202111 s",
+    "window_trim_reason": "公共窗右端取各源最小：mpc_real = 12.202111 s；`/traj/progress` 首次 ≥ 1.0：12.213041 s",
+    "source_ends_s": {
+      "target": 12.213040828704834,
+      "offboard": 12.213040828704834,
+      "mpc_sim": 26.233792543411255,
+      "mpc_real": 12.202110528945923
+    }
+  },
+  "sources": {
+    "target": {
+      "t0_abs": 1791454734.7870278,
+      "origin_abs": [
+        -0.04193028807640076,
+        -0.03807908296585083,
+        0.9904073476791382
+      ],
+      "completion_s": 12.213040828704834,
+      "completion_reason": "progress",
+      "window_trim_reason": "`/traj/progress` 首次 ≥ 1.0：12.213041 s",
+      "valid_fraction": 0.9983633387888707,
+      "feedback_source": "无（这是目标，不是测量）",
+      "position_source": "bag/5_traj3_lemniscate/traj/reference（相对量）+ 原点",
+      "attitude_source": "由 /traj/reference.yaw 生成的水平姿态（roll=pitch=0）",
+      "velocity_source": "/traj/reference.velocity",
+      "origin_source": "/mavros/setpoint_raw/local（散布 0.0e+00 m）"
+    },
+    "offboard": {
+      "t0_abs": 1791454734.7870278,
+      "origin_abs": [
+        -0.04193028807640076,
+        -0.03807908296585083,
+        0.9904073476791382
+      ],
+      "completion_s": 12.213040828704834,
+      "completion_reason": "progress",
+      "window_trim_reason": "`/traj/progress` 首次 ≥ 1.0：12.213041 s",
+      "valid_fraction": 1.0,
+      "feedback_source": "/mavros/local_position/pose（PX4 内置 PID 的反馈，EKF 30 Hz）",
+      "position_source": "/mavros/vision_pose/pose",
+      "attitude_source": "/mavros/vision_pose/pose（约 190 Hz；不是 30 Hz 的 EKF 姿态）",
+      "velocity_source": "/mavros/local_position/velocity_local（ENU）",
+      "origin_source": "/mavros/setpoint_raw/local（散布 0.0e+00 m）",
+      "origin_window_abs": [
+        1791454731.1257763,
+        1791454734.787083
+      ],
+      "metrics_vs_target": {
+        "position": {
+          "n": 1222,
+          "h_mean_m": 0.5935072996834894,
+          "h_rms_m": 0.6062980436235589,
+          "h_p95_m": 0.7582323362552561,
+          "h_max_m": 0.8241107025872972,
+          "z_mean_abs_m": 0.010673342184002668,
+          "z_max_abs_m": 0.018489855011574186,
+          "d3_rms_m": 0.6064078436892614,
+          "d3_max_m": 0.8241918049028653
+        },
+        "attitude": {
+          "n": 1222,
+          "angle_mean_deg": 6.146133748550666,
+          "angle_p95_deg": 8.162354841575358,
+          "angle_max_deg": 9.77909088740714,
+          "tilt": {
+            "mean": 3.024961045719075,
+            "p95": 4.6409040660933725,
+            "max": 5.634465842070095
+          },
+          "yaw_diff": {
+            "mean": 5.250747509409309,
+            "p95": 7.1574565270848405,
+            "max": 9.091685414404157
+          }
+        }
+      }
+    },
+    "mpc_sim": {
+      "t0_abs": 1792246042.5768356,
+      "origin_abs": [
+        -0.0013915003813153902,
+        0.0018755349822509992,
+        0.999946
+      ],
+      "completion_s": 26.233792543411255,
+      "completion_reason": "ref_end",
+      "window_trim_reason": "模型参考末帧：26.233793 s（= span 26.223615 s + 参考发布延迟 10.18 ms）",
+      "valid_fraction": 1.0,
+      "feedback_source": "SITL 合成 mocap（state_source=mocap），即 x0",
+      "position_source": "summary.frames[].x0[0:3]",
+      "attitude_source": "summary.frames[].x0[6:10]（wxyz）",
+      "velocity_source": "summary.frames[].x0[3:6]",
+      "u_conversion": {
+        "formula": "u_thrust_n = thrust × t_max",
+        "t_max_n": 46.3027,
+        "source": "harness-identity.json「控制器参数」"
+      },
+      "origin_source": "x_ref0（前摇段恒定值）− 模型参考首点；等价于锚点状态 + 参考 z 偏移（见 README）",
+      "origin_spread_m": 0.0,
+      "t0_reason": "t0 = 首帧墙钟 - t.first_frame + reference_timeline.first_s + ref_hold_s - 参考发布延迟（首条 /traj/reference header - /traj/start 记录时间）",
+      "metrics_vs_target": {
+        "position": {
+          "n": 1222,
+          "h_mean_m": 0.5203779798853366,
+          "h_rms_m": 0.5552203488752028,
+          "h_p95_m": 0.804852813128422,
+          "h_max_m": 0.8650389264593892,
+          "z_mean_abs_m": 0.08682333283156823,
+          "z_max_abs_m": 0.24952699895208852,
+          "d3_rms_m": 0.5662374583895011,
+          "d3_max_m": 0.88693178993991
+        },
+        "attitude": {
+          "n": 1222,
+          "angle_mean_deg": 85.47753211385765,
+          "angle_p95_deg": 87.84218666394509,
+          "angle_max_deg": 87.96086261218792,
+          "tilt": {
+            "mean": 8.905302348060054,
+            "p95": 12.384698002175368,
+            "max": 12.9378328411181
+          },
+          "yaw_diff": {
+            "mean": 85.08235256182851,
+            "p95": 87.82955585449048,
+            "max": 87.95135703271005
+          }
+        },
+        "control": {
+          "n": 1222,
+          "thrust_mean_n": 7.513403902639134,
+          "thrust_max_n": 8.69301273250728,
+          "thrust_min_n": 6.523385386245738,
+          "rate_norm_mean_radps": 0.17625356181967652,
+          "rate_norm_max_radps": 0.42267164073206626,
+          "rate_absmax_radps": [
+            0.2846696243304914,
+            0.3963904892880393,
+            0.014477890710920864
+          ]
+        }
+      }
+    },
+    "mpc_real": {
+      "t0_abs": 1792221003.3192825,
+      "origin_abs": [
+        -0.032465845346450806,
+        -0.02981523610651493,
+        1.1866655349731445
+      ],
+      "completion_s": 12.202110528945923,
+      "completion_reason": "progress",
+      "window_trim_reason": "`/traj/progress` 首次 ≥ 1.0：12.202111 s",
+      "valid_fraction": 1.0,
+      "feedback_source": "/mocap/pose_enu（模型预测控制的反馈，原始动捕）",
+      "position_source": "/mavros/vision_pose/pose",
+      "attitude_source": "/mavros/vision_pose/pose",
+      "velocity_source": "/mavros/local_position/velocity_local（ENU）",
+      "u_conversion": {
+        "formula": "u_thrust_n = thrust × t_max",
+        "t_max_n": 46.3027,
+        "source": "该趟 mpc_node 启动行（见 mpc-normalization.json）"
+      },
+      "origin_source": "/control/target（散布 0.0e+00 m）",
+      "origin_window_abs": [
+        1792221000.9387133,
+        1792221003.3193321
+      ],
+      "metrics_vs_target": {
+        "position": {
+          "n": 1222,
+          "h_mean_m": 0.269060494648414,
+          "h_rms_m": 0.27850787760781015,
+          "h_p95_m": 0.3634182836012901,
+          "h_max_m": 0.39496855091121275,
+          "z_mean_abs_m": 0.016706473064423095,
+          "z_max_abs_m": 0.03170762605926725,
+          "d3_rms_m": 0.27914252064472067,
+          "d3_max_m": 0.39562767046374964
+        },
+        "attitude": {
+          "n": 1222,
+          "angle_mean_deg": 3.968984659391078,
+          "angle_p95_deg": 6.370748986086313,
+          "angle_max_deg": 7.180269389142087,
+          "tilt": {
+            "mean": 3.3446189820281726,
+            "p95": 6.074452934541513,
+            "max": 6.679779367084394
+          },
+          "yaw_diff": {
+            "mean": 1.8963129161218226,
+            "p95": 2.745249222254509,
+            "max": 3.0187468040158447
+          }
+        },
+        "control": {
+          "n": 1222,
+          "thrust_mean_n": 8.598489300177986,
+          "thrust_max_n": 8.90140490832925,
+          "thrust_min_n": 8.229377215969564,
+          "rate_norm_mean_radps": 0.08208036638009349,
+          "rate_norm_max_radps": 0.391356300533806,
+          "rate_absmax_radps": [
+            0.2894646264788747,
+            0.26792828182984824,
+            0.002199758161956543
+          ]
+        }
+      }
+    }
+  },
+  "inputs": {
+    "offboard_bag": {
+      "path": "bag/5_traj3_lemniscate",
+      "sha256": "f7e191f739a665fc8c0a17ad7e3e1614176b5a50a2f4514e6596987a1bd5f33c",
+      "files": {
+        "bag/5_traj3_lemniscate/5_traj3_lemniscate_0.db3.zstd": {
+          "sha256": "49ab6964de6db6a44fdbf4f2b77ca82788ff6ab434c0a9335d33728f08cff4e1",
+          "size": 13496624
+        },
+        "bag/5_traj3_lemniscate/metadata.yaml": {
+          "sha256": "e72f9182f05990ad1dce0f8fb7f8586354a3b9f7fdec7fb172e634cacbe57da0",
+          "size": 76310
+        },
+        "bag/5_traj3_lemniscate/session.json": {
+          "sha256": "69575af284829bea3dd2c53f0ca1eca8e49f4651f1e438ae36453dc4f7882642",
+          "size": 40504
+        }
+      }
+    },
+    "mpc_bag": {
+      "path": "bag/6_free__20261017-070935",
+      "sha256": "e86424abbf8fe1fe9e20d83343adaae82734c640ba85e14cf95ac7631f80a53c",
+      "files": {
+        "bag/6_free__20261017-070935/6_free__20261017-070935_0.db3.zstd": {
+          "sha256": "ce504900897fd6c8e03469a5602a6601beb1ca4c7d830c92d558f8b0afd46c2f",
+          "size": 8561194
+        },
+        "bag/6_free__20261017-070935/metadata.yaml": {
+          "sha256": "f021f9929fa09ff63d5f2dec67472ae9e0a73ba8916fc8d01ce8dd148d0e459d",
+          "size": 72306
+        },
+        "bag/6_free__20261017-070935/session.json": {
+          "sha256": "952ea573d5620d48ee8dc55d7a7f7cbca15c3803cd7a6d5827343902ddbba023",
+          "size": 37944
+        }
+      }
+    },
+    "sim_summary": {
+      "path": "tools/report/evidence/sitl/R-lemniscate/R-lemniscate-summary.json",
+      "sha256": "658e42a5e187f75e7449b97abef1d8b7ce7173299f4a08cdc1b4edaa2c16274d",
+      "size": 10715134
+    },
+    "sim_model": {
+      "path": "tools/report/evidence/sitl/models/R-lemniscate-model.json",
+      "sha256": "8493bf72474b4e2b97cf82b24e58499ff11a3d2b48d574912c7f0751834dd1bb",
+      "size": 205864
+    },
+    "normalization": {
+      "path": "tools/report/evidence/mpc-normalization.json",
+      "sha256": "baf150abf608a9b0004407e8d11cbf93c3a16d7eacf30de4d74d69541ddf1c17",
+      "size": 3689
+    }
+  },
+  "readings": {
+    "target_identity": {
+      "offboard_bag": {
+        "n": 611,
+        "mean_m": 0.004735734807861657,
+        "p99_m": 0.050554668937807086,
+        "max_m": 0.09922803979267811,
+        "口径": "指令话题（offboard=/mavros/setpoint_raw/local，模型预测控制=/control/target）与「原点 + /traj/reference」逐样本比；参考流有缺口时用线性插值补齐。"
+      },
+      "mpc_bag": {
+        "n": 610,
+        "mean_m": 0.0014327179727466044,
+        "p99_m": 0.004655578918281885,
+        "max_m": 0.011814338685529379,
+        "口径": "指令话题（offboard=/mavros/setpoint_raw/local，模型预测控制=/control/target）与「原点 + /traj/reference」逐样本比；参考流有缺口时用线性插值补齐。"
+      },
+      "mpc_sim": {
+        "n": 2617,
+        "win_s": [
+          0.0,
+          26.233792543411255
+        ],
+        "mean_m": 0.007056343569705224,
+        "p99_m": 0.022698233384796547,
+        "max_m": 0.03270369429926953,
+        "口径": "TRACK 窗内 x_ref0 与「原点 + 模型参考」逐帧比（帧间线性插值）。"
+      }
+    },
+    "relative_at_t0": {
+      "target": [
+        0.004135500381315389,
+        0.0041354650177490015,
+        0.0
+      ],
+      "offboard": [
+        -0.07754359687874549,
+        -0.009521195981201748,
+        -0.011546370216081958
+      ],
+      "mpc_sim": [
+        -0.018450449337483223,
+        0.006507100867934474,
+        0.0019512363766902574
+      ],
+      "mpc_real": [
+        -0.06519986644158268,
+        0.0019222184532629236,
+        0.0061771405195476525
+      ]
+    },
+    "reference_gaps_s": {
+      "offboard_bag": {
+        "n": 1311,
+        "p50_s": 0.019980430603027344,
+        "p99_s": 0.03676474094390878,
+        "max_s": 0.15366053581237793,
+        "n_over_40ms": 8
+      },
+      "mpc_bag": {
+        "n": 1057,
+        "p50_s": 0.020015239715576172,
+        "p99_s": 0.0283812427520752,
+        "max_s": 0.04473280906677246,
+        "n_over_40ms": 1
+      },
+      "mpc_sim": {
+        "n": 1311,
+        "p50_s": 0.02000260353088379,
+        "p99_s": 0.020383143424987794,
+        "max_s": 0.02160954475402832,
+        "n_over_40ms": 0
+      }
+    }
+  }
+}

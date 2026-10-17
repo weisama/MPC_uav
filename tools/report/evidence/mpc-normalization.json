@@ -1,0 +1,34 @@
+{
+  "什么是": "模型预测控制源的 `u_thrust_n = thrust × t_max` 里那个 `t_max` 的出处。`run/logs/` 被 gitignore，所以把启动行**原文**与日志 sha256 摘到这里。",
+  "口径": "t_max 取**控制器启动行**（`mpc_node` 算出来的 T_max），不取被控对象 `plant_hover.t_max_total_n`（两者差 1e-4 N）。",
+  "runs": {
+    "hover": {
+      "log": "run/logs/20261017-070004-up/05-mpc.log",
+      "log_sha256": "fe2d249eab626fb61f1d05d932120f1f8f3d69216cb107d8c72377f8f32da1eb",
+      "launch_line": "[INFO] [1792220445.783360215] [mpc_node]: MPC（模型预测控制）节点启动：rate=100 Hz viz=10 Hz | ★状态源=mocap（/mocap/pose_enu + /mocap/velocity_enu（ENU/FLU）） | ★参考=/control/target（绝对目标，超时 0.5 s 关闸） | ★预流=开（只 not_armed/not_offboard 两档发悬停帧） / 自发起步=关（只由 control 发） | τ=0.05 s 参考偏移(仅hold档)=(0.0, 0.0, 0.0) yaw=保持当前 | 模型 mass=0.75 kg hover_thrust=0.1589 ⇒ T_max=46.3027 N | 垂直偏置 ki_z=1 N/(m·s) | 停机(mocap>0.5 s / px4>0.5 s / status>2.5 s / control>0.5 s / 离开 offboard=True / 掉 armed=True) | 下行=mavros 单频（无独立心跳，理由见模块 docstring） | 兜底：保持 10 拍 → 安全悬停；位姿合理性上限 20 m/s / 12.6 rad/s",
+      "mass_kg": 0.75,
+      "hover_thrust": 0.1589,
+      "t_max_n": 46.3027
+    },
+    "square": {
+      "log": "run/logs/20261017-070344-up/05-mpc.log",
+      "log_sha256": "b1905443141686e151292b990d8392a731377b08e1d9624637ef23fabe7350d8",
+      "launch_line": "[INFO] [1792220670.398029563] [mpc_node]: MPC（模型预测控制）节点启动：rate=100 Hz viz=10 Hz | ★状态源=mocap（/mocap/pose_enu + /mocap/velocity_enu（ENU/FLU）） | ★参考=/control/target（绝对目标，超时 0.5 s 关闸） | ★预流=开（只 not_armed/not_offboard 两档发悬停帧） / 自发起步=关（只由 control 发） | τ=0.05 s 参考偏移(仅hold档)=(0.0, 0.0, 0.0) yaw=保持当前 | 模型 mass=0.75 kg hover_thrust=0.1589 ⇒ T_max=46.3027 N | 垂直偏置 ki_z=1 N/(m·s) | 停机(mocap>0.5 s / px4>0.5 s / status>2.5 s / control>0.5 s / 离开 offboard=True / 掉 armed=True) | 下行=mavros 单频（无独立心跳，理由见模块 docstring） | 兜底：保持 10 拍 → 安全悬停；位姿合理性上限 20 m/s / 12.6 rad/s",
+      "mass_kg": 0.75,
+      "hover_thrust": 0.1589,
+      "t_max_n": 46.3027
+    },
+    "lemniscate": {
+      "log": "run/logs/20261017-070834-up/05-mpc.log",
+      "log_sha256": "a05b7777df8c572e8c485c404c8cc57054f2ac4c025d8a20c20bff469a9571b2",
+      "launch_line": "[INFO] [1792220961.425968269] [mpc_node]: MPC（模型预测控制）节点启动：rate=100 Hz viz=10 Hz | ★状态源=mocap（/mocap/pose_enu + /mocap/velocity_enu（ENU/FLU）） | ★参考=/control/target（绝对目标，超时 0.5 s 关闸） | ★预流=开（只 not_armed/not_offboard 两档发悬停帧） / 自发起步=关（只由 control 发） | τ=0.05 s 参考偏移(仅hold档)=(0.0, 0.0, 0.0) yaw=保持当前 | 模型 mass=0.75 kg hover_thrust=0.1589 ⇒ T_max=46.3027 N | 垂直偏置 ki_z=1 N/(m·s) | 停机(mocap>0.5 s / px4>0.5 s / status>2.5 s / control>0.5 s / 离开 offboard=True / 掉 armed=True) | 下行=mavros 单频（无独立心跳，理由见模块 docstring） | 兜底：保持 10 拍 → 安全悬停；位姿合理性上限 20 m/s / 12.6 rad/s",
+      "mass_kg": 0.75,
+      "hover_thrust": 0.1589,
+      "t_max_n": 46.3027
+    }
+  },
+  "sim": {
+    "t_max_n": 46.3027,
+    "source": "tools/report/evidence/sitl/R-*/harness-identity.json 的「控制器参数（DUT 实跑值）」"
+  }
+}
