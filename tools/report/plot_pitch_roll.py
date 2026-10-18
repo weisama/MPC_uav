@@ -1,17 +1,20 @@
 #!/usr/bin/env python3
-"""票 03 追加（2026-10-18 操作者裁定）：12 张 pitch/roll 图。
+"""票 03 追加（2026-10-18 操作者裁定）：9 张 pitch/roll 图。
 
-3 个场景 × 4 个源 = 12 种情况，每种情况一张图；每张图包含：
+3 个场景 × 3 个实际源 = 9 种情况，每种情况一张图；每张图包含：
 
 - **Pitch** 与 **Roll** 两条曲线（单位 deg）；
 - 一条 **0 deg 零线**（虚线）；
 - 横轴 `t [s]`，相对 `/traj/start`。
 
+目标姿态按控制器约定恒为 0，单独出图没有信息量（操作者 2026-10-18：
+「无需目标值」），因此**不画 target**。
+
 **坐标轴统一**（操作者明确要求，避免逐图看刻度）：
 
-- 纵轴：12 张图共用同一个范围。范围由**全部** 12 组 pitch/roll 数据现算，
+- 纵轴：9 张图共用同一个范围。范围由**全部** 9 组 pitch/roll 数据现算，
   以 0 为中心、向上取整后再留 1 deg 余量；不是逐图 autoscale；
-- 横轴：同一场景的 4 张图共用 `[0, 公共窗终点]`；不同场景窗口本来不同。
+- 横轴：同一场景的 3 张图共用 `[0, 公共窗终点]`；不同场景窗口本来不同。
 
 只读 `docs/report/data/*.csv`；图注的来源信息读同名 `.json`（票 01 产出），
 **不读原始包**，不在这里重算对齐口径。
@@ -52,7 +55,9 @@ import style  # noqa: E402
 from captions import CAPTION_HEADER, update_caption_file  # noqa: E402
 
 SCENES = plot_traj.SCENES
-SOURCES = style.SOURCES
+
+#: 只画实际姿态。目标姿态恒 0，不单独出图（操作者 2026-10-18：「无需目标值」）。
+ANGLE_SOURCES = ("offboard", "mpc_sim", "mpc_real")
 
 DATA_DIR = REPO / "docs/report/data"
 FIGURE_DIR = REPO / "docs/report/figures"
@@ -60,7 +65,6 @@ CAPTION_FILE = REPO / "docs/report/generated/figure-captions.md"
 
 #: 图注里给人看的中文源名；图内图例仍用英文。
 SOURCE_LABELS_CN = {
-    "target": "目标",
     "offboard": "offboard 实飞",
     "mpc_sim": "模型预测控制仿真",
     "mpc_real": "模型预测控制实飞",
@@ -81,13 +85,13 @@ def load_scenes(data_dir: Path) -> Dict[str, Dict[str, Dict[str, np.ndarray]]]:
 def compute_angle_limits(
     data_by_scene: Dict[str, Dict[str, Dict[str, np.ndarray]]],
 ) -> Tuple[float, float]:
-    """12 组 pitch/roll 共用的纵轴范围（deg，以 0 为中心）。
+    """9 组 pitch/roll 共用的纵轴范围（deg，以 0 为中心）。
 
     从数据现算，不在散文里写死：换一份数据重跑，范围自动跟着变。
     """
     values = []
     for data in data_by_scene.values():
-        for source in SOURCES:
+        for source in ANGLE_SOURCES:
             values.append(np.degrees(data[source]["pitch"]))
             values.append(np.degrees(data[source]["roll"]))
     if not values:
@@ -137,7 +141,7 @@ def plot_case(
         zorder=1,
     )
 
-    # 显式写死范围：同一场景的四张图共用横轴，12 张图共用纵轴。
+    # 显式写死范围：同一场景的三张图共用横轴，9 张图共用纵轴。
     ax.set_xlim(*xlim)
     ax.set_ylim(*ylim)
     ax.set_xlabel("t [s] (relative to /traj/start)")
@@ -155,9 +159,6 @@ def plot_case(
 
 
 def _source_description(source: str, meta: dict) -> str:
-    if source == "target":
-        return (f"`{meta['inputs']['offboard_bag']['path']}` 的 `/traj/reference`"
-                "（相对量 + 轨迹原点；姿态按控制器约定取水平 + 零偏航）")
     if source == "offboard":
         return (f"`{meta['inputs']['offboard_bag']['path']}` 的 "
                 "`/mavros/vision_pose/pose`")
@@ -168,9 +169,6 @@ def _source_description(source: str, meta: dict) -> str:
 
 
 def _attitude_note(source: str) -> str:
-    if source == "target":
-        return ("目标姿态按控制器约定取水平 + 零偏航，因此 pitch 与 roll 恒为 0，"
-                "两条曲线与零线重合。")
     if source == "mpc_sim":
         return ("仿真姿态由 `x0[6:10]` 四元数解算；旧日志里名叫 roll/pitch/yaw "
                 "的字段是角速率，不能当姿态角。")
@@ -193,9 +191,10 @@ def _caption(scene: str, source: str, meta: dict,
         f"`figures/fig-pitchroll-{scene}-{source}.svg`（300 dpi）",
         f"- 数据：`data/{scene}.csv`",
         f"- 窗口：0.0000 - {end:.4f} s（{reason}）",
-        f"- 统一坐标轴：纵轴 {ylim[0]:.0f} 到 {ylim[1]:.0f} deg（12 张图共用，"
-        "以 0 为中心）；横轴 0 - "
-        f"{end:.4f} s（同场景 4 张共用）；零线为 0 deg。",
+        f"- 统一坐标轴：纵轴 {ylim[0]:.0f} 到 {ylim[1]:.0f} deg"
+        f"（{len(SCENES) * len(ANGLE_SOURCES)} 张图共用，以 0 为中心）；"
+        "横轴 0 - "
+        f"{end:.4f} s（同场景 {len(ANGLE_SOURCES)} 张共用）；零线为 0 deg。",
         f"- 来源：{_source_description(source, meta)}。",
         f"- 姿态口径：{_attitude_note(source)}",
         f"- 生成：`{command}`",
@@ -235,7 +234,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     scenes = SCENES if args.scene == "all" else (args.scene,)
     command = _command(args.scene)
 
-    # 纵轴必须用全部 12 组数据定，否则部分重跑会和其他图不一致。
+    # 纵轴必须用全部 9 组数据定，否则部分重跑会和其他图不一致。
     data_by_scene = load_scenes(args.data_dir)
     ylim = compute_angle_limits(data_by_scene)
 
@@ -244,7 +243,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         data = data_by_scene[scene]
         meta = plot_traj.load_metadata(args.data_dir, scene)
         xlim = scene_window(data)
-        for source in SOURCES:
+        for source in ANGLE_SOURCES:
             fig, _ = plot_case(scene, source, data, ylim, xlim)
             stem = f"fig-pitchroll-{scene}-{source}"
             png, svg = style.save(fig, args.outdir, stem)

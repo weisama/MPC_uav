@@ -10,6 +10,10 @@
 **只读** `docs/report/data/<scene>.csv`；图注的来源信息读同名 `.json`（票 01 产出，
 含输入包路径与窗口口径），**不读原始包**，也不在这里重算对齐口径。
 
+**坐标轴统一**（操作者 2026-10-18）：轨迹 1/2/3 的 XY、Z–t 与 3D 视图共用同一组
+x/y/z 范围，Z–t 的时间轴也统一到三场景最长公共窗；范围由全部数据现算，不写死。
+XY 两轴取同一对称范围，保证等比例下三张图的尺度一致。
+
 用法：
 
     python3 tools/report/plot_traj.py --scene all
@@ -195,6 +199,49 @@ def load_metadata(data_dir: Path, scene: str) -> dict:
         return json.load(fh)
 
 
+def _symmetric_limit(values: np.ndarray) -> float:
+    """把一维数据包成以 0 为中心的对称范围，保留约 5% 余量、取到 0.1 m。"""
+    span = float(np.max(np.abs(values)))
+    if not np.isfinite(span):
+        raise ValueError("坐标范围含非有限值")
+    if span == 0.0:
+        return 0.1
+    return float(np.ceil(span * 1.05 * 10.0) / 10.0)
+
+
+def compute_axis_limits(
+    data_by_scene: Dict[str, Dict[str, Dict[str, np.ndarray]]],
+) -> Dict[str, tuple[float, float]]:
+    """三张轨迹图（含 3D 候选）共用的坐标轴范围。
+
+    - `xy`：x、y 取同一对称范围，`set_aspect("equal")` 下三张图尺度一致；
+    - `z`：Z–t 与 3D 共用，以 0 为中心；
+    - `t`：三场景最长公共窗，Z–t 的时间轴统一。
+
+    全部从数据现算，换数据重跑会自动变。
+    """
+    if not data_by_scene:
+        raise ValueError("没有可用的轨迹数据")
+
+    def collect(axis: str) -> np.ndarray:
+        return np.concatenate([
+            data[source][axis]
+            for data in data_by_scene.values()
+            for source in style.SOURCES
+        ])
+
+    xy_limit = max(_symmetric_limit(collect("x")),
+                   _symmetric_limit(collect("y")))
+    z_limit = _symmetric_limit(collect("z"))
+    t_end = max(float(data["target"]["t"][-1])
+                for data in data_by_scene.values())
+    return {
+        "xy": (-xy_limit, xy_limit),
+        "z": (-z_limit, z_limit),
+        "t": (0.0, t_end),
+    }
+
+
 # ─────────────────────────── 画图 ───────────────────────────
 
 
@@ -206,7 +253,8 @@ def _origin_lines(ax) -> None:
                linewidth=style.ORIGIN_LINE_WIDTH, zorder=0)
 
 
-def plot_scene(scene: str, data: Dict[str, Dict[str, np.ndarray]]):
+def plot_scene(scene: str, data: Dict[str, Dict[str, np.ndarray]],
+               limits: Dict[str, tuple[float, float]]):
     """一张图：左 XY 俯视、右 Z-t。返回 figure，由调用方保存/关闭。"""
     fig, (ax_xy, ax_zt) = plt.subplots(1, 2, figsize=style.FIGSIZE_2PANEL)
 
@@ -223,14 +271,16 @@ def plot_scene(scene: str, data: Dict[str, Dict[str, np.ndarray]]):
     ax_xy.set_xlabel("x [m]")
     ax_xy.set_ylabel("y [m]")
     ax_xy.set_title("XY (top view)")
-    ax_xy.margins(0.07)
+    # 三张图共用同一组范围；XY 两轴同范围，等比例下尺度才一致。
+    ax_xy.set_xlim(*limits["xy"])
+    ax_xy.set_ylim(*limits["xy"])
     ax_xy.set_aspect("equal", adjustable="box")
 
     ax_zt.set_xlabel("t [s] (relative to /traj/start)")
     ax_zt.set_ylabel("z [m]")
     ax_zt.set_title("Z-t")
-    ax_zt.set_xlim(0.0, float(data["target"]["t"][-1]))
-    ax_zt.margins(0.05, 0.08)
+    ax_zt.set_xlim(*limits["t"])
+    ax_zt.set_ylim(*limits["z"])
 
     fig.suptitle(f"{SCENE_TITLE_EN[scene]}: four sources", y=0.985)
     fig.legend(
@@ -244,8 +294,9 @@ def plot_scene(scene: str, data: Dict[str, Dict[str, np.ndarray]]):
     return fig
 
 
-def plot_scene_3d(scene: str, data: Dict[str, Dict[str, np.ndarray]]):
-    """3D 候选：四源叠加。坐标轴按数据范围归一化，只用于看形状。"""
+def plot_scene_3d(scene: str, data: Dict[str, Dict[str, np.ndarray]],
+                  limits: Dict[str, tuple[float, float]]):
+    """3D 候选：四源叠加。三张候选共用同一组 x/y/z 范围与盒体比例。"""
     fig = plt.figure(figsize=style.FIGSIZE_3D)
     # 3D 轴的绘制盒会按 box_aspect 缩在 axes rect 里，`tight_layout` 对它的
     # 留白算不准；这里直接指定 rect，顶部留给图例与标题。
@@ -264,20 +315,19 @@ def plot_scene_3d(scene: str, data: Dict[str, Dict[str, np.ndarray]]):
     ax.set_zlabel("z [m]")
     ax.set_title(f"{SCENE_TITLE_EN[scene]}: 3D trajectory (candidate)", pad=14)
     ax.view_init(elev=24, azim=-58)
-    # z 轴的绘制高度往往只有 x/y 的十分之一，默认刻度会挤在一起。
+    # 与正文图同一组范围；三张候选的盒体比例也完全相同。
+    ax.set_xlim(*limits["xy"])
+    ax.set_ylim(*limits["xy"])
+    ax.set_zlim(*limits["z"])
     ax.xaxis.set_major_locator(MaxNLocator(nbins=6))
     ax.yaxis.set_major_locator(MaxNLocator(nbins=6))
     ax.zaxis.set_major_locator(MaxNLocator(nbins=4))
-
-    spans = []
-    for axis in ("x", "y", "z"):
-        low = min(float(data[source][axis].min()) for source in style.SOURCES)
-        high = max(float(data[source][axis].max()) for source in style.SOURCES)
-        spans.append(max(high - low, 1e-3))
-    # 三个轴各占自己的数据范围（不是等比例）。z 范围常常只有几厘米，
-    # 给一个下限只是为了不把盒子压成一条线；图注里写明“不可用于读数”。
+    # box_aspect 与各轴实际跨度成正比：三张图的 z 都只有 x/y 的约 1/6，
+    # 盒体会偏薄；这是统一范围后的真实比例，不是缩放错误。
     ax.set_box_aspect(
-        (spans[0], spans[1], max(spans[2], 0.10 * max(spans[:2]))),
+        (limits["xy"][1] - limits["xy"][0],
+         limits["xy"][1] - limits["xy"][0],
+         limits["z"][1] - limits["z"][0]),
         zoom=1.12,
     )
 
@@ -306,7 +356,17 @@ def _window_text(meta: dict) -> str:
     )
 
 
-def _scene_caption(scene: str, meta: dict, command: str) -> str:
+def _axis_text(limits: Dict[str, tuple[float, float]]) -> str:
+    """图注里的统一坐标轴说明（数值现算，不写死）。"""
+    return (
+        f"XY 两轴 {limits['xy'][0]:.1f} 到 {limits['xy'][1]:.1f} m；"
+        f"z 轴 {limits['z'][0]:.1f} 到 {limits['z'][1]:.1f} m；"
+        f"时间轴 0 到 {limits['t'][1]:.4f} s"
+    )
+
+
+def _scene_caption(scene: str, meta: dict, command: str,
+                   limits: Dict[str, tuple[float, float]]) -> str:
     """一张正文图的中文图注。"""
     figure_id = FIGURE_IDS[scene]
     title = SCENE_TITLE_CN[scene]
@@ -330,6 +390,8 @@ def _scene_caption(scene: str, meta: dict, command: str) -> str:
         "详见 `data/README.md`。",
         "- 样式：目标为虚线，实际轨迹为实线；四源起点用同一种空心圆标记；"
         "左图 XY 等比例俯视，右图为高度-时间。",
+        f"- 坐标轴统一：三张轨迹图（含 3D 候选）共用同一组范围——"
+        f"{_axis_text(limits)}；范围由全部数据现算。",
         f"- 生成：`{command}`",
     ]
     if scene == "hover":
@@ -343,7 +405,8 @@ def _scene_caption(scene: str, meta: dict, command: str) -> str:
     return "\n".join(lines)
 
 
-def _candidate_caption(scene: str, meta: dict, command: str) -> str:
+def _candidate_caption(scene: str, meta: dict, command: str,
+                       limits: Dict[str, tuple[float, float]]) -> str:
     return "\n".join([
         f"### {FIGURE_IDS[scene]}-3D {SCENE_TITLE_CN[scene]}（{scene}）3D 轨迹候选",
         "",
@@ -352,8 +415,9 @@ def _candidate_caption(scene: str, meta: dict, command: str) -> str:
         "- 状态：**未进入正文**，待操作者看图后裁定去留。",
         f"- 数据、窗口、坐标与来源同 {FIGURE_IDS[scene]}："
         f"`data/{scene}.csv`，窗口 {_window_text(meta)}。",
-        "- 注意：3D 视角的三个坐标轴按各自数据范围缩放，**不保证等比例**，"
-        "只用于观察轨迹形状，不用于读数。",
+        f"- 坐标轴统一：三张候选与正文图共用同一组范围——{_axis_text(limits)}；"
+        "盒体按该范围成比例，z 只有厘米级，因此盒体偏薄。",
+        "- 注意：3D 透视视角不用于读数，只用于观察轨迹形状。",
         f"- 生成：`{command}`",
     ])
 
@@ -415,26 +479,31 @@ def main(argv: Sequence[str] | None = None) -> int:
     candidate_blocks: Dict[str, str] = {}
     candidate_dir = Path(args.outdir) / "candidates"
 
+    # 坐标轴必须用全部三个场景的数据定，否则部分重跑会和其他图不一致。
+    data_by_scene = {scene: load_scene(args.data_dir, scene)
+                     for scene in SCENES}
+    limits = compute_axis_limits(data_by_scene)
+
     for scene in scenes:
-        data = load_scene(args.data_dir, scene)
+        data = data_by_scene[scene]
         meta = load_metadata(args.data_dir, scene)
         n_points = len(data["target"]["t"])
 
-        fig = plot_scene(scene, data)
+        fig = plot_scene(scene, data, limits)
         png, svg = style.save(fig, args.outdir, f"fig-traj-{scene}")
         plt.close(fig)
         print(f"[ok] {_display(png)}  ({n_points} points/source)")
         print(f"[ok] {_display(svg)}")
-        scene_blocks[scene] = _scene_caption(scene, meta, command)
+        scene_blocks[scene] = _scene_caption(scene, meta, command, limits)
 
         if args.candidates:
-            fig3d = plot_scene_3d(scene, data)
+            fig3d = plot_scene_3d(scene, data, limits)
             png, svg = style.save(
                 fig3d, candidate_dir, f"fig-traj-{scene}-3d")
             plt.close(fig3d)
             print(f"[ok] {_display(png)}  (candidate)")
             print(f"[ok] {_display(svg)}")
-            candidate_blocks[scene] = _candidate_caption(scene, meta, command)
+            candidate_blocks[scene] = _candidate_caption(scene, meta, command, limits)
 
     if not args.no_captions:
         write_captions(

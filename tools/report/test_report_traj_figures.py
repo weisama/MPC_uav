@@ -42,6 +42,34 @@ def _svg_texts(path: Path) -> list[str]:
             if node.tag.endswith("text") and node.text]
 
 
+def _axes_ticks(path: Path) -> dict[str, dict[str, set[str]]]:
+    """按子图分开取刻度：`{xlabel: {"x": ..., "y": ...}}`。
+
+    一张图有两个 axes 组（XY / Z-t）。必须分开取，否则会把两个子图的
+    x 刻度混成一个集合，纵轴/横轴统一与否都测不出来。
+    """
+    root = ET.parse(path).getroot()
+    result: dict[str, dict[str, set[str]]] = {}
+    for group in root.iter():
+        group_id = group.get("id") or ""
+        if not (group.tag.endswith("g") and group_id.startswith("axes_")):
+            continue
+        texts = [node.text.strip() for node in group.iter()
+                 if node.tag.endswith("text") and node.text]
+        xlabel = next(text for text in texts if text.startswith("t [s]")
+                      or text == "x [m]")
+        ticks: dict[str, set[str]] = {"x": set(), "y": set()}
+        for node in group.iter():
+            node_id = node.get("id") or ""
+            for axis in ("x", "y"):
+                if node.tag.endswith("g") and node_id.startswith(f"{axis}tick"):
+                    for label in node.iter():
+                        if label.tag.endswith("text") and label.text:
+                            ticks[axis].add(label.text.strip())
+        result[xlabel] = ticks
+    return result
+
+
 @pytest.fixture(scope="module")
 def generated(tmp_path_factory):
     """跑一次完整生成（含候选），返回 `(图目录, 正文图注, 候选图注)`。"""
@@ -131,6 +159,64 @@ def test_each_source_has_a_distinct_color():
     assert len(set(colors)) == len(colors)
 
 
+# ─────────────────────────── 坐标轴统一（操作者 2026-10-18） ───────────────────────────
+
+
+def test_all_three_share_the_same_2d_and_3d_axes(generated):
+    """XY、Z–t 的刻度集合三张完全相同；任何一张 autoscale 都会变红。"""
+    outdir, _, _ = generated
+    per_scene = {}
+    for scene in SCENES:
+        axes = _axes_ticks(outdir / f"fig-traj-{scene}.svg")
+        assert set(axes) == {"x [m]", "t [s] (relative to /traj/start)"}
+        per_scene[scene] = (
+            tuple(sorted(axes["x [m]"]["x"])),
+            tuple(sorted(axes["x [m]"]["y"])),
+            tuple(sorted(axes["t [s] (relative to /traj/start)"]["x"])),
+            tuple(sorted(axes["t [s] (relative to /traj/start)"]["y"])),
+        )
+    assert len(set(per_scene.values())) == 1, per_scene
+
+
+def test_3d_candidates_share_the_same_axes(generated):
+    """3D 的刻度组没有按轴分 id（三个轴都叫 `xtick_N`），所以比全部刻度全集。
+
+    范围统一时全集必然相同；任一张按自身数据 autoscale，全集就会变。
+    """
+    outdir, _, _ = generated
+    per_scene = {}
+    for scene in SCENES:
+        path = outdir / "candidates" / f"fig-traj-{scene}-3d.svg"
+        root = ET.parse(path).getroot()
+        ticks: set[str] = set()
+        for node in root.iter():
+            node_id = node.get("id") or ""
+            if node.tag.endswith("g") and node_id.startswith("xtick"):
+                for label in node.iter():
+                    if label.tag.endswith("text") and label.text:
+                        ticks.add(label.text.strip())
+        per_scene[scene] = tuple(sorted(ticks))
+    assert len(set(per_scene.values())) == 1, per_scene
+
+
+def test_axis_limits_cover_data_and_are_symmetric():
+    data = {scene: plot_traj.load_scene(plot_traj.DATA_DIR, scene)
+            for scene in SCENES}
+    limits = plot_traj.compute_axis_limits(data)
+    assert limits["xy"][0] == -limits["xy"][1]
+    assert limits["z"][0] == -limits["z"][1]
+    for axis, key in (("x", "xy"), ("y", "xy"), ("z", "z")):
+        values = np.concatenate([
+            data[scene][source][axis]
+            for scene in SCENES for source in style.SOURCES
+        ])
+        assert limits[key][0] < float(values.min())
+        assert limits[key][1] > float(values.max())
+    # 时间轴统一到三场景中最长的公共窗。
+    ends = [float(data[scene]["target"]["t"][-1]) for scene in SCENES]
+    assert limits["t"] == (0.0, max(ends))
+
+
 # ─────────────────────────── 数据入口 ───────────────────────────
 
 
@@ -192,13 +278,19 @@ def test_captions_include_window_sources_and_command(generated):
     assert "python3 tools/report/plot_traj.py --scene all --candidates" in text
     # 悬停截断必须写明，避免被读成控制失败
     assert "offboard 包截止 39.65 s（录制截断，不是控制失败）" in text
+    # 坐标轴统一：数值现算后写进图注
+    assert "坐标轴统一" in text
+    assert "XY 两轴 -1.7 到 1.7 m" in text
+    assert "z 轴 -0.3 到 0.3 m" in text
+    assert "时间轴 0 到 39.6494 s" in text
 
 
 def test_candidate_caption_says_not_in_body(generated):
     _, captions, candidate_captions = generated
     candidate_text = candidate_captions.read_text(encoding="utf-8")
     assert "未进入正文" in candidate_text
-    assert "不保证等比例" in candidate_text
+    assert "共用同一组范围" in candidate_text
+    assert "盒体偏薄" in candidate_text
     # 正文图注里不能出现候选图：装配票会内联这个文件。
     assert "candidates/" not in captions.read_text(encoding="utf-8")
 

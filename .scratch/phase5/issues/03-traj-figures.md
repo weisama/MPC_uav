@@ -17,24 +17,36 @@ Type: task
 - 起点用同一标记；图例英文；单位 m；
 - 窗口 = 票 01 的公共窗（悬停 0–39.65 s；正方形/8 字到完成）。
 
-### 2026-10-18 追加：12 张 pitch/roll 图（操作者要求）
+### 2026-10-18 追加：9 张 pitch/roll 图 + 轨迹坐标轴统一
 
-3 个场景 × 4 个源 = **12 种情况，每种情况一张图**：
+**（1）pitch/roll 图（操作者要求；「无需目标值」，目标不出图）**
+
+3 个场景 × 3 个实际源 = **9 种情况，每种情况一张图**：
 
 - 每张图含 **Pitch、Roll 两条曲线 + 一条 0 deg 零线**（不是一张只画一个量，也不是 24 张）；
 - 单位 deg；横轴 `t [s]`，相对 `/traj/start`；图内标签英文；
-- **纵轴 12 张统一**：由全部 12 组数据现算，以 0 为中心、向上取整后留 1 deg 余量
+- **纵轴 9 张统一**：由全部 9 组数据现算，以 0 为中心、向上取整后留 1 deg 余量
   （当前数据快照为 −14 到 +14 deg；换数据重跑会自动变，不写死）；
-- **横轴同场景 4 张统一**：`0` 到该场景公共窗终点；不同场景窗口本来就不同；
-- 目标姿态按控制器约定恒 0，所以 `*-target` 图的两条线与零线重合。
+- **横轴同场景 3 张统一**：`0` 到该场景公共窗终点；不同场景窗口本来就不同；
+- 目标姿态按控制器约定恒 0，单独出图没有信息量，因此不画 target。
+
+**（2）轨迹图坐标轴统一（操作者 2026-10-18）**
+
+轨迹 1/2/3 的 **XY、Z–t 与 3D 视图**共用同一组坐标轴范围：
+
+- XY 两轴共用以 0 为中心的对称范围（当前 ±1.7 m），等比例下三张尺度一致；
+- Z 轴统一（当前 ±0.3 m）；Z–t 的时间轴统一到三场景最长公共窗
+  （当前 0–39.6494 s）；
+- 3D 候选与正文图共用同一组 x/y/z 范围，盒体比例三张相同（z 只有厘米级，盒体偏薄）；
+- 范围由全部数据现算，不写死；只重画一个场景时仍用三个场景的数据定范围。
 
 文件：
 
 - `docs/report/figures/fig-traj-{hover,square,lemniscate}.png`（300 dpi）
 - 同名 `.svg`
 - `docs/report/figures/candidates/fig-traj-{scene}-3d.png/.svg`：四源 3D 轨迹，**不放进正文**
-- `docs/report/figures/fig-pitchroll-{scene}-{source}.png/.svg`：12 张 pitch/roll 图
-  （`scene` = hover/square/lemniscate；`source` = target/offboard/mpc_sim/mpc_real）
+- `docs/report/figures/fig-pitchroll-{scene}-{source}.png/.svg`：9 张 pitch/roll 图
+  （`scene` = hover/square/lemniscate；`source` = offboard/mpc_sim/mpc_real）
 
 ## 实现
 
@@ -42,8 +54,10 @@ Type: task
 - 样式集中在一个 `style.py`（线型、颜色、字号、图幅），四类图共用；
 - 图注生成到 `docs/report/generated/figure-captions.md`，含场景、窗口、来源、生成命令；
 - 3D 候选单独目录，脚本里用 `--candidates` 开关，默认不生成。
-- pitch/roll 图脚本 `tools/report/plot_pitch_roll.py`；12 张共用同一纵轴；
+- pitch/roll 图脚本 `tools/report/plot_pitch_roll.py`；9 张共用同一纵轴；
   图注按 `phase5-pitchroll:<scene>:<source>` 分块，与轨迹图注互不覆盖。
+- 轨迹图范围由 `plot_traj.compute_axis_limits` 从三个场景的全部数据现算；
+  `plot_scene` / `plot_scene_3d` 显式 `set_xlim/set_ylim/set_zlim`。
 
 ## 检查清单
 
@@ -54,15 +68,17 @@ Type: task
 - [x] 生成脚本只读 CSV，不读原始包（图注另读票 01 的同名 JSON 取来源与窗口；未读任何包）
 - [x] 3D 候选没有被任何章节文件引用
 - [x] 图注含来源与窗口
-- [x] 12 张 pitch/roll 图齐全（3 场景 × 4 源），每张含 pitch、roll 与零线
-- [x] 12 张图纵轴范围完全一致；同场景 4 张横轴一致
-- [x] 目标 4 张图的 pitch/roll 恒 0；图注写明统一范围与姿态口径
+- [x] 9 张 pitch/roll 图齐全（3 场景 × 3 实际源），每张含 pitch、roll 与零线
+- [x] 9 张图纵轴范围完全一致；同场景 3 张横轴一致
+- [x] 按操作者要求不出目标图；图注写明统一范围与姿态口径
+- [x] 轨迹 1/2/3 的 XY、Z–t、3D 视图坐标轴范围分别完全一致
 - [x] pitch/roll 图注与轨迹图注分块共存，部分重跑不互相覆盖
 
 ## 验收
 
 - 操作者能只看图判断四源是否同口径（起点、窗口、相对系一致）；
-- 12 张 pitch/roll 图翻看时**不需要重新读纵轴数值**：范围一致、零线位置一致；
+- 轨迹 1/2/3 翻看时**不需要重新读坐标轴数值**：XY、Z、时间轴范围一致；
+- 9 张 pitch/roll 图翻看时**不需要重新读纵轴数值**：范围一致、零线位置一致；
 - 3D 候选交操作者看图后决定去留；去留决定写进票的 `## Comments`；
 - 完成后切 `ready-for-human`，附三张图 + 候选图 + 图注摘要。
 
@@ -71,6 +87,12 @@ Type: task
 ## Comments
 
 ### 2026-10-17 —— 三张图 + 三张候选已生成，转 ready-for-human
+
+> **2026-10-18 更新：本节以下内容有作废项，以本票末尾 2026-10-18 节为准。**
+> - 「读图口径」第 2 条：三张图的坐标轴不再各自按窗口/数据定，已统一；
+> - 「未做/边界」中的「3D 候选三个坐标轴按各自数据范围缩放（不保证等比例）」已作废：
+>   三张候选现与正文图共用同一组范围与同一盒体比例；
+> - 「78 passed」是当时的快照，现行测试数见 2026-10-18 节。
 
 **产物**
 
@@ -120,49 +142,65 @@ Type: task
 - 3D 候选的三个坐标轴按各自数据范围缩放（不保证等比例），只用于看形状；图注已写明。
 - `figure-captions.md` 按场景分块（`phase5-traj:<scene>`），部分重跑不会抹掉其他场景的图注。
 
-### 2026-10-18 —— 追加 12 张 pitch/roll 图，坐标轴统一
+### 2026-10-18 —— pitch/roll 图（9 张）+ 轨迹坐标轴统一
 
-**口径（按操作者选择）**
+**（1）pitch/roll 图**
 
-- 12 种情况 = 3 场景 × 4 源，每种情况**一张图**；每张图两条线（Pitch / Roll）+ 零线，
-  不是一张只画一个量，也不是 24 张。
-- **纵轴**：12 张完全共用。范围由全部 12 组 pitch/roll 数据现算：
-  `limit = ceil(max|angle|) + 1 deg`，对称到 `[-limit, +limit]`。
-  当前数据快照（2026-10-18）为 **−14 到 +14 deg**；代码里没有写死这个数，
-  换数据重跑会自动变。最大绝对值出现在 8 字仿真的 pitch（−12.05 deg）。
-- **横轴**：同场景 4 张共用 `0` 到公共窗终点；三场景分别为 39.6494 / 8.0096 /
-  12.2021 s。窗口取自票 01 的 `<scene>.json`，绘图仍只读 CSV。
-- 单位 deg，图内英文（`Pitch` / `Roll` / `Zero` / `angle [deg]`）。
+- 初版按操作者选择做了 3 场景 × 4 源 = 12 张；随后操作者明确「无需目标值」，
+  目标姿态按控制器约定恒 0，单独成图没有信息量，**已删掉 4 张目标图**，现为
+  **3 场景 × 3 实际源 = 9 张**。图注里的 3 个 `phase5-pitchroll:*:target` 块也已删除。
+- 每张图两条线（Pitch / Roll）+ 0 deg 零线；单位 deg，图内英文。
+- **纵轴 9 张共用**：`limit = ceil(max|angle|) + 1 deg`，对称到 `[-limit, +limit]`；
+  当前快照 **−14 到 +14 deg**（最大绝对值是 8 字仿真的 pitch −12.05 deg）。
+  代码没写死，换数据重跑会自动变。
+- **横轴同场景 3 张共用** `0` 到公共窗终点（39.6494 / 8.0096 / 12.2021 s）；
+  只重画一个场景时纵轴仍用全部 9 组数据定。
+
+**（2）轨迹坐标轴统一（操作者 2026-10-18）**
+
+- 轨迹 1/2/3 的 XY、Z–t 与 3D 候选现在共用同一组范围，范围由三个场景的全部
+  四源数据现算（`plot_traj.compute_axis_limits`）：
+  - XY 两轴：`[-1.7, +1.7] m`（x、y 取同一对称范围，等比例下尺度一致）；
+  - Z 轴：`[-0.3, +0.3] m`；
+  - 时间轴：`0 - 39.6494 s`（三场景最长公共窗）。
+- 3D 候选使用同一组 x/y/z 范围，`box_aspect` 与范围成比例，三张盒体比例相同。
+- 直接后果：正方形与 8 字的 Z–t 曲线只占时间轴左侧约 20% / 31%；悬停 XY 在
+  ±1.7 m 框里缩成一个点。这是"统一范围"的预期代价，不是数据丢失。
 
 **产物**
 
-- 图：`docs/report/figures/fig-pitchroll-{hover,square,lemniscate}-{target,offboard,mpc_sim,mpc_real}.{png,svg}`（12 × 2 个文件）
-- 图注：`docs/report/generated/figure-captions.md` 的 `phase5-pitchroll:<scene>:<source>` 块；
-  每块含窗口、来源、统一纵轴范围、横轴范围、姿态口径与生成命令。
-- 脚本：`tools/report/plot_pitch_roll.py`；图注分块写入抽到 `tools/report/captions.py`
-  （轨迹图脚本改为共用，行为不变）。
-- 重跑：`python3 tools/report/plot_pitch_roll.py --scene all`（约 6 s）；
-  只重画一个场景时纵轴仍用全部 12 组数据定，不会缩成该场景自身范围。
+- 图：`docs/report/figures/fig-pitchroll-{hover,square,lemniscate}-{offboard,mpc_sim,mpc_real}.{png,svg}`
+  （9 × 2 个文件）；轨迹图与 3D 候选已按新范围重画。
+- 图注：`figure-captions.md` 的 `phase5-pitchroll:<scene>:<source>` 块与
+  `phase5-traj:<scene>` 块；候选图注仍在单独的 `figure-captions-candidates.md`。
+- 脚本：`plot_pitch_roll.py`、`plot_traj.py`；图注分块写入抽到 `captions.py`。
+- 重跑：
+  - `python3 tools/report/plot_traj.py --scene all --candidates`
+  - `python3 tools/report/plot_pitch_roll.py --scene all`
 - 测试：`source /opt/ros/humble/setup.bash && python3 -m pytest tools/report -q`
-  → **96 passed**，其中 `test_report_pitch_roll_figures.py` 新增 **14 条**。
-- 连跑两次，12 张图与图注的 sha256 逐字节一致。
+  → **99 passed**（新增 pitch/roll 14 条 + 轨迹坐标轴 3 条）。
+- 两套图各自连跑两次，PNG/SVG/图注 sha256 逐字节一致。
+- 变异检查：把纵轴/时间轴改成 autoscale 后，刻度集合立刻变得三张互不相同，
+  对应断言会变红（不是恒绿）。
 
-**读图口径（验收时先看这三条）**
+**读图口径（验收时先看这四条）**
 
-1. 纵轴刻度 12 张完全相同（−10/−5/0/5/10）；零线永远在正中。翻图不必重读刻度。
-2. `*-target` 图 pitch/roll 恒 0，两条线与零线重合（目标姿态按控制器约定水平 +
-   零偏航），这是预期，不是画错或数据缺失。
+1. 轨迹 1/2/3 的 XY、Z、时间轴刻度完全相同；翻图不必重读刻度。
+2. 9 张 pitch/roll 的纵轴刻度完全相同（−10/−5/0/5/10），零线永远在正中。
 3. 实飞 roll 有约 +0.03 rad（≈1.7 deg）的系统零偏（VP 约 190 Hz vs EKF 30 Hz），
    图注已写明；不要把这条零偏读成跟踪误差。
+4. 目标不再单独出现在 pitch/roll 图里；轨迹图仍保留目标虚线（票面要求）。
 
 **需要操作者看的两件事**
 
-1. 12 张图的切分与"每张两条线 + 零线"是否符合预期；
-2. 纵轴 ±14 deg 是否合适：它由当前数据最大绝对值 12.05 deg 外扩而来；
-   若希望更紧凑（例如 ±13）或留更多余量，改 `compute_angle_limits` 一处即可。
+1. 轨迹图统一时间轴后，正方形/8 字被压到左侧，是否符合预期；若更想保留各自的
+   时间长度，可只统一 z 轴、时间轴按场景保留——需要你裁定。
+2. 纵轴 ±14 deg、XY ±1.7 m、Z ±0.3 m 是否合适；这些数都由当前数据外扩而来，
+   改对应的 `compute_angle_limits` / `compute_axis_limits` 一处即可。
+3. 3D 候选去留仍待裁定（本票 2026-10-17 节已提出，未变）。
 
 **未做/边界**
 
 - 没有扩展票 01/02：CSV 里四源的 `roll_rad`/`pitch_rad` 本来就齐全，本次只动绘图与图注。
 - `plot_traj.load_scene` 的必填列扩为 `t,x,y,z,roll,pitch,yaw`；CSV 不需重生成。
-- 轨迹图与 3D 候选未改动；3D 去留仍待操作者裁定。
+- 轨迹图只为统一坐标轴重画，数据、窗口与四源口径未变。

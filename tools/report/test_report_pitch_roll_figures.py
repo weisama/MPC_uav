@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
-"""票 03 追加（2026-10-18）：12 张 pitch/roll 图的**产物与坐标口径**测试。
+"""票 03 追加（2026-10-18）：9 张 pitch/roll 图的**产物与坐标口径**测试。
 
 操作者的两条硬要求，各对应一组测试：
 
 | 要求 | 测什么 |
 |---|---|
-| 每种情况一张图（3 场景 × 4 源 = 12 张） | 文件齐全、非空、PNG 300 dpi、SVG 可解析 |
-| **坐标轴统一** | 12 张 SVG 的纵轴刻度集合完全相同；同场景 4 张横轴刻度相同 |
+| 每种情况一张图（3 场景 × 3 实际源 = 9 张） | 文件齐全、非空、PNG 300 dpi、SVG 可解析 |
+| **坐标轴统一** | 9 张 SVG 的纵轴刻度集合完全相同；同场景 3 张横轴刻度相同 |
 | 每张图画 pitch、roll 与零线 | 两条源色线 + `#555555` 虚线都在 SVG 里 |
+| **无需目标值** | 不生成 `*-target` 图，图注里也没有目标块 |
 
-另外守住：目标姿态恒 0、图注分块不覆盖轨迹图注、部分重跑不动别的块、
-重跑逐字节一致。
+另外守住：图注分块不覆盖轨迹图注、部分重跑不动别的块、重跑逐字节一致。
 
 图生成到 pytest 的临时目录，**不覆盖** `docs/report/figures/` 里的提交版。
 """
@@ -32,10 +32,9 @@ sys.path.insert(0, str(HERE))
 
 import plot_pitch_roll  # noqa: E402
 import plot_traj  # noqa: E402
-import style  # noqa: E402
 
 SCENES = plot_traj.SCENES
-SOURCES = style.SOURCES
+SOURCES = plot_pitch_roll.ANGLE_SOURCES
 STEMS = [f"fig-pitchroll-{scene}-{source}"
          for scene in SCENES for source in SOURCES]
 
@@ -72,7 +71,7 @@ def _x_tick_labels(path: Path) -> set[str]:
 
 @pytest.fixture(scope="module")
 def generated(tmp_path_factory):
-    """完整生成 12 张图与图注，返回 `(图目录, 图注路径)`。"""
+    """完整生成 9 张图与图注，返回 `(图目录, 图注路径)`。"""
     outdir = tmp_path_factory.mktemp("pitchroll-figures")
     generated_dir = tmp_path_factory.mktemp("pitchroll-generated")
     captions = generated_dir / "figure-captions.md"
@@ -88,9 +87,9 @@ def generated(tmp_path_factory):
 # ─────────────────────────── 产物 ───────────────────────────
 
 
-def test_twelve_figures_exist_and_are_non_empty(generated):
+def test_nine_figures_exist_and_are_non_empty(generated):
     outdir, _ = generated
-    assert len(STEMS) == 12
+    assert len(STEMS) == 9
     for stem in STEMS:
         for suffix in ("png", "svg"):
             path = outdir / f"{stem}.{suffix}"
@@ -122,6 +121,13 @@ def test_svg_keeps_searchable_english_text(generated):
         assert not bad, f"{path} 含非 ASCII 字符 {bad}"
 
 
+def test_target_figures_are_not_generated(generated):
+    """操作者 2026-10-18：「无需目标值」。目标姿态恒 0，不出图也不写图注。"""
+    outdir, captions = generated
+    assert not list(outdir.glob("fig-pitchroll-*-target.*"))
+    assert "phase5-pitchroll:hover:target" not in captions.read_text(encoding="utf-8")
+
+
 def test_each_figure_has_two_curves_and_a_zero_line(generated):
     outdir, _ = generated
     for stem in STEMS:
@@ -135,7 +141,7 @@ def test_each_figure_has_two_curves_and_a_zero_line(generated):
 # ─────────────────────────── 坐标轴统一（操作者硬要求） ───────────────────────────
 
 
-def test_all_twelve_share_the_same_y_axis(generated):
+def test_all_nine_share_the_same_y_axis(generated):
     """纵轴统一：任一张图的 y 刻度集合不同，就说明某张 autoscale 了。"""
     outdir, _ = generated
     tick_sets = {stem: _y_tick_labels(outdir / f"{stem}.svg") for stem in STEMS}
@@ -155,7 +161,7 @@ def test_same_scene_shares_the_same_x_axis(generated):
                 outdir / f"fig-pitchroll-{scene}-{source}.svg")))
             for source in SOURCES
         }
-        assert len(ticks) == 1, f"{scene} 的四张图横轴刻度不一致：{ticks}"
+        assert len(ticks) == 1, f"{scene} 的三张图横轴刻度不一致：{ticks}"
 
 
 def test_limits_cover_every_value_without_autoscale():
@@ -181,16 +187,10 @@ def test_scene_window_matches_common_end():
         assert end == pytest.approx(meta["grid"]["common_end_s"], abs=1e-6)
 
 
-def test_target_attitude_is_exactly_zero():
-    data = plot_traj.load_scene(plot_pitch_roll.DATA_DIR, "hover")
-    for angle in ("pitch", "roll"):
-        np.testing.assert_array_equal(data["target"][angle], 0.0)
-
-
 # ─────────────────────────── 图注 ───────────────────────────
 
 
-def test_captions_have_twelve_blocks_with_window_source_and_axis(generated):
+def test_captions_have_nine_blocks_with_window_source_and_axis(generated):
     _, captions = generated
     text = captions.read_text(encoding="utf-8")
     for scene in SCENES:
@@ -202,7 +202,7 @@ def test_captions_have_twelve_blocks_with_window_source_and_axis(generated):
     assert "bag/4_traj2_square" in text
     assert "bag/5_traj3_lemniscate" in text
     assert "R-hover" in text and "R-square" in text and "R-lemniscate" in text
-    assert "12 张图共用" in text
+    assert "9 张图共用" in text
     assert "零线为 0 deg" in text
     assert "python3 tools/report/plot_pitch_roll.py --scene all" in text
     # 悬停截断原因要写全，不能只说"取最小"。
@@ -215,8 +215,8 @@ def test_caption_writer_preserves_traj_and_other_pitchroll_blocks(tmp_path):
     path.write_text(
         "# 图注\n\n"
         "<!-- BEGIN phase5-traj:hover -->\n轨迹图注\n<!-- END phase5-traj:hover -->\n\n"
-        "<!-- BEGIN phase5-pitchroll:square:target -->\n旧的正方形图注\n"
-        "<!-- END phase5-pitchroll:square:target -->\n",
+        "<!-- BEGIN phase5-pitchroll:square:offboard -->\n旧的正方形图注\n"
+        "<!-- END phase5-pitchroll:square:offboard -->\n",
         encoding="utf-8",
     )
     rc = plot_pitch_roll.main([
@@ -228,7 +228,7 @@ def test_caption_writer_preserves_traj_and_other_pitchroll_blocks(tmp_path):
     text = path.read_text(encoding="utf-8")
     assert "轨迹图注" in text, "轨迹图注被 pitch/roll 脚本覆盖了"
     assert "旧的正方形图注" in text, "部分重跑动了别的场景/源"
-    assert "phase5-pitchroll:hover:target" in text
+    assert "phase5-pitchroll:hover:offboard" in text
 
 
 # ─────────────────────────── 边界 ───────────────────────────
@@ -260,7 +260,7 @@ def test_rerun_is_byte_identical(tmp_path):
 
 
 def test_partial_rerun_keeps_global_y_axis(generated, tmp_path):
-    """只画一个场景时，纵轴仍由全部 12 组数据定，不能缩成该场景自身范围。"""
+    """只画一个场景时，纵轴仍由全部 9 组数据定，不能缩成该场景自身范围。"""
     reference_dir, _ = generated
     outdir = tmp_path / "hover-only"
     assert plot_pitch_roll.main([
@@ -272,6 +272,6 @@ def test_partial_rerun_keeps_global_y_axis(generated, tmp_path):
         stem = f"fig-pitchroll-hover-{source}"
         assert (_y_tick_labels(outdir / f"{stem}.svg")
                 == _y_tick_labels(reference_dir / f"{stem}.svg"))
-    # 若按悬停自身数据 autoscale，纵轴只会在 ±2 deg 量级，这里必须仍是 ±14。
-    assert _y_tick_labels(outdir / "fig-pitchroll-hover-target.svg") == {
+    # 若按悬停自身数据 autoscale，纵轴只会在 ±4 deg 量级，这里必须仍是 ±14。
+    assert _y_tick_labels(outdir / "fig-pitchroll-hover-offboard.svg") == {
         "-10", "-5", "0", "5", "10"}
