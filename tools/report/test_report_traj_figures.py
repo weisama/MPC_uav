@@ -162,8 +162,8 @@ def test_each_source_has_a_distinct_color():
 # ─────────────────────────── 坐标轴统一（操作者 2026-10-18） ───────────────────────────
 
 
-def test_all_three_share_the_same_2d_and_3d_axes(generated):
-    """XY、Z–t 的刻度集合三张完全相同；任何一张 autoscale 都会变红。"""
+def test_xy_axes_are_unified(generated):
+    """XY 两轴三张完全相同；任何一张 autoscale 都会变红。"""
     outdir, _, _ = generated
     per_scene = {}
     for scene in SCENES:
@@ -172,10 +172,27 @@ def test_all_three_share_the_same_2d_and_3d_axes(generated):
         per_scene[scene] = (
             tuple(sorted(axes["x [m]"]["x"])),
             tuple(sorted(axes["x [m]"]["y"])),
-            tuple(sorted(axes["t [s] (relative to /traj/start)"]["x"])),
-            tuple(sorted(axes["t [s] (relative to /traj/start)"]["y"])),
         )
     assert len(set(per_scene.values())) == 1, per_scene
+
+
+def test_zt_axes_are_per_scene(generated):
+    """操作者 2026-10-18：Z–t 不需要统一。
+
+    三张图的时间窗与 z 量级本来就不同（39.65/8.01/12.20 s、±0.1/±0.2/±0.3 m），
+    刻度集合必须保留这种差异；若哪天被"顺手统一"了，这条会变红。
+    """
+    outdir, _, _ = generated
+    per_scene = {}
+    for scene in SCENES:
+        axes = _axes_ticks(outdir / f"fig-traj-{scene}.svg")
+        zt = axes["t [s] (relative to /traj/start)"]
+        per_scene[scene] = (tuple(sorted(zt["x"])), tuple(sorted(zt["y"])))
+    assert len(set(t for t, _ in per_scene.values())) == len(SCENES), per_scene
+    assert len(set(z for _, z in per_scene.values())) == len(SCENES), per_scene
+    # 具体量级：悬停 z 只有 ±0.1，8 字到 ±0.3。
+    assert any("0.1" in label for label in per_scene["hover"][1])
+    assert any("0.3" in label for label in per_scene["lemniscate"][1])
 
 
 def test_3d_candidates_share_the_same_axes(generated):
@@ -212,9 +229,8 @@ def test_axis_limits_cover_data_and_are_symmetric():
         ])
         assert limits[key][0] < float(values.min())
         assert limits[key][1] > float(values.max())
-    # 时间轴统一到三场景中最长的公共窗。
-    ends = [float(data[scene]["target"]["t"][-1]) for scene in SCENES]
-    assert limits["t"] == (0.0, max(ends))
+    # Z–t 不统一：统一范围里没有时间轴这一项。
+    assert set(limits) == {"xy", "z"}
 
 
 # ─────────────────────────── 数据入口 ───────────────────────────
@@ -278,11 +294,12 @@ def test_captions_include_window_sources_and_command(generated):
     assert "python3 tools/report/plot_traj.py --scene all --candidates" in text
     # 悬停截断必须写明，避免被读成控制失败
     assert "offboard 包截止 39.65 s（录制截断，不是控制失败）" in text
-    # 坐标轴统一：数值现算后写进图注
+    # 坐标轴统一：数值现算后写进图注；Z–t 明确不统一
     assert "坐标轴统一" in text
     assert "XY 两轴 -1.7 到 1.7 m" in text
-    assert "z 轴 -0.3 到 0.3 m" in text
-    assert "时间轴 0 到 39.6494 s" in text
+    assert "3D 视图的 z 轴 -0.3 到 0.3 m" in text
+    assert "Z–t **不统一**" in text
+    assert "时间轴 0 到 39.6494 s" not in text
 
 
 def test_candidate_caption_says_not_in_body(generated):

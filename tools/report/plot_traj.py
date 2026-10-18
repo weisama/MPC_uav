@@ -10,9 +10,10 @@
 **只读** `docs/report/data/<scene>.csv`；图注的来源信息读同名 `.json`（票 01 产出，
 含输入包路径与窗口口径），**不读原始包**，也不在这里重算对齐口径。
 
-**坐标轴统一**（操作者 2026-10-18）：轨迹 1/2/3 的 XY、Z–t 与 3D 视图共用同一组
-x/y/z 范围，Z–t 的时间轴也统一到三场景最长公共窗；范围由全部数据现算，不写死。
-XY 两轴取同一对称范围，保证等比例下三张图的尺度一致。
+**坐标轴统一**（操作者 2026-10-18）：轨迹 1/2/3 的 **XY 与 3D 视图**共用同一组
+x/y/z 范围；范围由全部数据现算，不写死。XY 两轴取同一对称范围，保证等比例下
+三张图的尺度一致。**Z–t 不统一**（操作者同日明确）：z 与时间轴按各场景自己的
+窗口与数据范围画。
 
 用法：
 
@@ -212,13 +213,13 @@ def _symmetric_limit(values: np.ndarray) -> float:
 def compute_axis_limits(
     data_by_scene: Dict[str, Dict[str, Dict[str, np.ndarray]]],
 ) -> Dict[str, tuple[float, float]]:
-    """三张轨迹图（含 3D 候选）共用的坐标轴范围。
+    """三张轨迹图的 XY 与 3D 候选共用的坐标轴范围。
 
     - `xy`：x、y 取同一对称范围，`set_aspect("equal")` 下三张图尺度一致；
-    - `z`：Z–t 与 3D 共用，以 0 为中心；
-    - `t`：三场景最长公共窗，Z–t 的时间轴统一。
+    - `z`：3D 候选共用，以 0 为中心。
 
-    全部从数据现算，换数据重跑会自动变。
+    **Z–t 不在这里**：操作者 2026-10-18 明确 Z–t 不需要统一，由 `plot_scene`
+    按各场景自己的窗口与 z 数据范围画。全部从数据现算，换数据重跑会自动变。
     """
     if not data_by_scene:
         raise ValueError("没有可用的轨迹数据")
@@ -233,12 +234,9 @@ def compute_axis_limits(
     xy_limit = max(_symmetric_limit(collect("x")),
                    _symmetric_limit(collect("y")))
     z_limit = _symmetric_limit(collect("z"))
-    t_end = max(float(data["target"]["t"][-1])
-                for data in data_by_scene.values())
     return {
         "xy": (-xy_limit, xy_limit),
         "z": (-z_limit, z_limit),
-        "t": (0.0, t_end),
     }
 
 
@@ -279,8 +277,11 @@ def plot_scene(scene: str, data: Dict[str, Dict[str, np.ndarray]],
     ax_zt.set_xlabel("t [s] (relative to /traj/start)")
     ax_zt.set_ylabel("z [m]")
     ax_zt.set_title("Z-t")
-    ax_zt.set_xlim(*limits["t"])
-    ax_zt.set_ylim(*limits["z"])
+    # 操作者明确 Z–t 不统一：时间轴到本场景公共窗终点，z 按本场景数据范围。
+    zt_limit = _symmetric_limit(np.concatenate(
+        [data[source]["z"] for source in style.SOURCES]))
+    ax_zt.set_xlim(0.0, float(data["target"]["t"][-1]))
+    ax_zt.set_ylim(-zt_limit, zt_limit)
 
     fig.suptitle(f"{SCENE_TITLE_EN[scene]}: four sources", y=0.985)
     fig.legend(
@@ -360,8 +361,7 @@ def _axis_text(limits: Dict[str, tuple[float, float]]) -> str:
     """图注里的统一坐标轴说明（数值现算，不写死）。"""
     return (
         f"XY 两轴 {limits['xy'][0]:.1f} 到 {limits['xy'][1]:.1f} m；"
-        f"z 轴 {limits['z'][0]:.1f} 到 {limits['z'][1]:.1f} m；"
-        f"时间轴 0 到 {limits['t'][1]:.4f} s"
+        f"3D 视图的 z 轴 {limits['z'][0]:.1f} 到 {limits['z'][1]:.1f} m"
     )
 
 
@@ -390,8 +390,9 @@ def _scene_caption(scene: str, meta: dict, command: str,
         "详见 `data/README.md`。",
         "- 样式：目标为虚线，实际轨迹为实线；四源起点用同一种空心圆标记；"
         "左图 XY 等比例俯视，右图为高度-时间。",
-        f"- 坐标轴统一：三张轨迹图（含 3D 候选）共用同一组范围——"
-        f"{_axis_text(limits)}；范围由全部数据现算。",
+        f"- 坐标轴统一：三张轨迹图的 XY 与 3D 候选共用同一组范围——"
+        f"{_axis_text(limits)}；范围由全部数据现算。"
+        f"Z–t **不统一**：时间轴到本场景公共窗终点，z 按本场景数据范围。",
         f"- 生成：`{command}`",
     ]
     if scene == "hover":
