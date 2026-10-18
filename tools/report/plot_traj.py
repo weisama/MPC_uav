@@ -83,6 +83,11 @@ REPO = HERE.parents[1]
 sys.path.insert(0, str(HERE))
 
 import style  # noqa: E402
+from captions import (  # noqa: E402
+    CANDIDATE_CAPTION_HEADER,
+    CAPTION_HEADER,
+    update_caption_file,
+)
 
 SCENES = ("hover", "square", "lemniscate")
 
@@ -106,6 +111,10 @@ _COLUMNS = {
     "x": "x_m",
     "y": "y_m",
     "z": "z_m",
+    # 姿态列给票 03 追加的 pitch/roll 图用；轨迹图只取前四列。
+    "roll": "roll_rad",
+    "pitch": "pitch_rad",
+    "yaw": "yaw_rad",
 }
 
 DATA_DIR = REPO / "docs/report/data"
@@ -284,18 +293,6 @@ def plot_scene_3d(scene: str, data: Dict[str, Dict[str, np.ndarray]]):
 
 # ─────────────────────────── 图注 ───────────────────────────
 
-_CAPTION_HEADER = """# 图注（自动生成）
-
-> 本文件由报告图脚本生成，**不要手改**。脚本只替换对应的
-> `<!-- BEGIN ... -->` / `<!-- END ... -->` 块，不会动别的票写的块。
-"""
-
-_CANDIDATE_CAPTION_HEADER = """# 3D 候选图注（自动生成，不进正文）
-
-> 对应 `figures/candidates/`。**本文件不进入正文**；3D 候选是否采用
-> 由操作者看图后裁定（票 03 验收）。
-"""
-
 
 def _sim_path(meta: dict) -> str:
     return meta["inputs"]["sim_summary"]["path"]
@@ -361,35 +358,6 @@ def _candidate_caption(scene: str, meta: dict, command: str) -> str:
     ])
 
 
-def _replace_section(text: str, key: str, body: str) -> str:
-    """替换（或追加）`<!-- BEGIN key --> ... <!-- END key -->` 块。"""
-    begin = f"<!-- BEGIN {key} -->"
-    end = f"<!-- END {key} -->"
-    has_begin = begin in text
-    has_end = end in text
-    if has_begin != has_end:
-        raise ValueError(f"图注里的 {key!r} 块只有一半标记，先手工修好再重跑")
-    block = f"{begin}\n{body.rstrip()}\n{end}\n"
-    if has_begin:
-        before, rest = text.split(begin, 1)
-        _, after = rest.split(end, 1)
-        after = after.lstrip("\n")
-        # `block` 自带结尾换行；块之间固定留一个空行（重跑逐字节一致）。
-        return before + block + (f"\n{after}" if after else "")
-    return text.rstrip() + "\n\n" + block
-
-
-def _update_caption_file(path: Path, header: str, prefix: str,
-                         blocks: Dict[str, str]) -> None:
-    """按场景逐块替换，部分重跑不会抹掉其他场景的图注。"""
-    path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    text = path.read_text(encoding="utf-8") if path.exists() else header
-    for scene, body in blocks.items():
-        text = _replace_section(text, f"{prefix}:{scene}", body)
-    path.write_text(text.rstrip() + "\n", encoding="utf-8")
-
-
 def write_captions(
     path: Path,
     scene_blocks: Dict[str, str],
@@ -398,13 +366,13 @@ def write_captions(
     candidate_blocks: Dict[str, str] | None = None,
 ) -> None:
     """写正文图注；候选图注写到**另一个文件**，避免装配时被内联进正文。"""
-    _update_caption_file(Path(path), _CAPTION_HEADER, "phase5-traj",
-                         scene_blocks)
+    update_caption_file(Path(path), CAPTION_HEADER, "phase5-traj",
+                        scene_blocks)
     if candidate_blocks:
         if candidate_path is None:
             raise ValueError("写候选图注必须给 candidate_path")
-        _update_caption_file(
-            Path(candidate_path), _CANDIDATE_CAPTION_HEADER,
+        update_caption_file(
+            Path(candidate_path), CANDIDATE_CAPTION_HEADER,
             "phase5-traj-candidates", candidate_blocks)
 
 

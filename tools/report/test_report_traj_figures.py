@@ -145,9 +145,9 @@ def test_load_scene_keeps_four_sources_on_one_grid():
 def test_load_scene_fails_on_missing_source(tmp_path):
     path = tmp_path / "broken.csv"
     path.write_text(
-        "source,t_s,x_m,y_m,z_m\n"
-        "target,0.0,0,0,0\n"
-        "target,0.01,0,0,0\n",
+        "source,t_s,x_m,y_m,z_m,roll_rad,pitch_rad,yaw_rad\n"
+        "target,0.0,0,0,0,0,0,0\n"
+        "target,0.01,0,0,0,0,0,0\n",
         encoding="utf-8",
     )
     with pytest.raises(ValueError, match="缺少源"):
@@ -157,9 +157,9 @@ def test_load_scene_fails_on_missing_source(tmp_path):
 def test_load_scene_fails_on_empty_column(tmp_path):
     path = tmp_path / "broken.csv"
     path.write_text(
-        "source,t_s,x_m,y_m,z_m\n"
-        "target,0.0,0,0,0\n"
-        "target,,0,0,0\n",
+        "source,t_s,x_m,y_m,z_m,roll_rad,pitch_rad,yaw_rad\n"
+        "target,0.0,0,0,0,0,0,0\n"
+        "target,,0,0,0,0,0,0\n",
         encoding="utf-8",
     )
     with pytest.raises(ValueError, match="为空"):

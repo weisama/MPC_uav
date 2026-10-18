@@ -80,6 +80,9 @@ FIGSIZE_2PANEL = (12.0, 4.7)
 #: 多行共用时间轴（姿态 3 行、控制量 4 行）。
 FIGSIZE_MULTIROW = (11.0, 8.6)
 
+#: 单面板图（票 03 追加的 12 张 pitch/roll 图）。
+FIGSIZE_SINGLE = (10.0, 4.2)
+
 #: 3D 候选图。
 FIGSIZE_3D = (8.0, 6.8)
 
@@ -97,6 +100,24 @@ START_LEGEND_COLOR = "#555555"
 #: 轨迹原点参考线（x=0 / y=0 / z=0），浅灰，不进图例。
 ORIGIN_LINE_COLOR = "#c8c8c8"
 ORIGIN_LINE_WIDTH = 0.6
+
+# ─────────────────────────── 姿态角（pitch / roll） ───────────────────────────
+
+#: 12 张 pitch/roll 图共用。颜色刻意避开四源色，避免跨图误认。
+ANGLE_COLORS = {
+    "pitch": "#6A3D9A",
+    "roll": "#E69F00",
+}
+ANGLE_LABELS = {
+    "pitch": "Pitch",
+    "roll": "Roll",
+}
+ANGLE_LINEWIDTH = 1.25
+
+#: 零线：每张 pitch/roll 图都画，虚线，进图例。
+ZERO_LINE_COLOR = "#555555"
+ZERO_LINE_WIDTH = 0.9
+ZERO_LINE_STYLE = (0, (4, 2))
 
 
 def apply() -> None:
