@@ -135,32 +135,49 @@ CANDIDATE_CAPTION_FILE = (
 # ─────────────────────────── 读数据 ───────────────────────────
 
 
-def load_scene(data_dir: Path, scene: str) -> Dict[str, Dict[str, np.ndarray]]:
+def load_scene(
+    data_dir: Path,
+    scene: str,
+    *,
+    columns: Dict[str, str] | None = None,
+    sources: Sequence[str] | None = None,
+) -> Dict[str, Dict[str, np.ndarray]]:
     """读 `data_dir/<scene>.csv`，按源拆成 numpy 数组。
 
-    缺列、缺源、非数值、四源网格不一致都直接抛错 —— 静默补 0 会让图看起来
+    缺列、缺源、非数值、网格不一致都直接抛错 —— 静默补 0 会让图看起来
     很完整、结论却反了（票 01 的同一条纪律）。
+
+    `columns` / `sources` 让只画两源的图（如控制量）复用同一条读取与校验
+    路径：目标与 offboard 的控制量列本来就是空的，不能按四源全列硬读。
     """
+    columns = dict(_COLUMNS if columns is None else columns)
+    sources = tuple(style.SOURCES if sources is None else sources)
+    if not sources:
+        raise ValueError("至少需要一个源")
     path = Path(data_dir) / f"{scene}.csv"
     if not path.exists():
         raise FileNotFoundError(f"缺少数据文件 {path}（先跑票 01 的 build.py）")
 
     raw: Dict[str, Dict[str, list]] = {
-        source: {key: [] for key in _COLUMNS} for source in style.SOURCES
+        source: {key: [] for key in columns} for source in sources
     }
 
     with path.open(newline="") as fh:
         reader = csv.DictReader(fh)
         fieldnames = reader.fieldnames or []
-        needed = ["source", *_COLUMNS.values()]
+        needed = ["source", *columns.values()]
         missing = [name for name in needed if name not in fieldnames]
         if missing:
             raise ValueError(f"{path} 缺列：{missing}")
         for lineno, row in enumerate(reader, start=2):
             source = row["source"]
             if source not in raw:
+                # 只读部分源时（如控制量只读模型预测控制两源），跳过其余
+                # 已知源；真正未知的源名仍然报错。
+                if source in style.SOURCES:
+                    continue
                 raise ValueError(f"{path}:{lineno} 未知源 {source!r}")
-            for key, column in _COLUMNS.items():
+            for key, column in columns.items():
                 text = row[column]
                 if text is None or text == "":
                     raise ValueError(f"{path}:{lineno} 源 {source} 的 {column} 为空")
@@ -173,7 +190,7 @@ def load_scene(data_dir: Path, scene: str) -> Dict[str, Dict[str, np.ndarray]]:
                 raw[source][key].append(value)
 
     data: Dict[str, Dict[str, np.ndarray]] = {}
-    for source in style.SOURCES:
+    for source in sources:
         if not raw[source]["t"]:
             raise ValueError(f"{path} 缺少源 {source}")
         data[source] = {key: np.asarray(values, dtype=float)
@@ -182,12 +199,12 @@ def load_scene(data_dir: Path, scene: str) -> Dict[str, Dict[str, np.ndarray]]:
             if not np.all(np.isfinite(values)):
                 raise ValueError(f"{path} 源 {source} 的 {key} 含非有限值")
 
-    reference_t = data["target"]["t"]
-    for source in style.SOURCES:
+    reference_t = data[sources[0]]["t"]
+    for source in sources[1:]:
         if data[source]["t"].shape != reference_t.shape:
             raise ValueError(f"{path} 源 {source} 的网格点数与其他源不同")
         if not np.allclose(data[source]["t"], reference_t, atol=1e-9, rtol=0.0):
-            raise ValueError(f"{path} 源 {source} 与 target 不在同一时间网格")
+            raise ValueError(f"{path} 源 {source} 与 {sources[0]} 不在同一时间网格")
     return data
 
 

@@ -157,3 +157,120 @@
 - 姿态口径：实飞姿态取 `/mavros/vision_pose/pose`；它与 30 Hz EKF 姿态有约 +0.03 rad 的滚转系统偏差，不要把滚转零偏读成跟踪误差。
 - 生成：`python3 tools/report/plot_pitch_roll.py --scene all`
 <!-- END phase5-pitchroll:lemniscate:mpc_real -->
+
+<!-- BEGIN phase5-att:hover -->
+### A1 悬停（hover）姿态角：四源对比
+
+- 文件：`figures/fig-att-hover.png`、`figures/fig-att-hover.svg`（300 dpi）
+- 数据：`data/hover.csv`（同名 `.json` 记输入 sha256 与窗口口径）
+- 窗口：0.0000 - 39.6494 s（公共窗右端取各源最小：mpc_sim = 39.649415 s；录制截断：progress 终值 0.661 < 1.0；截止到参考流末尾 39.650080 s（包尾 39.661156 s））
+- 坐标：时间零点为 `/traj/start` 的包记录时间戳；三行分别是 roll、pitch、yaw，单位为 deg；三行纵轴各自按该轴数据范围，不共用。
+- 来源：目标来自 `/traj/reference` 的偏航（控制器约定为水平 + 纯偏航；本报告三条目标线均为 0）；offboard 来自 `bag/3_traj1_hover` 的 `/mavros/vision_pose/pose`；模型预测控制仿真来自 `tools/report/evidence/sitl/R-hover/R-hover-summary.json` 的 `x0` 四元数；模型预测控制实飞来自 `bag/6_free__20261017-070103` 的 `/mavros/vision_pose/pose`。
+- 目标姿态口径：按控制器约定取「水平 + 纯偏航」，即 roll = pitch = yaw = 0；这不是用参考加速度反解出的理想倾角，理由见第 8 章。
+- 姿态口径：实飞姿态取 `/mavros/vision_pose/pose`（约 190 Hz），它与 30 Hz EKF 姿态有约 **+0.03 rad** 的滚转系统偏差，不要把实际滚转均值读成跟踪误差；仿真姿态由 `x0[6:10]` 四元数解算，旧日志里名叫 roll/pitch/yaw 的字段是角速率，不能当姿态角。
+- 生成：`python3 tools/report/plot_attitude.py --scene all`
+- 注意：offboard 包截止 39.65 s（录制截断，不是控制失败）。
+<!-- END phase5-att:hover -->
+
+<!-- BEGIN phase5-att:square -->
+### A2 正方形（square）姿态角：四源对比
+
+- 文件：`figures/fig-att-square.png`、`figures/fig-att-square.svg`（300 dpi）
+- 数据：`data/square.csv`（同名 `.json` 记输入 sha256 与窗口口径）
+- 窗口：0.0000 - 8.0096 s（公共窗右端取各源最小：mpc_real = 8.009599 s；`/traj/progress` 首次 ≥ 1.0：8.021292 s）
+- 坐标：时间零点为 `/traj/start` 的包记录时间戳；三行分别是 roll、pitch、yaw，单位为 deg；三行纵轴各自按该轴数据范围，不共用。
+- 来源：目标来自 `/traj/reference` 的偏航（控制器约定为水平 + 纯偏航；本报告三条目标线均为 0）；offboard 来自 `bag/4_traj2_square` 的 `/mavros/vision_pose/pose`；模型预测控制仿真来自 `tools/report/evidence/sitl/R-square/R-square-summary.json` 的 `x0` 四元数；模型预测控制实飞来自 `bag/6_free__20261017-070446` 的 `/mavros/vision_pose/pose`。
+- 目标姿态口径：按控制器约定取「水平 + 纯偏航」，即 roll = pitch = yaw = 0；这不是用参考加速度反解出的理想倾角，理由见第 8 章。
+- 姿态口径：实飞姿态取 `/mavros/vision_pose/pose`（约 190 Hz），它与 30 Hz EKF 姿态有约 **+0.03 rad** 的滚转系统偏差，不要把实际滚转均值读成跟踪误差；仿真姿态由 `x0[6:10]` 四元数解算，旧日志里名叫 roll/pitch/yaw 的字段是角速率，不能当姿态角。
+- 生成：`python3 tools/report/plot_attitude.py --scene all`
+<!-- END phase5-att:square -->
+
+<!-- BEGIN phase5-att:lemniscate -->
+### A3 8 字（lemniscate）姿态角：四源对比
+
+- 文件：`figures/fig-att-lemniscate.png`、`figures/fig-att-lemniscate.svg`（300 dpi）
+- 数据：`data/lemniscate.csv`（同名 `.json` 记输入 sha256 与窗口口径）
+- 窗口：0.0000 - 12.2021 s（公共窗右端取各源最小：mpc_real = 12.202111 s；`/traj/progress` 首次 ≥ 1.0：12.213041 s）
+- 坐标：时间零点为 `/traj/start` 的包记录时间戳；三行分别是 roll、pitch、yaw，单位为 deg；三行纵轴各自按该轴数据范围，不共用。
+- 来源：目标来自 `/traj/reference` 的偏航（控制器约定为水平 + 纯偏航；本报告三条目标线均为 0）；offboard 来自 `bag/5_traj3_lemniscate` 的 `/mavros/vision_pose/pose`；模型预测控制仿真来自 `tools/report/evidence/sitl/R-lemniscate/R-lemniscate-summary.json` 的 `x0` 四元数；模型预测控制实飞来自 `bag/6_free__20261017-070935` 的 `/mavros/vision_pose/pose`。
+- 目标姿态口径：按控制器约定取「水平 + 纯偏航」，即 roll = pitch = yaw = 0；这不是用参考加速度反解出的理想倾角，理由见第 8 章。
+- 姿态口径：实飞姿态取 `/mavros/vision_pose/pose`（约 190 Hz），它与 30 Hz EKF 姿态有约 **+0.03 rad** 的滚转系统偏差，不要把实际滚转均值读成跟踪误差；仿真姿态由 `x0[6:10]` 四元数解算，旧日志里名叫 roll/pitch/yaw 的字段是角速率，不能当姿态角。
+- 生成：`python3 tools/report/plot_attitude.py --scene all`
+<!-- END phase5-att:lemniscate -->
+
+<!-- BEGIN phase5-error:hover -->
+### E1 悬停（hover）位置误差：四源对比
+
+- 文件：`figures/fig-error-hover.png`、`figures/fig-error-hover.svg`（300 dpi）
+- 数据：`data/hover.csv`（同名 `.json` 记输入 sha256 与窗口口径）
+- 窗口：0.0000 - 39.6494 s（公共窗右端取各源最小：mpc_sim = 39.649415 s；录制截断：progress 终值 0.661 < 1.0；截止到参考流末尾 39.650080 s（包尾 39.661156 s））
+- 误差定义：**实际 − 目标**（不是目标 − 实际）；三个分量分别为 `ex`、`ey`、`ez`，单位 m；坐标均为轨迹原点相对系。
+- 来源：offboard 来自 `bag/3_traj1_hover` 的 `/mavros/vision_pose/pose`；模型预测控制仿真来自 `tools/report/evidence/sitl/R-hover/R-hover-summary.json` 的 `x0` 位置；模型预测控制实飞来自 `bag/6_free__20261017-070103` 的 `/mavros/vision_pose/pose`；目标行是 目标自身（`/traj/reference`），因此误差恒 0。
+- 目标姿态与位置均来自 `/traj/reference`；参考在 TRACK 窗内才成立，跑完后参考继续发零，不能拿末帧参考当完成判据。
+- 生成：`python3 tools/report/plot_error.py --scene all`
+- 注意：offboard 包截止 39.65 s（录制截断，不是控制失败）。
+<!-- END phase5-error:hover -->
+
+<!-- BEGIN phase5-error:square -->
+### E2 正方形（square）位置误差：四源对比
+
+- 文件：`figures/fig-error-square.png`、`figures/fig-error-square.svg`（300 dpi）
+- 数据：`data/square.csv`（同名 `.json` 记输入 sha256 与窗口口径）
+- 窗口：0.0000 - 8.0096 s（公共窗右端取各源最小：mpc_real = 8.009599 s；`/traj/progress` 首次 ≥ 1.0：8.021292 s）
+- 误差定义：**实际 − 目标**（不是目标 − 实际）；三个分量分别为 `ex`、`ey`、`ez`，单位 m；坐标均为轨迹原点相对系。
+- 来源：offboard 来自 `bag/4_traj2_square` 的 `/mavros/vision_pose/pose`；模型预测控制仿真来自 `tools/report/evidence/sitl/R-square/R-square-summary.json` 的 `x0` 位置；模型预测控制实飞来自 `bag/6_free__20261017-070446` 的 `/mavros/vision_pose/pose`；目标行是 目标自身（`/traj/reference`），因此误差恒 0。
+- 目标姿态与位置均来自 `/traj/reference`；参考在 TRACK 窗内才成立，跑完后参考继续发零，不能拿末帧参考当完成判据。
+- 生成：`python3 tools/report/plot_error.py --scene all`
+<!-- END phase5-error:square -->
+
+<!-- BEGIN phase5-error:lemniscate -->
+### E3 8 字（lemniscate）位置误差：四源对比
+
+- 文件：`figures/fig-error-lemniscate.png`、`figures/fig-error-lemniscate.svg`（300 dpi）
+- 数据：`data/lemniscate.csv`（同名 `.json` 记输入 sha256 与窗口口径）
+- 窗口：0.0000 - 12.2021 s（公共窗右端取各源最小：mpc_real = 12.202111 s；`/traj/progress` 首次 ≥ 1.0：12.213041 s）
+- 误差定义：**实际 − 目标**（不是目标 − 实际）；三个分量分别为 `ex`、`ey`、`ez`，单位 m；坐标均为轨迹原点相对系。
+- 来源：offboard 来自 `bag/5_traj3_lemniscate` 的 `/mavros/vision_pose/pose`；模型预测控制仿真来自 `tools/report/evidence/sitl/R-lemniscate/R-lemniscate-summary.json` 的 `x0` 位置；模型预测控制实飞来自 `bag/6_free__20261017-070935` 的 `/mavros/vision_pose/pose`；目标行是 目标自身（`/traj/reference`），因此误差恒 0。
+- 目标姿态与位置均来自 `/traj/reference`；参考在 TRACK 窗内才成立，跑完后参考继续发零，不能拿末帧参考当完成判据。
+- 生成：`python3 tools/report/plot_error.py --scene all`
+<!-- END phase5-error:lemniscate -->
+
+<!-- BEGIN phase5-control:hover -->
+### C1 悬停（hover）控制量：模型预测控制仿真 vs 实飞
+
+- 文件：`figures/fig-control-hover.png`、`figures/fig-control-hover.svg`（300 dpi）
+- 数据：`data/hover.csv`（同名 `.json` 记输入 sha256 与窗口口径）
+- 窗口：0.0000 - 39.6494 s（公共窗右端取各源最小：mpc_sim = 39.649415 s；录制截断：progress 终值 0.661 < 1.0；截止到参考流末尾 39.650080 s（包尾 39.661156 s））
+- 四行：总推力 `F [N]`、机体角速率 `wx`、`wy`、`wz [rad/s]`（FLU，机体系指令）；横轴 `t [s]` 相对 `/traj/start`。
+- 只有两源：模型预测控制仿真（`tools/report/evidence/sitl/R-hover/R-hover-summary.json` 的求解指令（SITL 控制器参数））与模型预测控制实飞（`bag/6_free__20261017-070103` 的 `/mavros/setpoint_raw/attitude`（`body_rate` + `thrust`））。
+- 为什么没有 offboard：offboard 的控制量是 `/mavros/setpoint_raw/local` 的**位置设定点**，与“推力 + 角速率”不是同一层；画在一起会造成“看起来可比”的假象。两组只在位置跟踪这一层可比（见误差图）。
+- 推力换算：`u_thrust_n = thrust × t_max`，`t_max = 46.3027 N`；仿真取 SITL 控制器参数，实飞取该趟 `mpc_node` 启动行（`tools/report/evidence/mpc-normalization.json`）。CSV 里的控制量按 100 Hz 网格**零阶保持**取样。
+- 生成：`python3 tools/report/plot_control.py --scene all`
+- 注意：offboard 包截止 39.65 s（录制截断，不是控制失败）。
+<!-- END phase5-control:hover -->
+
+<!-- BEGIN phase5-control:square -->
+### C2 正方形（square）控制量：模型预测控制仿真 vs 实飞
+
+- 文件：`figures/fig-control-square.png`、`figures/fig-control-square.svg`（300 dpi）
+- 数据：`data/square.csv`（同名 `.json` 记输入 sha256 与窗口口径）
+- 窗口：0.0000 - 8.0096 s（公共窗右端取各源最小：mpc_real = 8.009599 s；`/traj/progress` 首次 ≥ 1.0：8.021292 s）
+- 四行：总推力 `F [N]`、机体角速率 `wx`、`wy`、`wz [rad/s]`（FLU，机体系指令）；横轴 `t [s]` 相对 `/traj/start`。
+- 只有两源：模型预测控制仿真（`tools/report/evidence/sitl/R-square/R-square-summary.json` 的求解指令（SITL 控制器参数））与模型预测控制实飞（`bag/6_free__20261017-070446` 的 `/mavros/setpoint_raw/attitude`（`body_rate` + `thrust`））。
+- 为什么没有 offboard：offboard 的控制量是 `/mavros/setpoint_raw/local` 的**位置设定点**，与“推力 + 角速率”不是同一层；画在一起会造成“看起来可比”的假象。两组只在位置跟踪这一层可比（见误差图）。
+- 推力换算：`u_thrust_n = thrust × t_max`，`t_max = 46.3027 N`；仿真取 SITL 控制器参数，实飞取该趟 `mpc_node` 启动行（`tools/report/evidence/mpc-normalization.json`）。CSV 里的控制量按 100 Hz 网格**零阶保持**取样。
+- 生成：`python3 tools/report/plot_control.py --scene all`
+<!-- END phase5-control:square -->
+
+<!-- BEGIN phase5-control:lemniscate -->
+### C3 8 字（lemniscate）控制量：模型预测控制仿真 vs 实飞
+
+- 文件：`figures/fig-control-lemniscate.png`、`figures/fig-control-lemniscate.svg`（300 dpi）
+- 数据：`data/lemniscate.csv`（同名 `.json` 记输入 sha256 与窗口口径）
+- 窗口：0.0000 - 12.2021 s（公共窗右端取各源最小：mpc_real = 12.202111 s；`/traj/progress` 首次 ≥ 1.0：12.213041 s）
+- 四行：总推力 `F [N]`、机体角速率 `wx`、`wy`、`wz [rad/s]`（FLU，机体系指令）；横轴 `t [s]` 相对 `/traj/start`。
+- 只有两源：模型预测控制仿真（`tools/report/evidence/sitl/R-lemniscate/R-lemniscate-summary.json` 的求解指令（SITL 控制器参数））与模型预测控制实飞（`bag/6_free__20261017-070935` 的 `/mavros/setpoint_raw/attitude`（`body_rate` + `thrust`））。
+- 为什么没有 offboard：offboard 的控制量是 `/mavros/setpoint_raw/local` 的**位置设定点**，与“推力 + 角速率”不是同一层；画在一起会造成“看起来可比”的假象。两组只在位置跟踪这一层可比（见误差图）。
+- 推力换算：`u_thrust_n = thrust × t_max`，`t_max = 46.3027 N`；仿真取 SITL 控制器参数，实飞取该趟 `mpc_node` 启动行（`tools/report/evidence/mpc-normalization.json`）。CSV 里的控制量按 100 Hz 网格**零阶保持**取样。
+- 生成：`python3 tools/report/plot_control.py --scene all`
+<!-- END phase5-control:lemniscate -->
