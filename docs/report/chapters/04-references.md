@@ -29,14 +29,14 @@
 
 | 项目 | 来源实验室 | 钉住的 commit / 版本 | 在本项目中的角色 | 是否复用代码 |
 |---|---|---|---|---|
-| `acados/acados` | 弗莱堡大学 syscop（Diehl 组） | `00947ddc`（`v0.6.0-41-g00947ddc3`） | 求解器与代码生成 | 否，外部依赖 |
-| `uzh-rpg/agilicious` | UZH-RPG | `50bba45` | 架构与选型佐证 | 否 |
-| `Longer95479/Fast-Drone-XI35` | 哈工大 HIT-K1928-LAB | `8c80ddb`（分支 `board`） | 同硬件整机参考 | 否，状态机重写 |
-| `HKUST-Aerial-Robotics/OmniNxt` | 港科大 Aerial Robotics Group | `79ce1d4` | 同系列硬件佐证 | 否 |
-| `Huan-qun/Sim2real-UAV-Params-` | 个人仓库，未注明实验室 | `b7aeebb` | 参数、动捕文档与监听器 | 是，`vrpn_listener` vendored |
-| `weisama/MPC_uav` | 本项目 | `21eb4a7`（Phase 4 收口） | 本报告描述的仓库本身 | 是，本仓库 |
-| `DISCOWER/px4-mpc` | KTH / ETH（ATMOS 团队） | `3e541af` | 10 状态 OCP 与节点骨架 | 是，模型与 OCP 改写 |
-| `HKUST-Aerial-Robotics/Nxt-FC` | 港科大 Aerial Robotics Group | `153b7d1` | 飞控硬件与板级参数 | 否，未刷其固件 |
+| [`acados/acados`](https://github.com/acados/acados) | 弗莱堡大学 syscop（Diehl 组） | `00947ddc`（`v0.6.0-41-g00947ddc3`） | 求解器与代码生成 | 否，外部依赖 |
+| [`uzh-rpg/agilicious`](https://github.com/uzh-rpg/agilicious) | UZH-RPG | `50bba45` | 架构与选型佐证 | 否 |
+| [`Longer95479/Fast-Drone-XI35`](https://github.com/Longer95479/Fast-Drone-XI35) | 哈工大 HIT-K1928-LAB | `8c80ddb`（分支 `board`） | 同硬件整机参考，代码框架和接口 | 否，状态机重写 |
+| [`HKUST-Aerial-Robotics/OmniNxt`](https://github.com/HKUST-Aerial-Robotics/OmniNxt) | 港科大 Aerial Robotics Group | `79ce1d4` | 同系列硬件佐证，代码框架和接口 | 否 |
+| [`Huan-qun/Sim2real-UAV-Params-`](https://github.com/Huan-qun/Sim2real-UAV-Params-) | 个人仓库，未注明实验室 | `b7aeebb` | 参数、动捕文档与监听器 | 是，`vrpn_listener` vendored |
+| [`weisama/MPC_uav`](https://github.com/weisama/MPC_uav) | 本项目 | `21eb4a7`（Phase 4 收口） | 本报告描述的仓库本身 | 是，本仓库 |
+| [`DISCOWER/px4-mpc`](https://github.com/DISCOWER/px4-mpc) | KTH / ETH（ATMOS 团队） | `3e541af` | 10 状态 OCP 与节点骨架 | 是，模型与 OCP 改写 |
+| [`HKUST-Aerial-Robotics/Nxt-FC`](https://github.com/HKUST-Aerial-Robotics/Nxt-FC) | 港科大 Aerial Robotics Group | `153b7d1` | 飞控硬件与板级参数 | 否，未刷其固件 |
 
 ### 4.2.1 acados —— 求解器与代码生成
 
