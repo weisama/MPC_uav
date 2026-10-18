@@ -1,6 +1,6 @@
 # 20: 收口全部票、README 对照报告修订、固定 v5.0 并推送
 
-Status: ready-for-agent
+Status: done
 Type: task
 
 **What to build:** 按操作者 2026-10-18 指令做 Phase 5 的最终收口：
@@ -31,12 +31,12 @@ Type: task
 ## 检查清单
 
 - [x] README 修订经操作者审阅通过（审阅记录写进本票 Comments）
-- [ ] 票 17 的构建与 pytest 结果已回填并勾选
+- [x] 票 17 的构建与 pytest 结果已回填并勾选
 - [x] 装配脚本重跑成功，自动检查的失败项已由操作者裁定
-- [ ] 票 01–19 全部 `done`/`wontfix`；spec `done`
-- [ ] `v5.0` 指向收口提交，`v4.0` 未动
-- [ ] `main` 与 `v5.0` 已推送，远端指向正确
-- [ ] 工作树无本票范围内的残留改动
+- [x] 票 01–19 全部 `done`/`wontfix`；spec `done`
+- [x] `v5.0` 指向收口提交，`v4.0` 未动
+- [x] `main` 与 `v5.0` 已推送，远端指向正确
+- [x] 工作树无本票范围内的残留改动
 
 ## 验收
 
@@ -59,3 +59,15 @@ Type: task
 - 操作者审阅：**通过**。
 - 装配自动检查：7 失败 / 4 警告；操作者裁定**接受**，不恢复其已删除的一句话总结行。
   明细见 `docs/report/REVIEW.md`。
+
+### 2026-10-18 —— 收口完成
+
+- 票 17 已收口：`colcon build` 7 包 exit 0；pytest `338 passed`（命令与结果见票 17 Comments
+  与 `docs/report/evidence/code-comment-audit.md` §四）。
+- 票 01–19 现算全部 `done`（无 `wontfix`）；`phase5/spec.md` 为 `done`。
+- `v5.0` 建在收口提交上（本票状态更新一并纳入）；`v4.0` 保持 `f137472` 未动。
+- `main` 与 `v5.0` 已推送，远端指针与本地一致。
+- 工作树残留 `docs/report/report.export.html`、`docs/report/report.pdf`、
+  `tools/report/export_pdf.py` 属并行会话在制的 PDF 导出，**不在本票范围、未提交**；
+  待其完成后由该会话自行入库。
+- 本票 `Status` → `done`；Phase 5 全部收口。
