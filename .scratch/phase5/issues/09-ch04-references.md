@@ -44,7 +44,19 @@ Type: task
 - 不写“本节介绍……”；不引入本节之外的数、不引用图号/表号；不写“效果良好/基本通过”。
 - 不单独成标题，不进目录。细则见 [spec.md](../spec.md) §8。
 
+## 跨章阅读（2026-10-18 追加）
+
+写作前**可以并建议**先读其他章节，尤其是相邻章和已落地章，用来对齐术语、符号、详略与过渡：
+
+- 先读 `docs/report/chapters/` 下已存在的章节，再读本章票与相邻章的「内容」，明确本章边界；
+- 术语/符号以 [CONTEXT.md](../../../CONTEXT.md) 为准；其他章已定下的写法优先沿用；
+  发现冲突记进本票 `## Comments`，不改别人的章；
+- 只借组织方式与措辞，不整段搬运；本章结论仍由本章自己给证据；
+- 别的章还没写完时不等待、不阻塞；写完后再做一次交叉核对。
+
 ## 检查清单
+
+- [ ] 写作前读过相邻章与已落地章；术语/符号与它们一致，冲突已记进 Comments
 
 - [x] 每个叶子小节末尾有且只有一行 `<big>**一句话总结：……**</big>`，且句子不引入本节之外的数
 
@@ -122,3 +134,20 @@ Type: task
 - `python3 -m pytest -q`：**1098 passed, 7 errors**（21 分 22 秒）。
 - 7 个 error 全部在 `tools/report/test_report_traj_figures.py`（并行会话未入库的 Phase 5 图形测试），setup 阶段报 `ValueError: Unknown projection '3d'`，属本机 matplotlib 缺 3D 投影，与本章及 `src/` 无关。
 - 章节自检最终值：21 个叶子小节 / 21 行总结；总结句汉字 26–39 字；29 个相对链接全部存在；裸词 `MPC` 仅 3 处英文原题。
+
+### 2026-10-18 —— 按操作者意见精简（agent）
+
+操作者 2026-10-18 的五条修改意见已全部落地：
+
+1. 删除 `4.1.2`（三次被证据推翻的结论），`4.1` 合并为单个叶子节，只保留证据四级与四条引用纪律。
+2. 开源项目表新增“来源实验室”列：acados 弗莱堡大学 syscop（Diehl 组）、agilicious UZH-RPG、XI35 哈工大 HIT-K1928-LAB、OmniNxt 与 Nxt-FC 港科大 Aerial Robotics Group、Sim2real 为未注明实验室的个人仓库、MPC_uav 为本项目、px4-mpc 为 KTH / ETH ATMOS 团队。
+3. 每个项目的“借了什么 / 改了什么 / 没借什么”压缩为短段落，删去文件数、逐行细节与重复数据，只留结论与关键锚点。
+4. 论文节每篇新增“出处与实验室”，并写明与开源项目的对应关系：Foehn2022 ↔ agilicious；Liu2024 ↔ OmniNxt 与 Nxt-FC；Houska2011 两篇 ↔ acados（RTI 与 ACADO 前身）；Sun2022、Torrente2021 与 agilicious 同组但无独立仓库。
+5. `4.2` 标题改为“参考的开源项目”。
+
+**自检（2026-10-18）**
+
+- 20 个叶子小节 / 20 行总结；总结句汉字 20–32 字；父小节不加。
+- 26 个相对链接全部存在；裸词 `MPC` 仅 3 处英文原题。
+- 篇幅：316 行 / 4,638 个汉字（精简前 381 行 / 8,676 字）。
+- 实验室归属依据：acados `docs/index.rst`；agilicious PDF 首页与 README；OmniNxt/Nxt-FC README；px4-mpc `package.xml` 的 `padr@kth.se` 与源码 `jalim@ethz.ch`；XI35 见 `open-source-survey.md`。
