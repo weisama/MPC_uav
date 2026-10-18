@@ -179,26 +179,19 @@ ros_ws/                              ← colcon 根 = 仓库根
 
 ### 6.5.1 哪些模块属于核心层
 
-`nmpc` 的分层按「有没有 ROS」切，不按文件类型切。核心层包括 `sign_map`、`commands`、`params`、`model`、`ocp`、`timing`、`node_core`；它们不许 import `rclpy`，也不许 import 任何具体消息包（`px4_msgs`、`mavros_msgs` 等）。这条约束的实际收益是：离线最优控制问题、台架夹具与纯函数测试都能直接 import 这些模块，不需要起 ROS 图。
+`nmpc` 按「有没有 ROS」切层：`sign_map`、`commands`、`params`、`model`、`ocp`、`timing`、`node_core` 是核心层，不许 import `rclpy` 或具体消息包，因此离线求解、台架与纯函数测试都能直接 import。`node_core.py` 决定「这一拍发不发、发什么」——新鲜度闸门、外推、参考构造与失效降级；它不 import acados 或 ROS，可用普通 pytest 断言。`ocp.py` 只求解，`sign_map.py` 只映射，符号错误与求解错误不会混在一起。
 
-`node_core.py` 是分界上的关键文件。它负责「这一拍发不发、发什么」：状态新鲜度闸门、状态外推、参考构造、断流与失效时的降级、有限值检查。它不 import acados，也不 import ROS，因此可以用普通 pytest 直接构造输入、断言输出。`ocp.py` 只负责求解并返回内部量；`sign_map.py` 只负责把内部量映射成下行字段。两件事分开后，符号错误与求解错误不会混在同一个失败里。
+节点层是 `mpc_node.py`：声明参数、按档订阅、把消息搬进核心层、把输出填进 `AttitudeTarget`。`offboard_smoke.py` 与 `preflight_check.py` 也是入口脚本，不属于核心层。
 
-节点层是 `mpc_node.py`。它是唯一一处把求解结果变成话题上一帧的地方：声明参数、按档条件订阅、把消息搬进核心层、把核心层的输出填进 `AttitudeTarget`、打日志。`offboard_smoke.py` 与 `preflight_check.py` 也是入口脚本：前者把核心层接到话题上做最小冒烟，后者在装桨前做静态自检；它们不属于核心层。
-
-「零 ROS」目前由测试里的 import 断言守着，但断言只点名 `rclpy` 与 `px4_msgs` 两个名字，还没有一条盯 `mavros_msgs`；这条缺口记在 [`票 13`](../../../.scratch/phase4/issues/13-mavros-downlink-switch.md) 的 Comments 里。分层的**设计**是完整的，**守卫**还有一处没补齐，读代码时不能把「现有断言全绿」当成「边界已经完全守住」。
+「零 ROS」目前只由测试断言 `rclpy` 与 `px4_msgs`，尚未盯 `mavros_msgs`；缺口记在 [`票 13`](../../../.scratch/phase4/issues/13-mavros-downlink-switch.md)。设计完整，守卫未齐，不能把「现有断言全绿」当成边界已守住。
 
 <big>**一句话总结：核心层用纯函数决定发不发、发什么，节点层只做接线；零 ROS 边界尚缺 mavros_msgs 断言。**</big>
 
 ### 6.5.2 改哪一层要不要 build
 
-判断依据不是「改的是哪个文件」，而是「这个进程 import 到的是哪一份」：
+判断依据是进程实际 import 到哪一份，不是改了哪个文件。`ros2 run nmpc mpc_node.py` 解析 `install/` 里的入口脚本；拷贝式安装下改 `mpc_node.py`、`offboard_smoke.py`、`preflight_check.py` 必须 `colcon build`。包模块看 `PYTHONPATH`：跑场脚本前置 `src/nmpc` 时，改 `node_core.py`、`params.py`、`ocp.py` 不用 build；只 source `install/` 时读的是安装副本，仍要 build。`--symlink-install` 下入口脚本也会即时生效。
 
-- **`ros2 run` 的入口脚本来自 `install/`。** `ros2 run nmpc mpc_node.py` 解析到 `install/nmpc/lib/nmpc/mpc_node.py`。常规安装是拷贝式，源码改动不会自动出现在安装目录；因此改 `mpc_node.py`、`offboard_smoke.py`、`preflight_check.py` **必须重新 `colcon build`**，否则跑的还是旧脚本。
-- **包模块看 `PYTHONPATH`。** `import nmpc.node_core` 可能落到 `src/nmpc/nmpc/node_core.py`，也可能落到 `install/nmpc/local/lib/python3.10/dist-packages/nmpc/node_core.py`。跑场脚本（如 SITL 的 `run_matrix.sh`）会把 `src/nmpc` 前置到 `PYTHONPATH`，子进程继承这条路径；在这种上下文里改 `node_core.py`、`params.py`、`ocp.py` **不用 build** 就生效。反过来，只 source `install/` 再 `ros2 run`，读到的就是安装副本，仍然要 build。
-
-安装方式会改变第一步的表现：仓库记录的常规安装是拷贝式；若用了 `--symlink-install`，`install/` 里是指向源码的软链，入口脚本的改动也会即时生效。判断仍以进程实际解析到的文件为准，不要依赖某一台机器的安装方式。
-
-仓库里「`mpc_node.py` 要 build、`node_core.py` 不要」这条经验，成立的前提正是跑场脚本前置了源码路径。它不是一个无条件的全局规则；判断时先看这个进程的 `PYTHONPATH`，再决定要不要 build。判断错了的症状很隐蔽：旧的入口脚本配新的核心层，日志里会少掉新增的列或字段，读数却看起来「和以前一样」，容易被当成模型没变化。遇到这种情况，先核对进程实际 import 的文件，再谈控制效果。
+因此「入口脚本要 build、核心层不要」只在源码路径被前置时成立。判断错了，旧入口配新核心层会静默少字段，读数却看着和以前一样；先核对进程实际 import 的文件，再谈控制效果。
 
 <big>**一句话总结：入口脚本来自 install/，包模块看 PYTHONPATH 指向源码还是安装副本，所以 build 规则不同。**</big>
 
@@ -208,25 +201,17 @@ ros_ws/                              ← colcon 根 = 仓库根
 
 ### 6.6.1 包内测试：seam 1 与 seam 2
 
-包内测试主体分成两个缝，另有两类辅助测试（见下）。**seam 2** 是纯逻辑：不起 ROS、不起节点，直接调用头文件或 Python 模块里的函数。`control` 的 `test_fsm.cpp`、`test_rc_stick.cpp`、`test_rc_switch.cpp`，`mocap` 的 `test_mocap_rel_pose.cpp`，`traj` 的 `test_trajectories.cpp`，以及 `nmpc` 的 `test_sign_map.py`、`test_commands.py`、`test_node_core.py`、`test_ocp_*.py`、`test_params.py` 都属于这一类。它们回答的是「给定输入，逻辑与数值对不对」。
+包内测试主体分两个缝。**seam 2** 是纯逻辑，直接调用 C++ 头文件或 Python 模块，例如 `nmpc` 的 `test_sign_map.py`、`test_commands.py`、`test_node_core.py`、`test_ocp_*.py`、`test_params.py`；它回答「给定输入，逻辑与数值对不对」。**seam 1** 是节点级，把节点作为子进程起起来，用 `bench` 的假 mavros、假动捕与假轨迹喂话题，断言话题、进程存活、退出码与日志；它回答「接线、QoS、频率、时序对不对」。
 
-**seam 1** 是节点级：把被测节点作为子进程起起来，用 `bench` 提供的假 mavros、假动捕与假轨迹喂话题，以话题断言为主，另看进程存活、退出码与日志。`control` 的 `test_control_standby.py`、`test_control_failsafe.py`、`test_control_takeoff.py`、`test_control_track.py`、`test_control_external_output.py`，`traj` 的 `test_traj_node.py`，`nmpc` 的 `test_mpc_node.py` 都属于这一类。它们回答的是「接线、QoS、频率、时序在真实消息面上对不对」。
-
-`nmpc` 还另有 `test_mavros_interface.py`：它不需要 init ROS，也不起 DUT，断言字段名、`type_mask` 常量与启动参数，属于消息形状与接口契约测试。`test_preflight_check.py` 走另一条：被测的是纯逻辑、参数表与 `ast` 扫描，同样不起 DUT。
-
-`bench` 自己也有自测：假 PX4 的行为、时间线、夹具初始化。它用 pytest 夹具把域号钉在 73，并硬拒域 0；同机跑多个夹具时要用 `colcon test --executor sequential`，否则会互相抢话题。`vrpn_listener` 是 vendored 包，没有测试，只保留 lint；`bringup` 只有 launch 与脚本，也没有测试——它的 CMake 注释明确说，再加一条「launch 能不能展开」的测试只会重复 `ros2 launch … --show-args`。
-
-两个缝都不能替代实飞。seam 2 证明逻辑，seam 1 证明接线；真飞机的气动、振动、遥控链路与动捕遮挡不在任何夹具里。
+`nmpc` 另有 `test_mavros_interface.py`（消息字段与 `type_mask` 契约）与 `test_preflight_check.py`（纯逻辑、参数与 `ast` 扫描），都不起 DUT。`bench` 自测把域号钉在 73 并硬拒域 0，多夹具同跑要用 `colcon test --executor sequential`；`vrpn_listener` 与 `bringup` 没有测试。两个缝都不替代实飞。
 
 <big>**一句话总结：包内 seam 2 直接调纯函数，seam 1 用 bench 夹具起节点子进程看话题，两者都不替代实飞。**</big>
 
 ### 6.6.2 仓库级测试：`run/tests/` 与 `tools/*/test_*.py`
 
-`run/tests/` 守的是**操作层**，不是控制律。`test_operation_manual.py` 把现场一页纸里的菜单号、命令与话题名钉到 `z0.ACTIONS`、`z0.ACTION_BY_KEY`、`z0.PROBES`；`test_safety_paths_drill.py` 把安全路径演练文档钉到 `docs/assets/z0.params` 与真实入口点；`test_z0_menu.py` 测 `z0.py` 的纯函数；`test_rec.py` 测录制层的解析、拼装与安全边界；`test_z0_check_live.py` 则对着 `bench` 假 mavros 做正控，确认自检真的读到帧，而不是「满屏 ✓ 但零帧」。这一组测试的共同点是：能离线验的判据不留到现场。
+`run/tests/` 守操作层：菜单号、命令与话题名钉到 `z0.ACTIONS` 等，安全演练文档钉到 `docs/assets/z0.params`，录制层测解析与安全边界，`test_z0_check_live.py` 对着假 mavros 做正控。`tools/*/test_*.py` 守离线测量与数据处理：电池与悬停推力、飞控参数、梯子基线、SITL 判据、符号映射、时间常数、RTI 收敛与报告数据；需要 bag 或 `.ulg` 的用例自己取。两组都不测控制律。
 
-`tools/*/test_*.py` 守的是**离线测量与数据处理**：电池推力、悬停推力、飞控参数、梯子基线、SITL 判据、符号映射、时间常数、RTI 收敛与报告数据管线。它们大多不需要飞机，有些需要已录的 bag 或 `.ulg`；它们回答的是「读数算得对不对、报告数据能不能复现」，不回答「控制律稳不稳」。
-
-跑这些测试要先 source `/opt/ros/humble`、`~/px4_msgs_ws`、`~/mavros_ws` 与本仓的 `install/`；`bench` 在模块级 import `px4_msgs`；少了那个工作区，包内 seam 1 会在 collection 阶段报 `ModuleNotFoundError`，`run/tests` 与 `tools/*` 里依赖它的用例则会被 `importorskip` 跳过。全量测试还要设 `ACADOS_SOURCE_DIR`，否则 acados 会被猜成源码目录，几十个最优控制问题用例一起变红。这是环境问题，不是代码坏了。
+跑之前 source `/opt/ros/humble`、`~/px4_msgs_ws`、`~/mavros_ws` 与本仓 `install/`；缺 `px4_msgs` 时 seam 1 在 collection 报错，`run/tests` 与 `tools/*` 的依赖用例被 `importorskip` 跳过。全量测试还要设 `ACADOS_SOURCE_DIR`，否则 acados 会被猜成源码目录。
 
 <big>**一句话总结：run/tests 守操作文档与菜单脚本，tools 的测试守离线测量与报告数据，它们都不测控制律。**</big>
 
