@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Phase 2 的 **MPC（模型预测控制）节点** —— 把 `ocp` + `sign_map` 接到**下行载体**上。
+"""Phase 2 的 **MPC 节点** —— 把 `ocp` + `sign_map` 接到**下行载体**上。
 
 层级是 **(C) 级 CTBR**：本节点只发"**总推力 + 机体角速率**"，**姿态环与混控仍留在飞控里**
 （理由与备选见 [`phase2-implementation.md`](../../../docs/control/phase2-implementation.md) §2.1）。
@@ -24,12 +24,12 @@
 
 | 方向 | 话题 | QoS | 依据 |
 |---|---|---|---|
-| 订阅 | `/mocap/pose_enu`（**ENU/FLU**，B 档；`state_source=mocap` 时才有这一条） | 可靠 / depth 10 | `mocap_rel_pose_node.cpp:110` `QoS(10)` |
+| 订阅 | `/mocap/pose_enu`（**ENU/FLU**，B 档；`state_source=mocap` 时才有这一条） | 可靠 / depth 10 | `mocap_rel_pose_node.cpp:120` `QoS(10)` |
 | 订阅 | `/mocap/velocity_enu`（`geometry_msgs/TwistStamped`，**ENU**，B 档；`state_source=mocap` 时才有） | 可靠 / depth 10 | `mocap_rel_pose_node.cpp` 的 `QoS(10)`；★ 速度来源（ticket 15）—— `PoseStamped` 没有 `twist` 字段，`v` 必须走这条独立话题才能进 `x + v·τ` |
 | 订阅 | ~~`/fmu/out/vehicle_local_position` + `/fmu/out/vehicle_attitude`（A 档）~~ | — | ☠️ **随载体一起没了**（ticket 13 §二⑤：A 档判为 uXRCE-DDS 专用、入口显式拒绝） |
 | 订阅 | **`/mavros/state`**（`mavros_msgs/State`，闸门源） | 可靠 / depth 10 / **TRANSIENT_LOCAL** | 发布方是 `mavros::StateQoS()`（`qos.hpp:60-63`）⟹ 逐项对齐它，理由见 `QOS_SUB_STATUS` |
 | 订阅 | ~~`/fmu/out/vehicle_status`~~ | — | ☠️ 同上：闸门源换成 `/mavros/state`，见 `TOPIC_STATUS` |
-| 订阅 | `/traj/reference`（`mavros_msgs/PositionTarget`；`reference_source=traj` 时才有这一条） | 可靠 / depth 10 | `traj_node.cpp:108-109` 的 `rclcpp::QoS(10)`（默认 reliable + volatile） |
+| 订阅 | `/traj/reference`（`mavros_msgs/PositionTarget`；`reference_source=traj` 时才有这一条） | 可靠 / depth 10 | `traj_node.cpp:112-113` 的 `rclcpp::QoS(10)`（默认 reliable + volatile） |
 | 发布 | **`/mavros/setpoint_raw/attitude`**（`mavros_msgs/AttitudeTarget`，`type_mask = 128`） | **BEST_EFFORT / depth 5 / volatile** | 收端是 `mavros::SensorDataQoS()`（`setpoint_raw.cpp:62`，用在 `:76-79`）⟹ 逐项对齐，理由见 `QOS_PUB_ATT` |
 | 发布 | ~~`/fmu/in/vehicle_rates_setpoint`~~ / ~~`/fmu/in/offboard_control_mode`~~ | — | ☠️ 前者换成了上面那条；**后者整个删掉** —— 换载体后**不需要我们发心跳**：飞控从收到的 `SET_ATTITUDE_TARGET` 自己派生 `OffboardControlMode`（`mavlink_receiver.cpp:1531-1535`）。⚠️ 由此一条**责任转移**：以前"不发"能让我们自己掌握节奏，现在"不发"就等于"心跳也停了"（详细裁决见 §四那段 ★★）。 |
 | 发布 | `/mpc/predicted_path`、`/mpc/reference`（RViz 用，`nav_msgs/Path` / `Marker`） | 默认（可靠） | 本仓自己的观测面，不接飞控 |
@@ -64,7 +64,7 @@
 
 | 档 | 测量 | 话题（**参数可换**） | 用在 |
 |---|---|---|---|
-| `mocap`（默认） | 动捕，**原生 ENU/FLU** | `/mocap/pose_enu`（上游定死，`mocap_rel_pose_node.cpp:110`） | B 档（动捕闭环）—— 默认档，不给参数就**不改变任何现有行为** |
+| `mocap`（默认） | 动捕，**原生 ENU/FLU** | `/mocap/pose_enu`（上游定死，`mocap_rel_pose_node.cpp:120`） | B 档（动捕闭环）—— 默认档，不给参数就**不改变任何现有行为** |
 | `px4`（☠️ 本阶段启动即拒） | 飞控自己的估计，**NED/FRD** | `-p px4_position_topic` / `px4_attitude_topic` | A 档（ticket 09）—— 闭环第一次**只用了飞控自己给的东西** |
 
 ☠️ **2026-10-12（ticket 13 §二⑤）：`px4` 这一档在本阶段不可用，入口显式拒绝。**
@@ -327,11 +327,11 @@ QOS_SUB_MAVROS_STATE = QoSProfile(history=HistoryPolicy.KEEP_LAST, depth=10,
 QOS_PUB_ATT = QoSProfile(history=HistoryPolicy.KEEP_LAST, depth=5,
                          reliability=ReliabilityPolicy.BEST_EFFORT)
 #: `/mocap/pose_enu` 是 `mocap` 节点用 `QoS(10)`（**可靠**）发的
-#: （`mocap_rel_pose_node.cpp:110`，与 `bench/vrpn_source.py` 的 `mocap_qos()` 一致）。
+#: （`mocap_rel_pose_node.cpp:120`，与 `bench/vrpn_source.py` 的 `mocap_qos()` 一致）。
 QOS_MOCAP = QoSProfile(history=HistoryPolicy.KEEP_LAST, depth=10,
                        reliability=ReliabilityPolicy.RELIABLE)
 #: `/traj/reference` 的发布方是 `traj` 节点，用 `rclcpp::QoS(10)`
-#: （`traj_node.cpp:108-109`：默认 reliable + volatile、depth 10）⟹ 与 `QOS_MOCAP` **同形**。
+#: （`traj_node.cpp:112-113`：默认 reliable + volatile、depth 10）⟹ 与 `QOS_MOCAP` **同形**。
 #: ⚠️ 仍然**单独一个名字**：两条话题的发布方毫无关系，共用一个名字意味着哪天
 #: `mocap` 那条的 QoS 一改会顺带改到轨迹这条上，而这件事在话题面上看不出来。
 QOS_TRAJ_REF = QoSProfile(history=HistoryPolicy.KEEP_LAST, depth=10,
@@ -502,7 +502,7 @@ class NodeParams:
     #: `traj` 档：参考**断流**判据 [s] ⟹ **冻结**（位置保持、速度置 0），**不是**停发。
     #: ★ 依据是 Phase 1 的裁定"缺一帧参考就保持上一个目标，不回退到原点"
     #:   （`phase1-implementation.md` §3.3）；停发的后果比丢帧激烈得多（见 `node_core` 的闸门）。
-    #: ★★ **名字抄 Phase 1 的**（`src/control/README.md:119`）：它那一级就叫 `traj_stream_gap_s`
+    #: ★★ **名字抄 Phase 1 的**（`src/control/README.md:141`）：它那一级就叫 `traj_stream_gap_s`
     #:   （0.5 s ⟹ 保持上一个目标），而 `traj_timeout_s` 在那边是**另一级**（3.0 s ⟹ 放弃这一趟）。
     #:   ☠️ 本参数**一度叫 `traj_timeout_s`**，那是同一个名字指两个阈值、两种后果 ——
     #:   现场照文档读数会读错一档，所以改掉。**本节点没有那第二级**（见 `node_core` 的说明）。
@@ -1330,7 +1330,7 @@ class MpcNode(Node):
         `json.dumps` 抛异常 = **整个 spin 挂掉**（症状是"节点起来一秒就没了、日志文件是空的"）。
         这条是 05 用一次真事故换来的（`offboard_smoke._tick` 里的同一段）。
 
-        ★★ **票面验收项「日志记录 MPC（模型预测控制）内部状态、求解耗时、约束饱和标志，
+        ★★ **票面验收项「日志记录 MPC 内部状态、求解耗时、约束饱和标志，
         供飞行后复盘而不只依赖记忆」就落在这一行**。三样各自的读者：
 
         | 字段 | 复盘时回答的问题 |

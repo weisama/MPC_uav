@@ -6,7 +6,7 @@
 
 **为什么要有这个节点**：`[05]` 要排除的几个静默失败（消息类型不匹配 / QoS 不兼容 /
 推力符号与归一化错）**都不报错、不崩溃**，只表现为"没反应"或"飞机朝错的方向加速"。
-若把真 MPC（模型预测控制）和它们一起第一次接上真 PX4，出问题时分不清是哪一层。
+若把真 MPC 和它们一起第一次接上真 PX4，出问题时分不清是哪一层。
 所以本节点刻意**没有模型** —— 它错了，那就只可能是中间件或符号错了。
 
 ★★ **2026-10-12 起本节点走 mavros**（`/mavros/setpoint_raw/attitude` + `/mavros/cmd/arming` +
@@ -80,7 +80,7 @@ TYPE_MASK_IGNORE_ATTITUDE = AttitudeTarget.IGNORE_ATTITUDE
 #: 取 `mavros_msgs/msg/State.msg` 里的常量 `MODE_PX4_OFFBOARD = OFFBOARD`（第一手：该文件），
 #: 它同时也是 mavros 填这个字段的那条路径 `sys_status.cpp:926`（`uas->str_mode_v10(...)`）的取值，
 #: 并且与本仓库**已经在跑**的 Phase 1 链是同一个串
-#: （`src/control/include/control/px4_interface.hpp:117-119` 的 `ModeNames::offboard`）。
+#: （`src/control/include/control/px4_interface.hpp:127-130` 的 `ModeNames::offboard`）。
 OFFBOARD_MODE = State.MODE_PX4_OFFBOARD
 
 #: `/mavros/state` 的**上报周期**：mavros 每收到一条 HEARTBEAT 才发一帧
@@ -250,7 +250,7 @@ class OffboardSmoke(Node):
         """`/mavros/cmd/arming`（`mavros_msgs/srv/CommandBool`）—— ★ **服务**，不是话题。
 
         第一手：mavros `src/plugins/command.cpp:111-113` 把它建在 `~/arming` 上；
-        本仓库**已经在跑**的同一形态见 `src/control/src/px4_interface.cpp:177`。
+        本仓库**已经在跑**的同一形态见 `src/control/src/px4_interface.cpp:222`。
         """
         if not self.cli_arming.service_is_ready():
             self._warn_service_once("/mavros/cmd/arming", "mavros 的 cmd/arming")
@@ -281,7 +281,7 @@ class OffboardSmoke(Node):
 
         ★ `base_mode` 留 `0`、只给 `custom_mode` **字符串**：mavros 自己会补
         `CUSTOM_MODE_ENABLED` —— 这正是本仓库 Phase 1 链的用法
-        （`src/control/src/px4_interface.cpp:546-547`，那里的注释逐字写着这一条）；
+        （`src/control/src/px4_interface.cpp:643`，那里的注释逐字写着这一条）；
         消息自己的注释也是这么规定的（`mavros_msgs/srv/SetMode.srv`：`base_mode`
         "filled by MAV_MODE enum value or **0 if custom_mode != ''**"）。
         ⚠️ 应答 `mode_sent=True` **只表示 SET_MODE 报文发出去了** —— 真正的判据是

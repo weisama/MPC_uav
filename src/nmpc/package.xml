@@ -4,7 +4,7 @@
   <name>nmpc</name>
   <version>0.1.0</version>
   <description>
-    Phase 2 的 MPC（模型预测控制）包：把 PX4 的内置 PID 换成自己的控制律（(C) 级 CTBR ——
+    Phase 2 的 MPC 包：把 PX4 的内置 PID 换成自己的控制律（(C) 级 CTBR ——
     只发「总推力 + 机体角速率」，姿态环与混控仍留在飞控里）。
     ★ 分层是刻意的：`sign_map` / `commands` 是**零 ROS 的纯函数**（离线 OCP 与假 PX4 夹具共用），
     只有节点才碰话题。符号与归一化的数值权威在 docs/control/sign-map.md，不在本包里。

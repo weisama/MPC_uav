@@ -16,7 +16,7 @@
     世界系 **ENU**（x 东、y 北、z 天）—— `g = [0, 0, −9.81]`
     机体系 **FLU**（x 前、y 左、z 上 = 推力方向）—— `force = [0, 0, F]`，`F ≥ 0`
 
-**不是 PX4 的 NED/FRD。** 选 ENU/FLU 的推导、理由与代价、以及"MPC（模型预测控制）内部 FLU →
+**不是 PX4 的 NED/FRD。** 选 ENU/FLU 的推导、理由与代价、以及"MPC 内部 FLU →
 PX4 FRD"的那张映射表，**唯一权威在 [`docs/control/sign-map.md`](../../../docs/control/sign-map.md)** ——
 本文件不复制那张表的任何数值（[该文件 §8](../../../docs/control/sign-map.md) 的防漂移契约）。
 

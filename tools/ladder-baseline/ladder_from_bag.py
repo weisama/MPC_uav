@@ -11,23 +11,23 @@
 | 档 | 指令话题 | 实际话题 | 窗口 |
 |---|---|---|---|
 | `a` | `/mavros/setpoint_raw/local`（Phase 1 的 (A) 级，PX4 内置 PID 闭环） | `/mocap/pose_enu` | `AUTO/TRACK` |
-| `c` | `/mpc/reference`（本仓 MPC（模型预测控制）节点喂给求解器的**绝对**参考） | `/mocap/pose_enu` | `AUTO/TRACK` |
-| `c-target` | `/control/target`（`output_mode=external` 链上模型预测控制 **原样消费**的绝对目标） | `/mocap/pose_enu` | `AUTO/TRACK` |
+| `c` | `/mpc/reference`（本仓 MPC 节点喂给求解器的**绝对**参考） | `/mocap/pose_enu` | `AUTO/TRACK` |
+| `c-target` | `/control/target`（`output_mode=external` 链上 MPC **原样消费**的绝对目标） | `/mocap/pose_enu` | `AUTO/TRACK` |
 | `t-anchored` | `/traj/reference` **+ 重建的锚点**（`reference_source=traj` 链：锚点是闸门首开那一拍的测量） | `/mocap/pose_enu` | 参考覆盖区间 ∩ `AUTO/TRACK`（包里没有 `/control/state` 时取参考首末帧） |
 
 ★★ **为什么有 `c-target` 而不是只有 `c`**：录包的话题正则
 `^/(mavros|mocap|traj|control|vrpn)/` **不包含 `/mpc/`** ⟹ 实飞包里根本没有
 `/mpc/reference`（`c` 在那些包上会直接报"话题不存在"，这是**包的边界**，不是缺陷）。
-external 链上 `control` 发的 `/control/target` 就是模型预测控制当拍消费的目标，两档同一 datum。
+external 链上 `control` 发的 `/control/target` 就是 MPC 当拍消费的目标，两档同一 datum。
 
-★★ **口径要按模型预测控制的 `参考=` 选，不能按 control 的 `output_mode` 选，也不能"包里有
+★★ **口径要按 MPC 的 `参考=` 选，不能按 control 的 `output_mode` 选，也不能"包里有
 `/traj/reference` 就猜 traj 模式"**：2026-10-17 悬停那趟 control 是 `external`（照发
-`/control/target`），模型预测控制启动行写的是 **`参考=/control/target`** ⟹ 正确口径是 `c-target`。
+`/control/target`），MPC 启动行写的是 **`参考=/control/target`** ⟹ 正确口径是 `c-target`。
 若误按 traj 模式重建锚点，两个"原点"实测差 **9.2 cm（x）**，悬停误差会从 **0.0861**
 误报成 **0.0537**（低 38%）—— 不是控制器差异，是零点差异，而且两个数都"看起来正常"。
 
 ★★ **为什么 `t-anchored` 要重建锚点**：`/traj/reference` 是**相对轨迹原点**的偏移，
-不是绝对位置。模型预测控制在 `reference_source=traj` 下把目标算成 `锚点 + 参考`，锚点是
+不是绝对位置。MPC 在 `reference_source=traj` 下把目标算成 `锚点 + 参考`，锚点是
 **闸门第一次打开那一拍**的动捕测量，之后不随测量移动。拿 `/traj/reference` 直接当
 指令，零点就错在"起飞那一刻飞机已经飘到的位置"—— 本仓系绳包实测差 **约 5 mm（z：4.8 mm 按插值、5.0 mm 按最近帧）**，
 看着像跟踪误差、其实是锚点。
@@ -62,14 +62,14 @@ REPO = Path(__file__).resolve().parents[2]
 
 #: `--caliber` → (指令话题, 指令怎么得到, 人话)
 #:   `abs`      = 话题本身就是**绝对**位置，直接用
-#:   `anchored` = 话题是**相对**偏移，要加锚点（模型预测控制的 `reference_source=traj` 规则）
+#:   `anchored` = 话题是**相对**偏移，要加锚点（MPC 的 `reference_source=traj` 规则）
 CALIBERS = {
     "a": ("/mavros/setpoint_raw/local", "abs",
           "(A) 级：PX4 内置级联 PID 的闭环指令"),
     "c": ("/mpc/reference", "abs",
-          "(C) 级：本仓 MPC（模型预测控制）节点喂给求解器的绝对参考"),
+          "(C) 级：本仓 MPC 节点喂给求解器的绝对参考"),
     "c-target": ("/control/target", "abs",
-                 "(C) 级 external 链：control 发给模型预测控制、由模型预测控制原样消费的绝对目标"),
+                 "(C) 级 external 链：control 发给 MPC、由 MPC 原样消费的绝对目标"),
     "t-anchored": ("/traj/reference", "anchored",
                    "(C) 级 traj 链：锚点（闸门首开那一拍的动捕）+ /traj/reference"),
 }
@@ -193,7 +193,7 @@ def _gate_datum(cmd: Series, act: Series, window) -> None:
 
 
 def _anchored_cmd(series, extras):
-    """按模型预测控制的 `reference_source=traj` 规则重建**绝对**指令。
+    """按 MPC 的 `reference_source=traj` 规则重建**绝对**指令。
 
     规则（`src/nmpc/nmpc/node_core.py` 的 `_update_anchor`）：
       闸门第一次打开 = 已被解锁 ∧ 模式 OFFBOARD ∧ 已收到 `/traj/reference`。
@@ -217,7 +217,7 @@ def _anchored_cmd(series, extras):
     if off_t is None:
         raise SystemExit(
             f"{MAVROS_STATE_TOPIC} 里从未出现 armed ∧ mode={MODE_OFFBOARD} ⟹ "
-            "模型预测控制的闸门从未打开，这个包里没有闭环段。"
+            "MPC 的闸门从未打开，这个包里没有闭环段。"
         )
     t_gate = max(float(ref.t[0]), off_t)
     i = anchor_index(t_gate, act.t)

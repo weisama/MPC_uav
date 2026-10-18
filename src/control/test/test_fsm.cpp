@@ -1661,7 +1661,7 @@ TEST(Track, 收到参考后目标等于轨迹原点加参考)
 }
 
 /// ★★ 票 15：`TRACK` 的**参考速度**要原样进 `Decision`（`/control/target` 的前馈）。
-/// 鉴别力：位置那档掩码忽略速度、看不出对错；external 档若漏掉这三格，模型预测控制的时域外推
+/// 鉴别力：位置那档掩码忽略速度、看不出对错；external 档若漏掉这三格，MPC 的时域外推
 /// 会退化成"原地保持"——**话题面上每帧都正常**，只有飞机的跟随会慢半拍（最难查的一类）。
 TEST(Track, 参考速度原样转发_断流时归零)
 {
@@ -1676,7 +1676,7 @@ TEST(Track, 参考速度原样转发_断流时归零)
   const control::Decision d = advance_traj(
     c, 1, odom, ref_at_with_velocity(0.5, -0.25, 0.10, 0.20, -0.10, 0.05, 0.3));
   EXPECT_EQ(d.phase, control::Phase::kTrack);
-  EXPECT_DOUBLE_EQ(d.target_vx, 0.20) << "参考速度没转发 ⟹ external 档的模型预测控制少了前馈";
+  EXPECT_DOUBLE_EQ(d.target_vx, 0.20) << "参考速度没转发 ⟹ external 档的 MPC 少了前馈";
   EXPECT_DOUBLE_EQ(d.target_vy, -0.10);
   EXPECT_DOUBLE_EQ(d.target_vz, 0.05);
 

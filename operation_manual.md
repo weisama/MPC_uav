@@ -273,7 +273,7 @@ vrpn_listener → mocap），**到 `mocap` 为止** —— ★ **不起 `traj`/`
 | # | 选什么 | 尾巴（公共前缀之外） | 这一档额外带的参数 | 用在哪 |
 |---|---|---|---|---|
 | 1 | **offboard 控制**（`control` 自己发 PX4 setpoint） | `traj → control` | ——（`output_mode` 默认 `position`） | 起完选轨迹 + 按开始键（§3.1 / §4） |
-| 2 | **模型预测控制**（`nmpc` 的 `mpc_node.py` 发执行器指令） | `traj → mpc → control` | `control`：`output_mode:=external`；`mpc`：`reference_source:=control` + `offboard_prestream:=true` | 起完选轨迹 + 按开始键（**与第 1 档完全一样**） |
+| 2 | **MPC**（`nmpc` 的 `mpc_node.py` 发执行器指令） | `traj → mpc → control` | `control`：`output_mode:=external`；`mpc`：`reference_source:=control` + `offboard_prestream:=true` | 起完选轨迹 + 按开始键（**与第 1 档完全一样**） |
 
 ★ **两档的尾巴都含 `traj`**（操作者 2026-10-16：「**轨迹必须起没得选**」）—— 这是**结构上的事实**；
 **没有"定点保持（`hold`）、不起 `traj`"那一档了**（一版有过，同一天删掉）。

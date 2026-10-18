@@ -96,7 +96,7 @@ SITL 驱动器上跑起来，本轮在 `tools/report/evidence/sitl/` 下加了�
 
 1. **`offboard_prestream:=true`**：PX4 要先收到 `SET_ATTITUDE_TARGET` 才进 OFFBOARD，
    DUT 的闸门又要求 `mode=="OFFBOARD"` 才发 ⟹ 互等死锁。实飞档同样用 `offboard_prestream`
-   破局（`run/z0.py` 的模型预测控制档）。包装把它补进 DUT 参数，`obs["params"]` 里有原文。
+   破局（`run/z0.py` 的 MPC 档）。包装把它补进 DUT 参数，`obs["params"]` 里有原文。
 2. **`mode` → `nav_state` 合成**：票 13 之后 DUT 的逐帧 JSONL 写 `mode`（字符串）而**没有**
    `nav_state`（整数）。`verify_tier_b_seam3.py:913` 的「不失控」主判读 `f.get("nav_state")==14`
    ⟹ 第一版包装没补这一列时，窗口内 793 帧 `mode` 全是 `"OFFBOARD"`、而 `offboard_kept=False`。

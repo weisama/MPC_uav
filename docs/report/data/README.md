@@ -11,10 +11,10 @@
 |---|---|---|---|
 | `target` | 参考目标 | offboard 包 `/traj/reference`（相对量）+ 轨迹原点 | 无（目标） |
 | `offboard` | PX4 内置 PID 实飞 | offboard 包 `/mavros/vision_pose/pose` | `/mavros/local_position/pose`（EKF 30 Hz） |
-| `mpc_sim` | 模型预测控制在 SITL 里闭环 | 票 02 的 `R-*` summary，`x0`（合成动捕） | SITL 合成 mocap |
-| `mpc_real` | 模型预测控制实飞 | 实飞包 `/mavros/vision_pose/pose` | `/mocap/pose_enu`（原始动捕） |
+| `mpc_sim` | MPC 在 SITL 里闭环 | 票 02 的 `R-*` summary，`x0`（合成动捕） | SITL 合成 mocap |
+| `mpc_real` | MPC 实飞 | 实飞包 `/mavros/vision_pose/pose` | `/mocap/pose_enu`（原始动捕） |
 
-⚠️ 报告里的“实际轨迹”统一用 `/mavros/vision_pose/pose`，但 offboard 与模型预测控制两组的
+⚠️ 报告里的“实际轨迹”统一用 `/mavros/vision_pose/pose`，但 offboard 与 MPC 两组的
 **控制器反馈不是同一条话题**（前者 EKF 30 Hz，后者原始动捕）。
 
 ## 窗口
@@ -45,8 +45,8 @@
 | `vx_mps`,`vy_mps`,`vz_mps` | m/s | 目标=参考速度；实飞=EKF `velocity_local`；仿真=`x0[3:6]` |
 | `roll_rad`,`pitch_rad`,`yaw_rad` | rad | ZYX 内旋，由 `qw..qz` 换算 |
 | `qw`,`qx`,`qy`,`qz` | — | **wxyz**（与 PX4 一致） |
-| `u_thrust_n` | N | 仅模型预测控制源：`thrust × t_max`；`t_max` 逐趟见 `.json` |
-| `wx_radps`,`wy_radps`,`wz_radps` | rad/s | 仅模型预测控制源：机体角速率指令 |
+| `u_thrust_n` | N | 仅 MPC 源：`thrust × t_max`；`t_max` 逐趟见 `.json` |
+| `wx_radps`,`wy_radps`,`wz_radps` | rad/s | 仅 MPC 源：机体角速率指令 |
 | `valid` | 0/1 | 该网格点是否落在该源原始数据的时间范围内；0 = 端点保持值 |
 
 网格 100 Hz：位置/速度线性插值，四元数沿最短弧 slerp，控制量**零阶保持**。
@@ -56,7 +56,7 @@
 轨迹原点取 **`AUTO/WAIT_START` 期间指令的恒定值**，不是 `/traj/start` 时刻的飞机位置：
 FSM 在稳定判据成立时就锁存原点，两者实测差 6.5–10.5 cm。⛔ 用后者会引入系统偏差。
 
-- offboard：`/mavros/setpoint_raw/local`；模型预测控制：`/control/target`；
+- offboard：`/mavros/setpoint_raw/local`；MPC：`/control/target`；
 - 仿真：`x_ref0（前摇）− 模型参考首点`，等价于「DUT 锚点状态 + 参考 z 偏置 1.0 m」；
 - 所有源减去各自原点后再写 `x_m` 等相对列。
 

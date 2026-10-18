@@ -451,7 +451,7 @@ private:
     }
   }
 
-  /// 日志里那半句"它的形状长什么样" —— 三条轨迹的尺寸差别不看一眼是记不住的。
+  /// 日志里那半句"它的形状长什么样" —— 四条轨迹的尺寸差别不看一眼是记不住的。
   /// ★ 周长与时长**一律从轨迹对象自己算**（`duration() · max_speed`），不写死：
   ///   写死的意思是"改了 `lemniscate_a_m` 之后日志还在说 3.05 m"（Spec 审查指出过）。
   std::string describe_shape(traj::Kind kind) const

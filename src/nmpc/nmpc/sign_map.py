@@ -1,4 +1,4 @@
-"""MPC（模型预测控制）内部量 → 下行字段的**唯一一处实现**（2026-10-12 起**两个具名入口**）。
+"""MPC 内部量 → 下行字段的**唯一一处实现**（2026-10-12 起**两个具名入口**）。
 
 两个入口对应两条下行通路（口径见 [`docs/control/sign-map.md`](../../../docs/control/sign-map.md)
 **§2.2 / §2.3** —— "谁取负"那张表）：
@@ -64,7 +64,7 @@ def _checked_inputs(omega_flu, thrust_n, t_max_n):
     （否则改一处、漏一处，而漏掉的那条恰恰是"宁可炸掉也不静默发错"的那一类）。
 
     ⚠️ 与 `node_core.py` 自己的入参检查是**故意重复**的（守在另一个门口），
-    那条理由写在 `node_core.py:423`。
+    那条理由写在 `node_core.py:504`。
     """
     if not math.isfinite(t_max_n) or t_max_n <= 0.0:
         raise ValueError(f"T_max 必须是正的有限值，收到 {t_max_n!r}")

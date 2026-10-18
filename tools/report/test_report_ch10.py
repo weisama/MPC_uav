@@ -225,12 +225,11 @@ def test_boundary_items_present():
         assert phrase in text, f"边界一节缺少 {phrase!r}"
 
 
-def test_no_bare_mpc_and_no_pass_phrase():
+def test_mpc_term_used_and_no_pass_phrase():
     text = CHAPTER.read_text(encoding="utf-8")
     assert "基本通过" not in text
-    # 去掉首次出现的“模型预测控制（MPC）”，其余正文不得再有裸词 MPC。
-    stripped = text.replace("模型预测控制（MPC）", "", 1)
-    assert "MPC" not in stripped, "正文还有裸词 MPC"
+    assert "模型预测控制" not in text, "正文应统一写 MPC"
+    assert "MPC" in text
 
 
 def test_caption_lines_are_close_to_figures():

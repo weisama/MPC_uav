@@ -14,7 +14,7 @@
 速度不经过两阶段原点选择器（原点只平移位置）。
 ⚠️ 已知不一致：外参平移加在**位置**上，速度仍是**刚体原点**的速度；同一个刚体上两点的速度差 `ω × d`
 （只有竖直偏移时由 roll/pitch 角速度耦合，≈ `0.08·ω_xy`）。EKF2 **不融合**动捕速度
-（`EKF2_EV_CTRL = 11`，3D 速度位关着），所以只影响 Phase 2 的 MPC（模型预测控制）速度输入；
+（`EKF2_EV_CTRL = 11`，3D 速度位关着），所以只影响 Phase 2 的 MPC 速度输入；
 twist 的角速度部分实测是恒 0，无法补偿。
 
 **本节点是全栈唯一一个「不做任何坐标转换」的节点** —— 它做三件事：
@@ -92,7 +92,7 @@ p_IMU = p_刚体 + R(该帧姿态) · r    ，r = (body_to_imu_x, body_to_imu_y,
 | `body_to_imu_x/y/z` | `0 / 0 / **−0.080**` | ★ **动捕外参**：刚体原点 → IMU 中心，机体系 **FLU**（x 前 / y 左 / z 上，m）。z0 的 z 是负的（IMU 在刚体原点**下方**）。三个都填 0 = 关掉外参。**随刚体摆放而变，每场次复核**；且与飞控 `EKF2_EV_POS_*` 成对（见上） |
 | `vision_pose_topic` | `/mavros/vision_pose/pose` | 喂 EKF2 |
 | `pose_enu_topic` | `/mocap/pose_enu` | 记录 / Phase 2 状态源 |
-| `velocity_enu_topic` | `/mocap/velocity_enu` | Phase 2 的模型预测控制速度来源（`TwistStamped`，与 pose 同一个 frame） |
+| `velocity_enu_topic` | `/mocap/velocity_enu` | Phase 2 的 MPC 速度来源（`TwistStamped`，与 pose 同一个 frame） |
 | `state_topic` | `/mavros/state` | 检测**解锁上升沿** |
 | `boot_samples` | `30` | 阶段 A 采样帧数（动捕 ~196 Hz ⟹ ≈0.15 s） |
 | `arm_samples` | `60` | 阶段 B 采样帧数（≈0.3 s，对应 §3.4 的"约 30–120 帧"） |

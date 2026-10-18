@@ -1,4 +1,4 @@
-# MPC（模型预测控制）节点与 seam 1 —— 话题面上发生了什么（ticket 06）
+# MPC 节点与 seam 1 —— 话题面上发生了什么（ticket 06）
 
 > 上游：[`phase2-implementation.md`](phase2-implementation.md) §4 的 **S4**（节点骨架）与 §2.5 的 **M7–M9**。
 > 本页是那两条的**交付文档**：节点在话题面上的**行为**、`seam 1` 这个名字的**边界**、

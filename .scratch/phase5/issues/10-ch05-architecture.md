@@ -1,6 +1,6 @@
 # 10: 第 5 章 系统架构与实验平台
 
-Status: ready-for-human
+Status: done
 Type: task
 
 **What to build:** `docs/report/chapters/05-architecture.md`。
@@ -19,7 +19,7 @@ Type: task
   至少覆盖 `/traj/reference`、`/traj/progress`、`/traj/start`、`/control/state`、
   `/control/target`、`/mavros/setpoint_raw/local`、`/mavros/setpoint_raw/attitude`、
   `/mavros/vision_pose/pose`、`/mocap/pose_enu`；
-- **数据流文字描述**：offboard 档 vs 模型预测控制档的两条链，各自的控制量是什么；
+- **数据流文字描述**：offboard 档 vs MPC 档的两条链，各自的控制量是什么；
 - **安全边界**：谁解锁、谁切模式、谁停发 setpoint；PX4 的 offboard 失效保护；
 - **不画装饰性架构图**（操作者已裁定不要）；用文字 + 表。
 
@@ -60,7 +60,7 @@ Type: task
 - [x] 每个叶子小节末尾有且只有一行 `<big>**一句话总结：……**</big>`，且句子不引入本节之外的数
 
 - [x] 话题表的频率标注测量时点，不写"约 XX Hz"当永恒事实
-- [x] 两条链的控制量写清：offboard = 位置 + yaw；模型预测控制 = 总推力 + 机体三轴角速率
+- [x] 两条链的控制量写清：offboard = 位置 + yaw；MPC = 总推力 + 机体三轴角速率
 - [x] 说清 uXRCE-DDS **不使用**、mavros 是唯一链路
 - [x] 说清 FLU/FRD、ENU/NED 的转换发生在哪一侧，不重复第 8 章的推导
 - [x] 不画架构图；不用 ASCII 大图代替文字
@@ -79,7 +79,7 @@ Type: task
 1. 5.1 符号与缩写（表 5-1）；5.2 三层架构（表 5-2）；5.3 两条动捕路径（表 5-3）；
 2. 5.4 硬件连接（表 5-4）、软件栈（表 5-5）、为什么没有 uXRCE-DDS；
 3. 5.5 话题表（表 5-6，16 行，九个指定话题全在）；
-4. 5.6 offboard 档（位置 + yaw）与模型预测控制档（总推力 + 机体三轴角速率）两条链；
+4. 5.6 offboard 档（位置 + yaw）与 MPC 档（总推力 + 机体三轴角速率）两条链；
 5. 5.7 坐标系与转换发生在哪一侧（表 5-7）；5.8 安全边界（表 5-8）；5.9 本章引用清单（表 5-9，15 行）。
 
 **话题频率快照**（2026-10-17 六份包，[`tools/report/topic_frequency.py`](../../../tools/report/topic_frequency.py) 重算，读数存 [`topic-frequency-20261017.json`](../../../tools/report/evidence/topic-frequency-20261017.json)；完整表见正文表 5-6）：
@@ -102,7 +102,7 @@ Type: task
 - 话题语义、`type_mask`、坐标系：`docs/control/phase1-implementation.md` §2–3、`docs/reference/px4-interface.md`；
   `/mavros/setpoint_raw/local` 的 **2552** 与 `/control/target` 的 **2496** 分别核到
   `src/control/include/control/px4_interface.hpp` 的 `kTypeMaskPositionAndYaw` / `kTypeMaskPositionVelocityAndYaw`；
-- 模型预测控制输出：`src/nmpc/nmpc/mpc_node.py`（`/mavros/setpoint_raw/attitude`、`type_mask=128`、100 Hz）、
+- MPC 输出：`src/nmpc/nmpc/mpc_node.py`（`/mavros/setpoint_raw/attitude`、`type_mask=128`、100 Hz）、
   `src/nmpc/nmpc/sign_map.py`（FLU 角速率原样、正号归一化推力）、`src/nmpc/nmpc/node_core.py`（`state_source=mocap`）；
 - 安全边界：`run/README.md`、`src/control/include/control/fsm.hpp`、`docs/assets/z0.params`；
 - 动捕两条路径与硬件：`docs/reference/mocap-setup.md`、`src/mocap/README.md`、`src/vrpn_listener/config/params.yaml`；
@@ -134,7 +134,7 @@ Type: task
   两档的流程描述都已改。
 - **失效分支不是“只停发”（真，但分两类）**：`fsm.hpp:1289-1310` 在已解锁时对输入类失效请求 `AUTO.LAND`；
   打杆接管与模式被夺走 ④ 那条分支，只停发、不请求任何模式。5.6.1 第 9 步已按两类改。
-- **模型预测控制关闸是停流（真）**：`node_core.py` 的 `_hold()` 返回 `publish=False`，不发布；
+- **MPC 关闸是停流（真）**：`node_core.py` 的 `_hold()` 返回 `publish=False`，不发布；
   初稿写“发零帧”，已改成“停流——不发布，也不冻结在最后一个目标”。
 - **ch5 / ch6 是并行的硬件路径（真）**：`z0.params` 的 `RC_MAP_ARM_SW=5`、`RC_MAP_FLTMODE=6`；
   表 5-8 已补两行，并说明外部解锁会被 `kArmingByUs` 判为异常、`control` 停发。
@@ -159,7 +159,7 @@ Type: task
   5.4→5.3、5.5→5.4、5.6→5.5、5.7→5.6、5.8→5.7、5.9→5.8；原表 5-4…5-9 → 表 5-3…5-11。
 - 原 5.6 的 18 步文字改为三张表：
   - 表 5-6「两条链的共同点」：任务总管、轨迹源、操作流程、OFFBOARD 前置、轨迹原点、下行链路、结束与失效、互斥；
-  - 表 5-7「offboard 档」与表 5-8「模型预测控制档」：同一组项目（谁发、下行话题、控制量、
+  - 表 5-7「offboard 档」与表 5-8「MPC 档」：同一组项目（谁发、下行话题、控制量、
     `type_mask`、指令频率、参考、状态反馈、PX4 承担、预流、停止条件），便于逐行对照。
 - 章首「三个问题」改为「两个问题」，去掉已被删除的两条动捕路径。
 - 未改动操作者的手改：5.2 的总结句、被删各节的解释段落、硬件表的表头分隔线等均保持原样。
@@ -172,3 +172,7 @@ Type: task
 注意：原定「两条动捕路径」内容已不在本章；章首与 5.2 表中仍有一处「两条动捕路径同时失去状态」
 的措辞，未改，留给操作者决定是否恢复该节或改这句。上一节「审阅建议重点」里的 5.3 / 5.6 / 5.8
 编号已被本次改结构取代（现在的 5.3 是硬件连接，5.5 是两条数据链，5.7 是安全边界）。
+
+### 2026-10-18 —— 操作者裁定收工
+
+操作者 2026-10-18 指令「全部 tickets 收工」，并对 README 修订与装配结果放行；本票按「做完了」义把 `Status` 转 `done`。收口过程见 [票 20](20-closeout-and-v5.md)。

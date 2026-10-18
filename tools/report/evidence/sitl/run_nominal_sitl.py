@@ -12,7 +12,7 @@ Phase 3（`7dd7133`，2026-10-09），**早于** Phase 4 票 13 把 DUT 的下�
    见 `run/z0.py` 的 `mavros` 动作）。本脚本不负责起它。
 2. **进 OFFBOARD 的前置流**：PX4 只认 `SET_ATTITUDE_TARGET`（由它自己派生
    OffboardControlMode），而 DUT 的闸门又要求 `mode == "OFFBOARD"` ⟹ 两边互等。
-   实飞那一档靠 `offboard_prestream:=true` 破局（`run/z0.py` 的模型预测控制档就是这么起的；
+   实飞那一档靠 `offboard_prestream:=true` 破局（`run/z0.py` 的 MPC 档就是这么起的；
    见 `operation_manual.md` §3.1″ 与 `src/nmpc/README.md` 的 `offboard_prestream` 行）。
    本包装只把这一条**补进 DUT 参数**，与实飞一致；不改闸门、不改控制器。
 3. **逐帧 `nav_state` 这一列**：票 13 换载体后 DUT 的 JSONL 写的是 `mode`（**字符串**，

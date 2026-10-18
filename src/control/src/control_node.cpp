@@ -73,7 +73,7 @@ constexpr double kDegradeRepeatS = 10.0;
 
 /// `TRACK` 进行中"进度心跳"的间隔（s）。★ 与 `diag_period_s` 分开是因为它的**用途不同**：
 /// 那一份是"判据可查"（缺什么、谁断了），这一份是给操作员一个"轨迹还在走、走到几成"的读数。
-/// 取 5 s：三条轨迹分别是 60 s（悬停）、几十秒（方形/8 字）的量级 ⟹ 一次飞行十来条，不刷屏。
+/// 取 5 s：四条轨迹的时长是 60 s 级（悬停，起飞沿用同一时长）与几十秒（方形/8 字）⟹ 一次飞行十来条，不刷屏。
 constexpr double kTrajProgressLogS = 5.0;
 
 /// 把 QoS 剖面的两个关键位翻成人话 —— 判"永远收不到"这类静默故障时，这两个位就是全部信息。
@@ -1360,7 +1360,7 @@ private:
   /// ★★ 票 15：输出后端（`position` / `external`）。只影响"目标发给谁"，不影响任务流程。
   control::OutputMode output_mode_{control::OutputMode::kPosition};
   std::string land_mode_{"AUTO.LAND"};
-  /// 起飞命令的服务名（ticket 09 会由遥控器 ch9 的上升沿去调它）。
+  /// 起飞命令的服务名（ticket 09 起也会由遥控器 ch9 的上升沿去调它）。
   std::string takeoff_service_name_{"/control/takeoff"};
 
   control::Px4Topics topics_;

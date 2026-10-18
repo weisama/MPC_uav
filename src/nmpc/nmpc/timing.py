@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""量 z0 的 OCP **最坏**周期耗时 —— 这个数字决定 MPC（模型预测控制）频率（D6）。
+"""量 z0 的 OCP **最坏**周期耗时 —— 这个数字决定 MPC 频率（D6）。
 
     export ACADOS_SOURCE_DIR=$HOME/acados
     export LD_LIBRARY_PATH=$ACADOS_SOURCE_DIR/lib:$LD_LIBRARY_PATH

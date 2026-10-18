@@ -64,7 +64,7 @@ HOLD_S = 0.5
 
 #: 轨迹参考：位置 + **速度**都给非零 ⟹ 后者能证明它真的从 `/traj/reference`
 #: 经 `fsm.hpp` 转发到了 `/control/target`（位置那一路在 external 档也走，但少了速度
-#: 只有模型预测控制的跟随会变慢，话题面上看不出来）。
+#: 只有 MPC 的跟随会变慢，话题面上看不出来）。
 REF = (0.5, -0.2, 0.1)
 REF_V = (0.2, 0.0, 0.0)
 
@@ -195,7 +195,7 @@ def test_external档_只发绝对目标_开始键与任务流程照旧():
             "TRACK 的目标不是「轨迹原点 + 参考」—— external 档把原点丢了？")
         assert (last.velocity.x, last.velocity.y, last.velocity.z) == pytest.approx(
             REF_V, abs=1e-6), (
-            "参考速度没有从 /traj/reference 转发到 /control/target（模型预测控制会少了前馈）")
+            "参考速度没有从 /traj/reference 转发到 /control/target（MPC 会少了前馈）")
         assert sc.setpoints() == [], "TRACK 里 control 仍在写 /mavros/setpoint_raw/local"
 
 

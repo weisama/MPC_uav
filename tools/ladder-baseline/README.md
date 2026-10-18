@@ -7,9 +7,9 @@
 
 **它量的是**：在「控制器正在跟轨迹」的那段窗口里，**实际位置偏离它自己的指令多少**。
 
-**为什么必须先量 (A) 级**：阶梯 4 的判据是「MPC（模型预测控制）的读数**不差于** (A) 级同一套判据」。
+**为什么必须先量 (A) 级**：阶梯 4 的判据是「MPC 的读数**不差于** (A) 级同一套判据」。
 "不差于"要给一个数作为线，那个数只能从 **(A) 级的实飞**里出 —— 拿 SITL 的数当线，
-比的是仿真与实机，答不了"MPC（模型预测控制）比 PID 如何"。
+比的是仿真与实机，答不了"MPC 比 PID 如何"。
 
 ★ 更基本的一条：**两侧必须由同一份代码、同一条规则算出来**。
 两个各写各的分析脚本、各自"看起来对"的读数相减，减掉的不是控制器差异，是口径差异。
@@ -19,12 +19,12 @@
 
 | 量 | 定义 |
 |---|---|
-| **窗口** | `/control/state` 里**最长的一段 `AUTO/TRACK`**，取该段**首拍到末拍**。`t-anchored` 在包里没有 `/control/state`（模型预测控制自发起步、没起 control）时取 `/traj/reference` 首末帧；有的话取参考覆盖区间 ∩ `AUTO/TRACK` |
+| **窗口** | `/control/state` 里**最长的一段 `AUTO/TRACK`**，取该段**首拍到末拍**。`t-anchored` 在包里没有 `/control/state`（MPC 自发起步、没起 control）时取 `/traj/reference` 首末帧；有的话取参考覆盖区间 ∩ `AUTO/TRACK` |
 | **实际** | `/mocap/pose_enu`（`geometry_msgs/PoseStamped`，ENU） |
 | **指令（口径 a）** | `/mavros/setpoint_raw/local`（`mavros_msgs/PositionTarget`）—— 飞的是 PX4 内置级联 PID |
-| **指令（口径 c）** | `/mpc/reference`（`visualization_msgs/Marker`）—— MPC（模型预测控制）当拍喂给求解器的**绝对**参考 |
-| **指令（口径 c-target）** | `/control/target`（`mavros_msgs/PositionTarget`）—— `reference_source=control` 时模型预测控制 **原样消费**的绝对目标 |
-| **指令（口径 t-anchored）** | **锚点 + `/traj/reference`** —— `reference_source=traj` 时模型预测控制实际算出的绝对目标；锚点按 `node_core._update_anchor` 的规则从包里重建 |
+| **指令（口径 c）** | `/mpc/reference`（`visualization_msgs/Marker`）—— MPC 当拍喂给求解器的**绝对**参考 |
+| **指令（口径 c-target）** | `/control/target`（`mavros_msgs/PositionTarget`）—— `reference_source=control` 时 MPC **原样消费**的绝对目标 |
+| **指令（口径 t-anchored）** | **锚点 + `/traj/reference`** —— `reference_source=traj` 时 MPC 实际算出的绝对目标；锚点按 `node_core._update_anchor` 的规则从包里重建 |
 | **误差** | `e(t) = p_实际(t) − p_指令(t)`；水平报 **`hypot(e_x, e_y)`**，垂直报**带符号的** `e_z` |
 | **采样** | 两条序列都线性插值到**同一个** 50 Hz 网格（`--hz` 可改） |
 
@@ -38,8 +38,8 @@
    ★ 锚点 = **闸门第一次打开那一拍已收到的最新一帧动捕**，不是轨迹起点、也不是"起飞瞬间"。
    2026-10-17 系绳那趟：闸门首开 t 的动捕 z = **0.1267 m**，`/traj/start` 那一刻是 0.1220 m
    —— 差约 **5 mm**（4.8 mm 按插值、5.0 mm 按最近帧；两者相差 9.2 ms）；拿后者当锚点会让整段 `e_z` 平移这个量，**看着仍像正常跟踪误差**。
-   ★★ `control` 照发 `/control/target`，**不代表模型预测控制消费它** —— 同一个 `control` 进程可以
-   `output_mode=external` 而模型预测控制仍用 `reference_source=traj`。**以模型预测控制启动日志的 `参考=` 为准**。
+   ★★ `control` 照发 `/control/target`，**不代表 MPC 消费它** —— 同一个 `control` 进程可以
+   `output_mode=external` 而 MPC 仍用 `reference_source=traj`。**以 MPC 启动日志的 `参考=` 为准**。
    2026-10-17 悬停那趟反过来踩过：启动行明写 `参考=/control/target`，若误按 traj 模式重建锚点，
    两个"原点"差 **9.2 cm（x，−0.1611 对 −0.0690）**，水平均值会从正确的 **0.0861** 误报成
    **0.0537**（低 38%）—— 两个数都"看起来正常"，没有任何报错。
@@ -107,7 +107,7 @@ print(d['bag'], d['window_len_s'], u['xy_mean'], u['xy_max'], a.get('dt_s'))"; d
 
 ## (C) 级实飞读数（2026-10-17）
 
-四份包的 `evidence/` JSON 是本节数字的来源。**口径按各自的模型预测控制启动行选**：
+四份包的 `evidence/` JSON 是本节数字的来源。**口径按各自的 MPC 启动行选**：
 
 | 包 | 口径 | 窗长 s | 水平均值 | 水平最大 | e_z 均值 | \|e_z\| 均值 | \|e_z\| 最大 |
 |---|---|---|---|---|---|---|---|
@@ -119,7 +119,7 @@ print(d['bag'], d['window_len_s'], u['xy_mean'], u['xy_max'], a.get('dt_s'))"; d
 与 (A) 级线并排看：悬停 0.0861/0.1468 对 **0.1049/0.1610**；正方形 0.2628/0.3681 对
 **0.5682/0.7552**；八字 0.2668/0.3892 对 **0.5886/0.8160**（均为未对齐验收口径）。
 ★ 系绳那趟的**整窗**（55.54 s，含起飞斜坡）是 0.0797/0.3464；末 30 s 才是稳态读数。
-★★ **四个包的口径都按各自的模型预测控制启动行选的**：系绳 `参考=/traj/reference` ⟹ `t-anchored`；
+★★ **四个包的口径都按各自的 MPC 启动行选的**：系绳 `参考=/traj/reference` ⟹ `t-anchored`；
 悬停/正方形/八字 `参考=/control/target` ⟹ `c-target`。**不是**按 `control` 的 `output_mode` 猜。
 
 ★ 两个自由飞包的 `aligned.dt_s` 都是 −0.5 s 量级（正方形 −0.54、八字 −0.52），
@@ -200,14 +200,14 @@ print(d['bag'], d['window_len_s'], u['xy_mean'], u['xy_max'], a.get('dt_s'))"; d
 ### 6. ★★ "两个原点"不是同一个 —— 悬停那趟差 9.2 cm（**静默**）
 
 2026-10-17 悬停包：`control` 是 `output_mode=external`，照发 `/control/target`；
-模型预测控制启动行写的是 `参考=/control/target` ⟹ **模型预测控制确实消费了它**，本包的正确口径是 `c-target`。
+MPC 启动行写的是 `参考=/control/target` ⟹ **MPC 确实消费了它**，本包的正确口径是 `c-target`。
 两侧的"轨迹原点"仍是分别抓的：`control` 的轨迹原点来自它自己的稳定判据（EKF，1 m 高度上），
-模型预测控制的锚点来自闸门首开那一拍的**动捕**。实测 x 差 **0.0920 m**（−0.0690 对 −0.1611）。
+MPC 的锚点来自闸门首开那一拍的**动捕**。实测 x 差 **0.0920 m**（−0.0690 对 −0.1611）。
 若误以为这趟走的是 traj 模式、按锚点重建，水平均值会从 **0.0861** 变成 **0.0537**（低 38%），
 而两个数**都"看起来正常"**，没有任何报错。那份选错口径的 JSON 保留为
 `evidence/C-anchored-6_free__20261017-070103-WRONG-CALIBER.json`（**只作反例，不进任何结论**）。
 
-⟹ 口径选择必须是**每次飞行查模型预测控制启动日志**的一条动作，不是"这个包是 external 就选 c-target"。
+⟹ 口径选择必须是**每次飞行查 MPC 启动日志**的一条动作，不是"这个包是 external 就选 c-target"。
 ⟹ 反向也成立：`reference_source=traj` 时**必须**用 `t-anchored`，且锚点按
 `闸门首开那一拍已收到的最新动捕` 重建 —— 用 `/traj/start` 那一刻会差约 **5 mm**（4.8–5.0 mm，系绳包实测）。
 
@@ -246,7 +246,7 @@ python3 tools/ladder-baseline/test_ladder_core.py --self-test
 > ⚠️ 反例 JSON 是**修正前那版代码**的产物（`anchor` 里多一个 `window_rule` 键）——
 > 它的价值就是"当时的错误输出长什么样"，**不要**拿它复现本文读数。
 > 想复跑要先把对应的包解出来（`/tmp/z0-ladder/` 过不了重启）。
-> ★★ 口径**必须按模型预测控制启动日志的 `参考=` 选**（见上文第 2 条），不能按 control 的
+> ★★ 口径**必须按 MPC 启动日志的 `参考=` 选**（见上文第 2 条），不能按 control 的
 > `output_mode` —— 悬停那趟用错会把水平均值从 0.0861 报成 0.0537（低 38%）。
 
 ## 依赖

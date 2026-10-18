@@ -1,6 +1,6 @@
 # 03: 3 张轨迹图（XY 俯视 + Z–t，含 3D 候选）
 
-Status: ready-for-human
+Status: done
 Type: task
 
 **What to build:** 三张轨迹对比图，每张两个子图；外加三张 3D 候选图（不进正文）。
@@ -12,7 +12,7 @@ Type: task
 每张图（悬停 / 正方形 / 8 字）：
 
 - **左：XY 俯视**，等比例；四源叠加：
-  目标（虚线）、offboard 话题包、模型预测控制仿真、模型预测控制话题包；
+  目标（虚线）、offboard 话题包、MPC 仿真、MPC 话题包；
 - **右：Z–t**，四源叠加，t 相对 `/traj/start`；
 - 起点用同一标记；图例英文；单位 m；
 - 窗口 = 票 01 的公共窗（悬停 0–39.65 s；正方形/8 字到完成）。
@@ -212,3 +212,7 @@ Type: task
 - 没有扩展票 01/02：CSV 里四源的 `roll_rad`/`pitch_rad` 本来就齐全，本次只动绘图与图注。
 - `plot_traj.load_scene` 的必填列扩为 `t,x,y,z,roll,pitch,yaw`；CSV 不需重生成。
 - 轨迹图只为统一坐标轴重画，数据、窗口与四源口径未变。
+
+### 2026-10-18 —— 操作者裁定收工
+
+操作者 2026-10-18 指令「全部 tickets 收工」，并对 README 修订与装配结果放行；本票按「做完了」义把 `Status` 转 `done`。收口过程见 [票 20](20-closeout-and-v5.md)。

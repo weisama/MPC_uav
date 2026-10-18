@@ -1,6 +1,6 @@
 # 12: 第 7 章 启动脚本与遥控等交互（含安全/FSM）
 
-Status: ready-for-human
+Status: done
 Type: task
 
 **What to build:** `docs/report/chapters/07-launch-and-rc.md`。这是"现场那一页"的报告版，
@@ -11,12 +11,12 @@ Type: task
 ## 内容
 
 - **一键起链**：`run/z0.py` 菜单与 `up.sh` / `down.sh`；两条一键链
-  （手动遥控飞 `up_manual` / offboard 或模型预测控制全链）；
+  （手动遥控飞 `up_manual` / offboard 或 MPC 全链）；
   "谁在上位控制飞机"那一问的含义；
 - **启动顺序与判读**：mavros → vrpn → mocap → traj → control（→ model predictive control）；
   每一步的就绪判据（`connected=True`、`/mocap/pose_enu` 有帧、`/control/state` 有帧、
-  模型预测控制启动行）；
-- **输出路径**：offboard 写 `setpoint_raw/local`；模型预测控制写 `setpoint_raw/attitude`，
+  MPC 启动行）；
+- **输出路径**：offboard 写 `setpoint_raw/local`；MPC 写 `setpoint_raw/attitude`，
   `control` 只写 `/control/target`；
 - **录制**：场景 1–6、120 s 倒计时、`session.json`、`MANIFEST.md`；只订阅、不解锁、不发帧；
 - **遥控**：
@@ -54,7 +54,19 @@ Type: task
 - 不写“本节介绍……”；不引入本节之外的数、不引用图号/表号；不写“效果良好/基本通过”。
 - 不单独成标题，不进目录。细则见 [spec.md](../spec.md) §8。
 
+## 跨章阅读（2026-10-18 追加）
+
+写作前**可以并建议**先读其他章节，尤其是相邻章和已落地章，用来对齐术语、符号、详略与过渡：
+
+- 先读 `docs/report/chapters/` 下已存在的章节，再读本章票与相邻章的「内容」，明确本章边界；
+- 术语/符号以 [CONTEXT.md](../../../CONTEXT.md) 为准；其他章已定下的写法优先沿用；
+  发现冲突记进本票 `## Comments`，不改别人的章；
+- 只借组织方式与措辞，不整段搬运；本章结论仍由本章自己给证据；
+- 别的章还没写完时不等待、不阻塞；写完后再做一次交叉核对。
+
 ## 检查清单
+
+- [ ] 写作前读过相邻章与已落地章；术语/符号与它们一致，冲突已记进 Comments
 
 - [x] 每个叶子小节末尾有且只有一行 `<big>**一句话总结：……**</big>`，且句子不引入本节之外的数
 
@@ -76,7 +88,7 @@ Type: task
 本章摘要（10 行内）：
 
 - 7.1 钉死控制权/任务态两个维度与 ch 编号约定；7.2 讲 11 项菜单、四条常用项、两条一键链与"谁在上位控制飞机"。
-- 7.3 给 mavros → vrpn → mocap → traj →（模型预测控制）→ control 的判据与超时；7.4 说明三条输出路径与两种模式下的最后执行者。
+- 7.3 给 mavros → vrpn → mocap → traj →（MPC）→ control 的判据与超时；7.4 说明三条输出路径与两种模式下的最后执行者。
 - 7.5 讲场景 1–6、120 s 倒计时、`session.json`/`MANIFEST.md` 与"只订阅"的 AST 守卫；7.6 按 `params-changes.md` §H 给四个开关的职责与实测档位。
 - 7.7 把状态机写成控制权 × 任务态并给正常路径七步；7.8 给三类失效、三条软停、两条复位与闩锁；7.9 逐条引用五场演练的第一手日志；7.10 列出这条链里没有的东西；7.11 给引用清单。
 
@@ -94,3 +106,9 @@ Type: task
 6. 求解失败注入未演练；回退 (A) 的切换动作同样未演练（票 08 已记操作者接受风险，无证据锚）。
 
 字数：302 行，约 2.00 万字符（含标点）。
+
+**2026-10-18 修订**：操作者要求大幅剪短小结句。11 条一句话总结由 30–50 字压到约 17–20 字，短于票面建议的 20–50 字；仍保持每节一条、只概括本节。
+
+### 2026-10-18 —— 操作者裁定收工
+
+操作者 2026-10-18 指令「全部 tickets 收工」，并对 README 修订与装配结果放行；本票按「做完了」义把 `Status` 转 `done`。收口过程见 [票 20](20-closeout-and-v5.md)。

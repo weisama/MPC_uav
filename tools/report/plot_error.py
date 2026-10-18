@@ -145,8 +145,8 @@ def _caption(scene: str, meta: dict, xlim: Tuple[float, float],
         "- 误差定义：**实际 − 目标**（不是目标 − 实际）；三个分量分别为 "
         "`ex`、`ey`、`ez`，单位 m；坐标均为轨迹原点相对系。",
         "- 来源：offboard 来自 " + _source_description("offboard", meta) + "；"
-        "模型预测控制仿真来自 " + _source_description("mpc_sim", meta) + "；"
-        "模型预测控制实飞来自 " + _source_description("mpc_real", meta) + "；"
+        "MPC 仿真来自 " + _source_description("mpc_sim", meta) + "；"
+        "MPC 实飞来自 " + _source_description("mpc_real", meta) + "；"
         "目标行是 " + _source_description("target", meta) + "。",
         "- 目标姿态与位置均来自 `/traj/reference`；参考在 TRACK 窗内才成立，"
         "跑完后参考继续发零，不能拿末帧参考当完成判据。",

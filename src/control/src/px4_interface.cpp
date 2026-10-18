@@ -30,7 +30,7 @@ static_assert(kTypeMaskPositionAndYaw == 2552, "type_mask 必须是 2552（ticke
 /// ★★ 票 15：`/control/target` 的掩码 —— 位置 + **速度** + yaw 三路都有效，
 ///   只忽略加速度(64/128/256)与 yaw_rate(2048) ⟹ 2496。
 ///   ⚠️ 与上面那条**不是**同一个数，也**不能**互换：给外部控制器的参考少了速度，
-///   模型预测控制的时域外推就退化成"原地保持"，而话题面上每帧都正常。
+///   MPC 的时域外推就退化成"原地保持"，而话题面上每帧都正常。
 constexpr uint16_t kTypeMaskPositionVelocityAndYaw =
   mavros_msgs::msg::PositionTarget::IGNORE_AFX |
   mavros_msgs::msg::PositionTarget::IGNORE_AFY |

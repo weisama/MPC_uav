@@ -1,6 +1,6 @@
 # 11: 第 6 章 项目结构与代码结构
 
-Status: ready-for-human
+Status: done
 Type: task
 
 **What to build:** `docs/report/chapters/06-code-structure.md`。
@@ -16,11 +16,11 @@ Type: task
   - `bringup`：launch/编排，无飞行逻辑；
   - `control`：FSM、offboard 位置控制、arm/takeoff/track/land；
   - `mocap`：VRPN 刚体 → 相对位姿（ENU/FLU），输出 vision pose；
-  - `nmpc`：模型预测控制节点 + 零 ROS 核心层（sign_map/commands/model/ocp/params）；
+  - `nmpc`：MPC 节点 + 零 ROS 核心层（sign_map/commands/model/ocp/params）；
   - `traj`：解析参考轨迹（悬停/正方形/8 字/起飞），只发参考；
   - `vrpn_listener`：VRPN → ROS 2 桥；
 - **数据流**：从 `/traj/reference` 到 `/mavros/setpoint_raw/*` 的两条路径；
-- **模型预测控制的层分界**：`node_core.py`（无 ROS，可单测）vs `mpc_node.py`（话题/参数/日志）；
+- **MPC 的层分界**：`node_core.py`（无 ROS，可单测）vs `mpc_node.py`（话题/参数/日志）；
   说清改哪一层要不要 build（`mpc_node.py` 要，`node_core.py` 不要，按仓库既有经验）；
 - **测试布局**：`src/*/test/`、`run/tests/`、`tools/*/test_*.py` 各自测什么；
 - **证据目录**：`bag/`、`tools/*/evidence/`、`docs/assets/` 的角色（详细索引见第 4/10 章或资料索引）。
@@ -42,7 +42,19 @@ Type: task
 - 不写“本节介绍……”；不引入本节之外的数、不引用图号/表号；不写“效果良好/基本通过”。
 - 不单独成标题，不进目录。细则见 [spec.md](../spec.md) §8。
 
+## 跨章阅读（2026-10-18 追加）
+
+写作前**可以并建议**先读其他章节，尤其是相邻章和已落地章，用来对齐术语、符号、详略与过渡：
+
+- 先读 `docs/report/chapters/` 下已存在的章节，再读本章票与相邻章的「内容」，明确本章边界；
+- 术语/符号以 [CONTEXT.md](../../../CONTEXT.md) 为准；其他章已定下的写法优先沿用；
+  发现冲突记进本票 `## Comments`，不改别人的章；
+- 只借组织方式与措辞，不整段搬运；本章结论仍由本章自己给证据；
+- 别的章还没写完时不等待、不阻塞；写完后再做一次交叉核对。
+
 ## 检查清单
+
+- [ ] 写作前读过相邻章与已落地章；术语/符号与它们一致，冲突已记进 Comments
 
 - [x] 每个叶子小节末尾有且只有一行 `<big>**一句话总结：……**</big>`，且句子不引入本节之外的数
 
@@ -64,7 +76,7 @@ Type: task
 - 仓库根即 colcon 根；`src/` 下 7 个包，`bag/`、`docs/`、`run/`、`tools/` 分职；目录树按 2026-10-17 16:18 UTC 快照现生成。
 - 7 个包逐个给职责、入口、依赖与起链关系；`bench` 明确为测试夹具，`bringup` 明确不含飞行逻辑。
 - 两条数据流按五段对照：`traj` → `control` →（位置 setpoint ｜ `/control/target` → `nmpc`）→ mavros → PX4。
-- 模型预测控制分核心层/节点层：核心层零 ROS，节点层只做话题、参数与日志。
+- MPC 分核心层/节点层：核心层零 ROS，节点层只做话题、参数与日志。
 - build 规则按「进程实际解析到哪份文件」说明：`ros2 run` 的入口脚本看 `install/`，包模块看 `PYTHONPATH` 与安装方式。
 - 测试按包内 seam 1 / seam 2、`run/tests/` 文档守卫、`tools/*/test_*.py` 离线工具三层说明；证据目录按 `bag/`、`tools/*/evidence/`、`docs/assets/`、`docs/report/` 分工。
 
@@ -94,3 +106,7 @@ Type: task
 **字数**：17,532 字符（`wc -m`，含 Markdown 与表格），280 行；13 个叶子内容小节，13 行一句话总结。
 
 **审阅**：待操作者审阅；未过审不转 `done`。建议重点核对 6.4 的两条数据流与 6.5.2 的 build 规则是否符合现场口径。
+
+### 2026-10-18 —— 操作者裁定收工
+
+操作者 2026-10-18 指令「全部 tickets 收工」，并对 README 修订与装配结果放行；本票按「做完了」义把 `Status` 转 `done`。收口过程见 [票 20](20-closeout-and-v5.md)。

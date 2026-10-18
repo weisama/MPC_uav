@@ -11,7 +11,7 @@ run/z0.py env            # 环境自检（只读）
 run/z0.py check          # 起链核对（只读，约 5 s 一张表）
 run/z0.py up             # ★ 一键启动全部（第 9 项；run/up.sh 是它的一行别名）—— 起链前选控制器（两档）
 run/z0.py up_manual      # ★ 一键启动到 mocap 为止（第 8 项）—— 手动遥控飞，**不问**
-run/z0.py mpc            # 只起 MPC（模型预测控制）节点（不进菜单；第 9 项的第 2 档就是它）
+run/z0.py mpc            # 只起 MPC 节点（不进菜单；第 9 项的第 2 档就是它）
 run/z0.py down           # ★ 清除后台节点（第 10 项；run/down.sh 是它的一行别名）
 run/down.sh --dry-run    # 只扫一眼"会停谁"，**一个信号都不发**
 run/z0.py rec_start 3    # ★ 开始录制（第 11 项；场景 1–6，不给号会问一句）
@@ -60,7 +60,7 @@ source /opt/ros/humble/setup.bash && source ~/mavros_ws/install/setup.bash && so
 |---|---|---|
 | `bringup` | `z0.launch.py` 一键起 mocap+traj+control —— `DOWN_TARGETS` 要从它取包名 | 照 [`bringup/README.md`](../src/bringup/README.md) 手打，或 `run/z0.py bringup`（会问一句 `use_vrpn:=false`） |
 | `fly` | 操作台 —— 第 9 项两档起齐后**前台**跑它选轨迹 | 那两档里自动起；想单独再跑：`run/z0.py fly` |
-| `mpc` | **模型预测控制节点**（`nmpc` 的 `mpc_node.py`）—— 第 9 项的第 2 档起它，带上 `--ros-args -p reference_source:=control` + `offboard_prestream:=true`（参考来自 `/control/target`，不再自己发 `/traj/start`）。★ **命令自带 acados 的两个环境变量**（`ACADOS_SOURCE_DIR` / `LD_LIBRARY_PATH`，`env …` 前缀）—— 缺一个它就在建求解器时 `OSError: libacados.so / libhpipm.so`**起不来**（2026-10-17 起链实测死在第 5 步）；外层已经 export 对了就听外层的 | 那一档里自动起；想单独再跑：`run/z0.py mpc`（它**会问**那四条可选参数 —— 两条参考源**互斥**；接 `control` 的目标答 `reference_source_control`） |
+| `mpc` | **MPC 节点**（`nmpc` 的 `mpc_node.py`）—— 第 9 项的第 2 档起它，带上 `--ros-args -p reference_source:=control` + `offboard_prestream:=true`（参考来自 `/control/target`，不再自己发 `/traj/start`）。★ **命令自带 acados 的两个环境变量**（`ACADOS_SOURCE_DIR` / `LD_LIBRARY_PATH`，`env …` 前缀）—— 缺一个它就在建求解器时 `OSError: libacados.so / libhpipm.so`**起不来**（2026-10-17 起链实测死在第 5 步）；外层已经 export 对了就听外层的 | 那一档里自动起；想单独再跑：`run/z0.py mpc`（它**会问**那四条可选参数 —— 两条参考源**互斥**；接 `control` 的目标答 `reference_source_control`） |
 | `rec_status` | 排障：**现在在录什么**（只读：读状态文件 + 按名字扫一眼录制进程） | `run/z0.py rec_status` |
 | `rec_manifest` | 排障：从 `bag/**/session.json` **重算总表**（每次收口都会顺手写一次；手工拷完 `.ulg` 之后也值得跑一次） | `run/z0.py rec_manifest` |
 
@@ -85,11 +85,11 @@ run/z0.py up_manual    # 第 8 项：动捕 + mavros，手动遥控飞
 | # | 选什么 | 尾巴 | 额外带的参数 | 第 9 项默认 |
 |---|---|---|---|---|
 | 1 | offboard 控制（`control` 自己发 PX4 setpoint） | `traj` → `control` | ——（`output_mode` 默认 `position`） | ★ |
-| 2 | **模型预测控制**（`mpc_node.py` 发执行器指令） | `traj` → `mpc` → `control` | `control`：`output_mode:=external`；`mpc`：`reference_source:=control` + `offboard_prestream:=true` | |
+| 2 | **MPC**（`mpc_node.py` 发执行器指令） | `traj` → `mpc` → `control` | `control`：`output_mode:=external`；`mpc`：`reference_source:=control` + `offboard_prestream:=true` | |
 
 ★ **第 8 项不问**（它只有一档、一版之前的样子）；**第 9 项两档**，**两档的尾巴都含 `traj`**
 （操作者 2026-10-16 的原话「轨迹必须起没得选」⟹ 这是**结构上的事实**，不是提示语）：
-模型预测控制**没有"定点保持（`hold`）、不起 `traj`"那一档了**（一版有过）。
+MPC**没有"定点保持（`hold`）、不起 `traj`"那一档了**（一版有过）。
 ★ **空回车 = 今天的行为一个字不变**（第 9 项 = `+traj/control`）。两档的**操作流程完全相同**：
 `control` 始终是任务总管（开始键、解锁、切 OFFBOARD、起飞、判稳、轨迹原点、`/traj/start`、降落），
 第 2 档只是把「谁最后给 PX4 发指令」换成 `mpc`。选到第 2 档就按它起：

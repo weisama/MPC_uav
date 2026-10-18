@@ -255,7 +255,7 @@ def test_保持前馈是参考自己的平衡点_也就是解析前馈的定义(
 
 def test_参考的姿态是水平的而不是照抄测量姿态():
     """★ 这条单独写，因为"照抄测量姿态"是一个**看起来更自然**的错法：
-    飞机倾斜着悬停时，把倾斜姿态当参考 = 让 MPC（模型预测控制）去维持那个倾斜。"""
+    飞机倾斜着悬停时，把倾斜姿态当参考 = 让 MPC 去维持那个倾斜。"""
     tilted = quat_tilted(roll=0.4, pitch=-0.2)
     ref = hold_reference(pose_to_state((0, 0, 0), tilted), ControlConfig(), N)
     q = ref[0][6:10]

@@ -21,7 +21,7 @@
 | 档 | 测量 | 用在 |
 |---|---|---|
 | `mocap`（默认） | `/mocap/pose_enu`（**原生 ENU/FLU**） | Phase 2 的 B 档（动捕闭环） |
-| `px4`（☠️ 本阶段启动即拒） | `/fmu/out/vehicle_local_position` + `vehicle_attitude`（**NED/FRD**） | A 档（MPC（模型预测控制）读 PX4 自己的状态） |
+| `px4`（☠️ 本阶段启动即拒） | `/fmu/out/vehicle_local_position` + `vehicle_attitude`（**NED/FRD**） | A 档（MPC 读 PX4 自己的状态） |
 
 A 档的价值**不在"多一条输入"**：它是"**我们的约定与真 PX4 一致**"这个问题第一次被真正回答
 （票面原文）—— 04 只验自洽、06 只验"映射表被实现对了"，只有状态**从 PX4 那头进来**，
@@ -156,7 +156,7 @@ MODE_OFFBOARD = "OFFBOARD"
 #:   是这个参数唯一的物理含义，而这个含义**只在两边用同一个周期时**才成立。
 #: 第一手出处：`/mavros/state` 只在 mavros 收到 MAVLink HEARTBEAT 时发布，那是 PX4 的
 #: **1 Hz 定频**（`sys_status.cpp:962-985`）；z0 上 Phase 1 量过 1.000 Hz
-#: （min 0.998 / max 1.001，`src/control/config/control.yaml:120-125`）。
+#: （min 0.998 / max 1.001，`src/control/config/control.yaml:142`）。
 #: ☠️ 换载体**之前**这条闸门的源是 `/fmu/out/vehicle_status`（2 Hz ⟹ 旧的 0.75 s 阈值）；
 #:   谁要把这里改成 2.0，先看 `StopConfig.status_timeout_s` 的 ☠️（那是整条账）。
 STATUS_SOURCE_PERIOD_S = 1.0
@@ -166,7 +166,7 @@ STATUS_SOURCE_PERIOD_S = 1.0
 #: 闸门用它们判"解锁了没有 / 在不在 OFFBOARD"。换载体后拿到的是 `mavros_msgs/State` 的
 #: `armed`（**bool**）与 `mode`（**字符串**）⟹ 那两句整数比较没有对应写法了（**判据本身不变**：
 #: armed 且 OFFBOARD），**两个常量已无读者，故删除**。
-#: ⛔ 别照旧版把它们加回来：`bench/fake_px4.py:50/:52` 与 `tools/px4-sitl/*` 各有**自己的一份**
+#: ⛔ 别照旧版把它们加回来：`bench/fake_px4.py:56-60` 与 `tools/px4-sitl/*` 各有**自己的一份**
 #: （那些文件走的是 uXRCE-DDS 载体，本来就该各自持有自己的枚举）。
 
 #: 状态源的名字（`-p state_source:=…`，见模块 docstring 的两档表）。
@@ -183,10 +183,10 @@ STATE_SOURCES = (STATE_SOURCE_MOCAP, STATE_SOURCE_PX4)
 #: |---|---|---|
 #: | `hold`（默认） | **参数化的位置保持**：`锚点 + hold_offset`，速度 0、机头 = 锚点机头 | 至今为止的全部实飞（A 档 ticket 09、B 档 ticket 11） |
 #: | `traj` | `/traj/reference`（`mavros_msgs/PositionTarget`，**相对轨迹原点**）⟹ 目标 = **本节点的锚点** + 它 | S5 判据②「三条轨迹」（[ticket 11](../../../.scratch/phase2/issues/11-sitl-tier-b-seam3.md) 的飞） |
-#: | `control` | `/control/target`（**绝对**位置/速度/yaw，ENU/FLU）⟹ 直接用，**不加锚点** | 菜单 9 的模型预测控制档：`control` 当任务总管（票 15） |
+#: | `control` | `/control/target`（**绝对**位置/速度/yaw，ENU/FLU）⟹ 直接用，**不加锚点** | 菜单 9 的 MPC 档：`control` 当任务总管（票 15） |
 #:
 #: ★ 为什么合成一个封闭集合：参数写错一个字母（`track`）必须**启动即退** —— 否则它会被
-#:   当成"等于 hold"而静静地悬停在原地，而"MPC（模型预测控制）在追一条轨迹"与"它锚在原地"在话题面上
+#:   当成"等于 hold"而静静地悬停在原地，而"MPC 在追一条轨迹"与"它锚在原地"在话题面上
 #:   都是**频率正常、数值有限**的一串角速率（同 `STATE_SOURCES` 的理由）。
 REFERENCE_SOURCE_HOLD = "hold"
 REFERENCE_SOURCE_TRAJ = "traj"
@@ -228,7 +228,7 @@ class StopConfig:
         "2 Hz 定频、默认 0.75"的账整段作废。** 新事实是第一手的：
         `/mavros/state` **只在 mavros 收到 MAVLink HEARTBEAT 时发布**，而那是 PX4 的
         **1 Hz 定频**流（`sys_status.cpp:962-985`；Phase 1 在 z0 上量过 1.000 Hz，
-        min 0.998 / max 1.001 —— `src/control/config/control.yaml:120-125`）。
+        min 0.998 / max 1.001 —— `src/control/config/control.yaml:142`）。
         `0.75 < 1.0` ⟹ 「状态超时」这条判据会**恒真**：每秒都在报"飞控失联"、闸门一直关着，
         而症状是**一帧都不发**（看着像话题名写错了）。
         **取 2.5 s**（= 2.5 × 下面那个 `STATUS_SOURCE_PERIOD_S`），与 Phase 1 的
@@ -247,7 +247,7 @@ class StopConfig:
     #: PX4 那条状态源的龄上限 [s]（位置与姿态**各自**判 —— 它们是两条消息）
     px4_timeout_s: float = 0.5
     #: `/traj/reference` 的**断流**判据 [s]（只有 `reference_source="traj"` 才用得上）。
-    #: ★★ **名字对着 Phase 1 的那一档抄**（`src/control/README.md:119`）：Phase 1 有两级 ——
+    #: ★★ **名字对着 Phase 1 的那一档抄**（`src/control/README.md:141`）：Phase 1 有两级 ——
     #:   `traj_stream_gap_s`（0.5 s）⟹ **保持上一个目标** + 重发 `/traj/start`；
     #:   `traj_timeout_s`（3.0 s）⟹ `degrade=traj_timeout`（放弃这一趟）。
     #:   本节点做的正是**第一级**，所以用第一级的名字。
@@ -256,7 +256,7 @@ class StopConfig:
     #: ★ 量级照抄动捕那一条：`traj` 节点实测 50 Hz ⟹ 0.5 s = **25 帧**，是"明显断了"的量级。
     #: ★★ **断流的后果不是停发**（与上面三条相反）：参考**冻住** —— 位置保持住、速度置 0
     #:   （`traj_reference(..., freeze=True)`）。理由就是 Phase 1 第一级那条
-    #:   （[`control/README.md:402`](../../../src/control/README.md)：「缺一帧参考就保持上一个目标，
+    #:   （[`control/README.md:429`](../../../src/control/README.md)：「缺一帧参考就保持上一个目标，
     #:   **不回退到原点**」）：回退到原点 = 朝一个已经飞出去的点回去；冻住 = 就地停住。
     #:   ⚠️ **冻住时必须把速度一起清掉**，否则"冻住的参考 + 它自己的速度"会让参考自己
     #:   一路飞下去（外推用的是速度）—— 那是这一档最危险的一种静默失败。
@@ -595,7 +595,7 @@ def traj_reference_fields(msg) -> Tuple[Tuple[Optional[float], ...],
     "忽略 = 保持锚点那一轴"处理（`traj_reference`）。`坏在哪` 非 `None` ⟹ 这一帧**整帧作废**。
 
     ★★ **掩码必须真的读**（`type_mask` 置 1 = 忽略该字段）。这条不是形式主义：忽略掉的轴里
-      上游**允许**放任意值（`traj_node.cpp:325` 就把被忽略的 `acceleration_or_force` 与
+      上游**允许**放任意值（`traj_node.cpp:356` 就把被忽略的 `acceleration_or_force` 与
       `yaw_rate` 留成 0），于是"读了一个被忽略的字段"最常见的后果是**参考恒为 0** ——
       而 `/traj/reference` 的默认掩码 `2496` 下位置位全是 0、位置字段里放的又正好是**真值**
       ⟹ 读错在那一档看不出来。真正能看出它的是 `IGNORE_VX` 那一类：速度被忽略时字段里
@@ -1319,7 +1319,7 @@ class NodeCore:
              也兼容将来上游换成带速度的位姿类型）。
           ③ 两条都没有 ⟹ `(0,0,0)`：**缺字段的退化是刻意的** —— 不许崩、也不许瞎猜一个速度
              出来（ticket 15 的裁定逐字）。`PoseStamped` **本来就没有** `twist` 字段
-             （`mocap_rel_pose_node.cpp:110`），而台架上的纯逻辑用例喂的正是这种形状
+             （`mocap_rel_pose_node.cpp:120`），而台架上的纯逻辑用例喂的正是这种形状
              ⟹ 这条退化路径**必须**保留（`test_node_core.py::test_动捕缺_twist_时退化成不外推`）。
 
         ★ **两条来源的形状是同一个** `…twist.linear`（`TwistStamped` 与"带 twist 的位姿"都如此）
@@ -1328,7 +1328,7 @@ class NodeCore:
         ★ **不单独判速度的新鲜度**（记录，但不闸）：pose 与 twist 由**同一台** `vrpn_listener`
           发出，位置那条链断了、twist 也就断了（`state_age` 只看 pose 那一路 ⟹ 已覆盖）。
           实测：`vrpn_listener` 的 `Synchronizer` **不是时间对齐器**（它只是每个 sender 的发布者
-          容器，`vrpn_listener.hpp:12-20`），`handlePose` / `handleTwist` 各自 `publish + now()`
+          容器，`vrpn_listener.hpp:16-24`），`handlePose` / `handleTwist` 各自 `publish + now()`
           （`vrpn_listener.cpp:19-66`）⟹ 两条消息的**时刻并不保证相等**，但都随同一条链生死。
           "速度到没到、多旧"在复盘面看得见（`describe_state` 的 `vel_cb` / `age_vel_s`）。
         """

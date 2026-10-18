@@ -31,7 +31,7 @@
 // ★★ 本张（ticket 08）的全部分量：**第一次真正自主离地并稳定悬停**。
 //   `STANDBY → TAKEOFF → HOVER → WAIT_START → LAND`，全部判据都是程序可判定的量：
 //   · **起飞命令**只从 `request_takeoff()` 进来（ROS 侧是服务 `/control/takeoff`，
-//     ticket 09 会用遥控器 ch9 的上升沿去调它）。**本文件不读遥控器**。
+//     ticket 09 起也由遥控器 ch9 的上升沿去调它）。**本文件不读遥控器**。
 //   · **解锁**走 `/mavros/cmd/arming`（H.6 的 D3 = 程序解锁）；前置 = 已在 OFFBOARD
 //     + setpoint 已在流（H.6 原文的两条）+ **遥控在线**（H.7.1，见 `update()` ⑦）。
 //     ⚠️ **不重试**：应答被拒或无应答 ⟹ 放弃本次起飞、退回 STANDBY（用户 2026-09-22 裁定）。
@@ -255,7 +255,7 @@ struct Health
   ///   理由必须写清楚：判据要的不是"话题静默了多久"，而是"**我们向 `traj` 要了流之后，
   ///   它多久没给**"。两者的计时起点不同：
   ///     · 刚进 `TRACK` 时参考**本来就还没开始发** —— `traj` 要等我们的 `/traj/start`
-  ///       才发第一帧（`traj_node.cpp:289`：`running_` 为假就一帧都不发）。拿"话题静默"
+  ///       才发第一帧（`traj_node.cpp:320-322`：`running_` 为假就一帧都不发）。拿"话题静默"
   ///       直接当判据，会在进 `TRACK` 的**第二帧**就判失效（`fail-fast` 在 20 ms 的
   ///       正常等待窗里就是误判）。
   ///     · 边界层也不知道"重发 `/traj/start`"这件事（运行中重选轨迹之后要再发一次，
@@ -589,7 +589,7 @@ struct Decision
   double target_z{0.0};
   /// 本帧目标的**速度前馈**（ROS/ENU，m/s）—— ★★ 票 15：只有 `TRACK` 且参考活着时非 0。
   /// ★ 位置控制那档**不读**它（掩码忽略速度）；它只对 `output_mode=external` 有意义
-  ///   （`/control/target` 的位置 + 速度一起交给外部控制器做模型预测控制的参考）。
+  ///   （`/control/target` 的位置 + 速度一起交给外部控制器做 MPC 的参考）。
   /// ⚠️ 其余所有阶段都是 0：爬升斜坡的目标本来就在 50 Hz 地自己前进，
   ///   再叠一份速度前馈等于把同一段位移算两遍。
   double target_vx{0.0};
@@ -677,8 +677,8 @@ public:
   /// @param limits 任务判据（ticket 08）。默认值就是工单里的数。
   Fsm(double offboard_prestream_s, TaskLimits limits);
 
-  /// 受理一条**起飞命令** —— `/control/takeoff` 的唯一入口，ticket 09 会让遥控器 ch9 的
-  /// 上升沿来调它。★ 语义与 `request_set_mode` 一样是**异步**的：受理 ≠ 起飞。
+  /// 受理一条**起飞命令** —— `/control/takeoff` 的唯一入口，ticket 09 起遥控器 ch9 的
+  /// 上升沿也调它。★ 语义与 `request_set_mode` 一样是**异步**的：受理 ≠ 起飞。
   ///
   /// 不受理的情形只有一种：**已经有一次任务在跑**（`kAlreadyFlying`）。刻意**不排队**：
   /// 排队等待前置满足 = 会在操作员不看的某一刻自己起飞 —— 那是本项目最不该有的失效模式。
@@ -855,11 +855,11 @@ private:
   bool track_seen_reference_{false};
   /// ★★ 本轮 `TRACK` 里**见过 `progress < 1.0`** ⟹ 这条轨迹真的在跑。
   ///   为什么需要它（**不是防御性编程，是一个具体的坑**）：`traj` 跑完之后
-  ///   **会一直保持 `progress = 1.0` 并继续按 50 Hz 发参考**（`traj_node.cpp:302-308`）。
+  ///   **会一直保持 `progress = 1.0` 并继续按 50 Hz 发参考**（`traj_node.cpp:328-331`）。
   ///   于是**同一个节点进程里的第二轮任务**进 `TRACK` 时，手上那个"上一轮的 1.0"是
   ///   **新鲜的**（不是陈旧数据）—— 只看"参考新鲜 + progress ≥ 1.0"会让飞机
   ///   **一进 `TRACK` 就判成飞完、当场降落**。要求"先见它从 1.0 以下跑起来"就把这条堵死了。
-  ///   ⚠️ 前提：三条轨迹的时长都 > 0（`trajectories.hpp:148` 把非正时长夹到 1e-3，
+  ///   ⚠️ 前提：四条轨迹的时长都 > 0（`trajectories.hpp:146,424` 把非正时长夹到 1e-3，
   ///     正方形/八字按周长÷限速算）⟹ 不存在"第一帧就是 1.0"的轨迹。
   bool track_started_{false};
   /// `TRACK` 的**最后一个目标**（ENU）。参考断流时用它继续发（"停在那儿别动"）。
@@ -1218,7 +1218,7 @@ inline Decision Fsm::update(const Guards & guards, const Health & health, const 
   //       那帧里的 `armed=false` **不是读数**而是占位值（它只说明"现在不知道飞控怎么样"），
   //       凭它复位 = 把闩锁**在空中**清掉，而链路恢复时若 PX4 仍 armed，本节点就会走上"重新准备接管"
   //       那条路（⑦ 的 `request_offboard`）。⚠️ 当前 `kArmingByUs` **恰好也**挡着它 —— 那帧的
-  //       `armed=false` 顺手清了归属标记（`px4_interface.cpp:160-164`）⟹ 恢复时 `own_arming=false`
+  //       `armed=false` 顺手清了归属标记（`px4_interface.cpp:242-244`）⟹ 恢复时 `own_arming=false`
   //       ⟹ 守卫不成立、停在 `MANUAL/INIT`。但那是**偶然的安全网**（它依赖"合成帧恰好也清了归属"），
   //       判据必须自己挡住这件事 —— 且 `arm_request_pending_` 陈旧时那层网就不在了。
   //       ⚠️ 代价（刻意接受）：真出现"链路断了之后飞机被人工落地上锁"时，我们也**看不到**那次上锁
@@ -1493,7 +1493,7 @@ inline Decision Fsm::update(const Guards & guards, const Health & health, const 
         d.target_y = traj_y_ + traj.y;
         d.target_z = traj_z_ + traj.z;
         // ★ 票 15：参考速度**逐字转发**（位置加的是原点，速度不用加 —— 原点是常量）。
-        //   外部控制器（今天 = 模型预测控制）用它做前馈；位置那档的掩码会忽略它。
+        //   外部控制器（今天 = MPC）用它做前馈；位置那档的掩码会忽略它。
         d.target_vx = traj.vx;
         d.target_vy = traj.vy;
         d.target_vz = traj.vz;

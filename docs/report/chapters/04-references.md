@@ -36,19 +36,19 @@
 | [`Huan-qun/Sim2real-UAV-Params-`](https://github.com/Huan-qun/Sim2real-UAV-Params-) | 个人仓库，未注明实验室 | `b7aeebb` | 参数、动捕文档与监听器 | 是，`vrpn_listener` vendored |
 | [`weisama/MPC_uav`](https://github.com/weisama/MPC_uav) | 本项目 | `21eb4a7`（Phase 4 收口） | 本报告描述的仓库本身 | 是，本仓库 |
 | [`DISCOWER/px4-mpc`](https://github.com/DISCOWER/px4-mpc) | KTH / ETH（ATMOS 团队） | `3e541af` | 10 状态 OCP 与节点骨架 | 是，模型与 OCP 改写 |
-| [`HKUST-Aerial-Robotics/Nxt-FC`](https://github.com/HKUST-Aerial-Robotics/Nxt-FC) | 港科大 Aerial Robotics Group | `153b7d1` | 飞控硬件与板级参数 | 否，未刷其固件 |
+
 
 ### 4.2.1 acados —— 求解器与代码生成
 
-`acados/acados` 是基于 CasADi 的嵌入式最优控制求解器，能把最优控制问题生成成 C 代码。它用 HPIPM 解 QP、BLASFEO 做线性代数、`t_renderer` 生成 C 代码，许可证为 BSD 2-Clause。
+`acados/acados` 是基于 [CasADi](https://web.casadi.org/) 的嵌入式最优控制求解器，能把最优控制问题生成成 C 代码。它用 [HPIPM](https://github.com/giaf/hpipm) 解 QP、[BLASFEO](https://github.com/giaf/blasfeo) 做线性代数、`t_renderer` 生成 C 代码，许可证为 BSD 2-Clause。
 
-**借了什么。** 求解器与代码生成整条链路都作为外部依赖使用，不重新实现：`acados_template` 搭问题，HPIPM、BLASFEO 与 `t_renderer` 在生成和求解时工作。求解器配置沿用成熟选项，具体参数留给第 8 章。Orin 上只需两处适配：BLASFEO 目标取 `ARMV8A_ARM_CORTEX_A76`（上游没有 A78 目标），HPIPM 取 `GENERIC`。
+**借了什么。** 求解器与代码生成整条链路都作为外部依赖使用，不重新实现：`acados_template` 搭问题，HPIPM、BLASFEO 与 `t_renderer` 在生成和求解时工作。求解器配置沿用成熟选项，具体参数留给第 8 章。机载电脑上只需两处适配：BLASFEO 目标取 `ARMV8A_ARM_CORTEX_A76`（上游没有 A78 目标），HPIPM 取 `GENERIC`。
 
-**没借什么。** 不走 CUDA，也不用预编译二进制：z0 的 Jetson 没有 `nvcc` 与 TensorRT，acados 在本机按源码编译，安装到 `~/acados`，构建目录在仓库之外。
+**没借什么。** 不走 CUDA，也不用预编译二进制：z0 的机载电脑没有 `nvcc` 与 TensorRT，acados 在本机按源码编译，安装到 `~/acados`，构建目录在仓库之外。
 
 **锚点。** `00947ddc394b30c956d9a7794d0bbcbc44c7c050`，2026-09-25。构建细节见 [`acados-orin-build.md`](../../control/acados-orin-build.md)。
 
-<big>**一句话总结：acados 提供求解器与代码生成；本项目只做源码构建和 Orin 适配，不走 CUDA。**</big>
+<big>**一句话总结：acados 是一个强大的广泛被引用的 MPC 求解器，极大地加速了 MPC 求解，提供 MPC 代码范式与代码生成。**</big>
 
 ### 4.2.2 agilicious —— 架构范本，不是代码来源
 
@@ -57,7 +57,7 @@
 **借了什么。** 借的是四个概念：
 
 - guard：一条与主链路并行的备份链路，主链路异常时接管。z0 没有实现独立的 guard pipeline，实际安全网是 PX4 的 EKF2、遥控接管与 `AUTO.LAND`。
-- 求解器选型：它的模型预测控制使用 acados + HPIPM，为本项目的选型提供旁证。
+- 求解器选型：它的 MPC 使用 acados + HPIPM，为本项目的选型提供旁证。
 - INDI 内环：它的控制器列表把 INDI 放在内环跟踪角速率。本项目把它列为 `(C) → (C)+INDI` 的下一步，**尚未实现**。
 - 多 pipeline：它支持多条 pipeline 与运行时切换；本项目只按阶段选择启动配置。
 
@@ -79,7 +79,7 @@
 
 **许可证边界。** `px4ctrl` 目录是 GPL-3.0；本项目没有把它的源文件或构建依赖引入仓库，只按判据重写。
 
-<big>**一句话总结：XI35 借出状态划分与实飞判据；PID、参数与推力模型都没有落地。**</big>
+<big>**一句话总结：XI35 参考了其 FSM （状态划分与实飞判据）；PID、参数与推力模型都没有落地。**</big>
 
 ### 4.2.4 OmniNxt —— 同系列硬件的平台佐证
 
@@ -91,13 +91,13 @@
 
 **一处更正。** 旧索引把 OmniNxt 写成“全向倾转旋翼、带舵机”。PDF 全文里 `tilt`、`tilting`、`servo` 各 0 次，构型是常规四旋翼；“omnidirectional”指全向视觉。
 
-<big>**一句话总结：OmniNxt 只用于佐证 Nxt-FC 与 Orin NX 这条硬件线；它没有可复用的代码或参数。**</big>
+<big>**一句话总结：OmniNxt 只用于佐证 Nxt-FC 与 Orin NX 这条硬件线；参考其硬件（无人机动力套件）选项。**</big>
 
 ### 4.2.5 Sim2real-UAV-Params —— 参数与动捕链路的资料库
 
 `Huan-qun/Sim2real-UAV-Params-` 是同一套配件的动捕实飞资料库，钉在 `b7aeebb`（2026-08-30）。它提供参数、文档与一个可用的 VRPN 监听器，不是控制算法；仓库没有许可证文件。
 
-**借了什么。** `uav1.params` 作为 z0 参数文件的基线，归档为 [`docs/assets/z0.params`](../../assets/z0.params) 后逐项对账；`mocap.md` 整理成 [`mocap-setup.md`](../../reference/mocap-setup.md)；`BOM.md` 的物料信息整理进 [`hardware.md`](../../reference/hardware.md)；`vrpn_listener.zip` 原样 vendored 到 [`src/vrpn_listener/`](../../../src/vrpn_listener/VENDORED.md)，9 个文件与本仓库逐文件 sha256 一致，一行未改。它的 `stamp = now()` 是刻意设计：动捕主机与 Jetson 约有 4 秒时钟差，用 `msg_time` 会毁掉 EKF2 融合。
+**借了什么。** `uav1.params` 作为 z0 参数文件的基线，归档为 [`docs/assets/z0.params`](../../assets/z0.params) 后逐项对账；`mocap.md` 整理成 [`mocap-setup.md`](../../reference/mocap-setup.md)；`BOM.md` 的物料信息整理进 [`hardware.md`](../../reference/hardware.md)；`vrpn_listener.zip` 原样 vendored 到 [`src/vrpn_listener/`](../../../src/vrpn_listener/VENDORED.md)，9 个文件与本仓库逐文件 sha256 一致，一行未改。它的 `stamp = now()` 是刻意设计：动捕主机与机载电脑约有 4 秒时钟差，用 `msg_time` 会毁掉 EKF2 融合。
 
 **没借什么。** 上游物理参数表标注“待更新”，其 0.3 kg 是另一台更轻的机器，只能作量级参考；Genesis + `rsl_rl` 的强化学习路线也没有采用。
 
@@ -129,7 +129,7 @@
 
 **没借什么。** x500 的参数、`0.07` 魔数、占位的 `max_rate = 0.5`、`MPC_HORIZON = 15` 死变量都没有沿用。截至 2026-10-17，上游 23 条远端分支里没有 `VehicleAttitudeSetpoint` 的参考实现，四旋翼分支都发角速率设定点；要做 (B) 级姿态回退，是全新工作。
 
-<big>**一句话总结：px4-mpc 借出 10 状态模型、求解器配置与节点骨架；参数与下行载体按 z0 改过。**</big>
+<big>**一句话总结：px4-mpc 是本项目的 MPC 动力学代码框架的主要参考，参考了 10 状态模型、求解器配置与节点骨架；参数与下行载体按 z0 改过。**</big>
 
 ### 4.2.8 Nxt-FC 与 z0 固件 —— 飞控硬件与固件身份
 
@@ -141,25 +141,27 @@
 
 **z0 固件的真身。** 飞控自报 `flight_sw_version = 0x010e0300`，即 `1.14.3`；`flight_custom_version` 的 8 字节还原出 `4a0e65f233`，对应 `Minderring/PX4-Autopilot` @ `4a0e65f2`（2024-11-18），是一份 v1.14.3 系的 MicoAir 厂商构建。其 `msg/` 与上游 v1.14.3 逐字节相同。2026-10-09 操作者已裁定不重刷固件，本章只作事实存档。
 
-<big>**一句话总结：Nxt-FC 只提供板级目标与默认参数，不提供 z0 固件；z0 跑 Minderring 构建且不重刷。**</big>
+<big>**一句话总结：Nxt-FC 本项目飞控的开源仓库**</big>
 
 ---
 
 ## 4.3 论文
 
-`docs/assets/papers/` 里有 6 篇 PDF。英文原题按 PDF 首页保留，中文译名放在括号里；引用的数字只写“论文报告了什么”。
+[`docs/assets/papers/`](../../assets/papers) 里有 6 篇 PDF。英文原题按 PDF 首页保留，中文译名放在括号里；引用的数字只写“论文报告了什么”。
 
 ### 4.3.1 `Sun2022_TRO_NMPC_vs_DFBC.pdf`
 
-**原题：** *A Comparative Study of Nonlinear MPC and Differential-Flatness-based Control for Quadrotor Agile Flight*（中文译名：《非线性模型预测控制与基于微分平坦的控制用于四旋翼敏捷飞行的对比研究》）
+**原题：** *A Comparative Study of Nonlinear MPC and Differential-Flatness-based Control for Quadrotor Agile Flight*（中文译名：《非线性 MPC 与基于微分平坦的控制用于四旋翼敏捷飞行的对比研究》）
 
 **出处与实验室：** IEEE Transactions on Robotics (T-RO), 2022；苏黎世大学机器人与感知组（UZH-RPG），与 4.2.2 的 agilicious 同一研究组。
 
-**内容。** 在同一台四旋翼上对比非线性模型预测控制与微分平坦控制，速度到 20 m/s；两者加上 INDI 内环与气动阻力模型后，论文报告跟踪误差降低 78% 以上。
+**链接：** [DOI: 10.1109/TRO.2022.3177279](https://doi.org/10.1109/TRO.2022.3177279) · [arXiv:2109.01365](https://arxiv.org/abs/2109.01365)
+
+**内容。** 在同一台四旋翼上对比非线性 MPC 与微分平坦控制，速度到 20 m/s；两者加上 INDI 内环与气动阻力模型后，论文报告跟踪误差降低 78% 以上。
 
 **用途与对应关系。** 这是 `(C) → (C)+INDI` 路线的直接依据。它没有单独的开源仓库；同组工作见 agilicious（4.2.2）。本项目没有复现 INDI，也没有在 z0 上验证这个数字。
 
-<big>**一句话总结：Sun2022 论证模型预测控制加 INDI 内环的收益；对应同组 agilicious，无单独仓库。**</big>
+<big>**一句话总结：Sun2022 对比论证 MPC 加 INDI 内环的收益，是本项目控制器内（PID角度环）/外环（MPC）的选型依据，对应同组 agilicious。**</big>
 
 ### 4.3.2 `Foehn2022_SciRob_agilicious.pdf`
 
@@ -167,7 +169,9 @@
 
 **出处与实验室：** Science Robotics, Vol. 7, Issue 67, 2022；UZH-RPG。
 
-**内容。** 一套软硬件协同设计的敏捷四旋翼平台，模型预测控制输出总推力与机体三轴角速率（CTBR），内环用 INDI；论文报告 5 g 加速度、70 km/h 的轨迹跟踪，并描述了 guard 模块。
+**链接：** [DOI: 10.1126/scirobotics.abl6259](https://doi.org/10.1126/scirobotics.abl6259) · [arXiv:2307.06100](https://arxiv.org/abs/2307.06100)
+
+**内容。** 一套软硬件协同设计的敏捷四旋翼平台，MPC 输出总推力与机体三轴角速率（CTBR），内环用 INDI；论文报告 5 g 加速度、70 km/h 的轨迹跟踪，并描述了 guard 模块。
 
 **用途与对应关系。** 它直接对应 4.2.2 的 agilicious 仓库，是 (C) 级控制与 acados + HPIPM 选型的理论来源。仓库没有可借用的代码，本项目只借分层与控制层级的判断。
 
@@ -175,23 +179,27 @@
 
 ### 4.3.3 `Torrente2021_RAL_DataDrivenMPC.pdf`
 
-**原题：** *Data-Driven MPC for Quadrotors*（中文译名：《面向四旋翼的数据驱动模型预测控制》）
+**原题：** *Data-Driven MPC for Quadrotors*（中文译名：《面向四旋翼的数据驱动 MPC》）
 
 **出处与实验室：** IEEE Robotics and Automation Letters (RA-L), 2021；UZH-RPG。
 
-**内容。** 用高斯过程学习气动效应并嵌入模型预测控制，论文报告在 14 m/s、加速度超过 4 g 时，高速跟踪误差最多降低 70%。
+**链接：** [DOI: 10.1109/LRA.2021.3061307](https://doi.org/10.1109/LRA.2021.3061307) · [arXiv:2102.05773](https://arxiv.org/abs/2102.05773)
+
+**内容。** 用高斯过程学习气动效应并嵌入 MPC，论文报告在 14 m/s、加速度超过 4 g 时，高速跟踪误差最多降低 70%。
 
 **用途与对应关系。** 这是第二阶段气动补偿的参考；与 agilicious（4.2.2）同组，但没有单独的开源仓库。本项目当前没有气动项，70% 不是 z0 的读数。
 
-<big>**一句话总结：Torrente2021 给出用高斯过程补偿气动效应的路线；与 agilicious 同组，本项目暂未实现。**</big>
+<big>**一句话总结：Torrente2021 给出用高斯过程补偿气动效应的路线；与 agilicious 同组，本项目暂未参考。**</big>
 
 ### 4.3.4 `Houska2011_Automatica_RTI.pdf`
 
-**原题：** *An auto-generated real-time iteration algorithm for nonlinear MPC in the microsecond range*（中文译名：《一种把非线性模型预测控制压到微秒级的自动生成实时迭代算法》）
+**原题：** *An auto-generated real-time iteration algorithm for nonlinear MPC in the microsecond range*（中文译名：《一种把非线性 MPC 压到微秒级的自动生成实时迭代算法》）
 
 **出处与实验室：** Automatica, 47 (2011) 2279–2285；K.U. Leuven（Diehl 组）。
 
-**内容。** 提出实时迭代（RTI）：把 SQP 的准备放在两次采样之间，采样时刻只做一次廉价反馈迭代，使非线性模型预测控制的单周期计算压到微秒级。
+**链接：** [DOI: 10.1016/j.automatica.2011.08.020](https://doi.org/10.1016/j.automatica.2011.08.020)
+
+**内容。** 提出实时迭代（RTI）：把 SQP 的准备放在两次采样之间，采样时刻只做一次廉价反馈迭代，使非线性 MPC 的单周期计算压到微秒级。
 
 **用途与对应关系。** 它是 acados（4.2.1）里 `SQP_RTI` 求解器的理论出处，也解释了机载 100 Hz 求解为什么可行。算法由 acados 实现，本项目没有自己写 RTI。
 
@@ -203,7 +211,9 @@
 
 **出处与实验室：** Optimal Control Applications and Methods (OCAM), 32:298–312, 2011；K.U. Leuven（Diehl 组）。
 
-**内容。** 介绍 ACADO Toolkit：一个 C++ 的最优控制与动态优化框架，覆盖直接最优控制（含模型预测控制）以及状态与参数估计，重点讲软件设计与符号表达式处理。
+**链接：** [DOI: 10.1002/oca.939](https://doi.org/10.1002/oca.939)
+
+**内容。** 介绍 ACADO Toolkit：一个 C++ 的最优控制与动态优化框架，覆盖直接最优控制（含 MPC）以及状态与参数估计，重点讲软件设计与符号表达式处理。
 
 **用途与对应关系。** ACADO Toolkit 是 acados（4.2.1）的前身；读它能理解 acados 为什么强调符号建模与代码生成。本项目没有使用 ACADO Toolkit 的代码。
 
@@ -215,11 +225,13 @@
 
 **出处与实验室：** IEEE/RSJ IROS 2024；港科大 Aerial Robotics Group。
 
+**链接：** [DOI: 10.1109/IROS58592.2024.10802134](https://doi.org/10.1109/IROS58592.2024.10802134) · [arXiv:2403.20085](https://arxiv.org/abs/2403.20085)
+
 **内容。** 面向全向视野的空中机器人平台：多鱼眼相机组、飞控 Nxt-FC、Jetson Orin NX，软件提供 Omni-VINS 与 Omni-Depth。
 
 **用途与对应关系。** 它对应 4.2.4 的 OmniNxt 仓库，也佐证 4.2.8 的 Nxt-FC 硬件线。它的感知与规划面向视觉，本项目不采用；构型是常规四旋翼，不是旧索引写的倾转旋翼。
 
-<big>**一句话总结：Liu2024 是 OmniNxt 对应的论文，也佐证了 Nxt-FC 与 Orin NX 这条硬件线有工程先例。**</big>
+<big>**一句话总结：Liu2024 是 OmniNxt （港科大 Aerial Robotics Group） 对应的论文，也佐证了 Nxt-FC 与 Orin NX 这条硬件线有工程先例。**</big>
 
 ---
 
@@ -229,12 +241,12 @@
 
 | 上游 | 落点 | 方式 | 本项目改动 |
 |---|---|---|---|
-| `acados` @ `00947ddc` | `~/acados` | 外部依赖 | Orin 适配：BLASFEO A76、HPIPM GENERIC、不走 CUDA |
-| `px4-mpc` @ `3e541af` 的模型与 OCP | `src/nmpc/nmpc/` | 复制后改写 | 参数、上限、代价、兜底、状态源、下行载体 |
-| `px4-mpc` 的节点骨架 | `src/nmpc/nmpc/node_core.py` | 结构参考后重写 | ROS 2 节点、mavros 下行、健康度与兜底 |
-| XI35 `px4ctrl` 的状态机 | `src/control/include/control/fsm.hpp` | 按判据重写 | 控制权与任务态显式拆开 |
-| Sim2real `vrpn_listener.zip` | `src/vrpn_listener/` | 原样 vendored | 无；新增 `VENDORED.md` 说明来源 |
-| Sim2real `uav1.params` 与文档 | `docs/assets/z0.params`、`docs/reference/` | 基线后整理 | 按 z0 板级默认值与日志改值 |
+| `acados` @ `00947ddc` | `~/acados` | 外部依赖 | 机载电脑适配：BLASFEO A76、HPIPM GENERIC、不走 CUDA |
+| `px4-mpc` @ `3e541af` 的模型与 OCP | [`src/nmpc/nmpc/`](../../../src/nmpc/nmpc) | 复制后改写 | 参数、上限、代价、兜底、状态源、下行载体 |
+| `px4-mpc` 的节点骨架 | [`src/nmpc/nmpc/node_core.py`](../../../src/nmpc/nmpc/node_core.py) | 结构参考后重写 | ROS 2 节点、mavros 下行、健康度与兜底 |
+| XI35 `px4ctrl` 的状态机 | [`src/control/include/control/fsm.hpp`](../../../src/control/include/control/fsm.hpp) | 按判据重写 | 控制权与任务态显式拆开 |
+| Sim2real `vrpn_listener.zip` | [`src/vrpn_listener/`](../../../src/vrpn_listener) | 原样 vendored | 无；新增 `VENDORED.md` 说明来源 |
+| Sim2real `uav1.params` 与文档 | [`docs/assets/z0.params`](../../assets/z0.params)、[`docs/reference/`](../../reference) | 基线后整理 | 按 z0 板级默认值与日志改值 |
 
 真正逐字节进入仓库的上游代码只有 `vrpn_listener`；`px4-mpc` 是改写，XI35 是重写，acados 始终是外部依赖。
 
@@ -254,7 +266,7 @@
 ### 4.4.3 本项目的原创部分
 
 - **ROS 2 包组织与实现**：七个包的分工、节点边界、话题与参数；`control` 把控制权与任务态拆成两个维度。
-- **mavros 下行**：模型预测控制节点走 `/mavros/setpoint_raw/attitude`，把总推力与机体角速率交给 PX4。
+- **mavros 下行**：MPC 节点走 `/mavros/setpoint_raw/attitude`，把总推力与机体角速率交给 PX4。
 - **轨迹与台架**：悬停、正方形、8 字三条解析轨迹；假 PX4 夹具、脚本化动捕、故障注入与同构 SITL 机体。
 - **数据与报告**：四源对齐的数据管线、图与结果表、文档与票面记录。
 
@@ -295,7 +307,7 @@ pdftotext docs/assets/papers/Sun2022_TRO_NMPC_vs_DFBC.pdf -
 
 ---
 
-## 本章引用清单
+## 第 4 章引用清单
 
 | 主题 | 文件 |
 |---|---|
@@ -305,7 +317,7 @@ pdftotext docs/assets/papers/Sun2022_TRO_NMPC_vs_DFBC.pdf -
 | 6 篇论文的中文标注 | [`docs/assets/papers/README.md`](../../assets/papers/README.md) |
 | 原仓库 README（归档） | [`docs/assets/MPC_uav-README.md`](../../assets/MPC_uav-README.md) |
 | 固件身份与 `px4_msgs` 选版 | [`refs-manifest.md §2.5(d)、§2.6`](../../reference/refs-manifest.md) |
-| acados 在 Orin 上的构建 | [`docs/control/acados-orin-build.md`](../../control/acados-orin-build.md) |
+| acados 在机载电脑上的构建 | [`docs/control/acados-orin-build.md`](../../control/acados-orin-build.md) |
 | px4-mpc 的逐行解读与改动 | [`docs/control/phase2-implementation.md`](../../control/phase2-implementation.md) |
 | 输出侧符号映射的唯一权威 | [`docs/control/sign-map.md`](../../control/sign-map.md) |
 | 状态机实现与出处注释 | [`src/control/include/control/fsm.hpp`](../../../src/control/include/control/fsm.hpp) |

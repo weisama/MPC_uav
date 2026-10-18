@@ -39,7 +39,7 @@
 | 项 | 内容 |
 |---|---|
 | 定位 | 基于 CasADi 的**嵌入式最优控制求解器**，**自动生成 C 代码** |
-| 本项目角色 | **MPC（模型预测控制）求解器由它生成**。这是唯一一个"必用"的项目 |
+| 本项目角色 | **MPC 求解器由它生成**。这是唯一一个"必用"的项目 |
 | 获取方式 | 源码编译安装（aarch64） |
 
 **组成部分**（本项目会用到的）：
@@ -113,9 +113,9 @@ nlp:   SQP_RTI   ← 实时迭代，每周期一次 SQP，延迟最低
 1. **`guard` 模块 = 本项目"安全网"的现成范本。** 原文（`docs/modules/guard.rst`）：
    > *"运行一条**完全独立的 pipeline**（独立的 sampler / estimator / controller），与主 pipeline **并行**。当主控制器崩溃、主估计发散、或无人机飞出预定 3D 空间时，guard **自动接管**并把飞机带回安全。用户观察到异常时也可**手动触发**。"*
 
-   → 这正好是 [`px4-interface.md`](px4-interface.md) 第 1 节那张图里"安全网链路 / 控制链路分开"的**同构设计**。**z0 的安全网应该照这个思路做：一条不依赖模型预测控制的独立链路 + 一个 3D 边界条件。**
+   → 这正好是 [`px4-interface.md`](px4-interface.md) 第 1 节那张图里"安全网链路 / 控制链路分开"的**同构设计**。**z0 的安全网应该照这个思路做：一条不依赖 MPC 的独立链路 + 一个 3D 边界条件。**
 
-2. **★ 它的模型预测控制求解器栈和本项目完全一致。** `docs/modules/controller.rst` 原文：
+2. **★ 它的 MPC 求解器栈和本项目完全一致。** `docs/modules/controller.rst` 原文：
    > *":code:`MPC`: … It uses **`acados`** with **`HPIPM`** solver to build an optimization problem…"*
 
    → 这是本项目 §1 里 acados + HPIPM 选型的**独立佐证**——不是我拍脑袋选的。
@@ -125,7 +125,7 @@ nlp:   SQP_RTI   ← 实时迭代，每周期一次 SQP，延迟最低
 
    → 与本项目演进路线 `(C) → (C)+INDI → (D)` **字面吻合**。**内环用 INDI 是这条线上被验证过的做法。**
 
-4. **它的 controllers 列表同时有模型预测控制 / 几何控制 / PID / INDI**，且 `Pipelines` 支持**运行时切换**（*"create multiple pipelines and switch between them at runtime"*）。
+4. **它的 controllers 列表同时有 MPC / 几何控制 / PID / INDI**，且 `Pipelines` 支持**运行时切换**（*"create multiple pipelines and switch between them at runtime"*）。
    → 这给本项目的 `(A) → (C)` 分阶段切换提供了架构上的正当性。
 
 **Bridge 层（说明它不走 PX4）**：`sbus` / `ctrl`（自家 `AgiNuttx` 底层控制器）/ `laird`（LAIRD RF 模块）/ `RotorS`（仿真）/ BetaFlight。
@@ -144,7 +144,7 @@ nlp:   SQP_RTI   ← 实时迭代，每周期一次 SQP，延迟最低
 | 定位 | **哈工大 HIT-K1928-LAB** 的同机架自主飞行栈 |
 | 硬件 | **与本项目高度重叠**：OddityRC XI35 + NxtPX4v2/Nxt-FC + Jetson Orin NX + 6S |
 | 规模 | **1501 个文件**（`.cpp` 237 / `.h` 202 / `.hpp` 145 / `.py` 62 / `.launch` 72 / `.msg` 43） |
-| 控制器 | **PID，不是模型预测控制** |
+| 控制器 | **PID，不是 MPC** |
 | ROS 版本 | **ROS1**（`rospy` / `catkin` / `mavros_msgs`） |
 
 **★ 为什么它最有价值**：**同一台机架、同一个飞控、同一个机载电脑**上已经有人跑通了完整自主飞行栈。**它的 `(B)` 级接口和状态机是"在 z0 这块硬件上被验证过"的。**
@@ -193,7 +193,7 @@ enum State_t {
 > 📌 **这是本项目的关键收获**：状态机把"**谁在控制飞机**"（遥控器 / 自动）和"**自动在干什么**"（悬停 / 跟踪 / 起飞 / 降落）**正交地分开了**。本项目 Phase 1 的状态机应照此设计，并把 `MANUAL_CTRL → AUTO_TAKEOFF → AUTO_HOVER → CMD_CTRL → AUTO_LAND` 的**转移条件**照抄过来（它们包含超时、电压、RC 打杆接管等实飞才会想到的判据）。
 
 **★ 控制器的取舍**：`controller.cpp` 是 **PID + 推力模型反解**（(B) 级姿态输出）。
-→ ❌ **不要抄它的控制器**（本项目要做模型预测控制）；✅ **但要抄它"从期望加速度反解推力 + 电压补偿"的那段**——`thrust_model` 的公式正是模型预测控制也需要的东西。
+→ ❌ **不要抄它的控制器**（本项目要做 MPC）；✅ **但要抄它"从期望加速度反解推力 + 电压补偿"的那段**——`thrust_model` 的公式正是 MPC 也需要的东西。
 
 ### 3.3 ⚠️ `config/ctrl_param_fpv.yaml` 的两个真实的坑
 
@@ -248,7 +248,7 @@ F = K1 * Voltage^K2 * (K3*u^2 + (1-K3)*u)
 ```
 
 - **K3 就是 PX4 的 `THR_MDL_FAC`** —— 文件里自己写了注释：*"K3 equals THR_MDL_FAC"*。z0 的 `THR_MDL_FAC=0.45`，**可以直接代入作为 K3 的先验**。
-- **`F = K1*V^K2*(...)` 这个形式本身就是结论**：推力**随电池电压变化**（`V^K2`，K2≈1.69）。**这就是"电池是瓶颈"的定量表达**，也是模型预测控制里 `T_max` 必须按电压缩放的依据。
+- **`F = K1*V^K2*(...)` 这个形式本身就是结论**：推力**随电池电压变化**（`V^K2`，K2≈1.69）。**这就是"电池是瓶颈"的定量表达**，也是 MPC 里 `T_max` 必须按电压缩放的依据。
 
 → **结论**：`thrust_calibrate.py` 是 **🔶 参考（借公式与流程，代码重写）**，不是 ✅ 直接可用。
 
@@ -264,7 +264,7 @@ F = K1 * Voltage^K2 * (K3*u^2 + (1-K3)*u)
 
 | 点 | 说明 |
 |---|---|
-| **插值对齐时间戳** | 这是一个**本项目尚未考虑的技巧**。`mocap-setup.md` 的方案是"直接转发 `vrpn_listener` 的位姿"，没有做 pose/twist/accel 的**互相对齐**。若将来要用动捕的速度/加速度（模型预测控制里很有用），**这段插值逻辑是现成的蓝本** |
+| **插值对齐时间戳** | 这是一个**本项目尚未考虑的技巧**。`mocap-setup.md` 的方案是"直接转发 `vrpn_listener` 的位姿"，没有做 pose/twist/accel 的**互相对齐**。若将来要用动捕的速度/加速度（MPC 里很有用），**这段插值逻辑是现成的蓝本** |
 | **发布成 `nav_msgs::Odometry`** | 一个话题同时给位置+姿态+速度+角速度，**比多个 topic 更好用** |
 | ⚠️ 依赖 `/vrpn_client_node/...` | 它用的是 `vrpn_client_ros` 的命名，**不是**本项目选定的自写 `vrpn_listener`。**对接时要改话题名** |
 
@@ -276,7 +276,7 @@ F = K1 * Voltage^K2 * (K3*u^2 + (1-K3)*u)
 |---|---|---|
 | **`px4ctrl/PX4CtrlFSM.*`** | ✅ **重点参考** | ★ **状态机骨架**，实飞验证过，本项目直接借 |
 | **`px4ctrl/controller.cpp` 的推力模型段** | ✅ **重点参考** | 期望加速度 → 推力 + 电压补偿 |
-| **`px4ctrl/controller.cpp` 的 PID 段** | ❌ **不用** | 本项目要做的是模型预测控制 |
+| **`px4ctrl/controller.cpp` 的 PID 段** | ❌ **不用** | 本项目要做的是 MPC |
 | **`px4ctrl/config/ctrl_param_fpv.yaml`** | ❌ **不要拷贝** | ⚠️ 质量 0.645 是 XI35 的，不是 z0 的 750 g；且 `rc_reverse` 重复定义 |
 | **`px4ctrl/thrust_calibrate_scrips/`** | 🔶 **参考公式与流程** | ⚠️ Python2 + ROS1 + 话题是 (B) 级的，必须重写 |
 | **`motion_capture`** | 🔶 **重点参考** | ★ pose/twist/accel **插值对齐**；话题名要换成 `vrpn_listener` 的 |
@@ -286,7 +286,7 @@ F = K1 * Voltage^K2 * (K3*u^2 + (1-K3)*u)
 | `uav_simulator/` | ❌ 不用 | 本项目用 PX4 SITL |
 | `catkin_*` / ROS1 构建体系 | ❌ 不直接搬 | 目标是 ROS2 Humble，**移植而非搬运** |
 
-> ⚠️ **再强调一次**：该项目的控制器是 **PID**，**不能把它的控制部分当模型预测控制参考**。用户说的"参考其控制以外的功能包"正是这个意思。
+> ⚠️ **再强调一次**：该项目的控制器是 **PID**，**不能把它的控制部分当 MPC 参考**。用户说的"参考其控制以外的功能包"正是这个意思。
 
 ### 3.7 上游 `Fast-Drone-250`
 
@@ -383,8 +383,8 @@ F = K1 * Voltage^K2 * (K3*u^2 + (1-K3)*u)
 
 **对本项目的启示**：
 
-- ✅ **说明模型预测控制不是这台机器的唯一路线**，上游/同平台还有 RL 路线在跑。**本项目选择模型预测控制是有意识地选了另一条路**，不是因为 RL 不可行。
-- 🔶 **可复用**：如果后续要做"模型预测控制与 RL 对比"或 sim-to-real 实验，这套 **Genesis + rsl_rl** 环境是现成的起点。
+- ✅ **说明 MPC 不是这台机器的唯一路线**，上游/同平台还有 RL 路线在跑。**本项目选择 MPC 是有意识地选了另一条路**，不是因为 RL 不可行。
+- 🔶 **可复用**：如果后续要做"MPC 与 RL 对比"或 sim-to-real 实验，这套 **Genesis + rsl_rl** 环境是现成的起点。
 - ⚠️ **但要注意**：z0 的机载电脑 **没有 `nvcc`、没有 TensorRT**（见 [`hardware.md`](hardware.md) 第 8 节），**GPU 训练在当前环境跑不了** —— 训练得在别的机器上做，Jetson 只负责推理。
 
 ### 关于 `S2R/assets/param/` 里的物理参数表
@@ -419,7 +419,7 @@ F = K1 * Voltage^K2 * (K3*u^2 + (1-K3)*u)
 |---|---|
 | **`Foehn2022_SciRob_agilicious.pdf`** | ★ **`agilicious` 的论文**。本项目 `(C)` 方案（CTBR）与 INDI 内环的**理论来源** |
 | **`Sun2022_TRO_NMPC_vs_DFBC.pdf`** | ★ **NMPC vs 微分平坦控制的实证对比**。结论：*"两者加内环 INDI + 气动阻力模型后跟踪误差降低 78 % 以上"* —— **直接支撑本项目的 INDI 演进路线** |
-| **`Torrente2021_RAL_DataDrivenMPC.pdf`** | **数据驱动模型预测控制**：用高斯过程建模气动效应嵌入模型预测控制，高速跟踪误差最多降 70 %，实测至 14 m/s / 4 g。→ **本项目第二阶段（气动补偿）的参考** |
+| **`Torrente2021_RAL_DataDrivenMPC.pdf`** | **数据驱动 MPC**：用高斯过程建模气动效应嵌入 MPC，高速跟踪误差最多降 70 %，实测至 14 m/s / 4 g。→ **本项目第二阶段（气动补偿）的参考** |
 | **`Liu2024_IROS_OmniNxt.pdf`** | 同平台（**Nxt-FC + Jetson Orin NX，与本项目完全同款**）的全向平台论文。**硬件参考价值 > 算法价值** |
 | **`Houska2011_OCAM_ACADOToolkit.pdf`** | ACADO toolkit 综述。**acados 的前身**，帮助理解 acados 的设计取舍 |
 | **`Houska2011_Automatica_RTI.pdf`** | ACADO 的**实时迭代（RTI）**算法原始论文。**`SQP_RTI` 的出处** —— 解释了为什么 acados 能做到微秒级 |
@@ -436,11 +436,11 @@ F = K1 * Voltage^K2 * (K3*u^2 + (1-K3)*u)
 
 | 项目 | 价值 | 优先级 |
 |---|---|---|
-| **`DISCOWER/px4-mpc`** | ★★ **`(C)` 方案的现成蓝本**：用 acados 生成模型预测控制，**发布 `/fmu/in/vehicle_rates_setpoint`** —— 与本项目方案完全一致。约 210 ★ | ★★★ **最高** |
+| **`DISCOWER/px4-mpc`** | ★★ **`(C)` 方案的现成蓝本**：用 acados 生成 MPC，**发布 `/fmu/in/vehicle_rates_setpoint`** —— 与本项目方案完全一致。约 210 ★ | ★★★ **最高** |
 | `tkkim-robot/px4_ugv_exp` | PX4 + ROS2 Humble + Vicon 的闭环最小可运行模板 | ★★ |
 | `SaxionMechatronics/mocap_px4_bridge` | OptiTrack → PX4（ROS2 版） | ★ 备用参考 |
 
-> 📌 **`px4-mpc` 应该被 clone 下来当作起点。** 它同时解决了两个问题：**acados 怎么用** + **模型预测控制怎么接 PX4**。本项目的增量工作是**把控制器换成自己的 + 接上动捕**，而不是从零搭建。
+> 📌 **`px4-mpc` 应该被 clone 下来当作起点。** 它同时解决了两个问题：**acados 怎么用** + **MPC 怎么接 PX4**。本项目的增量工作是**把控制器换成自己的 + 接上动捕**，而不是从零搭建。
 
 ---
 
@@ -602,7 +602,7 @@ MC_ROLLRATE_K 0.35  MC_PITCHRATE_K 0.4  MC_YAWRATE_K 1.2  MC_YAWRATE_MAX 360
      ★ **2026-10-09 更正解释**：☠️ ~~"不是运气 —— 这条缺陷不在这块固件里"~~ ⟹
      **缺陷在 z0 的板级目标里，但这份配置从厂商加这块板起就是修好的 `ADC12_CH(8)`**
      （`33bdd21f:boards/hkust/nxt-dual/src/board_config.h:98`）。**是"本来就修好了"，不是"运气"。**
-4. **`MC_*RATE_K` 是 PX4 角速率环增益** —— Phase 2 的模型预测控制要架在这一层之上，这几条值最终决定了内环带宽。
+4. **`MC_*RATE_K` 是 PX4 角速率环增益** —— Phase 2 的 MPC 要架在这一层之上，这几条值最终决定了内环带宽。
 5. **用不上的部分**：fork 的 `feat_fast_lab_stable`（UART DMA）、Nxt-FC 的 OmniNxt docker CI，对 z0 无增量价值。
    ☠️ **原写「`pr_fix_hkust_nxt_dual` 的修复已进上游（可用）」—— 2026-09-21 作废**（理由当时写的是"它修的是 `hkust/nxt-dual`，而 z0 的板级目标不是它"）。
    ⚠️ **2026-10-09 再更正**：**z0 的板级目标就是 `hkust/nxt-dual`**，所以那条修法**本来是对口的** ——
@@ -633,7 +633,7 @@ MC_ROLLRATE_K 0.35  MC_PITCHRATE_K 0.4  MC_YAWRATE_K 1.2  MC_YAWRATE_MAX 360
 
 拿来即用的：
   ├─ acados（源码编译，aarch64）                ← 唯一"必用"依赖（§1）
-  ├─ z0.params（928 行，已归档）                ← 与 **`boards/hkust/nxt-dual/init/rc.board_defaults`** diff（★ 2026-10-09 定案：这一份就是基准；已比过 18 条：15 同 / 3 改）
+  ├─ z0.params（★ 行数现算、别抄；2026-10-10 已从飞控重导出） ← 与 **`boards/hkust/nxt-dual/init/rc.board_defaults`** diff（★ 2026-10-09 定案：这一份就是基准；已比过 18 条：15 同 / 3 改）
   ├─ vrpn_listener（用户已验证的 zip）           ← 动捕链路，不改 stamp（mocap-setup 6.2）
   └─ 6 篇论文                                   ← 理论依据，已在仓库
 
@@ -669,7 +669,7 @@ MC_ROLLRATE_K 0.35  MC_PITCHRATE_K 0.4  MC_YAWRATE_K 1.2  MC_YAWRATE_MAX 360
    **缺陷就在 z0 的板级目标里，但 z0 那份配置从厂商加这块板起就是修好的 `ADC12_CH(8)`**。
    **⟹ 缺陷描述对上游 `boards/hkust/nxt-dual` 成立（上游 v1.16.0 才修），对 z0 不适用（已修好）** —— 不是"运气好没中招"。见 §9.5。
 
-3. **✅ 架构解耦是对的。** `(C)` 级 `VehicleRatesSetpoint` 在 PX4 文档里标注"**所需状态估计：none**"——模型预测控制链路完全不依赖飞控定位，与"动捕→EKF2"安全网链路可**独立调试、独立失败**。agilicious 的 `guard` 模块用同样思路（独立 pipeline + 3D 边界）做了三年。见 §2 与 [`px4-interface.md`](px4-interface.md) 3.1。
+3. **✅ 架构解耦是对的。** `(C)` 级 `VehicleRatesSetpoint` 在 PX4 文档里标注"**所需状态估计：none**"——MPC 链路完全不依赖飞控定位，与"动捕→EKF2"安全网链路可**独立调试、独立失败**。agilicious 的 `guard` 模块用同样思路（独立 pipeline + 3D 边界）做了三年。见 §2 与 [`px4-interface.md`](px4-interface.md) 3.1。
    ☠️ **2026-10-13（票 13 收口轮）**：这条结论**一个字都不变**（"none"这一格是本项目最重要的架构洞察）。
    只有一处措辞要跟上载体：**"`(C)` 级"指的是输出形态（角速率 + 推力），不是某个消息名** ——
    本项目 2026-10-12 起的载体是 mavros 的 `/mavros/setpoint_raw/attitude`（`AttitudeTarget`），

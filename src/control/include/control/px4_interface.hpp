@@ -354,7 +354,7 @@ public:
   ///   `coordinate_frame` 填 `FRAME_LOCAL_NED` 只是**占位**（与 `/traj/reference` 的既有做法
   ///   逐字一致）—— 内部话题的消费者按 ENU/FLU 读，不要按枚举名去换算。
   /// ★ 掩码 = 2496（忽略加速度三轴 + yaw_rate），⟹ 位置、速度、yaw **三路都有效**。
-  ///   外部控制器拿到的是一条"位置 + 速度"的参考，正好是模型预测控制需要的形状。
+  ///   外部控制器拿到的是一条"位置 + 速度"的参考，正好是 MPC 需要的形状。
   /// ⚠️ 只在 `output_mode=external` 的链上调用；`position` 档不能碰它（否则会多出一个
   ///   没人消费的发布者，"飞机不动"时现场会先怀疑那个后端）。
   void publish_control_target(double x, double y, double z,

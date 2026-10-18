@@ -198,31 +198,29 @@ def test_源码里不出现发布与服务调用():
 
 # ─────────────── 术语纪律（`CONTEXT.md` 第一节「最危险的一个歧义」） ───────────────
 
-#: ★ 逐字搬自 `CONTEXT.md` 那条**全仓复扫命令**的正则（`run/tests/test_safety_paths_drill.py`
-#:   里也有一份）。⛔ 别自己另写一条：松一点就漏、紧一点就把 `MPC_*` 参数与
-#:   `MPC（模型预测控制）` 这种合规写法也误报成违规。
-RE_BARE_MPC = re.compile(r"(?<![A-Za-z_/\-])MPC(?![A-Za-z_（\-\d])")
+#: ★ 2026-10-18 起术语规则反转（`CONTEXT.md`）：正文一律写 `MPC`，不再写旧全称。
+#:   `run/tests/test_safety_paths_drill.py` 里有一份同样的守卫。
+RE_OLD_TERM = re.compile("模型预测控制")
+#: 唯一豁免：代码里的启动日志字面串，它是运行时判据（`run/z0.py` 的 `STEP_LOG_READY`）。
+OLD_TERM_ALLOW = "MPC（模型预测控制）节点启动："
 
-#: ★ **改到哪就守到哪**：ticket 14 往这三个文件里新写了几十处「本项目的那个控制器」，
-#:   而 `HEAD` 上它们对这条正则的命中数**都是 0** ⟹ 那一版是**回退**，不是续用。
-#:   ⚠️ `README.md` 不在名单里：它有两处是**讲这个词本身**（"含 MPC 歧义澄清"），
-#:   属于 `CONTEXT.md` 明列的豁免类 ①，扫进来只会逼人把守则本身改得看不懂。
-BARE_MPC_FILES = ("run/z0.py", "run/README.md", "operation_manual.md")
+#: ★ **改到哪就守到哪**：这三个文件是操作者现场直接读的措辞面。
+TERM_DISCIPLINE_FILES = ("run/z0.py", "run/README.md", "operation_manual.md")
 
 
-def test_三个文件里不裸用_MPC():
-    """★ PX4 的 `MPC_*` 是**多旋翼位置控制器**（级联 PID）的参数，与模型预测控制无关
-    （`CONTEXT.md` 第一节）⟹ 指代本项目的控制器时写 `MPC（模型预测控制）` 或全称。
+def test_三个文件里不用旧术语_模型预测控制():
+    """★ PX4 的 `MPC_*` 是**多旋翼位置控制器**（级联 PID）的参数，与本项目 MPC 无关
+    （`CONTEXT.md` 第一节）⟹ 正文一律写 `MPC`，不再写旧全称。
 
     ★ 代价很低、收益很实：漏了不会让飞机摔，但会让"这句话说的是哪个 MPC"每年重问一次。
     """
     hits = []
-    for rel in BARE_MPC_FILES:
+    for rel in TERM_DISCIPLINE_FILES:
         path = RUN_DIR.parent / rel
         for number, line in enumerate(path.read_text(encoding="utf-8").split("\n"), start=1):
-            if RE_BARE_MPC.search(line):
+            if RE_OLD_TERM.search(line) and OLD_TERM_ALLOW not in line:
                 hits.append(f"{rel}:{number}：{line.strip()}")
-    assert not hits, ("裸用 `MPC`（要写成 `MPC（模型预测控制）` 或全称）：\n  "
+    assert not hits, ("正文出现旧术语「模型预测控制」，应统一写 `MPC`：\n  "
                       + "\n  ".join(hits))
 
 
@@ -596,11 +594,11 @@ def test_第八项不再问那一句_且与一版之前起的一样(monkeypatch,
     assert "遥控器" in "\n".join(chain.closing)
 
 
-def test_两档的尾巴都起_traj_且模型预测控制档带三条参数():
+def test_两档的尾巴都起_traj_且MPC档带三条参数():
     """★ 票 15 之后的表：第 9 项**只有两档**、**两档的尾巴都含 `traj` 与 `control`**
     （操作者原话「轨迹必须起没得选」—— 这是**结构上的事实**，不是提示语）。
 
-    ★★ 票 15 的核心：模型预测控制档的尾巴变成 `traj → mpc → control` —— `control` 仍是
+    ★★ 票 15 的核心：MPC 档的尾巴变成 `traj → mpc → control` —— `control` 仍是
       **唯一任务总管**（开始键/解锁/OFFBOARD/起飞/判稳/轨迹原点/`/traj/start`/降落），
       `mpc` 只是它的输出后端。额外三条参数缺一条，这条链就跑不起来：
         · `reference_source_control` —— mpc 订 `/control/target`（绝对目标）；
@@ -630,7 +628,7 @@ def test_两档的尾巴都起_traj_且模型预测控制档带三条参数():
         assert not set(choice.tail) & set(z0.MANUAL_CHAIN), \
             f"第 {number} 档的尾巴里混进了公共前缀：{set(choice.tail) & set(z0.MANUAL_CHAIN)}"
     assert all("traj" in choice.tail for choice in chain.choices), \
-        "★ 「轨迹必须起」= 每一档的尾巴里都有 `traj`（模型预测控制**没有** hold 那一档）"
+        "★ 「轨迹必须起」= 每一档的尾巴里都有 `traj`（MPC**没有** hold 那一档）"
     # ★★ 票 15：两档的尾巴都含 `control`（它是唯一任务总管）；第 2 档的 control **只发**
     #   `/control/target`，第 1 档的 control 照旧直接写 PX4 setpoint。
     assert all("control" in choice.tail for choice in chain.choices), \
@@ -638,7 +636,7 @@ def test_两档的尾巴都起_traj_且模型预测控制档带三条参数():
     assert _cmd_for("control", chain.choice(1)).endswith("ros2 launch control control.launch.py"), \
         f"默认档的 control 不许带 output_mode（默认就是 position）：{_cmd_for('control', chain.choice(1))}"
     assert _cmd_for("control", chain.choice(2)).endswith(" output_mode:=external"), \
-        ("模型预测控制档的 control 必须切到 external —— 否则它会和 mpc 同时写 PX4 setpoint："
+        ("MPC 档的 control 必须切到 external —— 否则它会和 mpc 同时写 PX4 setpoint："
          f"{_cmd_for('control', chain.choice(2))}")
     assert chain.default_choice == 1, "★ 空回车 = offboard 控制 = 今天的行为，一个字不变"
     # ★ 空回车 = 默认档 ⟹ 默认档下的顺序与这一版之前**逐字相同**
@@ -646,7 +644,7 @@ def test_两档的尾巴都起_traj_且模型预测控制档带三条参数():
     assert list(z0.CHAIN_BY_KEY["up"].steps) == list(z0.UP_CHAIN)
 
 
-def test_模型预测控制档没有_hold_那一条():
+def test_MPC档没有_hold_那一条():
     """★ 二定删掉的正是那条路：`mpc` 那一档的参考源**只能是 `traj`** —— 名字里不许有 `hold`，
     屏幕上（收尾）也不许再提"这一档的参考是 hold"那类话（留着会把现场指向一条不存在的路）。"""
     chain = z0.CHAIN_BY_KEY["up"]
@@ -654,18 +652,18 @@ def test_模型预测控制档没有_hold_那一条():
     assert "mpc_hold" not in keys, f"`hold` 那一档还在：{keys}"
     mpc = chain.choice(2)
     text = "\n".join((mpc.title,) + mpc.closing)
-    assert "hold" not in text, f"模型预测控制那一档的屏上还在说 hold：{text}"
+    assert "hold" not in text, f"MPC 那一档的屏上还在说 hold：{text}"
     # 而下面这条是"它还真的带上了正确的参考源"的**正面**判据（只查名字只能证明没写错字）。
     # ★★ 票 15：参考源从 `traj` 换成 `control`（绝对目标），`start_traj_reference` **不再带**
     #   —— `/traj/start` 由 control 的 TRACK 分支发，两边都发会让参考时钟归零两次。
     assert _mpc_cmd(mpc).endswith(
         " --ros-args -p reference_source:=control"
         " --ros-args -p offboard_prestream:=true"), \
-        f"模型预测控制档的命令不对：{_mpc_cmd(mpc)}"
+        f"MPC 档的命令不对：{_mpc_cmd(mpc)}"
     assert "start_traj_reference" not in _mpc_cmd(mpc), \
         "control 在场时 mpc 不许再自己发 /traj/start（参考时钟会被归零两次）"
     assert _mpc_cmd(chain.choice(1)).endswith("ros2 run nmpc mpc_node.py"), \
-        f"offboard 控制档**不许**带这些参数（它根本不起模型预测控制）：{_mpc_cmd(chain.choice(1))}"
+        f"offboard 控制档**不许**带这些参数（它根本不起 MPC）：{_mpc_cmd(chain.choice(1))}"
 
 
 def test_默认档的提示与默认档一致():
@@ -769,7 +767,7 @@ def _mpc_cmd(choice) -> str:
     return _cmd_for("mpc", choice)
 
 
-def test_模型预测控制档的收尾要说清_开始键与_offboard_档一样():
+def test_MPC档的收尾要说清_开始键与_offboard_档一样():
     """★★ 票 15 之后这一档**不再是"起链 ≠ 能飞"**：`control` 在场，开始键/解锁/OFFBOARD/
     起飞/判稳/轨迹原点/`/traj/start`/降落全由它负责，`mpc` 只是输出后端 ⟹ 屏上必须
     明确写出"**手上的动作与 offboard 档完全一样**"。
@@ -788,10 +786,10 @@ def test_模型预测控制档的收尾要说清_开始键与_offboard_档一样
     assert "失流保护" in text, "control 死了之后的兜底必须写清楚（0.5 s 关闸 + PX4 1 s）"
     # 反面：三句旧话不许留。
     for stale in ("没有 `control`", "手打", "start_traj_reference", "safety-paths-drill"):
-        assert stale not in text, f"模型预测控制档的收尾里还留着一版的旧话：{stale!r}"
+        assert stale not in text, f"MPC 档的收尾里还留着一版的旧话：{stale!r}"
     # ★ 状态栏在这一档**确实可用**（`control` 在场）—— 与一版的"会是空的"正好相反。
     assert "/control/state" in text and "照常可用" in text
-    # offboard 控制档的收尾里不该出现模型预测控制的概念。
+    # offboard 控制档的收尾里不该出现 MPC 的概念。
     offboard = "\n".join(z0.CHAIN_BY_KEY["up"].choice(1).closing)
     assert "/control/target" not in offboard and "mpc_node" not in offboard
 
@@ -950,7 +948,7 @@ def test_dry_run_up_manual_只到_mocap_且不起_control(capsys, monkeypatch):
         assert z0.ACTION_BY_KEY[key].cmd in default, f"{key} 的命令没摊出来"
     assert z0.ACTION_BY_KEY["control"].cmd not in out, "手动飞那条**不许**起 control"
     assert z0.ACTION_BY_KEY["traj"].cmd not in out, "手动飞那条**不许**起 traj"
-    assert z0.ACTION_BY_KEY["mpc"].cmd not in out, "手动飞那条**不许**起模型预测控制"
+    assert z0.ACTION_BY_KEY["mpc"].cmd not in out, "手动飞那条**不许**起 MPC"
     assert z0.ACTION_BY_KEY["fly"].cmd not in out, "手动飞那条不选轨迹（没有 traj 可选）"
     assert "遥控器" in default          # 起完是"你自己用遥控器飞"
     # ★ 复原的判据：**没有**「其他档」那一块（一版之前它就没有），且明说"不问"
@@ -983,20 +981,20 @@ def test_dry_run_把两档的命令都摊开且默认那档排在前面(capsys, 
     out = capsys.readouterr().out
     default = _default_block(out)
     other = out.partition(z0.OTHER_CHOICES_HEADER)[2]
-    # 默认档（第 9 项 = offboard 控制）那一块里**只有**它的尾巴；模型预测控制档那三条
+    # 默认档（第 9 项 = offboard 控制）那一块里**只有**它的尾巴；MPC 档那三条
     # `--ros-args` 参数不在里头
     assert z0.ACTION_BY_KEY["control"].cmd in default
     assert "output_mode:=external" not in default, \
-        "★ external 只有模型预测控制档才带 ⟹ 不许出现在默认那一块"
+        "★ external 只有 MPC 档才带 ⟹ 不许出现在默认那一块"
     assert "--ros-args -p reference_source:=control" not in default, \
-        "★ 模型预测控制的那几条参数只有第 2 档才带"
+        "★ MPC 的那几条参数只有第 2 档才带"
     assert "--ros-args -p reference_source:=control" in other, "第 2 档那几条参数要摊出来"
     assert "offboard_prestream:=true" in other and "output_mode:=external" in other
     assert "start_traj_reference:=true" not in other, \
         "control 在场时 mpc 不许再自己发 /traj/start"
     assert z0.ACTION_BY_KEY["mpc"].cmd in other
     assert z0.ACTION_BY_KEY["control"].cmd in other, "第 2 档的尾格里也有 control（任务总管）"
-    # 第 2 档（模型预测控制）在"其他档"那一块；第 1 档是默认档 ⟹ 它**不**该出现在那里
+    # 第 2 档（MPC）在"其他档"那一块；第 1 档是默认档 ⟹ 它**不**该出现在那里
     # （★ 默认那一块摊的是它的**命令与判据**，不是它的标题 —— 标题只在提问那一屏上）
     assert z0.CHAIN_BY_KEY["up"].choice(2).title in other
     assert z0.CHAIN_BY_KEY["up"].choice(1).title not in other
@@ -1039,7 +1037,7 @@ def up_world(monkeypatch, tmp_path, fake_child):
 
     ★ 前台那一步（`handover`）也换掉：它会真去跑 `fly.py` 并把终端抢走。
     ★ 起链前那一问（`ask_chain_choice`）换成**直接给默认档** —— 与 `ask_confirm` 同一个套路；
-      要试别的档，用例自己再 `monkeypatch` 一次（见 `test_选到_模型预测控制档_先起_traj_再起_mpc_且带上三条参数`）。
+      要试别的档，用例自己再 `monkeypatch` 一次（见 `test_选到_MPC档_先起_traj_再起_mpc_且带上三条参数`）。
     ★ `启动参数`那一栏用的是 `choice.extra_optionals` ⟹ 假 `start_child` 也必须收它，
       否则"第 4 档带没带 `--ros-args`"这件事在编排这一层就没有任何观测点。
     """
@@ -1114,7 +1112,7 @@ def test_手动飞那条只起三条_不占前台_也没有_traj_control(up_worl
     assert "遥控器" in capsys.readouterr().out
 
 
-def test_选到_模型预测控制档_先起_traj_再起_mpc_再起_control_且各带参数(up_world, monkeypatch, capsys):
+def test_选到_MPC档_先起_traj_再起_mpc_再起_control_且各带参数(up_world, monkeypatch, capsys):
     """★★ 第 9 项第 2 档（票 15 之后的形状）：`traj → mpc → control`。
 
     三条额外参数缺一条，这条链就断在某一处：
@@ -1149,7 +1147,7 @@ def test_选到_模型预测控制档_先起_traj_再起_mpc_再起_control_且�
 
 
 def test_选到_offboard_控制档_起四条_一条参数都不带(up_world, monkeypatch, capsys):
-    """第 9 项第 1 档（默认）= 今天的行为：`traj → control`，**不**起模型预测控制、
+    """第 9 项第 1 档（默认）= 今天的行为：`traj → control`，**不**起 MPC、
     也不带任何 `--ros-args` 参数。"""
     snapshots, started, foreground, optionals = up_world
     monkeypatch.setattr(z0, "ask_chain_choice", lambda chain: chain.choice(1))
@@ -1280,7 +1278,7 @@ def test_清除目标表按名字扫_且把起链的每一条都盖住():
     assert keys[0] == "mavros", "串口的持有者应当排在最前面（最先要看它有没有放开）"
     for key in _chain_choice_keys(z0.CHAIN_BY_KEY["up"]):
         assert key in keys, f"起链里有 `{key}`，清除表里没有它 ⟹ 清了也留着"
-    assert "mpc" in keys, "★ 模型预测控制两档会起 `mpc_node.py` ⟹ 清除表必须扫得到它"
+    assert "mpc" in keys, "★ MPC 两档会起 `mpc_node.py` ⟹ 清除表必须扫得到它"
     for target in z0.DOWN_TARGETS:
         assert target.label and target.pattern
         re.compile(target.pattern)                      # ★ 模式得是能编译的正则（写错要在这里炸）

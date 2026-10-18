@@ -1,4 +1,4 @@
-# 用 MPC（模型预测控制）控制无人机 —— 项目技术蓝图
+# 用 MPC 控制无人机 —— 项目技术蓝图
 
 > **文档定位**：个人技术蓝图 + 决策记录（ADR 风格），中文为主，术语保留英文原词。
 > **读者**：作者本人、未来协作者、半年后回看的自己。
@@ -12,9 +12,9 @@
 
 本项目这台无人机命名为 **`z0`**，全部文档一律用这个代号，不用"新机/本机/这台机"等代称。
 
-**在 `z0` 上**（一台**已经组装完成、已经实飞验证过**的 3.5 英寸 6S 涵道四旋翼），用 **acados 生成 MPC（模型预测控制）求解器**，跑在 **Jetson Orin NX** 上，通过 **PX4 飞控**控制飞机，以 **Nokov 动捕**作为定位源。目标不是"造一台无人机"，而是**建成一个可复用的模型预测控制飞行平台**。
+**在 `z0` 上**（一台**已经组装完成、已经实飞验证过**的 3.5 英寸 6S 涵道四旋翼），用 **acados 生成 MPC 求解器**，跑在 **Jetson Orin NX** 上，通过 **PX4 飞控**控制飞机，以 **Nokov 动捕**作为定位源。目标不是"造一台无人机"，而是**建成一个可复用的 MPC 飞行平台**。
 
-**核心判断**：这个项目**不是从零开始**。硬件、动捕链路、仿真环境、飞控参数都有现成资产（详见 1.2）。真正全新的只有 **模型预测控制这一层**。
+**核心判断**：这个项目**不是从零开始**。硬件、动捕链路、仿真环境、飞控参数都有现成资产（详见 1.2）。真正全新的只有 **MPC 这一层**。
 
 ---
 
@@ -22,10 +22,10 @@
 
 ### 1.1 目标（Q1 答案：平台建设型）
 
-建成一台**可长期复用的自主无人机平台**，模型预测控制是第一块而非唯一目的。副产物是发表论文。
+建成一台**可长期复用的自主无人机平台**，MPC 是第一块而非唯一目的。副产物是发表论文。
 
 **这意味着**：
-- 验收标准不应只写"模型预测控制能飞"，而应包含**可复用性**（模块边界清晰、接口稳定、能被后续任务复用）
+- 验收标准不应只写"MPC 能飞"，而应包含**可复用性**（模块边界清晰、接口稳定、能被后续任务复用）
 - 每一个技术选择都要问"这对后续扩展是加分还是负债"
 
 ### 1.2 已有资产 —— 你不是从零开始
@@ -59,9 +59,9 @@
 
 对 `agilicious`、`acados`、`OmniNxt`、`Fast-Drone-XI35`、`Sim2real-UAV-Params-` 五个关键词做全盘 grep，**用户笔记中命中数全部为 0**。
 
-→ **MPC（模型预测控制）这条线是唯一真正全新的部分。**
+→ **MPC 这条线是唯一真正全新的部分。**
 
-⚠️ 但有一个陷阱必须先破除：笔记里出现的 3 处 "MPC"（`MPC_Z_VEL_MAX_UP`、`MPC_XY_VEL_MAX`、"更新其中PID（MPC_xxx）参数"）**全部是 PX4 的 PID 控制器参数，不是模型预测控制**。详见 [`../CONTEXT.md`](../CONTEXT.md) 开头的术语澄清。
+⚠️ 但有一个陷阱必须先破除：笔记里出现的 3 处 "MPC"（`MPC_Z_VEL_MAX_UP`、`MPC_XY_VEL_MAX`、"更新其中PID（MPC_xxx）参数"）**全部是 PX4 的 PID 控制器参数，不是 MPC**。详见 [`../CONTEXT.md`](../CONTEXT.md) 开头的术语澄清。
 
 ### 1.4 值得记录的复用线索：你的硬件是一个**已知平台**
 
@@ -69,7 +69,7 @@
 
 | 团队 | 项目 | 产出 |
 |---|---|---|
-| **哈工大 HIT-K1928-LAB** | [`Fast-Drone-XI35`](https://github.com/Longer95479/Fast-Drone-XI35) | 完整的 ROS1 自主飞行栈（**控制器是 PID，不是模型预测控制**） |
+| **哈工大 HIT-K1928-LAB** | [`Fast-Drone-XI35`](https://github.com/Longer95479/Fast-Drone-XI35) | 完整的 ROS1 自主飞行栈（**控制器是 PID，不是 MPC**） |
 | **HKUST 航空机器人组** | [`OmniNxt`](https://github.com/HKUST-Aerial-Robotics/OmniNxt) | 论文 + 一份公开的**同平台 PX4 参数文件** `OmniNxt-03.params` |
 | **个人 `Huan-qun`** | [`Sim2real-UAV-Params-`](https://github.com/Huan-qun/Sim2real-UAV-Params-) | **同配件的动捕实飞 PX4 参数**（本项目采用，见第 5 节） |
 
@@ -94,9 +94,9 @@
 
 > ⚠️ **一处用词纠正**：HQProp `T90MMX3` 的正式型号是 **`DT90MMX3`**。你说的"翼飞 ProTek35 桨叶"——ProTek35 的原厂配桨其实是 **Nazgul 3535**，DT90 是被卖家标注为 **ProTek35 兼容**的第三方桨。不影响使用，但文档里应写对。
 
-### 2.2 构型定标（为模型预测控制建模铺路）
+### 2.2 构型定标（为 MPC 建模铺路）
 
-> **这是本项目模型预测控制模型的几何基础。符号约定不写死，后面会花几天找"为什么横滚是反的"。**
+> **这是本项目 MPC 模型的几何基础。符号约定不写死，后面会花几天找"为什么横滚是反的"。**
 
 | 项 | 值 | 来源 |
 |---|---|---|
@@ -124,7 +124,7 @@
 
 > ⚠️ 注意：控制分配的另一半是**几何**（`CA_ROTORx_PX/PY`）。`z0.params` 里这一项是 PX4 模板默认值（算出来轴距 424 mm，与你机架不符），**必须在飞控上核实**。见 [`reference/params-analysis.md`](reference/params-analysis.md) 第 3 节。
 
-### 2.3 建模参数表（模型预测控制模型的输入）
+### 2.3 建模参数表（MPC 模型的输入）
 
 标注规则：**✅ 已有实测** / 🔶 推算（有依据） / ❌ **需实测或系统辨识**
 
@@ -152,13 +152,13 @@
 | **推力曲线 `THR_MDL_FAC`** | 0.45（PX4 参数） | 🔶 | 可用 `thrust_calibrate.py` 实测 |
 | 气动阻力系数 | — | ❌ | 高速飞行才需要，第一版可忽略 |
 
-**关于悬停油门的两个数**：理论推算 42.9%（`√(187.5/1020)`），但 PX4 参数里写的是 `MPC_THR_HOVER = 0.5`。**`0.5` 是 PX4 的默认值**，不一定是实测值。模型预测控制的**线性化工作点**取哪个，会影响控制效果——建议用 `Fast-Drone-XI35` 的 `thrust_calibrate.py` 实测后回填。
+**关于悬停油门的两个数**：理论推算 42.9%（`√(187.5/1020)`），但 PX4 参数里写的是 `MPC_THR_HOVER = 0.5`。**`0.5` 是 PX4 的默认值**，不一定是实测值。MPC 的**线性化工作点**取哪个，会影响控制效果——建议用 `Fast-Drone-XI35` 的 `thrust_calibrate.py` 实测后回填。
 
 **关于 1020 g 这个数**：这是 GFD90-3 桨的数据，**不是你的 DT90MMX3**。它是**电机能力的参考上限**，不能直接当模型参数用。真实值必须用 `thrust_calibrate.py` 实测。
 
 ### 2.4 ★ 电池是全机最大的瓶颈（重要发现）
 
-把 2.3 的数据代进去算，得到一条**对模型预测控制设计有决定性影响**的结论：
+把 2.3 的数据代进去算，得到一条**对 MPC 设计有决定性影响**的结论：
 
 | 依据 | 持续电流 | 可用总功率 | **反推可达 T/W** |
 |---|---|---|---|
@@ -172,11 +172,11 @@
 > ⟹ 满量程 **46.30 N** ⟹ T/W **6.29**。与上表最后一行的外推 5.44 同量级（高 16 %，方向合理）。
 > ⚠️ 但上表**前两行（15 / 30 A）仍然是外推**，而它们才是 OCP `F` 上限该用的那一层。
 
-**含义（对模型预测控制的直接影响）**：
+**含义（对 MPC 的直接影响）**：
 
 1. **悬停与温和机动没问题** —— 悬停只吃 ≈7.4 A，是 15 A 限额的一半。
 2. **敏捷飞行做不了。** 文献里 `agilicious` 那类 20 m/s 机动飞行，通常需要 T/W 有 4–6 的裕度。**按电池真实能力算只有 1.60–2.54。**
-3. **模型预测控制的推力可行域必须按电池设，不能按电机设。** 否则它会算出物理上供不出来的推力指令——轻则跟踪变差，重则求解器给出"数学最优但物理不可行"的解。★ **2026-09-29 订正**：这条说的是 `F` 的**上限**（`f_max` = 11.8 N，15 A 口径）。而把 `F` 换算成 PX4 `thrust_body` 的**归一化常数**是**另一个**数（`t_max` = 实测满量程 46.30 N，按电机）—— 两者 2026-09-29 之前是同一个 `T_max`，回填 `hover_thrust` 时把 `F` 上限顺手抬了 **3.9 倍**且测试全绿（[`control/phase2-implementation.md`](control/phase2-implementation.md) §3.3.3）。**改任何一个之前先问：我在改的是"归一化"还是"上限"。**
+3. **MPC 的推力可行域必须按电池设，不能按电机设。** 否则它会算出物理上供不出来的推力指令——轻则跟踪变差，重则求解器给出"数学最优但物理不可行"的解。★ **2026-09-29 订正**：这条说的是 `F` 的**上限**（`f_max` = 11.8 N，15 A 口径）。而把 `F` 换算成 PX4 `thrust_body` 的**归一化常数**是**另一个**数（`t_max` = 实测满量程 46.30 N，按电机）—— 两者 2026-09-29 之前是同一个 `T_max`，回填 `hover_thrust` 时把 `F` 上限顺手抬了 **3.9 倍**且测试全绿（[`control/phase2-implementation.md`](control/phase2-implementation.md) §3.3.3）。**改任何一个之前先问：我在改的是"归一化"还是"上限"。**
 4. **电压跌落（sag）不可忽略。** VTC6 内阻 13 mΩ/节 → 6S1P 整包 ≈78 mΩ：
    - 30 A 时压降 **2.34 V** → 满电 25.2 V 掉到 22.9 V
    - 87 A 时压降 **6.8 V** → 掉到 18.4 V
@@ -201,9 +201,9 @@
 | ROS2 | **Humble 已 source**（299 个包，全是官方核心包） |
 | Docker | `chen` **不在 docker 组**，需 `sudo` |
 
-**⚠️ 内存是硬约束**：7.4 GB 要同时跑 Gazebo 仿真 + PX4 SITL + ROS2 + 模型预测控制是**紧张的**。真机飞行时模型预测控制 + 动捕 + mavros 没问题，但**仿真时要留神**。
+**⚠️ 内存是硬约束**：7.4 GB 要同时跑 Gazebo 仿真 + PX4 SITL + ROS2 + MPC 是**紧张的**。真机飞行时 MPC + 动捕 + mavros 没问题，但**仿真时要留神**。
 
-**⚠️ 没有 `nvcc` / TensorRT** —— 如果有任何基于 GPU 或 TensorRT 的感知/学习组件计划，需要先补装。当前模型预测控制路线不需要。
+**⚠️ 没有 `nvcc` / TensorRT** —— 如果有任何基于 GPU 或 TensorRT 的感知/学习组件计划，需要先补装。当前 MPC 路线不需要。
 
 ---
 
@@ -263,7 +263,7 @@ PX4 官方 Offboard 文档明确标注了每种 setpoint 所需的**状态估计
 | thrust_and_torque | **none** | `VehicleThrustSetpoint` + `VehicleTorqueSetpoint` |
 | direct motors | **none** | `ActuatorMotors` |
 
-**含义（这是本项目最重要的架构洞察）**：选 `(C)` 方案时，**模型预测控制这条链完全不依赖 PX4 的位置估计**。动捕位姿直给模型预测控制，模型预测控制出 ω+T 给 PX4，PX4 自己有没有位置估计都不影响模型预测控制工作。
+**含义（这是本项目最重要的架构洞察）**：选 `(C)` 方案时，**MPC 这条链完全不依赖 PX4 的位置估计**。动捕位姿直给 MPC，MPC 出 ω+T 给 PX4，PX4 自己有没有位置估计都不影响 MPC 工作。
 
 → **"动捕 → PX4 EKF2" 从"必需"降级为"安全网"**（失控保护、RC 接管、自动降落仍需要它）。这让两条链路可以独立调试、独立失败。
 
@@ -272,7 +272,7 @@ PX4 官方 Offboard 文档明确标注了每种 setpoint 所需的**状态估计
 | 链路 | 方案 | 理由 |
 |---|---|---|
 | **动捕 → PX4** | **mavros**（`/mavros/vision_pose/pose` → `VISION_POSITION_ESTIMATE` → EKF2） | 已在旧机上跑通，有 50 ms 延迟实测数据、EKF2 调参经验全部可复用 |
-| **模型预测控制 → PX4** | **mavros**（`/mavros/setpoint_raw/attitude`：`body_rate` + 标量 `thrust`）<br>☠️ **2026-10-13**：原写"**uXRCE-DDS**（`/fmu/in/vehicle_rates_setpoint`）"，**今天为假** —— 那条链在 z0 上根本通不了（无空闲串口 + `UXRCE_DDS_CFG = 0`），见 [`reference/px4-interface.md`](reference/px4-interface.md) §4.3 | ☠️ 原理由「有现成蓝本 `DISCOWER/px4-mpc` 可直接对照，省掉自己设计接口」**随载体一并作废** —— mavros 这条路**没有现成蓝本**，接口是自己定的（票 13 §二） |
+| **MPC → PX4** | **mavros**（`/mavros/setpoint_raw/attitude`：`body_rate` + 标量 `thrust`）<br>☠️ **2026-10-13**：原写"**uXRCE-DDS**（`/fmu/in/vehicle_rates_setpoint`）"，**今天为假** —— 那条链在 z0 上根本通不了（无空闲串口 + `UXRCE_DDS_CFG = 0`），见 [`reference/px4-interface.md`](reference/px4-interface.md) §4.3 | ☠️ 原理由「有现成蓝本 `DISCOWER/px4-mpc` 可直接对照，省掉自己设计接口」**随载体一并作废** —— mavros 这条路**没有现成蓝本**，接口是自己定的（票 13 §二） |
 
 > ☠️ **2026-10-13（票 13 收口轮）：下面两段整段作废 —— "混合"不再是定案。** 定案 = **(C) 级下行全走 mavros**，
 > **不起 uXRCE-DDS Agent** ⟹ "mavros 与 uXRCE-DDS Agent 各占一个 UART"这个前提不存在了；
@@ -292,7 +292,7 @@ PX4 官方 Offboard 文档明确标注了每种 setpoint 所需的**状态估计
 
 | 组件 | 运行环境 |
 |---|---|
-| 模型预测控制节点、mavros（☠️ **2026-10-13**：原写"、uXRCE-DDS Agent" —— **没有它了**，见 [`reference/px4-interface.md`](reference/px4-interface.md) §4.3） | **ROS2 Humble 原生**（宿主 Ubuntu 22.04） |
+| MPC 节点、mavros（☠️ **2026-10-13**：原写"、uXRCE-DDS Agent" —— **没有它了**，见 [`reference/px4-interface.md`](reference/px4-interface.md) §4.3） | **ROS2 Humble 原生**（宿主 Ubuntu 22.04） |
 | acados | **宿主原生编译**（aarch64），`ACADOS_SOURCE_DIR` + `LD_LIBRARY_PATH` |
 | PX4 SITL 仿真 | 已有的 humble 容器（`osrf/ros:humble-desktop-full` + PX4 1.13.3 + gazebo-classic） |
 | noetic 容器 | **仅**用于确实没有 ROS2 版本的 ROS1 包 |
@@ -305,14 +305,14 @@ PX4 官方 Offboard 文档明确标注了每种 setpoint 所需的**状态估计
 
 > ⚠️ **本节是资料汇总，不是最终决策。** 架构决策在另一个对话中进行。本节把四个选项的证据摆齐，供那个对话取用。
 
-**建议主线：`(C)`（模型预测控制出角速率 + 推力），演进方向 `(C) + INDI → (D)`。**
+**建议主线：`(C)`（MPC 出角速率 + 推力），演进方向 `(C) + INDI → (D)`。**
 
 ### 4.1 四个选项
 
-| | 模型预测控制输出 | PX4 承担 | 评价 |
+| | MPC 输出 | PX4 承担 | 评价 |
 |---|---|---|---|
-| **(A)** | 位置/速度（`TrajectorySetpoint`） | 完整内环 | ❌ **模型预测控制被 PX4 位置环抹掉，做了等于没做** |
-| **(B)** | 姿态 + 推力（`VehicleAttitudeSetpoint`） | 角速率环 | ⚠️ 姿态环带宽与模型预测控制预测会打架；四元数 setpoint 的 yaw 处理麻烦 |
+| **(A)** | 位置/速度（`TrajectorySetpoint`） | 完整内环 | ❌ **MPC 被 PX4 位置环抹掉，做了等于没做** |
+| **(B)** | 姿态 + 推力（`VehicleAttitudeSetpoint`） | 角速率环 | ⚠️ 姿态环带宽与 MPC 预测会打架；四元数 setpoint 的 yaw 处理麻烦 |
 | **(C)** ★ | **角速率 + 推力**（`VehicleRatesSetpoint`）<br>☠️ **2026-10-13**：本项目今天经 mavros 的 `AttitudeTarget` 发这同一组量 —— **方案不变，消息载体变了** | **仅 1 kHz rate loop** | ✅ **推荐** |
 | **(D)** | 电机指令（`ActuatorMotors`） | 无（绕过控制分配） | ⚠️ 第二阶段的终点，**但会禁用 PX4 的 `control_allocator` 与安全网** |
 
@@ -323,11 +323,11 @@ PX4 官方 Offboard 文档明确标注了每种 setpoint 所需的**状态估计
 ### 4.2 为什么推荐 (C) —— 四条独立论据
 
 1. **模型最简** —— 只需建到"刚体动力学 + 推力/力矩"这一层，**不需要电机模型、不需要混装矩阵的精确标定**。转向约定、桨的推力系数这些坑全部留给 PX4。
-2. **带宽分层合理** —— 模型预测控制 100 Hz 出 ω_des/T_des，PX4 1 kHz rate loop 做底层跟踪。这是学术界主流。
+2. **带宽分层合理** —— MPC 100 Hz 出 ω_des/T_des，PX4 1 kHz rate loop 做底层跟踪。这是学术界主流。
 3. **架构解耦**（见 3.2）—— **`(C)` 不需要 PX4 有位置估计**，两条链路可独立失败。
 4. **两份独立佐证**：
-   - `agilicious` 的模型预测控制输出就是 **CTBR（collective thrust + body rate）**，Bridge 只有 sbus/ctrl/laird/RotorS —— **不走 PX4、不走 mavros**
-   - [`DISCOWER/px4-mpc`](https://github.com/DISCOWER/px4-mpc)（210★）用 acados 生成模型预测控制，发布 `/fmu/in/vehicle_rates_setpoint` —— **与 `(C)` 完全一致，是现成蓝本**
+   - `agilicious` 的 MPC 输出就是 **CTBR（collective thrust + body rate）**，Bridge 只有 sbus/ctrl/laird/RotorS —— **不走 PX4、不走 mavros**
+   - [`DISCOWER/px4-mpc`](https://github.com/DISCOWER/px4-mpc)（210★）用 acados 生成 MPC，发布 `/fmu/in/vehicle_rates_setpoint` —— **与 `(C)` 完全一致，是现成蓝本**
 
 ### 4.3 C → D 的三步演进（每步保留前一步的模型与接口）
 
@@ -342,12 +342,12 @@ PX4 官方 Offboard 文档明确标注了每种 setpoint 所需的**状态估计
 **为什么 INDI 是这个项目的自然选择**：
 
 - **不依赖精确模型** —— INDI 是增量式的，只用当前角加速度与"操纵效能矩阵"（control effectiveness matrix）。对一台**模型参数全靠辨识、还有电压 sag** 的机器特别合适。
-- **`agilicious` 的 controllers 列表里同时有模型预测控制、几何控制、PID 和 INDI**，INDI 在其架构里就是内环。
+- **`agilicious` 的 controllers 列表里同时有 MPC、几何控制、PID 和 INDI**，INDI 在其架构里就是内环。
 - **你自己仓库里的论文支持这条路**：`MPC_uav/papers/Sun2022_TRO_NMPC_vs_DFBC.pdf` 的结论明确写着"**两者加内环 INDI + 气动阻力模型后跟踪误差降低 78% 以上**"。
 
 ### 4.4 模型结构（待架构对话确认后展开）
 
-`(C)` 方案下，模型预测控制的状态与输入大致为：
+`(C)` 方案下，MPC 的状态与输入大致为：
 
 - **状态**：位置 `p`、速度 `v`、姿态四元数 `q`、机体角速率 `ω`
 - **输入**：总推力 `T`、机体角速率期望 `ω_des`（三轴）
@@ -364,7 +364,7 @@ PX4 官方 Offboard 文档明确标注了每种 setpoint 所需的**状态估计
 
 **决策**：`z0` 的飞控初始参数直接采用 [`Huan-qun/Sim2real-UAV-Params-`](https://github.com/Huan-qun/Sim2real-UAV-Params-) 的 `S2R/assets/param/uav1.params`。
 
-**依据**：那份文件来自**另一台用同一套配件搭建、且用动捕实飞验证过的无人机**（用户确认）。已归档为本仓库的 [`assets/z0.params`](assets/z0.params)（928 行 / 914 条参数 / PX4 1.14.3 dev；**比上游原件多 6 行出处说明**）。
+**依据**：那份文件来自**另一台用同一套配件搭建、且用动捕实飞验证过的无人机**（用户确认）。已归档为本仓库的 [`assets/z0.params`](assets/z0.params)（★ 行数/条数随现场重导出变化：**2026-09-21 快照**为 928 行 / 914 条；**2026-10-10 已用 QGC 从 z0 飞控重导出**，现算 955 行 / 911 条；PX4 1.14.3 dev）。
 
 > ⚠️ **命名上要分清两件事**：
 > - **`uav1.params`** = 上游那个文件的原名。**"uav1" 是上游那台机器的代号**（上游是多机集群，刚体叫 `r11`/`r22`），不是 z0 的名字。
@@ -425,13 +425,13 @@ PX4 官方 Offboard 文档明确标注了每种 setpoint 所需的**状态估计
 
 | 项目 | 定位 | 本项目怎么用 |
 |---|---|---|
-| **`acados`** | 基于 CasADi 的嵌入式模型预测控制求解器，生成 C 代码 | ✅ **核心依赖**。注意 Jetson 上的 `BLASFEO_TARGET=ARMV8A_ARM_CORTEX_A76`（Orin NX 是 A78AE，**acados 无 A78 目标**）、`HPIPM_TARGET=GENERIC`、☠️ Tera 渲染器缺失**不再报** `EOFError`（v0.6.0 起）—— ★ **但「必须装」这件事不变**；真身是三种落点，其中「在、但渲染不出东西」**完全静默**，见 [`control/acados-orin-build.md`](control/acados-orin-build.md) §4） |
+| **`acados`** | 基于 CasADi 的嵌入式 MPC 求解器，生成 C 代码 | ✅ **核心依赖**。注意 Jetson 上的 `BLASFEO_TARGET=ARMV8A_ARM_CORTEX_A76`（Orin NX 是 A78AE，**acados 无 A78 目标**）、`HPIPM_TARGET=GENERIC`、☠️ Tera 渲染器缺失**不再报** `EOFError`（v0.6.0 起）—— ★ **但「必须装」这件事不变**；真身是三种落点，其中「在、但渲染不出东西」**完全静默**，见 [`control/acados-orin-build.md`](control/acados-orin-build.md) §4） |
 | **`agilicious`** | ETH/UZH 敏捷飞行框架 | ⚠️ **公开仓库无任何源码**（只有 README + docs + bib），代码需向 UZH 申请。**只参考其文档架构 + 论文理论** |
 | **`Fast-Drone-XI35`** | ★ **同硬件**的 ROS1 自主飞行栈（控制器是 PID） | ✅ **重点参考**。取 `thrust_calibrate.py`（推力标定）、`px4ctrl` 的 FSM 状态机、`motion_capture` 的时延对齐；**ego-planner 规划链留到第二阶段** |
 | **`OmniNxt`** | **全向视觉感知**的常规四旋翼（★ 构型已更正，见下） | ❌ **零可复用代码**：仓库里**只有 4 个文件**（README + LICENSE + 论文 PDF + 一张图），16 MB 里 15 MB 是 PDF。**且 `OmniNxt-03.params` 根本不在仓库里**——README 指向 OneDrive 链接，需浏览器登录才能下。**真正的产出是它的硬件线**：`Nxt-FC` 与配套 PX4 fork |
 | **`Sim2real-UAV-Params-`** | 同配件动捕实飞资料 | ✅ **已采用其 `uav1.params`**；另有 `mocap.md`（594 行动捕/PX4/ROS2 配置手册）与 `BOM.md` 值得对照 |
 | **`MPC_uav`**（本项目仓库） | 论文资料库 | 📚 目前只有 README + 6 篇 PDF，**无代码**。论文见 [`assets/MPC_uav-README.md`](assets/MPC_uav-README.md) |
-| `DISCOWER/px4-mpc` | acados 模型预测控制 + PX4 (ROS2) | ✅ **`(C)` 方案的现成蓝本**（210★，发布 `vehicle_rates_setpoint`） |
+| `DISCOWER/px4-mpc` | acados MPC + PX4 (ROS2) | ✅ **`(C)` 方案的现成蓝本**（210★，发布 `vehicle_rates_setpoint`） |
 | `tkkim-robot/px4_ugv_exp` | PX4 + ROS2 Humble + Vicon 闭环 | 🔍 动捕闭环最小可运行模板 |
 | `SaxionMechatronics/mocap_px4_bridge` | OptiTrack → PX4 (ROS2) | 🔍 备用参考 |
 
@@ -441,16 +441,16 @@ PX4 官方 Offboard 文档明确标注了每种 setpoint 所需的**状态估计
 
 | # | 里程碑 | 内容 | 验收标准 | 依赖 |
 |---|---|---|---|---|
-| **0** | **环境就绪** | 装 acados（含 Tera）、CasADi、uXRCE-DDS Agent；★ **`px4_msgs` 钉 `release/1.14` @ `ffb6e80e`** 并与真身 `4a0e65f2` 的 `msg/` 逐字节比对通过（共有的 184 个文件 blob 全同）。☠️ 原写「**从 fork `5ba2e91f` 的 `msg/` 生成**」—— **作废**（真身不跑 fork，见 §7.1 与 [`reference/refs-manifest.md`](reference/refs-manifest.md) §2.6 执行版） | 模型预测控制求解器能编译并跑通官方 `quadrotor_nav` 示例；**且 `px4_msgs` 与固件消息定义逐字节一致** | — |
+| **0** | **环境就绪** | 装 acados（含 Tera）、CasADi、uXRCE-DDS Agent；★ **`px4_msgs` 钉 `release/1.14` @ `ffb6e80e`** 并与真身 `4a0e65f2` 的 `msg/` 逐字节比对通过（共有的 184 个文件 blob 全同）。☠️ 原写「**从 fork `5ba2e91f` 的 `msg/` 生成**」—— **作废**（真身不跑 fork，见 §7.1 与 [`reference/refs-manifest.md`](reference/refs-manifest.md) §2.6 执行版） | MPC 求解器能编译并跑通官方 `quadrotor_nav` 示例；**且 `px4_msgs` 与固件消息定义逐字节一致** | — |
 | **1** | **z0 动捕定点** | 移植旧机的动捕链路到 z0：VRPN 驱动 → `/mavros/vision_pose/pose` → EKF2；~~重标 `EKF2_EV_POS_*` 外参~~（★ **2026-10-09 改判**：外参落在 **`mocap` 节点**的 `body_to_imu_*`，飞控该参数**保持 `0`** —— 见 O4）；重调 `EKF2_EVP_NOISE` | z0 能用动捕自主定点悬停 | 动捕场地 + 网段打通（见第 7 节） |
 | **2** | **系统辨识** | 用 `thrust_calibrate.py` 测推力曲线；辨识 kt/kq/惯量；测推力在不同电压下的漂移 | 得到完整的建模参数表（替换 2.3 里的 ❌ 项） | 里程碑 1 |
-| **3** | **仿真闭环** | 先在 Python/CasADi 对自写模型验模型预测控制数学；再进 PX4 SITL 验接口与闭环 | SITL 里轨迹跟踪不发散 | 里程碑 0 |
-| **4** | **实机 `(C)` 闭环** | 模型预测控制 → ~~`VehicleRatesSetpoint`~~ **`/mavros/setpoint_raw/attitude`**（☠️ **2026-10-13** 换载体）→ PX4 rate loop，动捕定位 | 实机完成给定轨迹跟踪 | 里程碑 1、2、3 |
+| **3** | **仿真闭环** | 先在 Python/CasADi 对自写模型验 MPC 数学；再进 PX4 SITL 验接口与闭环 | SITL 里轨迹跟踪不发散 | 里程碑 0 |
+| **4** | **实机 `(C)` 闭环** | MPC → ~~`VehicleRatesSetpoint`~~ **`/mavros/setpoint_raw/attitude`**（☠️ **2026-10-13** 换载体）→ PX4 rate loop，动捕定位 | 实机完成给定轨迹跟踪 | 里程碑 1、2、3 |
 | **5** | **INDI 内环** | 用 INDI 替代 PX4 rate loop（步骤 2） | 跟踪精度优于步骤 1 | 里程碑 4 |
 | **6** | **基线对比与论文** | 与 PID 基线（`px4ctrl`）对比，出数据 | 论文素材 | 里程碑 4/5 |
 | **7**（可选） | **(D) 电机直发** | INDI 直接输出电机指令，绕过 `control_allocator` | — | 里程碑 5 |
 
-**顺序上的一个判断**：**里程碑 1（z0 动捕定点）应该在模型预测控制之前完成。** 理由：模型预测控制的地基是状态估计。动捕链路没在 z0 上跑通，模型预测控制调参时会无法区分"是模型预测控制的问题"还是"是定位的问题"。
+**顺序上的一个判断**：**里程碑 1（z0 动捕定点）应该在 MPC 之前完成。** 理由：MPC 的地基是状态估计。动捕链路没在 z0 上跑通，MPC 调参时会无法区分"是 MPC 的问题"还是"是定位的问题"。
 
 ---
 
@@ -460,7 +460,7 @@ PX4 官方 Offboard 文档明确标注了每种 setpoint 所需的**状态估计
 
 | 风险 | 影响 | 缓解 |
 |---|---|---|
-| **电池功率瓶颈**（见 2.4） | T/W 实际只有 1.60–2.54，敏捷飞行受限 | 模型预测控制推力约束按电池设；考虑换更高 C 的电池 |
+| **电池功率瓶颈**（见 2.4） | T/W 实际只有 1.60–2.54，敏捷飞行受限 | MPC 推力约束按电池设；考虑换更高 C 的电池 |
 | **电压 sag** | 同样油门给出不同推力，sim-to-real gap | 辨识推力-电压关系；或模型里显式建电压状态 |
 | ~~**★★ 动捕时间戳抖动 10–100 ms**~~ | ✅ **【已撤销】该风险不存在** —— 抖动实际只有 ~2–5 ms，且 `stamp = now()` 是刻意设计（动捕主机与 Jetson 时钟差 ~4 秒，改成 `msg_time` 反而会毁掉 EKF2）。真实最坏延迟 ≈ 55 ms 而非 150 ms | **不需要任何缓解措施。** 详见 [`reference/mocap-setup.md`](reference/mocap-setup.md) **6.2** |
 | ~~**飞控固件来源不明**~~ | ✅ **【已结案，2026-09-21 第一手终审】** 真身是 **`Minderring/PX4-Autopilot` @ `4a0e65f2331b23b9c8352656e9ccb6edeaea5d6c`**（2024-11-18，commit message `add micoair743-aio to PX4-Autopilot v1.14.3`）= **v1.14.3 系的 MicoAir 厂商构建**。判据是**飞控自报**的 `flight_custom_version` 8 字节 `00 00 00 33 f2 65 0e 4a` ⟹ hash `4a0e65f233`（由 sha 正向推出的字节与实测**逐字相同**），且 `flight_sw_version = 0x010e0300` ⟹ `1.14.3`；其 `msg/` 与**上游 v1.14.3 逐字节相同**。☠️ **09-20 那一版「真身 = `Peize-Liu/PX4-Autopilot @ 5ba2e91f`（经 Nxt-FC 的 submodule 指认）」作废** —— 那条 submodule 线索**不等于飞控里烧的那一份**；`5ba2e91f` 是 **v1.15 世代**的 fork，**与 z0 无关** | ✅ **该"以 QGC 读数为准"的终审已做**（MAVLink `AUTOPILOT_VERSION`，2026-09-21）—— 见 [`reference/refs-manifest.md`](reference/refs-manifest.md) §2.5(c)(d)。⚠️ `z0.params` 头的 `Git Revision: 4a0e65f233000000` 与它**逐字对得上**（同一个 8 字节值的两种写法），该参数文件是**旁证**而非 z0 的读数。⚠️ 遗留张力：板名 **NxtPX4v2** 与真身树里的板级目标（只有 `micoair/{h743,h743-v2,h743-aio}`、**无 `hkust/`**）对不上 ⟹ **Phase 4 重编该编哪个目标未定**。**→ ★ 2026-10-09 已解**：查清**板级目标就是 `hkust_nxt-dual`**（飞控自报 `ver_hw = HKUST_NXT_DUAL`，8 份飞行日志一致；`4a0e65f2` 那棵树里看不到它，是因为板级目录是它的**子提交 `33bdd21f`** 加进去的，而版本头只记裸 `HEAD`）；同日操作者裁定**不重刷固件** ⟹ 该结论**只作存档、不派生动作**。见 [`reference/refs-manifest.md`](reference/refs-manifest.md) §2.5(d)④ |
@@ -476,12 +476,12 @@ PX4 官方 Offboard 文档明确标注了每种 setpoint 所需的**状态估计
 
 | # | 问题 | 为什么要紧 |
 |---|---|---|
-| **O1** | **螺旋桨转向是 props-in 还是 props-out？** | 直接决定模型预测控制模型里力矩 τ 的符号 |
+| **O1** | **螺旋桨转向是 props-in 还是 props-out？** | 直接决定 MPC 模型里力矩 τ 的符号 |
 | **O2** | ~~**动捕怎么接到 Jetson？**~~ ✅ **已收敛**：VRPN 就是 UDP over IP，**把 Jetson 连到动捕主机所在的同一个 WiFi 即可，不需要额外网卡**。实测：z0 连 `SUSTech-802.1x`（`10.29.12.59/14`）时，到 `10.1.1.198` 的路由经校园网网关（`10.31.255.254`）绕出，ping 与 TCP 3883 **均不通**；换到动捕所在网络后即通 | **剩一个动作**：连对 WiFi。不是硬件问题 |
 | **O3** | **`CA_ROTORx_PX/PY` 实际值是多少？** 🔶 **一半已答（2026-09-21 对账）**：**飞控真身读到的就是 `±0.15`** —— 所以"文件是不是过时"这个问题**结了**。但**"实测这台飞机的真实几何"仍未做**。★ **2026-09-22 裁定：`CA_ROTOR*` 不改**（分配器按几何自身范数归一化，均匀缩放会被完全约掉 ⟹ 改了没效果），真正要它的是 **(D) 方案**与力矩饱和估算 | 控制分配的几何基础 |
 | **O4** | 动捕刚体 → IMU 偏移（外参） | ★★ **2026-10-09 落点改了：做在 `mocap` 节点里，不是写飞控参数。** 节点侧 `body_to_imu_x/y/z = 0/0/−0.080` m（机体系 FLU，按该帧姿态旋转）⟹ **飞控 `EKF2_EV_POS_X/Y/Z` 保持 `0/0/0`，且这个 `0` 现在是「正确的」**（由构造保证），⛔ 别两边都做（偏移双计）。**z 这一半不用尺子也能拿**：飞机停在地面那场（`bag/1_static`，2026-09-29）的动捕**原始 z = `+0.10850 m`** 给的是**飞控侧**该填的值 `≈ −0.0885 m`（FRD、z 向下为正），与节点侧落的 80 mm 差 8.5 mm（来源：「离地 20 mm」是估的）—— **两个数都留着**。⚠️ 前提「动捕 z=0 即地面」**待验**，且这是**每场次现读**的数（09-21 那次 `+0.0883`）。**xy 仍未做**（现按零处理）。详见 [`phase4/01`](../.scratch/phase4/issues/01-geometry-and-extrinsics.md) 的「★★ 落地」 |
-| **O5** | `MPC_THR_HOVER` 是默认值还是实测值？ | ★ **一半已答（2026-09-21 对账）**：真身就是 `0.5`，**且 `0.5` 恰好是 PX4 出厂默认值** ⟹ 看不出来被改过。★ **2026-09-22 裁定：留到推力标定**（里程碑 2，与 `THR_MDL_FAC` 一并定）；它决定 **MPC（模型预测控制）** 的线性化工作点对不对 |
-| **O6** | ~~**通信中间件最终选"混合"还是"全 mavros"？**~~ ✅ **已定（分阶段）**：**Phase 1 全走 mavros2**（`/mavros/vision_pose/pose` + `/mavros/setpoint_raw/local`），**完全不碰 uXRCE-DDS**（`UXRCE_DDS_CFG` 都不用改）；~~**uXRCE-DDS 推迟到 Phase 2** 引入模型预测控制时再上。~~ ☠️ **2026-10-13 更新（票 13）：这一步没有发生** —— Phase 2 引入模型预测控制时**也没上 uXRCE-DDS**，(C) 级下行改走 **mavros**（`/mavros/setpoint_raw/attitude`；定案与起因见 [`reference/px4-interface.md`](reference/px4-interface.md) §4.3）。⟹ O6 的**最终答案是"全 mavros"**，⛔ 不是"混合"；`UXRCE_DDS_CFG` 一直是 `0`、今后也不用改。理由：每个阶段只引入一个新变量 —— Phase 1 验动捕链路（中间件零新增），Phase 2 才引入新中间件（此时动捕已验证）。同时避开 `px4_msgs` 版本不匹配的静默失败陷阱 | 见 3.3 与本项目 Phase 1 决策记录 |
+| **O5** | `MPC_THR_HOVER` 是默认值还是实测值？ | ★ **一半已答（2026-09-21 对账）**：真身就是 `0.5`，**且 `0.5` 恰好是 PX4 出厂默认值** ⟹ 看不出来被改过。★ **2026-09-22 裁定：留到推力标定**（里程碑 2，与 `THR_MDL_FAC` 一并定）；它决定 **MPC** 的线性化工作点对不对 |
+| **O6** | ~~**通信中间件最终选"混合"还是"全 mavros"？**~~ ✅ **已定（分阶段）**：**Phase 1 全走 mavros2**（`/mavros/vision_pose/pose` + `/mavros/setpoint_raw/local`），**完全不碰 uXRCE-DDS**（`UXRCE_DDS_CFG` 都不用改）；~~**uXRCE-DDS 推迟到 Phase 2** 引入 MPC 时再上。~~ ☠️ **2026-10-13 更新（票 13）：这一步没有发生** —— Phase 2 引入 MPC 时**也没上 uXRCE-DDS**，(C) 级下行改走 **mavros**（`/mavros/setpoint_raw/attitude`；定案与起因见 [`reference/px4-interface.md`](reference/px4-interface.md) §4.3）。⟹ O6 的**最终答案是"全 mavros"**，⛔ 不是"混合"；`UXRCE_DDS_CFG` 一直是 `0`、今后也不用改。理由：每个阶段只引入一个新变量 —— Phase 1 验动捕链路（中间件零新增），Phase 2 才引入新中间件（此时动捕已验证）。同时避开 `px4_msgs` 版本不匹配的静默失败陷阱 | 见 3.3 与本项目 Phase 1 决策记录 |
 | **O7** | 里程碑 5（INDI）是第一版就做，还是留到第二阶段？ | 影响模型复杂度 |
 | **O8** | `EKF2_GPS_CTRL = 7` 是否需要改成 0？ | ✅ **已关闭** —— 2026-09-22 裁定改，**2026-09-23 已写入并读回确认**（`EKF2_GPS_CTRL = 0` + `SYS_HAS_GPS = 0`）。命令与读回见 [`reference/params-changes.md`](reference/params-changes.md) **§I.1** |
 
@@ -519,8 +519,8 @@ PX4 官方 Offboard 文档明确标注了每种 setpoint 所需的**状态估计
 |---|---|
 | [`../CONTEXT.md`](../CONTEXT.md) | **术语表（先读）**，含 `MPC` 歧义澄清 |
 | [`../.scratch/`](../.scratch/) | ★ **本地 issue tracker**（随 git 入库、不是临时目录）：`phase{1,2,3,4}/spec.md` + 各阶段的 `issues/` —— **进度只认各文件的 `Status:` 行**，未结票清单现算（命令见 [`../README.md`](../README.md)） |
-| [`control/mpc-roadmap.md`](control/mpc-roadmap.md) | 模型预测控制路线图详细版（**资料汇总**，含 D1–D10 待决清单） |
-| [`control/phase2-implementation.md`](control/phase2-implementation.md) | ★★ **Phase 2 实施清单（模型预测控制接管 PID）** —— D1–D10 决议、`px4-mpc` 第一手解读、S1–S8 分步步骤、待实测参数——**做 Phase 2 时先读它** |
+| [`control/mpc-roadmap.md`](control/mpc-roadmap.md) | MPC 路线图详细版（**资料汇总**，含 D1–D10 待决清单） |
+| [`control/phase2-implementation.md`](control/phase2-implementation.md) | ★★ **Phase 2 实施清单（MPC 接管 PID）** —— D1–D10 决议、`px4-mpc` 第一手解读、S1–S8 分步步骤、待实测参数——**做 Phase 2 时先读它** |
 | [`control/sign-map.md`](control/sign-map.md) | ★★ **符号映射表的唯一权威** —— ENU/FLU ↔ PX4 FRD 的推导、与参考实现的逐条对照、推力项的量纲与 `T_max` 口径；**代码一律回链它、不复写数值** |
 | [`reference/hardware.md`](reference/hardware.md) | 硬件规格调查原始记录 |
 | [`reference/params-analysis.md`](reference/params-analysis.md) | `z0.params` 逐项分析 |

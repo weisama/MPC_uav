@@ -22,7 +22,7 @@
    | `/fmu/out/vehicle_local_position` + `vehicle_attitude` 的**话题名、QoS、定频、字段单位与坐标系（NED/FRD）** | **EKF2 怎么估出那些数**（A 档的夹具给的是**我们指定的**状态：位置/速度/四元数都是注入的，不是估的） |
    | `/fmu/in/*` 的**订阅侧 QoS**（决定 DUT 的发布方能不能匹配上） | EKF2 怎么融合动捕、模式需求检查、prearm 的**具体**检查项 |
    | PX4 反序列化器对 `timestamp` 的读法（`recorded_age_s`，**只报告、不据此行动**） | 时钟同步的真实滞后 Δ（见 `recorded_age_s` 的说明） |
-   | armed / nav_state / pre_flight_checks_pass 的**注入** | `vehicle_command` 的处理（MPC（模型预测控制）节点是纯控制器，不发命令 ⟹ 夹具也不处理）|
+   | armed / nav_state / pre_flight_checks_pass 的**注入** | `vehicle_command` 的处理（MPC 节点是纯控制器，不发命令 ⟹ 夹具也不处理）|
 
 ★ **为什么状态话题要"注入"而不是"仿真"**（ticket 09）：A 档那一侧要回答的是
   "**我们的约定与真 PX4 一致**"——即"给定一个**已知**的 NED/FRD 状态，节点发出的指令方向对不对"。

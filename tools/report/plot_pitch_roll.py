@@ -66,8 +66,8 @@ CAPTION_FILE = REPO / "docs/report/generated/figure-captions.md"
 #: 图注里给人看的中文源名；图内图例仍用英文。
 SOURCE_LABELS_CN = {
     "offboard": "offboard 实飞",
-    "mpc_sim": "模型预测控制仿真",
-    "mpc_real": "模型预测控制实飞",
+    "mpc_sim": "MPC 仿真",
+    "mpc_real": "MPC 实飞",
 }
 
 #: 图注章节前缀（与轨迹图的 `phase5-traj` 分开，互不覆盖）。

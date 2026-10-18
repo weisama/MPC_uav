@@ -1,4 +1,4 @@
-# nmpc —— Phase 2 的 MPC（模型预测控制）包
+# nmpc —— Phase 2 的 MPC 包
 
 把 PX4 的内置 PID 换成我们自己的控制律。控制层级是 **(C) 级 CTBR**：
 我们只发「总推力 + 机体角速率」，**姿态环与混控仍留在飞控里**
@@ -34,7 +34,7 @@
 上面那两条断言**只盯 `rclpy` 与 `px4_msgs` 这两个名字**，**没有一条**盯 `mavros_msgs` ⟹
 "不许 import 任何具体消息包"目前是**写在这里的口径**，不是被断言守住的事实。
 
-★ **`ocp` 与 `sign_map` 的分界不许模糊**：`ocp` 出的 `u` 是 **MPC（模型预测控制）内部的 FLU 量**；
+★ **`ocp` 与 `sign_map` 的分界不许模糊**：`ocp` 出的 `u` 是 **MPC 内部的 FLU 量**；
 把它变成下行字段是 `sign_map` 的事。`ocp.py` 里**没有一行**涉及那些字段名 —— 混在一起，
 "符号错了"和"模型解错了"就再也分不开了。
 
@@ -95,7 +95,7 @@ python3 src/nmpc/nmpc/offboard_smoke.py --help    # 不经 colcon 也能跑
 - `/control/target` 是 **ENU / FLU 数值**（与仓库里 `/traj/reference` 一样，`coordinate_frame`
   字段只是占位，**不做 NED 转换**）；`type_mask` 必须是 **2496**（位置 + 速度 + yaw，
   忽略加速度与 yaw_rate），与 `control` 侧同一个常量。
-- **目标就是绝对值**：`x_ref = 目标位置`、速度按目标速度线性外推（模型预测控制的前馈）。
+- **目标就是绝对值**：`x_ref = 目标位置`、速度按目标速度线性外推（MPC 的前馈）。
   **不再加锚点** —— 轨迹原点、起飞悬停点、判稳全在 `control` 里算好了。
 - 目标断流 **0.5 s**（`control_target_timeout_s`）⟹ 闸门以 `no_control_target` 关闭，
   **不是冻结**：冻结等于拿旧目标继续飞，而目标流断掉通常意味着上游任务态变了。
@@ -113,12 +113,12 @@ python3 src/nmpc/nmpc/offboard_smoke.py --help    # 不经 colcon 也能跑
 
 两条都是 2026-10-16 加的，`_PARAMS` 里默认值均为 `False` ⟹ **不传参数时行为与今天逐字一致**
 （"默认关"的活证据是既有用例照旧绿，尤其 `test_未解锁时一帧_setpoint_都没有` —— 不是口头保证）。
-★ 票 15 起 `z0.py` 的模型预测控制档只打开 `offboard_prestream`；`start_traj_reference` 不再由
+★ 票 15 起 `z0.py` 的 MPC 档只打开 `offboard_prestream`；`start_traj_reference` 不再由
 `z0.py` 打开（`/traj/start` 归 `control`），但仍保留给 `reference_source=traj` 的旧链：
 
 | 参数 | 默认 | 打开后它做什么 | 谁打开 |
 |---|---|---|---|
-| `offboard_prestream` | `false` | 闸门关着时，**只有** `not_armed` / `not_offboard` 这两个原因下发**一帧纯悬停**（零角速率 + 悬停推力，就是 `__init__` 里那个 `_hover_sp`）；其余关闸原因**照旧零帧** | `z0.py` 的模型预测控制档 ⟹ `--ros-args -p offboard_prestream:=true` |
+| `offboard_prestream` | `false` | 闸门关着时，**只有** `not_armed` / `not_offboard` 这两个原因下发**一帧纯悬停**（零角速率 + 悬停推力，就是 `__init__` 里那个 `_hover_sp`）；其余关闸原因**照旧零帧** | `z0.py` 的 MPC 档 ⟹ `--ros-args -p offboard_prestream:=true` |
 | `start_traj_reference` | `false` | 参考源是 `traj` 时，闸门因 `no_traj_reference` 关着那一拍发**一帧** `/traj/start`（`std_msgs/Empty`），**发一次**；理由回到 `no_status` / `not_armed` / `not_offboard` 才重新武装 | **只给旧 `traj` 档手打**；`z0.py` 不再打开它（`control` 档下 `_validate` 直接拒） |
 
 ★ **`offboard_prestream` 的权限边界**（第一手，PX4 1.14.3 `mavlink_receiver.cpp`）：不在 `OFFBOARD` 时

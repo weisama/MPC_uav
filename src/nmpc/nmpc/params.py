@@ -1,4 +1,4 @@
-"""z0 的模型参数 —— 10 状态 MPC（模型预测控制）用。
+"""z0 的模型参数 —— 10 状态 MPC 用。
 
 ★ **本文件里的数分三类，别混**（改之前先看这一行）：
 
@@ -9,8 +9,8 @@
 | **电池口径的引数** | `f_max` | `hardware.md` §6.2 的 Mooch 持续放电 15 A 外推（≈11.8 N）—— 是**引数**，不是我们量的 |
 | ~~占位值~~ | ~~`hover_thrust`、`t_max`~~ | ✅ **2026-09-29 已全部实测**（ticket 10 的 P1/P2 回填），本表已无占位 |
 
-⚠️ 归一化常数（参考实现里硬编码的 `0.07`）**不在本文件里**：它在
-`nmpc/sign_map.py` 的 `px4_rates_setpoint(..., t_max_n)` 里以**形参**出现，由调用方传 `t_max`。
+⚠️ 归一化常数（参考实现里硬编码的 `0.07`）**不在本文件里**：它在 `nmpc/sign_map.py` 的
+两个下行入口（`px4_rates_setpoint` / `mavros_attitude_target`）里以**形参** `t_max_n` 出现，由调用方传 `t_max`。
 本文件只负责把 `t_max` 与 `hover_thrust` 锁成一条导出关系（见下）。
 
 **这条导出关系必须自洽**（[`phase2-implementation.md`](../../../docs/control/phase2-implementation.md) §6.3）：
@@ -42,7 +42,7 @@ G = 9.81
 #: 那是生产里判"顶没顶界"用的相对容差，这里判"归一化常数与悬停油门是不是同一个物理量"，
 #: 属同一类"读到的值落在边界上还算不算数"的问题 ⟹ 复用它，**不另起一个数**
 #: （★ 那一条是 [判据全绿也可能是机理反了] 的反面：判据的阈值来自生产口径，不是我现编的）。
-#: ⚠️ 这两个常量**不能合并成一处**：`node_core` 反过来 import 本模块（`:387` 用 `params.f_max`）
+#: ⚠️ 这两个常量**不能合并成一处**：`node_core` 反过来 import 本模块（`:460` 用 `params.f_max`）
 #: ⟹ 本模块 import `node_core` 会成环。值相同这件事由
 #: `test/test_params.py::test_normalization_tolerance_matches_production` 盯着（改一个忘另一个会红）。
 NORM_TOL_REL = 1e-3

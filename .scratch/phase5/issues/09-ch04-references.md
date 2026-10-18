@@ -1,6 +1,6 @@
 # 09: 第 4 章 参考项目与资料来源
 
-Status: ready-for-human
+Status: done
 Type: task
 
 **What to build:** `docs/report/chapters/04-references.md`。
@@ -15,7 +15,7 @@ Type: task
   - Fast-Drone-XI35（最接近的机体与 FSM 参考）；
   - OmniNxt（全向紧凑空中机器人）；
   - Sim2real-UAV-Params（参数辨识）；
-  - MPC_uav（模型预测控制参考实现）；
+  - MPC_uav（MPC 参考实现）；
   - px4-mpc（10 状态 OCP 的直接参考）；
   - Nxt-FC（厂商飞控/固件仓库）；
 - **论文**（6 篇，标题保留英文，附中文译名与用途）：
@@ -95,7 +95,7 @@ Type: task
 
 **未确定项（正文已写明，未当作结论）**
 
-- `MPC_uav` 票面的括注“模型预测控制参考实现”与事实不符：它就是本仓库，本章按“本项目自己的仓库”写，并锚在 Phase 4 收口提交 `21eb4a7`。
+- `MPC_uav` 票面的括注“MPC 参考实现”与事实不符：它就是本仓库，本章按“本项目自己的仓库”写，并锚在 Phase 4 收口提交 `21eb4a7`。
 - `papers/README.md` 旧索引称 OmniNxt 为“倾转旋翼、带舵机”；PDF 全文核实为常规四旋翼，本章按更正后的表述写，并点名这次更正。
 - `refs-manifest.md` 记 Nxt-FC 为 51 个文件，2026-10-17 用 `find` 现算为 49 个普通文件；本章写现算值并标注日期。
 - Sim2real 仓库没有 LICENSE 文件；vendored 的 `vrpn_listener` 的 `package.xml` 许可证字段仍为 `TODO`。本章只陈述事实，未替上游补许可证。
@@ -106,7 +106,7 @@ Type: task
 - 叶子小节 21 个（4.1.1–4.1.2、4.2.1–4.2.8、4.3.1–4.3.6、4.4.1–4.4.3、4.5、本章引用清单），每个末尾恰好 1 行总结，共 21 行；父小节不加。脚本按标题层级解析。
 - 总结句汉字数 26–39 字，均在 20–50 字区间；未引入本节之外的数、未引用图表号、未用“效果良好 / 基本通过”。
 - 相对链接 29 个，全部存在（脚本核对；复核后新增 3 条教训的就地来源链接）。
-- 裸词 `MPC`：正则 `RE_BARE_MPC` 命中 3 处，全部在必须逐字保留的英文原题内（`Nonlinear MPC`、`Data-Driven MPC`、`nonlinear MPC`）；中文正文与标题一律用“模型预测控制”或 `MPC（模型预测控制）`。
+- `MPC` 写法：英文原题内 3 处（`Nonlinear MPC`、`Data-Driven MPC`、`nonlinear MPC`）必须逐字保留；中文正文与标题一律用「MPC」（2026-10-18 术语规则）。
 - 本章为纯文档改动，不新增代码与测试。
 
 ### 2026-10-17 —— 双轴复核与全量测试（agent 记录，非操作者验收）
@@ -152,3 +152,7 @@ Type: task
 - 26 个相对链接全部存在；裸词 `MPC` 仅 3 处英文原题。
 - 篇幅：316 行 / 4,638 个汉字（精简前 381 行 / 8,676 字）。
 - 实验室归属依据：acados `docs/index.rst`；agilicious PDF 首页与 README；OmniNxt/Nxt-FC README；px4-mpc `package.xml` 的 `padr@kth.se` 与源码 `jalim@ethz.ch`；XI35 见 `open-source-survey.md`。
+
+### 2026-10-18 —— 操作者裁定收工
+
+操作者 2026-10-18 指令「全部 tickets 收工」，并对 README 修订与装配结果放行；本票按「做完了」义把 `Status` 转 `done`。收口过程见 [票 20](20-closeout-and-v5.md)。

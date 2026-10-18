@@ -1,9 +1,9 @@
 # 05: 补充图（位置误差–时间、控制量）
 
-Status: ready-for-human
+Status: done
 Type: task
 
-**What to build:** 两张补充图族：位置误差–时间（四源）与控制量（模型预测控制仿真 vs 实飞两源）。
+**What to build:** 两张补充图族：位置误差–时间（四源）与控制量（MPC 仿真 vs 实飞两源）。
 
 **Blocked by:** 01, 02
 
@@ -18,7 +18,7 @@ Type: task
 
 - 每场景一张：`docs/report/figures/fig-control-{hover,square,lemniscate}.png/.svg`；
 - 4 行：推力（N）、ωx、ωy、ωz；
-- **只画两源**：模型预测控制仿真、模型预测控制实飞；
+- **只画两源**：MPC 仿真、MPC 实飞；
 - ⛔ 不把 offboard 的 `/mavros/setpoint_raw/local`（位置设定点）混进来——它和推力/角速率不是同一层，
   画在一起会造成"看起来可比"的假象；
 - 实飞推力换算口径写进图注（`thrust` / `thrust_body_z` 与归一化常数，按该趟日志）。
@@ -92,3 +92,7 @@ Type: task
 
 - 只读 `docs/report/data/*.csv` 与同名 JSON，不读原始包、不重算管线口径。
 - 没有改动票 01/02 的数据与指标；没有生成 3D 图。
+
+### 2026-10-18 —— 操作者裁定收工
+
+操作者 2026-10-18 指令「全部 tickets 收工」，并对 README 修订与装配结果放行；本票按「做完了」义把 `Status` 转 `done`。收口过程见 [票 20](20-closeout-and-v5.md)。

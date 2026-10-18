@@ -2,11 +2,11 @@
 //
 // 数据流（全部为**动捕原生 ENU / 机体 FLU**，本节点不做任何坐标系转换）：
 //   /vrpn/<刚体>/pose  ──▶ 本节点 ──▶ /mavros/vision_pose/pose   （mavros 负责 ENU→NED、FLU→FRD）
-//                                  └─▶ /mocap/pose_enu           （Phase 1 只用于记录；Phase 2 的 MPC（模型预测控制）状态源）
-//   /vrpn/<刚体>/twist ──▶ 本节点 ──▶ /mocap/velocity_enu         （Phase 2 的 MPC（模型预测控制）速度来源，见 .scratch/phase2/issues/15）
+//                                  └─▶ /mocap/pose_enu           （Phase 1 只用于记录；Phase 2 的 MPC 状态源）
+//   /vrpn/<刚体>/twist ──▶ 本节点 ──▶ /mocap/velocity_enu         （Phase 2 的 MPC 速度来源，见 .scratch/phase2/issues/15）
 //
 // ★ 速度是**原样 republish**（`TwistStamped`，frame 与 stamp 都从 `msg->header` 带走）：
-//   `vrpn_listener` 的 twist 与本节点转发给模型预测控制的 pose **同一个 frame**（都是 `"world"`）
+//   `vrpn_listener` 的 twist 与本节点转发给 MPC 的 pose **同一个 frame**（都是 `"world"`）
 //   ⟹ 同 frame 直接转发就是**零变换**，与「输入侧不做坐标转换」那条约定一致。
 //
 // ★ 四条不许碰的约定（改任何一条都会毁掉 EKF2 融合，见 docs/control/phase1-implementation.md）：
@@ -27,7 +27,7 @@
 //   ③ ⚠️ 没做平移的那一半：`/mocap/velocity_enu` 仍是**刚体原点**的速度（原样转发）。
 //      两者的差是 `ω × d_机体系`，其中竖直偏移只与 roll/pitch 角速率耦合（≈ 0.08·ω_xy）。
 //      影响面有限：EKF2 **不融合** EV 速度（`EKF2_EV_CTRL = 11`，bit2 关），只有 Phase 2 的
-//      模型预测控制速度输入会带上它；且动捕 twist 的 angular 实测恒为 0 ⟹ 想补偿也补不了。见 README。
+//      MPC 速度输入会带上它；且动捕 twist 的 angular 实测恒为 0 ⟹ 想补偿也补不了。见 README。
 //
 // ★ 运行纪律：**从本节点启动到解锁之间，不要把飞机搬来搬去、不要转它。**
 //   （两阶段原点切换的跳变量 = 这段时间里飞机被移动的量。朝向不重要，静止才重要。）

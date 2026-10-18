@@ -283,7 +283,8 @@ python3 -m nmpc.timing --runs 1000 --cpu 4
 "没问题"（掩盖了尾延迟）。
 
 ★ 本票量的是**离线**（无 ROS、无 SITL、无话题收发）。SITL 闭环下的**整周期**（含订阅/发布、
-状态转换、日志）尚未测 ⟹ 该项留给 seam 3（ticket 11）复核。
+状态转换、日志）尚未测 ⟹ 该项留给 seam 3（ticket 11）复核（★ **2026-09-29 已复核，见下**）。
+★ **2026-09-29 复核（ticket 11）**：SITL 闭环 100 Hz 下，逐拍**求解耗时**稳态最坏 **5.652 ms**、实发 **99.5–99.6 Hz**（p50 10.0 ms、p99 11.4–11.9 ms）；**整周期墙钟没有单独分项**。见 [`phase2-implementation.md`](phase2-implementation.md) §5 与 [`tier-b-sitl-seam3.md`](tier-b-sitl-seam3.md) §9。
 
 ---
 
@@ -303,7 +304,7 @@ setpoint 往哪边转"**与 `sign-map.md` 一致**（⑨a 残差 +0.082 rad）�
 本页所有数字都是**离线**（无 ROS/SITL）—— SITL 闭环下的**整周期**耗时归 seam 3；
 `hover_thrust`/`t_max` 真值归 P1（ticket 10）。
 
-**不能**：**"符号约定与真 PX4 一致"。** 本模块里的 `u` 是 **MPC（模型预测控制）内部的 FLU 量**，
+**不能**：**"符号约定与真 PX4 一致"。** 本模块里的 `u` 是 **MPC 内部的 FLU 量**，
 `ocp.py` 里**没有一行**涉及 `roll`/`pitch`/`yaw`/`thrust_body` —— 那层映射的唯一实现在
 `nmpc/sign_map.py`，权威表在 [`sign-map.md`](sign-map.md) §2。
 "PX4 收到这个 setpoint 之后往哪边转"只有 **SITL 闭环**（seam 3）能回答。

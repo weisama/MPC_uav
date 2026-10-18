@@ -6,7 +6,7 @@
 - 左：XY 俯视（四源叠加，等比例）；
 - 右：Z-t（四源叠加，t 相对 `/traj/start`）。
 
-四源 = 目标（虚线）、offboard 实飞、模型预测控制仿真、模型预测控制实飞。
+四源 = 目标（虚线）、offboard 实飞、MPC 仿真、MPC 实飞。
 **只读** `docs/report/data/<scene>.csv`；图注的来源信息读同名 `.json`（票 01 产出，
 含输入包路径与窗口口径），**不读原始包**，也不在这里重算对齐口径。
 
@@ -172,7 +172,7 @@ def load_scene(
         for lineno, row in enumerate(reader, start=2):
             source = row["source"]
             if source not in raw:
-                # 只读部分源时（如控制量只读模型预测控制两源），跳过其余
+                # 只读部分源时（如控制量只读 MPC 两源），跳过其余
                 # 已知源；真正未知的源名仍然报错。
                 if source in style.SOURCES:
                     continue
@@ -398,12 +398,12 @@ def _scene_caption(scene: str, meta: dict, command: str,
         f"- 数据：`data/{scene}.csv`（同名 `.json` 记输入 sha256 与窗口口径）",
         f"- 窗口：{_window_text(meta)}",
         f"- 来源：目标与 offboard 来自 `{offboard_bag}`；"
-        f"模型预测控制仿真来自 `{sim_path}`；"
-        f"模型预测控制实飞来自 `{mpc_bag}`。",
+        f"MPC 仿真来自 `{sim_path}`；"
+        f"MPC 实飞来自 `{mpc_bag}`。",
         "- 坐标：四源各自减去自身的轨迹原点（`AUTO/WAIT_START` 期间的指令值），单位为 m；"
         "时间零点为 `/traj/start` 的包记录时间戳。",
         "- 实际轨迹：实飞两源取 `/mavros/vision_pose/pose`；仿真源取 SITL 的 `x0`"
-        "（合成动捕）。offboard 与模型预测控制两组控制器看到的反馈源不同，"
+        "（合成动捕）。offboard 与 MPC 两组控制器看到的反馈源不同，"
         "详见 `data/README.md`。",
         "- 样式：目标为虚线，实际轨迹为实线；四源起点用同一种空心圆标记；"
         "左图 XY 等比例俯视，右图为高度-时间。",

@@ -12,7 +12,7 @@
 
    · `/traj/start` **由任务总管 `control` 在"开始跟踪"那一刻自己发**（票 15 起两档一致；
      票 09 Comments ② 的原始裁定）：两档都是 `control` 进 `TRACK` 时发，
-     模型预测控制档不再由 `mpc_node` 发（`start_traj_reference` 在 `reference_source=control`
+     MPC 档不再由 `mpc_node` 发（`start_traj_reference` 在 `reference_source=control`
      下会被 `_validate` 直接拒）。参考时钟的零点必须与"开始飞"同一时刻。
      这里再发一次 = 把正在跑的参考时钟归零，飞机当场掉头飞回轨迹起点 —— 且现场看不出是谁干的。
    · 起飞 = **遥控器开始键的第 1 次上升沿**（§H.5）。这条防线是刻意的：
@@ -171,7 +171,7 @@ def _print_help() -> None:
         "★ 起飞与开始轨迹**不在这个脚本里**：遥控器开始键的第 1 次上升沿 = 解锁起飞，\n"
         "  第 2 次 = 进 TRACK（§H.5）。开始键按下之前，control 不会发任何控制指令。\n"
         "★ 本脚本**不发** /traj/start —— 两档都由 control 在进 TRACK 时发\n"
-        "  （模型预测控制档也一样，见脚本头部说明）。\n",
+        "  （MPC 档也一样，见脚本头部说明）。\n",
         flush=True)
 
 

@@ -104,7 +104,7 @@ def test_thrust_normalisation_is_negative_and_normalised():
 
 
 def _derived_px4_command(omega_flu, F_n, t_max_n=T_MAX):
-    """把 MPC（模型预测控制）内部量按**推导出来的**映射变成 PX4 的四个字段。
+    """把 MPC 内部量按**推导出来的**映射变成 PX4 的四个字段。
 
     这里刻意**不 import 节点里的实现** —— 闭环要能独立成立。
     """

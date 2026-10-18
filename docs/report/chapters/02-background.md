@@ -2,37 +2,39 @@
 
 ## 2.1 平台与目标
 
-z0 是一台已经组装完成、并且做过人工飞行验证的 152 mm 涵道四旋翼，机架为 OddityRC XI35 Pro。飞控是 MicoAir NxtPX4v2，运行 PX4 1.14.3 系的 MicoAir 厂商构建——固件真身是 `Minderring/PX4-Autopilot` @ `4a0e65f2`，由飞控自报的版本字段核对确认（[refs-manifest.md §2.5(d)](../../reference/refs-manifest.md)）。机载计算机是 Jetson Orin NX 8GB，本仓库就在这台机器上；室内定位由 Nokov 动捕系统提供，经 VRPN 送到机载侧。平台与版本的完整清单见 [README.md 的「项目基础信息」](../../../README.md)。
+z0 是一台已经组装完成、并且做过人工飞行验证的 152 mm 涵道四旋翼，机架为 [OddityRC XI35 Pro](https://oddityrc.com/)。飞控是 [MicoAir NxtPX4v2](https://micoair.cn/en/products/nxtpx4v2)，运行 [PX4](https://github.com/PX4/PX4-Autopilot) 1.14.3 系的 MicoAir 厂商构建——固件真身是 `Minderring/PX4-Autopilot` @ `4a0e65f2`，由飞控自报的版本字段核对确认（[refs-manifest.md §2.5(d)](../../reference/refs-manifest.md)）。机载电脑是 [Jetson Orin NX 8GB](https://www.nvidia.com/en-us/autonomous-machines/embedded-systems/jetson-orin/)，本仓库就在这台机器上；室内定位由 [Nokov](https://www.nokov.com/) 动捕系统提供，经 [VRPN](https://github.com/vrpn/vrpn) 送到机载侧。平台与版本的完整清单见 [README.md 的「项目基础信息」](../../../README.md)。
 
-本项目的目标不是再造一台能飞的机器，而是把 z0 建成一个可复用的自主飞行平台，并让模型预测控制（MPC）接管飞控内置的 PID。平台建设优先于单次演示：模块边界是否清晰、接口是否稳定、后续任务能否复用，本身就是验收标准的一部分（[PROJECT.md §1.1](../../PROJECT.md)）。
+本项目的目标不是再造一台能飞的机器，而是把 z0 建成一个可复用的自主飞行平台，并让 MPC 接管飞控内置的 PID。平台建设优先于单次演示：模块边界是否清晰、接口是否稳定、后续任务能否复用，本身就是验收标准的一部分（[PROJECT.md §1.1](../../PROJECT.md)）。
 
 平台目标有两条：
 
-- **整条链路可替换**：从动捕感知、参考规划、模型预测控制到 PX4 执行，做成一套首尾相接的完整系统；控制算法可以整块换掉，而感知、状态估计、轨迹与安全机制不需要跟着改（分层与接口见[第 5 章](05-architecture.md)）。
+- **整条链路可替换**：从动捕感知、参考规划、MPC 到 PX4 执行，做成一套首尾相接的完整系统；控制算法可以整块换掉，而感知、状态估计、轨迹与安全机制不需要跟着改（分层与接口见[第 5 章](05-architecture.md)）。
 - **硬件平台大推重比、可高速飞行**：推重比决定机动与速度的物理上限，电池的可持续放电能力是当前最硬的约束；z0 的实际边界见[第 3 章](03-hardware.md) §3.4.2。
 
-四阶段路线遵循「每个阶段只引入一个新变量」：Phase 1 只验证「动捕 → 机载计算机 → offboard → 飞控 → 飞机」这条基础链路，控制律仍是 PX4 内置 PID；Phase 2 才把模型预测控制接进控制回路，但只在 SITL 中验证，不碰真机；Phase 3 不引入新变量，负责把前两阶段摊开的文档与未结事项收敛掉；Phase 4 才让模型预测控制在真机上飞，并在离地之前把每个可能摔机的未知量单独测出来（[README.md 的四阶段路线](../../../README.md)）。
+四阶段路线遵循「每个阶段只引入一个新变量」：Phase 1 只验证「动捕 → 机载电脑 → offboard → 飞控 → 飞机」这条基础链路，控制律仍是 PX4 内置 PID；Phase 2 才把 MPC 接进控制回路，但只在 SITL 中验证，不碰真机；Phase 3 不引入新变量，负责把前两阶段摊开的文档与未结事项收敛掉；Phase 4 才让 MPC 在真机上飞，并在离地之前把每个可能摔机的未知量单独测出来（[README.md 的四阶段路线](../../../README.md)）。
 
 这条路线还带着一条贯穿全项目的纪律：结论必须能指回证据。项目早期有过两次结论站不住的教训——把未授权私有仓库的 404 当成「仓库不存在」，以及在只有 README、LICENSE 与 PDF 二进制的情况下声称读过论文全文——此后关键判断都要求落到第一手来源：源码路径、行号、commit、日志或数据文件（[open-source-survey.md §0](../../reference/open-source-survey.md)）。本报告中的读数同样要求带来源与窗口。
 
-<big>**一句话总结：z0 是一台涵道四旋翼，本项目的目标是把MPC接进飞控回路，并按四个阶段逐步推进。**</big>
+**术语约定。** 本报告里 `SITL` 专指 PX4 软件在环仿真；「仿真」只作形容词或与「实飞」对举，不单独指代 SITL。`offboard` 小写指本项目的位置控制链路，`Offboard` 指 PX4 的飞行模式，`OFFBOARD` 指代码常量。正文叙述统一用「实飞」指 z0 真机飞行、用「Phase」指四阶段路线中的阶段；「真机」「上机」「阶段」只在引用原文或强调动作时出现。`MPC` 指 Model Predictive Control，与 PX4 的 `MPC_*`（Multicopter Position Controller）参数前缀无关。
+
+<big>**打造一台全链（动捕感知 → 参考规划 → MPC → 飞控执行）无人机平台，并且可灵活切换和添加新的控制方式，硬件选型注重大推重比。**</big>
 
 ## 2.2 四阶段路线
 
 表 2-1 给出四个阶段各自做了什么、控制接口是什么，以及截至 2026-10-17 的结论。
 
-**表 2-1　四阶段路线**
+**表 2-1　四阶段路线。**
 
 | 阶段 | 做了什么 | 控制接口 | 结论（截至 2026-10-17） |
 |---|---|---|---|
 | **Phase 1** | 用动捕让 z0 稳定悬停并跟踪简单轨迹；PX4 跑位置、姿态、角速率全部内环 PID | **(A) 级**：`/mavros/setpoint_raw/local`（位置 + yaw） | 2026-09-28 真机自由飞一次成功，以目测为准、数值未量；票面无未结，但阶段 spec 仍为 `ready-for-agent` |
-| **Phase 2** | 模型预测控制节点 + acados；在 z0 同构 SITL 机体上验证闭环 | **(C) 级**：机体三轴角速率 + 总推力（SITL 阶段经 px4_msgs/uXRCE-DDS；Phase 4 起改 mavros） | SITL 闭环跑通，最高一级验收的四条判据都有结论（不都是通过）；票面无未结，但阶段 spec 仍为 `ready-for-agent` |
+| **Phase 2** | MPC 节点 + acados；在 z0 同构 SITL 机体上验证闭环 | **(C) 级**：机体三轴角速率 + 总推力（SITL 阶段经 px4_msgs/uXRCE-DDS；Phase 4 起改 mavros） | SITL 闭环跑通，最高一级验收的四条判据都有结论（不都是通过）；票面无未结，但阶段 spec 仍为 `ready-for-agent` |
 | **Phase 3** | 整理入口层与 `docs/`，并结清 Phase 2 留下的未结票 | 无（不引入新的控制接口） | spec `done`（2026-10-09） |
 | **Phase 4** | 四项前置测量（部分未完成）；按拆桨 → 系绳 20 cm → 系绳悬停 30 s → 自由飞三条轨迹推进（阶梯 2 未达标，裁定跳过） | 同 Phase 2（**(C) 级**） | 自由飞三条轨迹完成；spec `done`（2026-10-17，操作者裁定收口）；5 张票记为 `wontfix` 的缺口 |
 
 ### 2.2.1 Phase 1 —— offboard 位置定点
 
-Phase 1 把自主飞行限制在「位置」这一层：机载计算机只发位置与 yaw 设定点，位置环、姿态环、角速率环全部由 PX4 内置 PID 承担。2026-09-28 的首次真机自由飞一次成功，定点、定高、按键与三条轨迹均按目测判为正常；这次验收的口径是**目测为准、不补量数字**，因此它能证明的是「链路通了」，不是「跟踪精度是多少」（[phase1 票 09](../../../.scratch/phase1/issues/09-track-mission-script.md)）。
+Phase 1 把自主飞行限制在「位置」这一层：机载电脑只发位置与 yaw 设定点，位置环、姿态环、角速率环全部由 PX4 内置 PID 承担。2026-09-28 的首次真机自由飞一次成功，定点、定高、按键与三条轨迹均按目测判为正常；这次验收的口径是**目测为准、不补量数字**，因此它能证明的是「链路通了」，不是「跟踪精度是多少」（[phase1 票 09](../../../.scratch/phase1/issues/09-track-mission-script.md)）。
 
 Phase 1 名下的拆桨、系绳 20 cm、系绳悬停 30 s 三级阶梯没有做；操作者 2026-09-28 裁定不再补做，这几级在（A）级下的读数至今为空（[README.md 的四阶段路线](../../../README.md)）。票据层面 Phase 1 已没有未结票，但**阶段并未收口**：`phase1/spec.md` 的 `Status` 行仍是 `ready-for-agent`（[phase1 spec](../../../.scratch/phase1/spec.md)）。这里必须区分「票收口」与「阶段收口」：前者指每张票有了处置，后者指 spec 本身被翻成 `done`，两者不是一回事。
 
@@ -40,13 +42,13 @@ Phase 1 名下的拆桨、系绳 20 cm、系绳悬停 30 s 三级阶梯没有做
 
 <big>**一句话总结：Phase 1 搭建了一台动捕作为定位来源的 offboard 模式（控制部分为飞控固有PID）的PX4无人机。**</big>
 
-### 2.2.2 Phase 2 —— SITL 验证模型预测控制
+### 2.2.2 Phase 2 —— SITL 验证 MPC
 
-Phase 2 才把模型预测控制接进控制回路。控制层级选 **(C)**：模型预测控制输出总推力与机体三轴角速率，PX4 只保留 1 kHz 的角速率环与混控。被控对象与 z0 同构，但其物理参数当时并没有对齐真机实测口径——满量程推力明显偏小，直到 Phase 3 才按实测基线重搭（[phase2 spec](../../../.scratch/phase2/spec.md)；[phase3 票 04](../../../.scratch/phase3/issues/04-rebuild-sitl-plant-to-measured-baseline.md)）。这一阶段只在仿真里闭环，不碰真机。
+Phase 2 才把 MPC 接进控制回路。控制层级选 **(C)**：MPC 输出总推力与机体三轴角速率，PX4 只保留 1 kHz 的角速率环与混控。被控对象与 z0 同构，但其物理参数当时并没有对齐真机实测口径——满量程推力明显偏小，直到 Phase 3 才按实测基线重搭（[phase2 spec](../../../.scratch/phase2/spec.md)；[phase3 票 04](../../../.scratch/phase3/issues/04-rebuild-sitl-plant-to-measured-baseline.md)）。这一阶段只在仿真里闭环，不碰真机。
 
 Phase 2 的最高一级验收把状态源换成动捕：参考轨迹取自真实动捕包，测量则由 SITL 真值叠加上从包里提取的噪声与延迟合成——没有把录好的帧直接当测量流，因为那样会断开反馈，注入延迟的判据也就失去意义（[phase2 票 11](../../../.scratch/phase2/issues/11-sitl-tier-b-seam3.md)；[tier-b-sitl-seam3.md §3](../../control/tier-b-sitl-seam3.md)）。四条判据都留下了结论，其中包括未通过项，而不是「看着还行」。票据层面同样已无未结票，但 `phase2/spec.md` 的 `Status` 仍是 `ready-for-agent`（[phase2 spec](../../../.scratch/phase2/spec.md)）。Phase 2 未收口，主要不是因为控制律还有悬案，而是因为「仿真能飞」与「真机能飞」之间隔着一批只能在真机上读出的量：真实的动捕到飞控延迟、推力标定、动捕与 IMU 的外参、电池在负载下的电压跌落（[phase4 spec 的 Problem Statement](../../../.scratch/phase4/spec.md)）。
 
-**结论：**（C）级模型预测控制在 SITL 中完成了闭环验证，能摔机的错法被逐条验过；阶段未收口，未收口的部分是「真机上的量还没量」。
+**结论：**（C）级 MPC 在 SITL 中完成了闭环验证，能摔机的错法被逐条验过；阶段未收口，未收口的部分是「真机上的量还没量」。
 
 <big>**一句话总结：MPC 算法在仿真 SITL 中完成了闭环验证，但并未同步实机的物理参数。**</big>
 
@@ -60,40 +62,40 @@ Phase 3 不引入新变量，也不改控制律。它做两件事：把入口层
 
 <big>**一句话总结：Phase 3 并未引入新功能，而是将前俩阶段的工作优化，并同步实机的物理参数。**</big>
 
-### 2.2.4 Phase 4 —— MPC上实机
+### 2.2.4 Phase 4 —— MPC 上实机
 
-Phase 4 是模型预测控制第一次上真机。上机前安排了四项前置测量：电机实际位置、悬停油门、动捕与 IMU 之间的外参、动捕到飞控的端到端延迟（[phase4 spec](../../../.scratch/phase4/spec.md)）。实际落地并不完整：悬停油门有实测回填；延迟有来源记录，但没有做 A/B；电机位置由「机架规格 + 操作者现场复认」推得，不是卡尺读数；外参只落了 z 方向的一部分——xy 未测，「动捕 z=0 平面即地面」的前提未证，倾斜段的实飞判据从未跑过。未完成的部分按操作者 2026-10-17 裁定记为 `wontfix`，没有证据作锚（[phase4 票 01](../../../.scratch/phase4/issues/01-geometry-and-extrinsics.md)；[phase4 票 02](../../../.scratch/phase4/issues/02-hover-thrust-backfill.md)；[phase4 票 03](../../../.scratch/phase4/issues/03-latency-tau-from-logs.md)）。
+Phase 4 是 MPC 第一次上真机。上机前安排了四项前置测量：电机实际位置、悬停油门、动捕与 IMU 之间的外参、动捕到飞控的端到端延迟（[phase4 spec](../../../.scratch/phase4/spec.md)）。实际落地并不完整：悬停油门有实测回填；延迟有来源记录，但没有做 A/B；电机位置由「机架规格 + 操作者现场复认」推得，不是卡尺读数；外参只落了 z 方向的一部分——xy 未测，「动捕 z=0 平面即地面」的前提未证，倾斜段的实飞判据从未跑过。未完成的部分按操作者 2026-10-17 裁定记为 `wontfix`，没有证据作锚（[phase4 票 01](../../../.scratch/phase4/issues/01-geometry-and-extrinsics.md)；[phase4 票 02](../../../.scratch/phase4/issues/02-hover-thrust-backfill.md)；[phase4 票 03](../../../.scratch/phase4/issues/03-latency-tau-from-logs.md)）。
 
 然后按「拆桨看方向 → 系绳离地 20 cm → 系绳闭环悬停 30 s → 自由飞三条轨迹」四级阶梯推进。阶梯并不是每一级都过了：阶梯 1（拆桨看方向）用 `/mavros/rc/out` 的仪器读数判过，六段角速率指令的方向全部与预期一致；阶梯 2（系绳离地 20 cm）在 2026-10-16 实跑未达标——系绳长度没有把高度限制在 20 cm，飞机没有稳定悬停在该高度，随后下坠，并在水平方向跑出明显距离后撞地。操作者当天裁定**跳过这一级、直接进闭环**，并明令豁免判据页「哪级不过不进下一级」的规则（[phase4 票 09](../../../.scratch/phase4/issues/09-ladder-ground-and-tether20.md)；[ladder-acceptance-criteria.md §5.1](../../control/ladder-acceptance-criteria.md)）。之后阶梯 3、4 才继续推进，具体读数见票 09 与第 10 章。
 
-2026-10-17 的自由飞留下了三份模型预测控制轨迹包（悬停、正方形、八字；另有一份起飞包），供第 10 章与 Phase 1 的 offboard 数据同口径对比（[bag/README.md](../../../bag/README.md)）。Phase 4 的 spec 于同日翻成 `done`，依据是操作者裁定「全都收工」；其中 5 张票按裁定记为 `wontfix`。这 5 张并不都是同一种「没做」：多数是「裁定收、不做了」，[票 14](../../../.scratch/phase4/issues/14-chain-controller-choice.md) 是「被[票 15](../../../.scratch/phase4/issues/15-trajectory-flight-roles.md) 取代后收口」；无论哪一种，未做项都没有证据作锚，并不等于每一项都做过。具体缺口分别记在[票 01](../../../.scratch/phase4/issues/01-geometry-and-extrinsics.md)（几何与外参）、[票 04](../../../.scratch/phase4/issues/04-firmware-reflash.md)（固件不重刷）、[票 09](../../../.scratch/phase4/issues/09-ladder-ground-and-tether20.md)（阶梯 2）与[票 16](../../../.scratch/phase4/issues/16-ladder3-and-4-closeout-gaps.md)（阶梯 3/4 的未取证项），第 10 章会把它们作为「未验证项」列出。
+2026-10-17 的自由飞留下了三份 MPC 轨迹包（悬停、正方形、8 字；另有一份起飞包），供第 10 章与 Phase 1 的 offboard 数据同口径对比（[bag/README.md](../../../bag/README.md)）。Phase 4 的 spec 于同日翻成 `done`，依据是操作者裁定「全都收工」；其中 5 张票按裁定记为 `wontfix`。这 5 张并不都是同一种「没做」：多数是「裁定收、不做了」，[票 14](../../../.scratch/phase4/issues/14-chain-controller-choice.md) 是「被[票 15](../../../.scratch/phase4/issues/15-trajectory-flight-roles.md) 取代后收口」；无论哪一种，未做项都没有证据作锚，并不等于每一项都做过。具体缺口分别记在[票 01](../../../.scratch/phase4/issues/01-geometry-and-extrinsics.md)（几何与外参）、[票 04](../../../.scratch/phase4/issues/04-firmware-reflash.md)（固件不重刷）、[票 09](../../../.scratch/phase4/issues/09-ladder-ground-and-tether20.md)（阶梯 2）与[票 16](../../../.scratch/phase4/issues/16-ladder3-and-4-closeout-gaps.md)（阶梯 3/4 的未取证项），第 10 章会把它们作为「未验证项」列出。
 
-**结论：** （C）级模型预测控制完成了自由飞三条轨迹，阶段按操作者裁定收口；但前置测量与阶梯都有未完成项，阶梯 2 未达标后由裁定跳过，另有若干未取证项——这些缺口单独记账，不用「基本完成」掩盖。
+**结论：** （C）级 MPC 完成了自由飞三条轨迹，阶段按操作者裁定收口；但前置测量与阶梯都有未完成项，阶梯 2 未达标后由裁定跳过，另有若干未取证项——这些缺口单独记账，不用「基本完成」掩盖。
 
-<big>**一句话总结：MPC算法在实机上完成了三种轨迹的验证，并进通过实机测量优化物理参数模型。**</big>
+<big>**一句话总结：MPC 算法在实机上完成了三种轨迹的验证，并进一步通过实机测量优化物理参数模型。**</big>
 
 ## 2.3 三条关键工程约束
 
 ### 2.3.1 室内无 GPS，动捕是唯一位置源
 
-飞行场地在室内，没有 GPS。z0 的绝对定位只有动捕一条来源：Nokov 动捕主机把刚体位姿经 VRPN 送到机载计算机，再进入 PX4 的 EKF2；GPS 这条线在飞控参数上被显式关掉（`EKF2_GPS_CTRL = 0`、`SYS_HAS_GPS = 0`，见 [params-changes.md §I.1](../../reference/params-changes.md)）。这条约束有两个直接后果：第一，动捕链路中断时没有卫星定位可以作为备份；第二，所有位置与轨迹都是相对于某个局部原点的量，比较不同架次的数据时必须先对齐时间零点与轨迹原点（方法见第 9 章）。动捕链路的设计与延迟标定见 [mocap-setup.md](../../reference/mocap-setup.md)。
+飞行场地在室内，没有 GPS。z0 的绝对定位只有动捕一条来源：Nokov 动捕主机把刚体位姿经 VRPN 送到机载电脑，再进入 PX4 的 EKF2；GPS 这条线在飞控参数上被显式关掉（`EKF2_GPS_CTRL = 0`、`SYS_HAS_GPS = 0`，见 [params-changes.md §I.1](../../reference/params-changes.md)）。这条约束有两个直接后果：第一，动捕链路中断时没有卫星定位可以作为备份；第二，所有位置与轨迹都是相对于某个局部原点的量，比较不同架次的数据时必须先对齐时间零点与轨迹原点（方法见第 9 章）。动捕链路的设计与延迟标定见 [mocap-setup.md](../../reference/mocap-setup.md)。
 
 <big>**一句话总结：室内没有 GPS，动捕是唯一位置源，因此也没有卫星定位可以作为备份。**</big>
 
 ### 2.3.2 mavros 是唯一的机载链路
 
-在 z0 真机上，机载计算机与飞控之间只走 mavros 一条链路。Phase 2 的 SITL 验证曾经用 px4_msgs/uXRCE-DDS 把 (C) 级指令发到 `/fmu/in/vehicle_rates_setpoint`；到 Phase 4 上机时这条路走不通——飞控的 `UXRCE_DDS_CFG` 是 `0`，串口又被 MAVLink 占着——于是 2026-10-12 起 (C) 级下行改为 mavros 的 `/mavros/setpoint_raw/attitude`（[phase4 票 13](../../../.scratch/phase4/issues/13-mavros-downlink-switch.md)；[README.md 的「项目基础信息」](../../../README.md)）。所以：Phase 1 的 (A) 级、Phase 4 的 (C) 级实飞，以及今天代码里的 (C) 级下行，都经 mavros；uXRCE-DDS 从未在真机上使用。代价是 (C) 级要经过 mavros 的消息转换；收益是真机只有一条需要维护、需要排查的链路。Phase 2 的 SITL 证据是在旧载体上产出的，第 9、10 章引用那批证据时要把这一点写明。
+在 z0 真机上，机载电脑与飞控之间只走 mavros 一条链路。Phase 2 的 SITL 验证曾经用 px4_msgs/uXRCE-DDS 把 (C) 级指令发到 `/fmu/in/vehicle_rates_setpoint`；到 Phase 4 上机时这条路走不通——飞控的 `UXRCE_DDS_CFG` 是 `0`，串口又被 MAVLink 占着——于是 2026-10-12 起 (C) 级下行改为 mavros 的 `/mavros/setpoint_raw/attitude`（[phase4 票 13](../../../.scratch/phase4/issues/13-mavros-downlink-switch.md)；[README.md 的「项目基础信息」](../../../README.md)）。所以：Phase 1 的 (A) 级、Phase 4 的 (C) 级实飞，以及今天代码里的 (C) 级下行，都经 mavros；uXRCE-DDS 从未在真机上使用。代价是 (C) 级要经过 mavros 的消息转换；收益是真机只有一条需要维护、需要排查的链路。Phase 2 的 SITL 证据是在旧载体上产出的，第 9、10 章引用那批证据时要把这一点写明。
 
 <big>**一句话总结：真机只走 mavros 一条链路，SITL 阶段的 uXRCE-DDS 载体没有延续到实机。**</big>
 
 ### 2.3.3 控制层级选 (C)：总推力 + 机体三轴角速率
 
-控制层级的编号描述的是模型预测控制把控制量送到 PX4 的哪一层，四个选项的完整对照见 [mpc-roadmap.md §1](../../control/mpc-roadmap.md) 与 [PROJECT.md §4.1](../../PROJECT.md)。本项目选 **(C) 级：总推力 + 机体三轴角速率**，也就是 CTBR（collective thrust + body rate）。它的含义是：模型预测控制接管位置环与姿态环，输出总推力，以及绕机体三轴的角速率期望；PX4 只保留 1 kHz 角速率环与混控（[CONTEXT.md 的 CTBR 与 `(C)` 方案](../../../CONTEXT.md)）。
+控制层级的编号描述的是 MPC 把控制量送到 PX4 的哪一层，四个选项的完整对照见 [mpc-roadmap.md §1](../../control/mpc-roadmap.md) 与 [PROJECT.md §4.1](../../PROJECT.md)。本项目选 **(C) 级：总推力 + 机体三轴角速率**，也就是 CTBR（collective thrust + body rate）。它的含义是：MPC 接管位置环与姿态环，输出总推力，以及绕机体三轴的角速率期望；PX4 只保留 1 kHz 角速率环与混控（[CONTEXT.md 的 CTBR 与 `(C)` 方案](../../../CONTEXT.md)）。
 
 不选另外三级的理由分别是：
 
-- **(A) 级**只发位置与速度，模型预测控制的输出会被 PX4 的位置环「抹平」，模型等于没有进回路——这正是 Phase 1 的状态；
-- **(B) 级**发姿态角与推力，仍然隔着 PX4 的姿态环，姿态环带宽会与模型预测控制的预测时域打架，四元数设定点的 yaw 处理也更麻烦；
+- **(A) 级**只发位置与速度，MPC 的输出会被 PX4 的位置环「抹平」，模型等于没有进回路——这正是 Phase 1 的状态；
+- **(B) 级**发姿态角与推力，仍然隔着 PX4 的姿态环，姿态环带宽会与 MPC 的预测时域打架，四元数设定点的偏航处理也更麻烦；
 - **(D) 级**直接发电机指令，绕过 PX4 的 `control_allocator` 与安全网，摔机风险与标定工作量都超出本项目的范围。
 
 (C) 级是这三者之间唯一「模型真正起作用、又不拆掉飞控安全机制」的落点（[PROJECT.md §4.2](../../PROJECT.md)）。需要强调：(C) 级定义的是**输出形态**，不是某一条具体话题；本项目当前经 mavros 的 `mavros_msgs/AttitudeTarget` 下发，将来更换载体不改变方案本身（[CONTEXT.md](../../../CONTEXT.md)；[phase4 票 13](../../../.scratch/phase4/issues/13-mavros-downlink-switch.md)）。

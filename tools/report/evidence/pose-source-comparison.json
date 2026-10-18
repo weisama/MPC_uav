@@ -1,0 +1,348 @@
+{
+  "what": "VP 与 LP 的对照（票 14，第 9 章）；口径见本脚本文件头。",
+  "generated_by": "python3 tools/report/evidence/compare_pose_sources.py",
+  "cases": [
+    {
+      "scene": "hover",
+      "source": "offboard",
+      "bag": "bag/3_traj1_hover",
+      "bag_sha256": "03d905cb2aed6d05cefe4d6927367eaf8c18dfafdac6e97a1ac850c054a36fc9",
+      "bag_start_to_traj_start_s": 76.78175783157349,
+      "reference_publish_delay_ms": 7.737636566162109,
+      "track_window_s": [
+        0.0,
+        39.65007972717285
+      ],
+      "track_end_reason": "ref_end",
+      "track": {
+        "n": 7539,
+        "position": {
+          "h_rms_m": 0.007033739337876355,
+          "d3_rms_m": 0.007133693044690468,
+          "h_mean_m": 0.006146044031358706,
+          "d3_max_m": 0.01696073168948999,
+          "xyz_rms_m": [
+            0.005435839323604423,
+            0.00446375849717983,
+            0.0011899946985914978
+          ],
+          "what": "VP − LP（ENU）；LP 线性插值到 VP 的时间戳"
+        },
+        "attitude": {
+          "roll_diff_mean_rad": 0.040765515834596276,
+          "roll_diff_std_rad": 0.011623880965650351,
+          "quat_dot_negative_fraction": 1.0,
+          "quat_abs_dot_mean": 0.9996728338025733,
+          "what": "roll 差 = VP − LP（ZYX 内旋）；四元数点积在 LP 时间戳上取"
+        }
+      },
+      "whole_bag": {
+        "n": 21019,
+        "position": {
+          "h_rms_m": 0.008374642772314055,
+          "d3_rms_m": 0.009770194715128858,
+          "h_mean_m": 0.0066490440915181375,
+          "d3_max_m": 0.11838411987567306,
+          "xyz_rms_m": [
+            0.005925655420104808,
+            0.005917875413191341,
+            0.00503210325884316
+          ],
+          "what": "VP − LP（ENU）；LP 线性插值到 VP 的时间戳"
+        },
+        "attitude": {
+          "roll_diff_mean_rad": 0.030567932571026517,
+          "roll_diff_std_rad": 0.013315977785977557,
+          "quat_dot_negative_fraction": 1.0,
+          "quat_abs_dot_mean": 0.9933194927550508,
+          "what": "roll 差 = VP − LP（ZYX 内旋）；四元数点积在 LP 时间戳上取"
+        }
+      }
+    },
+    {
+      "scene": "hover",
+      "source": "mpc_real",
+      "bag": "bag/6_free__20261017-070103",
+      "bag_sha256": "e7d4a1fd7bf723b197af8008eaa362cf5a804d97643480b7097adfbd073e6c8e",
+      "bag_start_to_traj_start_s": 19.176186561584473,
+      "reference_publish_delay_ms": 9.265899658203125,
+      "track_window_s": [
+        0.0,
+        60.0162935256958
+      ],
+      "track_end_reason": "progress",
+      "track": {
+        "n": 11142,
+        "position": {
+          "h_rms_m": 0.010959961976485666,
+          "d3_rms_m": 0.011160329285578877,
+          "h_mean_m": 0.009809706823526424,
+          "d3_max_m": 0.03378783539941111,
+          "xyz_rms_m": [
+            0.007149582030939961,
+            0.008306879276170553,
+            0.0021052750975912625
+          ],
+          "what": "VP − LP（ENU）；LP 线性插值到 VP 的时间戳"
+        },
+        "attitude": {
+          "roll_diff_mean_rad": 0.03733921900140371,
+          "roll_diff_std_rad": 0.0025421286762376204,
+          "quat_dot_negative_fraction": 1.0,
+          "quat_abs_dot_mean": 0.9998081315250296,
+          "what": "roll 差 = VP − LP（ZYX 内旋）；四元数点积在 LP 时间戳上取"
+        }
+      },
+      "whole_bag": {
+        "n": 16463,
+        "position": {
+          "h_rms_m": 0.013453584389061319,
+          "d3_rms_m": 0.016562181360046963,
+          "h_mean_m": 0.010813248603473557,
+          "d3_max_m": 0.10824432958638548,
+          "xyz_rms_m": [
+            0.009692189286411641,
+            0.00933061625778073,
+            0.009659550636002294
+          ],
+          "what": "VP − LP（ENU）；LP 线性插值到 VP 的时间戳"
+        },
+        "attitude": {
+          "roll_diff_mean_rad": 0.034704771454528854,
+          "roll_diff_std_rad": 0.005679311239842994,
+          "quat_dot_negative_fraction": 1.0,
+          "quat_abs_dot_mean": 0.9998258853607236,
+          "what": "roll 差 = VP − LP（ZYX 内旋）；四元数点积在 LP 时间戳上取"
+        }
+      }
+    },
+    {
+      "scene": "square",
+      "source": "offboard",
+      "bag": "bag/4_traj2_square",
+      "bag_sha256": "0b40e4afb1f8fc525965910fce1cccddefc01c53e911875573e45c7270c395f4",
+      "bag_start_to_traj_start_s": 18.986923694610596,
+      "reference_publish_delay_ms": 9.085655212402344,
+      "track_window_s": [
+        0.0,
+        8.021292209625244
+      ],
+      "track_end_reason": "progress",
+      "track": {
+        "n": 1578,
+        "position": {
+          "h_rms_m": 0.011680476608963748,
+          "d3_rms_m": 0.012027166263505723,
+          "h_mean_m": 0.00927806486613837,
+          "d3_max_m": 0.04316974624500698,
+          "xyz_rms_m": [
+            0.010088475183277715,
+            0.005886951867387676,
+            0.002866913761776058
+          ],
+          "what": "VP − LP（ENU）；LP 线性插值到 VP 的时间戳"
+        },
+        "attitude": {
+          "roll_diff_mean_rad": 0.051791714463516006,
+          "roll_diff_std_rad": 0.01861616687880274,
+          "quat_dot_negative_fraction": 1.0,
+          "quat_abs_dot_mean": 0.9992278709995124,
+          "what": "roll 差 = VP − LP（ZYX 内旋）；四元数点积在 LP 时间戳上取"
+        }
+      },
+      "whole_bag": {
+        "n": 7018,
+        "position": {
+          "h_rms_m": 0.011200425400604286,
+          "d3_rms_m": 0.021372211340191707,
+          "h_mean_m": 0.008810063087334247,
+          "d3_max_m": 0.1502327485411111,
+          "xyz_rms_m": [
+            0.009283545628876346,
+            0.006266203771907846,
+            0.01820224954271633
+          ],
+          "what": "VP − LP（ENU）；LP 线性插值到 VP 的时间戳"
+        },
+        "attitude": {
+          "roll_diff_mean_rad": 0.03302576760930819,
+          "roll_diff_std_rad": 0.018033324558768188,
+          "quat_dot_negative_fraction": 1.0,
+          "quat_abs_dot_mean": 0.999549874595362,
+          "what": "roll 差 = VP − LP（ZYX 内旋）；四元数点积在 LP 时间戳上取"
+        }
+      }
+    },
+    {
+      "scene": "square",
+      "source": "mpc_real",
+      "bag": "bag/6_free__20261017-070446",
+      "bag_sha256": "347bff1f46997efb19b72d203d01053ab48cef904d31ad4dfd49be0826fb8e13",
+      "bag_start_to_traj_start_s": 18.39716386795044,
+      "reference_publish_delay_ms": 12.8936767578125,
+      "track_window_s": [
+        0.0,
+        8.009598731994629
+      ],
+      "track_end_reason": "progress",
+      "track": {
+        "n": 1454,
+        "position": {
+          "h_rms_m": 0.025134383346106213,
+          "d3_rms_m": 0.025420274099741024,
+          "h_mean_m": 0.021007184182336266,
+          "d3_max_m": 0.10985212706278848,
+          "xyz_rms_m": [
+            0.01859452101347997,
+            0.01691097319695924,
+            0.003801724492509005
+          ],
+          "what": "VP − LP（ENU）；LP 线性插值到 VP 的时间戳"
+        },
+        "attitude": {
+          "roll_diff_mean_rad": 0.035052900157852486,
+          "roll_diff_std_rad": 0.00586876597161975,
+          "quat_dot_negative_fraction": 1.0,
+          "quat_abs_dot_mean": 0.9997991941813973,
+          "what": "roll 差 = VP − LP（ZYX 内旋）；四元数点积在 LP 时间戳上取"
+        }
+      },
+      "whole_bag": {
+        "n": 6987,
+        "position": {
+          "h_rms_m": 0.07899888936486811,
+          "d3_rms_m": 0.08813811203049068,
+          "h_mean_m": 0.03345077662732319,
+          "d3_max_m": 0.5229254770504123,
+          "xyz_rms_m": [
+            0.04482365312104518,
+            0.06505124627374095,
+            0.039083273550415985
+          ],
+          "what": "VP − LP（ENU）；LP 线性插值到 VP 的时间戳"
+        },
+        "attitude": {
+          "roll_diff_mean_rad": 0.03127396726549875,
+          "roll_diff_std_rad": 0.012938160045760764,
+          "quat_dot_negative_fraction": 1.0,
+          "quat_abs_dot_mean": 0.9997820025585219,
+          "what": "roll 差 = VP − LP（ZYX 内旋）；四元数点积在 LP 时间戳上取"
+        }
+      }
+    },
+    {
+      "scene": "lemniscate",
+      "source": "offboard",
+      "bag": "bag/5_traj3_lemniscate",
+      "bag_sha256": "f7e191f739a665fc8c0a17ad7e3e1614176b5a50a2f4514e6596987a1bd5f33c",
+      "bag_start_to_traj_start_s": 23.30953860282898,
+      "reference_publish_delay_ms": 10.177850723266602,
+      "track_window_s": [
+        0.0,
+        12.213040828704834
+      ],
+      "track_end_reason": "progress",
+      "track": {
+        "n": 2294,
+        "position": {
+          "h_rms_m": 0.02351211910607351,
+          "d3_rms_m": 0.023706140388599785,
+          "h_mean_m": 0.019469119265615134,
+          "d3_max_m": 0.09891908530928398,
+          "xyz_rms_m": [
+            0.01803169598459998,
+            0.015088992172346983,
+            0.0030267717564783775
+          ],
+          "what": "VP − LP（ENU）；LP 线性插值到 VP 的时间戳"
+        },
+        "attitude": {
+          "roll_diff_mean_rad": 0.025328794171089047,
+          "roll_diff_std_rad": 0.010032603878233374,
+          "quat_dot_negative_fraction": 1.0,
+          "quat_abs_dot_mean": 0.9998261480288374,
+          "what": "roll 差 = VP − LP（ZYX 内旋）；四元数点积在 LP 时间戳上取"
+        }
+      },
+      "whole_bag": {
+        "n": 8960,
+        "position": {
+          "h_rms_m": 0.01617772124918171,
+          "d3_rms_m": 0.020023435146691308,
+          "h_mean_m": 0.011919865050554897,
+          "d3_max_m": 0.11344470752251194,
+          "xyz_rms_m": [
+            0.01214400787688984,
+            0.010688392652885771,
+            0.011799122435907139
+          ],
+          "what": "VP − LP（ENU）；LP 线性插值到 VP 的时间戳"
+        },
+        "attitude": {
+          "roll_diff_mean_rad": 0.02492418431659812,
+          "roll_diff_std_rad": 0.011146866753861206,
+          "quat_dot_negative_fraction": 1.0,
+          "quat_abs_dot_mean": 0.9997595016883505,
+          "what": "roll 差 = VP − LP（ZYX 内旋）；四元数点积在 LP 时间戳上取"
+        }
+      }
+    },
+    {
+      "scene": "lemniscate",
+      "source": "mpc_real",
+      "bag": "bag/6_free__20261017-070935",
+      "bag_sha256": "e86424abbf8fe1fe9e20d83343adaae82734c640ba85e14cf95ac7631f80a53c",
+      "bag_start_to_traj_start_s": 25.144071102142334,
+      "reference_publish_delay_ms": 15.571355819702148,
+      "track_window_s": [
+        0.0,
+        12.202110528945923
+      ],
+      "track_end_reason": "progress",
+      "track": {
+        "n": 2392,
+        "position": {
+          "h_rms_m": 0.024557144366791173,
+          "d3_rms_m": 0.02483508156765625,
+          "h_mean_m": 0.021538475055775882,
+          "d3_max_m": 0.07979191000234732,
+          "xyz_rms_m": [
+            0.018603861449790742,
+            0.01602964998396452,
+            0.003705123077674445
+          ],
+          "what": "VP − LP（ENU）；LP 线性插值到 VP 的时间戳"
+        },
+        "attitude": {
+          "roll_diff_mean_rad": 0.03007108906976378,
+          "roll_diff_std_rad": 0.0036226564941935716,
+          "quat_dot_negative_fraction": 1.0,
+          "quat_abs_dot_mean": 0.9998581553162351,
+          "what": "roll 差 = VP − LP（ZYX 内旋）；四元数点积在 LP 时间戳上取"
+        }
+      },
+      "whole_bag": {
+        "n": 8797,
+        "position": {
+          "h_rms_m": 0.02567700938163402,
+          "d3_rms_m": 0.03013223334442555,
+          "h_mean_m": 0.016584756552356316,
+          "d3_max_m": 0.20455309196261637,
+          "xyz_rms_m": [
+            0.016972383095142148,
+            0.019267771611067422,
+            0.015768407514343014
+          ],
+          "what": "VP − LP（ENU）；LP 线性插值到 VP 的时间戳"
+        },
+        "attitude": {
+          "roll_diff_mean_rad": 0.029982569286577523,
+          "roll_diff_std_rad": 0.005887064702472633,
+          "quat_dot_negative_fraction": 1.0,
+          "quat_abs_dot_mean": 0.9998425546727079,
+          "what": "roll 差 = VP − LP（ZYX 内旋）；四元数点积在 LP 时间戳上取"
+        }
+      }
+    }
+  ]
+}

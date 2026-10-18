@@ -2,15 +2,15 @@
 
 本章是"现场那一页"的报告版：从摆好飞机、起链、选轨迹、拨开关、按开始键，一直写到降落、录制与出事后的处置。它回答的不是"代码怎么写"，而是"这一趟飞下来，人在什么时候做什么、机器在什么时候接手、每一步凭什么判断它可以往下走"。
 
-第 5 章给出了层与层之间的接口和话题，第 6 章按包拆了代码结构；本章不重复它们，只把两条控制链的操作顺序、就绪判据、遥控通道、状态机与失效路径串起来。模型预测控制（MPC）的公式见第 8 章，实验设计与数据处理见第 9 章，结果与未验证项见第 10 章。本章的命令与菜单号以 [`run/README.md`](../../../run/README.md) 为唯一出处，现场动作以 [`operation_manual.md`](../../../operation_manual.md) 为准，通道裁定回到 [`params-changes.md` §H](../../reference/params-changes.md)，安全结论回到 [`docs/assets/drill/`](../../assets/drill/) 的第一手日志。
+第 5 章给出了层与层之间的接口和话题，第 6 章按包拆了代码结构；本章不重复它们，只把两条控制链的操作顺序、就绪判据、遥控通道、状态机与失效路径串起来。MPC 的公式见第 8 章，实验设计与数据处理见第 9 章，结果与未验证项见第 10 章。本章的命令与菜单号以 [`run/README.md`](../../../run/README.md) 为唯一出处，现场动作以 [`operation_manual.md`](../../../operation_manual.md) 为准，通道裁定回到 [`params-changes.md` §H](../../reference/params-changes.md)，安全结论回到 [`docs/assets/drill/`](../../assets/drill/) 的第一手日志。
 
 ---
 
 ## 7.1 术语与通道编号
 
-本章只用几个固定词，先把它们钉死，后面不再解释。**控制权**回答"谁在驱动飞机"，只有 `MANUAL` 与 `AUTO` 两个值；**任务态**回答"这一趟走到哪一步"，有八个值，逐项见 7.7 节的表 7-7。两者是正交的，`/control/state` 把二者拼成一行，例如 `MANUAL/STANDBY` 或 `AUTO/TRACK`。**开始键**指遥控器上的 ch9，**杀车**指 ch8，**软停**指不切断动力的三种停任务方式。回退 (A) 级与 (C) 级沿用项目里的分档：(A) 是 offboard 位置控制，(C) 是模型预测控制下发角速率与推力，角速率环与混控仍由 PX4 做。
+本章只用几个固定词，先把它们钉死，后面不再解释。**控制权**回答"谁在驱动飞机"，只有 `MANUAL` 与 `AUTO` 两个值；**任务态**回答"这一趟走到哪一步"，有八个值，逐项见 7.7 节的表 7-7。两者是正交的，`/control/state` 把二者拼成一行，例如 `MANUAL/STANDBY` 或 `AUTO/TRACK`。**开始键**指遥控器上的 ch9，**杀车**指 ch8，**软停**指不切断动力的三种停任务方式。回退 (A) 级与 (C) 级沿用项目里的分档：(A) 是 offboard 位置控制，(C) 是 MPC 下发角速率与推力，角速率环与混控仍由 [PX4](https://github.com/PX4/PX4-Autopilot) 做。
 
-**表 7-1　本章术语**
+**表 7-1　本章术语。**
 
 | 词 | 含义 | 在哪读 |
 |---|---|---|
@@ -19,7 +19,7 @@
 | 开始键 | ch9；两次上升沿分别对应起飞与开始轨迹，长按对应自动降落 | `/mavros/rc/in` 的 `channels[8]` |
 | 杀车 | ch8；高值让 PX4 立即停桨 | PX4 的 `manual_lockdown` |
 | 软停 | 长按 ch9、打杆、拨 ch6 三条不切断动力的停任务路径 | 本章 7.8 节 |
-| 回退 (A) 级 | 放弃模型预测控制，回到 offboard 位置链 | `run/z0.py up` 第 1 档 |
+| 回退 (A) 级 | 放弃 MPC，回到 offboard 位置链 | `run/z0.py up` 第 1 档 |
 | 通道编号 | 遥控器侧的 ch 编号，从 1 起 | `RC_MAP_*` 参数与 `RC_CHANNELS` |
 
 `ch9` 在这个仓库里一律指遥控器通道号，不是数组下标；代码读的是 `/mavros/rc/in` 的 `channels[8]`，两者差 1，现场核对时不要混。
@@ -30,18 +30,18 @@
 
 ## 7.2 一键起链：两条链与一个问句
 
-`run/z0.py` 是一张 11 项的交互菜单，本身不含任何飞行逻辑。它把命令送出去、把读数摊开，判据与记录仍在 [`bench-runbook.md`](../../control/bench-runbook.md) 里。现场最常用的是其中四项：第 8 项"一键启动（动捕+mavros，手动遥控飞）"、第 9 项"一键启动全部（起前选控制器；默认 offboard 控制）"、第 10 项"清除后台节点"、第 11 项"开始录制（选场景 1–6）"。其余各项分别做环境自检、起链核对，或单独起某一个节点。
+[`run/z0.py`](../../../run/z0.py) 是一张 11 项的交互菜单，本身不含任何飞行逻辑。它把命令送出去、把读数摊开，判据与记录仍在 [`bench-runbook.md`](../../control/bench-runbook.md) 里。现场最常用的是其中四项：第 8 项"一键启动（动捕+mavros，手动遥控飞）"、第 9 项"一键启动全部（起前选控制器；默认 offboard 控制）"、第 10 项"清除后台节点"、第 11 项"开始录制（选场景 1–6）"。其余各项分别做环境自检、起链核对，或单独起某一个节点。
 
-**表 7-2　一键起链的入口**
+**表 7-2　一键起链的入口。**
 
 | 入口 | 等价于 | 起什么 | 起完之后谁在上位 |
 |---|---|---|---|
-| `run/up.sh` | `run/z0.py up`，菜单第 9 项 | 公共前缀 + 所选尾巴 | `control`，或 `mpc_node`（见下） |
+| [`run/up.sh`](../../../run/up.sh) | `run/z0.py up`，菜单第 9 项 | 公共前缀 + 所选尾巴 | `control`，或 `mpc_node`（见下） |
 | `run/z0.py up_manual` | 菜单第 8 项 | mavros → vrpn_listener → mocap | 没有人；飞机由遥控器手动飞 |
-| `run/down.sh` | `run/z0.py down`，菜单第 10 项 | 按名字停进程 | —— |
+| [`run/down.sh`](../../../run/down.sh) | `run/z0.py down`，菜单第 10 项 | 按名字停进程 | —— |
 | `run/z0.py check` | 菜单第 2 项 | 只读核对表 | —— |
 
-两条一键链的公共前缀逐字相同：mavros（可选带 GCS 桥给 QGC）→ vrpn_listener → mocap，每一步都等判据成立再走下一步。差别只在起链前选出的"尾巴"。
+两条一键链的公共前缀逐字相同：[mavros](https://github.com/mavlink/mavros)（可选带 GCS 桥给 [QGC](https://qgroundcontrol.com/)）→ vrpn_listener → mocap，每一步都等判据成立再走下一步。差别只在起链前选出的"尾巴"。
 
 第一种是手动档。`up_manual` 只起前缀三步，不起 `traj`，也不起 `control`。这意味着整条链里没有任何程序在发布 setpoint；起完之后，操作者直接用遥控器手动起飞。它适合检查动捕与飞控链路，或者单纯把飞机飞起来。
 
@@ -49,7 +49,7 @@
 
 所以"谁在上位控制飞机"问的不是"谁在管任务"，而是"谁的指令最后落到 PX4 的执行器 setpoint 上"。两档里 `control` 始终是任务总管：它管开始键、解锁、切 OFFBOARD、起飞、判稳、记录轨迹原点、发 `/traj/start` 与降落。第 2 档只是把最后一段换成 `mpc_node` 求解后写姿态 setpoint。手动档则连任务总管都不起，飞机完全由人飞。
 
-`run/down.sh` 是这条链的另一头。它按名字扫描 `DOWN_TARGETS` 白名单——mavros、vrpn_listener、mocap、traj、control、mpc_node 与 bringup 壳——先把 pid 与完整命令行摊开，问一句 y/N，再按 SIGINT → 等 5 s → SIGTERM → 等 3 s → SIGKILL 的阶梯停。它不区分这些进程是谁起的：别的会话、跑着的测试，只要名字对上都会进清单。**停进程不是降落**：setpoint 一停，PX4 在 `COM_OF_LOSS_T` 之后自己退出 OFFBOARD，按 `COM_OBL_RC_ACT` 落回 Position；飞机若还在空中，要先用 7.8 节的软停路径处置。
+[`run/down.sh`](../../../run/down.sh) 是这条链的另一头。它按名字扫描 `DOWN_TARGETS` 白名单——mavros、vrpn_listener、mocap、traj、control、mpc_node 与 bringup 壳——先把 pid 与完整命令行摊开，问一句 y/N，再按 SIGINT → 等 5 s → SIGTERM → 等 3 s → SIGKILL 的阶梯停。它不区分这些进程是谁起的：别的会话、跑着的测试，只要名字对上都会进清单。**停进程不是降落**：setpoint 一停，PX4 在 `COM_OF_LOSS_T` 之后自己退出 OFFBOARD，按 `COM_OBL_RC_ACT` 落回 Position；飞机若还在空中，要先用 7.8 节的软停路径处置。
 
 <big>**一句话总结：两条链只差最后发指令的人：遥控器或程序。**</big>
 
@@ -59,7 +59,7 @@
 
 自动档的起链顺序是固定的：mavros → vrpn_listener → mocap → traj →（第 2 档才有的 mpc）→ control。顺序不能反，原因分散在每一步的判据里：后面的节点消费前面的话题，前面没起来，后面即使进程在跑也只是空转。
 
-**表 7-3　启动顺序与就绪判据**
+**表 7-3　启动顺序与就绪判据。**
 
 | 步 | 起什么 | 等什么判据 | 上限 | 现场提示 |
 |---|---|---|---|---|
@@ -90,13 +90,13 @@
 
 两档的现场动作相同，区别只在最后一跳。表 7-4 把两条输出路径并排放在一起。
 
-**表 7-4　两条输出路径**
+**表 7-4　两条输出路径。**
 
 | 尾巴 | 谁写 | 话题 | 消息内容 | 之后由谁算控制量 |
 |---|---|---|---|---|
 | 第 1 档 offboard | `control` | `/mavros/setpoint_raw/local` | 绝对 ENU 位置 + yaw，`type_mask=2552` | PX4 的位置环 → 姿态环 → 角速率环 → 混控 |
-| 第 2 档模型预测控制 | `control` | `/control/target` | 绝对 ENU 位置 + 速度 + yaw，`type_mask=2496` | 不直接到飞控；`mpc_node` 拿它当参考 |
-| 第 2 档模型预测控制 | `mpc_node` | `/mavros/setpoint_raw/attitude` | 机体三轴角速率（FLU）+ 归一化总推力，`type_mask=128` | PX4 的角速率环 → 混控 |
+| 第 2 档 MPC | `control` | `/control/target` | 绝对 ENU 位置 + 速度 + yaw，`type_mask=2496` | 不直接到飞控；`mpc_node` 拿它当参考 |
+| 第 2 档 MPC | `mpc_node` | `/mavros/setpoint_raw/attitude` | 机体三轴角速率（FLU）+ 归一化总推力，`type_mask=128` | PX4 的角速率环 → 混控 |
 
 第 1 档里，`control` 从 `STANDBY` 起就以 50 Hz 发 `/mavros/setpoint_raw/local`，切 OFFBOARD 之前已经预流满 1 s。预流的作用不是那些帧本身——切模式前 PX4 会把它们丢掉——而是每条 setpoint 触发的 offboard 心跳，它满足 PX4 的"切模式前 setpoint 已在流"前置。切进 OFFBOARD 之后，同样的帧才真正驱动飞机。
 
@@ -116,7 +116,7 @@
 
 录制由菜单第 11 项启动。它选场景 1–6，起 `ros2 bag record`，并**占住终端**：屏幕上走倒计时，录满 120 s（场景 1–5）自己收口；想提前停就按 Ctrl-C，这与倒计时到点走的是同一条 SIGINT 收口路径。
 
-**表 7-5　六条录制场景**
+**表 7-5　六条录制场景。**
 
 | 场景 | 名字 | 时长 | 用途 |
 |---|---|---|---|
@@ -124,12 +124,12 @@
 | 2 | 手飞起飞 | 120 s | 起飞瞬态 |
 | 3 | 轨迹 1（悬停） | 120 s | 悬停判据 |
 | 4 | 轨迹 2（正方形） | 120 s | 有机动的激励 |
-| 5 | 轨迹 3（八字） | 120 s | 另一类机动 |
+| 5 | 轨迹 3（8 字） | 120 s | 另一类机动 |
 | 6 | 任意录制 | 不到点 | 自由补录，只有 Ctrl-C 收口 |
 
-录制的话题走白名单正则 `^/(mavros|mocap|traj|control|vrpn)/`，不是 `-a`；压缩用 zstd，在收口那一刻做。收口的动作是固定的：SIGINT 之后等它写缓存、压包、关库，最多等 45 s，等不到才升级到 SIGTERM / SIGKILL；然后用 `ros2 bag info` 的实测帧数逐条回对预期，写 `session.json`（时长、大小、话题、频率、sha256、缺了什么、为什么收的），再重算 `bag/MANIFEST.md`。
+录制的话题走白名单正则 `^/(mavros|mocap|traj|control|vrpn)/`，不是 `-a`；压缩用 zstd，在收口那一刻做。收口的动作是固定的：SIGINT 之后等它写缓存、压包、关库，最多等 45 s，等不到才升级到 SIGTERM / SIGKILL；然后用 `ros2 bag info` 的实测帧数逐条回对预期，写 `session.json`（时长、大小、话题、频率、sha256、缺了什么、为什么收的），再重算 [`bag/MANIFEST.md`](../../../bag/MANIFEST.md)。
 
-这一层只订阅，不解锁、不切模式、不发帧。这条边界有机器守卫：[`test_rec.py`](../../../run/tests/test_rec.py) 用 AST 扫录制层的代码，禁止出现 `create_publisher` / `create_service` / `create_client`，也禁止那四个与"让飞机动"有关的动作。它和 `run/z0.py` 的其余部分一样，不给程序起飞入口。
+这一层只订阅，不解锁、不切模式、不发帧。这条边界有机器守卫：[`test_rec.py`](../../../run/tests/test_rec.py) 用 AST 扫录制层的代码，禁止出现 `create_publisher` / `create_service` / `create_client`，也禁止那四个与"让飞机动"有关的动作。它和 [`run/z0.py`](../../../run/z0.py) 的其余部分一样，不给程序起飞入口。
 
 现场没有"停止录制"这一项。菜单第 11 项一启动就占住终端，想提前停只能按 Ctrl-C；要看进度，另开一个终端跑 `run/z0.py rec_status`。手工拷完飞控日志（`.ulg`）之后，可以跑 `run/z0.py rec_manifest` 重算总表。飞控日志本身不由这一层拷：拔 SD 卡，把 `<卡根>/log/sessNNN/logMMM.ulg` 手工放进 `bag/<场景>/fcu/`。
 
@@ -143,7 +143,7 @@
 
 遥控器的通道分配是 Phase 1 的输入，不是随手定的。`z0.params` 里非零的 `RC_MAP_*` 只有七条：四条摇杆加三个开关。其余的 `RC_MAP_*` 全为 0，ch9 不在占用表里，所以拨它不会切模式、不会解锁、不会杀车。
 
-**表 7-6　遥控通道**
+**表 7-6　遥控通道。**
 
 | 通道 | 功能 | 参数 | 谁读 | 现场怎么用 |
 |---|---|---|---|---|
@@ -153,7 +153,7 @@
 | ch8 | 杀车开关 | `RC_MAP_KILL_SW=8`；`RC_KILLSWITCH_TH=0.75` | PX4 | 高值 = 立即停桨，不是"取消任务" |
 | ch9 | 开始键 | `start_channel=9`，读 `channels[8]` | `control` | 两次上升沿 + 一次长按 |
 
-ch6 的三个档位要按实测说。快照里 `COM_FLTMODE1=2`、`COM_FLTMODE4=8`、`COM_FLTMODE6=7`；2026-10-12 的通道读数里，ch6 低档 999 报 `POSCTL`（Position）、中档 1503 报 `STABILIZED`、高档 2000 报 `OFFBOARD`。现场只用第 6 档，也就是 Offboard；第 2、3、5 档未分配，拨过去没有反应。`operation_manual.md` §1 的括号里仍写着 `COM_FLTMODE1/4/6 = 2/1/7`，其中第 4 位与快照的 `8`、实测的 `STABILIZED` 不符——这是文档里的旧值，现场动作（第 6 档）不受影响，但读参数时要按快照与实测。
+ch6 的三个档位要按实测说。快照里 `COM_FLTMODE1=2`、`COM_FLTMODE4=8`、`COM_FLTMODE6=7`；2026-10-12 的通道读数里，ch6 低档 999 报 `POSCTL`（Position）、中档 1503 报 `STABILIZED`、高档 2000 报 `OFFBOARD`。现场只用第 6 档，也就是 Offboard；第 2、3、5 档未分配，拨过去没有反应。[`operation_manual.md`](../../../operation_manual.md) §1 的括号里仍写着 `COM_FLTMODE1/4/6 = 2/1/7`，其中第 4 位与快照的 `8`、实测的 `STABILIZED` 不符——这是文档里的旧值，现场动作（第 6 档）不受影响，但读参数时要按快照与实测。
 
 ch9 的判据分三层。第一层是归一化阈值：低位 `< 0.25`、高位 `> 0.75`，去抖 200 ms。第二层是采样：`/mavros/rc/in` 是 10 Hz，200 ms 去抖等于连续 3 帧，所以每次压住至少 0.3 s 再松，压得太贴边会有一半概率按不动，而且连"被丢掉"的日志都没有。第三层是动作归属：上电即在高位不算边沿，必须先见到低位；第 1 次上升沿是解锁加起飞；第 2 次按下只"记下"，**松手**那一刻才进 `TRACK`；在飞时长按 ≥1 s 是立即自动降落，判据从电平确认起算，物理上要按住约 1.2 s，而且资格看**按下那一刻**——起飞那一下按完一直按着不放，不会让飞机刚离地就降落。
 
@@ -171,7 +171,7 @@ ch8 是最后手段。它的语义链是 `RC_MAP_KILL_SW=8` → `RC_KILLSWITCH_T
 
 状态机把"谁在控制"与"在干什么"拆成两个维度，而不是一个扁平枚举。控制权是 `MANUAL` / `AUTO`，任务态是 `INIT`、`STANDBY`、`TAKEOFF`、`HOVER`、`WAIT_START`、`TRACK`、`LAND`、`RC_OVERRIDE`。`/control/state` 以 `"<控制权>/<任务态>"` 发布，例如 `MANUAL/STANDBY`、`AUTO/TAKEOFF`、`MANUAL/RC_OVERRIDE`。
 
-**表 7-7　两个维度**
+**表 7-7　两个维度。**
 
 | 维度 | 取值 | 回答的问题 |
 |---|---|---|
@@ -194,7 +194,7 @@ ch8 是最后手段。它的语义链是 `RC_MAP_KILL_SW=8` → `RC_KILLSWITCH_T
 
 失效先分成两类，处置刻意不同。**控制权被夺走**包括打杆接管 `rc_override` 与模式被外部切走 `mode_lost`；处置是立即停发 setpoint、不请求任何模式、交还控制权——既不抢回 OFFBOARD，也不请求 `AUTO.LAND`，因为那是在跟正在接管飞机的人抢。**输入坏了**包括 `state_timeout`、`mocap_timeout`、`local_pos_timeout`、`rc_timeout`、`battery_low`、`position_invalid`、`mocap_stamp_stalled`、`ekf2_pos_lost`、`traj_timeout`；处置同样是先停发，若已解锁再请求 `AUTO.LAND`，把降落交给 PX4。
 
-**表 7-8　失效分类**
+**表 7-8　失效分类。**
 
 | 类 | 原因 token | 停发 | 请求 `AUTO.LAND` | 落点 |
 |---|---|---|---|---|
@@ -205,7 +205,7 @@ ch8 是最后手段。它的语义链是 `RC_MAP_KILL_SW=8` → `RC_KILLSWITCH_T
 
 现场能停任务的有三条软路径，外加一条不是软路径的杀车。
 
-**表 7-9　停任务的三条软路径与杀车**
+**表 7-9　停任务的三条软路径与杀车。**
 
 | 路径 | 动作 | 程序做什么 | 飞机最后谁管 |
 |---|---|---|---|
@@ -226,7 +226,7 @@ ch8 是最后手段。它的语义链是 `RC_MAP_KILL_SW=8` → `RC_KILLSWITCH_T
 
 这一节只写 2026-10-12 那几场演练里实际发生的事。PX4 侧的原文都能在 [`docs/assets/drill/`](../../assets/drill/) 里按时间戳找到；节点侧的收尾细节（`ps` 无输出、launch 的 `process has died`）在 [`phase4 票 08`](../../../.scratch/phase4/issues/08-safety-paths-and-fallback-drill.md) 的 Comments 里。演练的判据与记录体例在 [`safety-paths-drill.md`](../../control/safety-paths-drill.md)。
 
-**表 7-10　2026-10-12 的安全路径实测**
+**表 7-10　2026-10-12 的安全路径实测。**
 
 | 路径 | 时刻 | 条件 | 结果 | 原始日志 |
 |---|---|---|---|---|
@@ -248,7 +248,7 @@ ch8 是最后手段。它的语义链是 `RC_MAP_KILL_SW=8` → `RC_KILLSWITCH_T
 
 **回退 (A) 级要按实际范围读。** 2026-10-12 走的是回退步骤里的第 1、4、5 步：确认 Phase 1 整条链仍在、随时可用。证据是 `2026-10-12-chain-up-clean.log`：`/control/state` 为 `MANUAL/STANDBY`，`/mavros/state` 为 `connected=True armed=False mode=OFFBOARD`，`/mavros/setpoint_raw/local` 约 50 Hz，`/traj/reference` 无帧。第 2、3 步——也就是**把正在跑的 (C) 链换成 (A) 链的那个切换动作本身**——从未演练过。2026-10-12 当天的理由是当时没有正在发 setpoint 的 (C) 链、没有可切的对象；到 2026-10-13，(C) 链的归属已经落地，这条理由不再成立，操作者仍裁定明确不做，理由是排期。按"接受风险 · 没有实测读数作锚"收口。同一张票里的"求解失败注入"也一样：实机链路上从未触发过求解失败，操作者按同一方式接受风险收口。
 
-**读这批材料时要留意的过期处。** `safety-paths-drill.md` §0 与 §2.1 仍写着"打杆试过半场、判据没命中"，那描述的是 03:59 那场 `mode_lost`；07:23 那场后来按同一判据通过，记录在 [`phase4 票 08`](../../../.scratch/phase4/issues/08-safety-paths-and-fallback-drill.md) 的"实测 ③"。同一份演练页 §3.4 说 (C) 链"没有工具，只能 Ctrl-C"，那是在菜单第 9 项补上模型预测控制档之前（票 14/15，2026-10-16 与 10-17）；现在 `down.sh` 的 `DOWN_TARGETS` 已经包含它。`run/z0.py` 的 `DOWN_WARNING` 里还留着一句 `NAV_RCL_ACT = 2` 会试图返航，那是旧值；飞控现值是 `1`（Hold，2026-09-28 实测），遥控丢失时 PX4 就地保持，不返航。这些都在文档清扫票的范围里，本章按现状写，不按旧句子写。
+**读这批材料时要留意的过期处。** `safety-paths-drill.md` §0 与 §2.1 仍写着"打杆试过半场、判据没命中"，那描述的是 03:59 那场 `mode_lost`；07:23 那场后来按同一判据通过，记录在 [`phase4 票 08`](../../../.scratch/phase4/issues/08-safety-paths-and-fallback-drill.md) 的"实测 ③"。同一份演练页 §3.4 说 (C) 链"没有工具，只能 Ctrl-C"，那是在菜单第 9 项补上 MPC 档之前（票 14/15，2026-10-16 与 10-17）；现在 `down.sh` 的 `DOWN_TARGETS` 已经包含它。[`run/z0.py`](../../../run/z0.py) 的 `DOWN_WARNING` 里还留着一句 `NAV_RCL_ACT = 2` 会试图返航，那是旧值；飞控现值是 `1`（Hold，2026-09-28 实测），遥控丢失时 PX4 就地保持，不返航。这些都在文档清扫票的范围里，本章按现状写，不按旧句子写。
 
 <big>**一句话总结：每条安全路径都有当天的日志与时间戳。**</big>
 
@@ -256,9 +256,9 @@ ch8 是最后手段。它的语义链是 `RC_MAP_KILL_SW=8` → `RC_KILLSWITCH_T
 
 ## 7.10 现场边界：这条链里没有什么
 
-这条链的边界比它做了什么更值得记住。`run/z0.py` 没有解锁、起飞、切模式、改参数、发任何帧的入口；这不是遗漏，而是把"开始键之前不发控制指令"这条防线留在飞控与 `control` 之间。`z0.launch.py` 也不给程序起飞入口，理由写在它的文件头：那会绕开同一条防线。
+这条链的边界比它做了什么更值得记住。[`run/z0.py`](../../../run/z0.py) 没有解锁、起飞、切模式、改参数、发任何帧的入口；这不是遗漏，而是把"开始键之前不发控制指令"这条防线留在飞控与 `control` 之间。`z0.launch.py` 也不给程序起飞入口，理由写在它的文件头：那会绕开同一条防线。
 
-**表 7-11　这条链刻意不做的事**
+**表 7-11　这条链刻意不做的事。**
 
 | 不做 | 原因 | 谁做 |
 |---|---|---|
@@ -281,7 +281,7 @@ ch8 是最后手段。它的语义链是 `RC_MAP_KILL_SW=8` → `RC_KILLSWITCH_T
 
 表 7-12 把本章的命令、通道、状态机与安全结论按主题归到仓库内的文件，便于回查。正文里已经随行给过链接，这里只是索引。
 
-**表 7-12　本章引用清单**
+**表 7-12　本章引用清单。**
 
 | 主题 | 文件 |
 |---|---|

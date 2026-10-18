@@ -1,6 +1,6 @@
 # 01: 数据提取与对齐管线
 
-Status: ready-for-human
+Status: done
 Type: task
 
 **What to build:** 一条可重跑的数据管线，把六份话题包与三趟 SITL 的四种来源变成统一 CSV/JSON。
@@ -12,7 +12,7 @@ Type: task
 
 输入：
 
-| 场景 | 目标 | offboard | 模型预测控制仿真 | 模型预测控制实飞 |
+| 场景 | 目标 | offboard | MPC 仿真 | MPC 实飞 |
 |---|---|---|---|---|
 | 悬停 | `bag/3_traj1_hover` | `bag/3_traj1_hover` | 票 02 的 `R-hover` | `bag/6_free__20261017-070103` |
 | 正方形 | `bag/4_traj2_square` | `bag/4_traj2_square` | 票 02 的 `R-square` | `bag/6_free__20261017-070446` |
@@ -30,7 +30,7 @@ Type: task
 1. **时间零点**：`/traj/start`（`std_msgs/Empty`，无 header）的**包记录时间戳**。
 2. **轨迹原点**：
    - offboard：首个 `AUTO/WAIT_START` 期间 `/mavros/setpoint_raw/local` 的恒定值；
-   - 模型预测控制：首个 `AUTO/WAIT_START` 期间 `/control/target` 的恒定值；
+   - MPC：首个 `AUTO/WAIT_START` 期间 `/control/target` 的恒定值；
    - 回退：首个 `AUTO/WAIT_START` 时 `/mavros/local_position/pose` 的位置。
    - ⛔ 不用 `/traj/start` 时刻的飞机位置（会引入 6.5–10.5 cm 假偏差）。
 3. **TRACK 窗**：`[t0, 首个 /traj/progress >= 1.0]`；悬停 offboard 包没有 1.0，
@@ -50,12 +50,12 @@ Type: task
 `u_thrust_n`、`wx_radps`、`wy_radps`、`wz_radps`、`valid`。
 
 - 目标源的 `u_*` 为空；offboard 源没有推力/角速率，只填位置与姿态；
-- 模型预测控制源的 `u_thrust_n` 由 `thrust` / `thrust_body_z` 按该趟日志的归一化常数换算，
+- MPC 源的 `u_thrust_n` 由 `thrust` / `thrust_body_z` 按该趟日志的归一化常数换算，
   换算口径写进 JSON；**不跨趟抄常数**。
   ⚠️ `run/logs/` 被 gitignore：必须把该趟启动行的 `mass`/`hover_thrust`/`t_max` **原文**摘进 JSON，
   不能只留一个会消失的路径。
 - JSON 的每个源要记 `feedback_source`：offboard = `/mavros/local_position/pose`（EKF 30 Hz）、
-  模型预测控制 = `/mocap/pose_enu`（原始动捕）、仿真 = SITL 的合成 mocap。
+  MPC = `/mocap/pose_enu`（原始动捕）、仿真 = SITL 的合成 mocap。
   报告里的"实际轨迹"统一用 `/mavros/vision_pose/pose`，但两组的控制器反馈不是同一条。
 
 ## 检查清单
@@ -114,7 +114,7 @@ $ python3 -m pytest tools/report/test_report_data.py -q
 公共窗：悬停 `0–39.6494 s`（由 mpc_sim 决定）、正方形 `0–8.0096 s`（mpc_real）、
 8 字 `0–12.2021 s`（mpc_real）。原点黄金值与探针值逐份一致到 1 mm 内；
 `target = origin + reference` 在 TRACK 窗内逐样本核对（offboard 均值 0–4.7 mm，
-模型预测控制实飞 1.4–10.1 mm，仿真 ≤ 36 mm——差的是参考流 50 Hz 重发与
+MPC 实飞 1.4–10.1 mm，仿真 ≤ 36 mm——差的是参考流 50 Hz 重发与
 DUT 100 Hz 取样的对齐，不是公式不成立）。
 
 **已知坑**（完整版在 `docs/report/data/README.md` §已知坑）：
@@ -146,3 +146,7 @@ DUT 100 Hz 取样的对齐，不是公式不成立）。
 水平误差均值/最大 0.4160/0.6452 → **0.4073/0.6253 m**，倾角均值 7.77° → 7.66°，
 偏航差 90.07° → 90.05°。已重跑 `build.py --scene square` 对齐当前证据；
 `hover` / `lemniscate` 未受影响。
+
+### 2026-10-18 —— 操作者裁定收工
+
+操作者 2026-10-18 指令「全部 tickets 收工」，并对 README 修订与装配结果放行；本票按「做完了」义把 `Status` 转 `done`。收口过程见 [票 20](20-closeout-and-v5.md)。

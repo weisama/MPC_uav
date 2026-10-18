@@ -29,7 +29,7 @@
   ★ **填了哪几个字段也是抄的**（2026-09-30 补，ticket 17）：真身 `publish_reference`
   （`traj_node.cpp:311-329`）填的是 `position` + `velocity` + `yaw`，`acceleration_or_force`
   与 `yaw_rate` 留 0（那几位在 `kTypeMask` 里被忽略）。本夹具原先把 `velocity` **漏了** ——
-  对只看位置的消费者不可见，而 Phase 2 的 MPC（模型预测控制）要拿它做时域外推 ⟹ 漏掉它 = 每条轨迹都被
+  对只看位置的消费者不可见，而 Phase 2 的 MPC 要拿它做时域外推 ⟹ 漏掉它 = 每条轨迹都被
   当成"停在那儿"，且不报错。`velocity_fn` 就是补的这三格。
 
 ★★ 它**不做二次成型**：`reference_fn` 说什么就发什么（没有限速、没有平滑）。
@@ -105,7 +105,7 @@ class FakeTraj:
         #: ⚠️ **2026-09-30 补（ticket 17）**：本夹具原先把这三格**漏掉了**（永远留 0），
         #:   而"0"与"没给"在**参考**这一侧是两个不同的意思（前者说"它就停在这儿"）。
         #:   对一个只看位置的消费者（Phase 1 的 `control`）漏掉它是不可见的；而 Phase 2 的
-        #:   MPC（模型预测控制）要把速度拿去做时域外推 ⟹ 漏掉它 = 每一条轨迹都被当成"停在那儿"，
+        #:   MPC 要把速度拿去做时域外推 ⟹ 漏掉它 = 每一条轨迹都被当成"停在那儿"，
         #:   且**完全不报错**。默认 `None` ⟹ 三个轴都发 0（= 补这一格之前的行为，旧用例不受影响）。
         self.velocity_fn = velocity_fn or (lambda _t: (0.0, 0.0, 0.0))
         self.publish_progress = publish_progress

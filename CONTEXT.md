@@ -11,14 +11,14 @@
 
 | 写法 | 含义 | 出现在哪 |
 |---|---|---|
-| **MPC**（本项目语境） | **Model Predictive Control，模型预测控制** —— 用动力学模型在线求解有限时域最优控制问题 | 本文档、`MPC_uav` 仓库、acados、agilicious |
-| **`MPC_*`**（PX4 参数前缀） | PX4 的 **Multicopter Position Controller**，即**级联 PID + 限幅**，**与模型预测控制毫无关系** | 飞控参数文件、QGC 参数页 |
+| **MPC**（本项目语境） | **Model Predictive Control（MPC）** —— 用动力学模型在线求解有限时域最优控制问题 | 本文档、`MPC_uav` 仓库、acados、agilicious |
+| **`MPC_*`**（PX4 参数前缀） | PX4 的 **Multicopter Position Controller**，即**级联 PID + 限幅**，**与 MPC 控制器毫无关系** | 飞控参数文件、QGC 参数页 |
 
-**实例**：`MPC_THR_HOVER`、`MPC_XY_VEL_MAX`、`MPC_TILTMAX_AIR` 全都是 PX4 的 PID 控制器参数，**不是**模型预测控制的参数。`MPC_THR_HOVER` 读作"多旋翼位置控制器的悬停油门"，不是"MPC 求解器的悬停油门"。
+**实例**：`MPC_THR_HOVER`、`MPC_XY_VEL_MAX`、`MPC_TILTMAX_AIR` 全都是 PX4 的 PID 控制器参数，**不是** MPC 的参数。`MPC_THR_HOVER` 读作"多旋翼位置控制器的悬停油门"，不是"MPC 求解器的悬停油门"。
 
-**书写约定**：本项目中提到模型预测控制时，一律写全称或加限定："MPC（模型预测控制）"；引用 PX4 参数时一律写完整参数名并加反引号。**禁止**单独使用裸词 `MPC` 指代二者之一。
+**书写约定（2026-10-18 操作者裁定）**：本项目中提到 MPC 时一律写 `MPC`，首次出现可写 `Model Predictive Control（MPC）`。引用 PX4 参数时一律写完整参数名并加反引号，并说明它是 Multicopter Position Controller，与 MPC 控制器无关。旧约定「禁止裸词 `MPC`」即日起作废。
 
-**★ 2026-10-10 做过一次全仓清扫**（范围跨票，理由：这条约定立了三个多月，存量一直没清）。把所有**指代本项目控制器**的裸用 `MPC` 改成 `MPC（模型预测控制）`（每份文件首处）或全称 `模型预测控制`（其余）。**刻意没动**四类 —— ① 讲这个词本身的**指称**（本节、`docs/control/mismatch-sweep.md`、各 spec 的"禁止裸词"条款）；② **论文标题**与归档文件 [`docs/assets/MPC_uav-README.md`](docs/assets/MPC_uav-README.md)；③ **上游引文**（如 `open-source-survey.md` 引 `px4-mpc` 的原话）；④ 标识符 `MPC_uav` / `MPC_CODEGEN_DIR` 与 PX4 的 `MPC_*` 参数。
+**★ 2026-10-10 的历史清扫记录（已被 2026-10-18 裁定取代，仅存档）**：当时把所有**指代本项目控制器**的裸用 `MPC` 改成 `MPC（模型预测控制）`（每份文件首处）或全称 `模型预测控制`（其余）。**刻意没动**四类 —— ① 讲这个词本身的**指称**（本节、`docs/control/mismatch-sweep.md`、各 spec 的"禁止裸词"条款）；② **论文标题**与归档文件 [`docs/assets/MPC_uav-README.md`](docs/assets/MPC_uav-README.md)；③ **上游引文**（如 `open-source-survey.md` 引 `px4-mpc` 的原话）；④ 标识符 `MPC_uav` / `MPC_CODEGEN_DIR` 与 PX4 的 `MPC_*` 参数。
 复扫命令：`grep -rnP '(?<![A-Za-z_/\-])MPC(?![A-Za-z_（\-\d])' --include='*.md' --include='*.yaml' --include='*.cpp' .` —— 剩余命中**全部属于上面四类**（逐条理由与例外清单见清扫的那次提交说明）。★ **受影响的旧票已就地加注**（`phase3/02`、`phase3/04`、`phase2/03`、`phase2/15`、`phase2/19`、`phase3/03`）：它们引的是**清扫前的原文**。
 
 ---
@@ -32,9 +32,9 @@
 | **轴距 (wheelbase)** | **对角两个电机中心之间的距离**。本项目为 **152 mm**。注意：不叫"轮距"，也不是相邻电机间距。 |
 | **臂长 (arm length)** | 机体中心到单个电机中心的距离 = 轴距 / 2。本项目为 **76 mm**。PX4 里体现为 `CA_ROTORx_PX/PY` 的组合模长。 |
 | **机体系 (body frame)** | PX4 约定：**x 轴向前、y 轴向右、z 轴向下**（FRD, Forward-Right-Down）。 |
-| **机体系（模型预测控制内部）** | **FLU**：x 朝前、**y 朝左**、**z 朝上（沿推力方向）** —— 与项目依据的两篇论文一致。★ 它与上面那个 PX4 的 FRD 是**同一台飞机的两套标注**（x 相同，y 与 z 取反），两者之间的映射表**全项目只有一处权威**：[`docs/control/sign-map.md`](docs/control/sign-map.md)。 |
+| **机体系（MPC 内部）** | **FLU**：x 朝前、**y 朝左**、**z 朝上（沿推力方向）** —— 与项目依据的两篇论文一致。★ 它与上面那个 PX4 的 FRD 是**同一台飞机的两套标注**（x 相同，y 与 z 取反），两者之间的映射表**全项目只有一处权威**：[`docs/control/sign-map.md`](docs/control/sign-map.md)。 |
 | **世界系 (world / NED)** | PX4 约定：**北-东-地**（NED）。动捕与 ROS 常用 **ENU**（东-北-天），两者相差一次坐标变换。 |
-| **props-in / props-out** | 螺旋桨旋转方向布置的两种约定。**决定 MPC（模型预测控制）模型里力矩 τ 的符号**，必须在文档里写死。 |
+| **props-in / props-out** | 螺旋桨旋转方向布置的两种约定。**决定 MPC 模型里力矩 τ 的符号**，必须在文档里写死。 |
 | **电机序 (motor order)** | 物理输出口编号 ↔ PX4 逻辑电机编号的映射。本项目飞控为 **`3-2-1-4`**（见 `docs/reference/params-analysis.md`）。 |
 | **控制分配 (control allocation)** | 把期望的总推力与三轴力矩分配到各电机的过程。PX4 中由 `control_allocator` 模块与 `CA_*` 参数定义。 |
 | **涵道机 (ducted / cinewhoop)** | 桨叶被环形涵道包围的构型。本项目属此类。**建模上按普通四轴处理**，涵道影响吸收进辨识出的推力/阻力系数。 |
@@ -45,7 +45,7 @@
 |---|---|
 | **推力系数 kt / KF** | 电机转速平方到推力的比例系数（N/(rad/s)² 或等价形式）。**本项目需系统辨识**。 |
 | **扭矩系数 kq / KM** | 电机转速平方到反扭矩的比例系数。**本项目需系统辨识**。 |
-| **悬停油门 (hover throttle) / `hover_thrust`** | 悬停所需的**归一化推力**：`hover_thrust ≡ T_hover/T_max = m·g/T_max`，即满推力占的比例。★ 在 `thrust_body` 通路上它是**推力**、不是油门 —— 从归一化推力再往下到电机信号，才是「推力曲线」（`THR_MDL_FAC`）那一层；两者混为一谈就是**静默的增益错误**。**模型预测控制的工作点**，直接决定线性化点与推力可行域。 |
+| **悬停油门 (hover throttle) / `hover_thrust`** | 悬停所需的**归一化推力**：`hover_thrust ≡ T_hover/T_max = m·g/T_max`，即满推力占的比例。★ 在 `thrust_body` 通路上它是**推力**、不是油门 —— 从归一化推力再往下到电机信号，才是「推力曲线」（`THR_MDL_FAC`）那一层；两者混为一谈就是**静默的增益错误**。**MPC 的工作点**，直接决定线性化点与推力可行域。 |
 | **推重比 (T/W)** | 最大总推力 / 整机重量。**必须区分"电机能力上限的 T/W"与"电池能供出的 T/W"** —— 本项目两者差距巨大：电机/桨 **6.29**（2026-09-29 悬停日志实测，满量程 46.30 N；旧外推 5.44）vs 电池 **1.60 ~ 2.54**（15 A / 30 A 外推）。★★ **这两个口径对应两个不同的代码常数，别合并**：归一化常数 `t_max` 按**电机**（= 实测满量程 46.30 N）、`F` 上限 `f_max` 按**电池**（11.8 N）。⚠️ 2026-09-29 之前两者**是同一个** `T_max`，回填实测 `hover_thrust` 时顺手把 `F` 上限抬了 3.9 倍而测试全绿（[`phase2-implementation.md`](docs/control/phase2-implementation.md) §3.3.3）。见 `docs/PROJECT.md` 第 2.4 节、[`hardware.md`](docs/reference/hardware.md) §6.3 ③。 |
 | **推力曲线 (thrust curve)** | 油门指令到实际推力的非线性映射。PX4 用 `THR_MDL_FAC` 参数化：`throttle = (1-c)·u + c·u²`。 |
 | **转动惯量 (inertia, Ixx/Iyy/Izz)** | 机体三轴转动惯量。**本项目需系统辨识或 CAD 估算**。 |
@@ -58,12 +58,12 @@
 | 术语 | 定义 |
 |---|---|
 | **Offboard 模式** | PX4 的一种飞行模式，控制指令由机载电脑（而非遥控器）给出。 |
-| **外环 / 内环** | 外环处理位置与姿态，带宽低；内环处理角速率，带宽高。本项目 **模型预测控制在外环（100 Hz），PX4 角速率环在内环（1 kHz）**。 |
+| **外环 / 内环** | 外环处理位置与姿态，带宽低；内环处理角速率，带宽高。本项目 **MPC 在外环（100 Hz），PX4 角速率环在内环（1 kHz）**。 |
 | **CTBR** | **Collective Thrust + Body Rate**。控制器输出"总推力 + 机体三轴角速率期望值"的形式。**是 `agilicious` 与 `px4-mpc` 共同采用的下发口径**，也是本项目 `(C)` 方案的形式。 |
-| **`(C)` 方案** | 本项目对"模型预测控制输出形态"的编号：**模型预测控制输出「角速率 + 推力」，PX4 只跑角速率环 + 混控**。编号 `(A)(B)(C)(D)` 的定义见 [`docs/control/mpc-roadmap.md`](docs/control/mpc-roadmap.md)。<br>☠️ **2026-10-13（票 13 收口轮）**：原写"→ `VehicleRatesSetpoint`（ω + 推力）→" —— 那是**消息类型**，不是方案的定义，而且**已不是本项目的载体**（实机走 **mavros 的 `/mavros/setpoint_raw/attitude`**：`body_rate.x/y/z` + 标量 `thrust`；`VehicleRatesSetpoint` / uXRCE-DDS 那条路自 2026-10-13 起废）。⟹ **方案没变，载体变了**；引用本词条时"`(C)`"= **输出形态**，⛔ 别当成某条具体话题。 |
+| **`(C)` 方案** | 本项目对"MPC 输出形态"的编号：**MPC 输出「角速率 + 推力」，PX4 只跑角速率环 + 混控**。编号 `(A)(B)(C)(D)` 的定义见 [`docs/control/mpc-roadmap.md`](docs/control/mpc-roadmap.md)。<br>☠️ **2026-10-13（票 13 收口轮）**：原写"→ `VehicleRatesSetpoint`（ω + 推力）→" —— 那是**消息类型**，不是方案的定义，而且**已不是本项目的载体**（实机走 **mavros 的 `/mavros/setpoint_raw/attitude`**：`body_rate.x/y/z` + 标量 `thrust`；`VehicleRatesSetpoint` / uXRCE-DDS 那条路自 2026-10-13 起废）。⟹ **方案没变，载体变了**；引用本词条时"`(C)`"= **输出形态**，⛔ 别当成某条具体话题。 |
 | **INDI** | **Incremental Nonlinear Dynamic Inversion**，增量式非线性动态逆。**不依赖精确模型**的内环控制方法（用当前角加速度与操纵效能矩阵做增量更新），可替代 PID 做角速率跟踪。 |
 | **几何控制 (geometric control)** | 在 SO(3) 流形上直接设计姿态控制的非线性方法。是 `agilicious` 的控制器之一。 |
-| **NMPC** | 非线性模型预测控制（区别于线性模型预测控制）。 |
+| **NMPC** | 非线性 MPC（区别于线性 MPC）。 |
 | **MPCC** | **Model Predictive Contouring Control**，模型预测轮廓控制 —— 优化"沿参考路径的进度"而非"点到点误差"，是竞速飞行的主流方法。 |
 | **微分平坦 (differential flatness)** | 四旋翼的一类性质：全部状态与输入可由四个平坦输出（位置 xyz + 偏航）及其导数代数地表示。常用于生成前馈轨迹。 |
 | **DFBC** | Differential-Flatness-Based Control，基于微分平坦的控制。`Sun2022_TRO_NMPC_vs_DFBC` 论文中作为 NMPC 的对照组。 |
@@ -88,11 +88,11 @@
 
 | 术语 | 定义 |
 |---|---|
-| **acados** | 基于 CasADi 的嵌入式最优控制求解器，**C 实现**，自动生成求解器代码。本项目模型预测控制的求解器由它生成。 |
+| **acados** | 基于 CasADi 的嵌入式最优控制求解器，**C 实现**，自动生成求解器代码。本项目 MPC 的求解器由它生成。 |
 | **CasADi** | 符号建模与自动微分框架（Python/C++）。用于定义 OCP。 |
 | **HPIPM** | acados 默认的 QP 求解器（内点法），利用 OCP 的带状结构。 |
 | **BLASFEO** | acados 使用的高性能线性代数库，**按 CPU 微架构编译**（Jetson 上需指定 ARM 目标）。 |
-| **SQP_RTI** | **Real-Time Iteration** —— 每周期只做一次 SQP 迭代（分 preparation / feedback 两相），延迟极低，适合硬实时模型预测控制。本项目的选择。 |
+| **SQP_RTI** | **Real-Time Iteration** —— 每周期只做一次 SQP 迭代（分 preparation / feedback 两相），延迟极低，适合硬实时 MPC。本项目的选择。 |
 | **OCP** | Optimal Control Problem，最优控制问题。 |
 | **Tera / `t_renderer`** | acados 代码生成用的模板引擎二进制。☠️ 旧话「安装缺失时报 `EOFError`」**在 v0.6.0 上不成立**（那是 v0.5.x 及以前交互式 `input()` 提问、非交互读到 EOF 的内建异常）。★ **但「必须装」这件事不变**：**真身是三种落点，其中「在、但渲染不出东西」完全静默** —— 静默两层后才炸成 `.so: cannot open shared object file`。详见 [`docs/control/acados-orin-build.md`](docs/control/acados-orin-build.md) §4 |
 
@@ -120,11 +120,11 @@
 
 | 术语 | 定义 |
 |---|---|
-| ★ **z0** | **本项目这台无人机的正式名称。** 构型 = OddityRC XI35 Pro 机架（152 mm 轴距）+ 微空 NxtPX4v2 飞控 + Jetson Orin NX 8GB。**全部文档中一律写 `z0`**，不再用"新机/本机/这台机"等代称。★ **状态不写死在本行**（写死的会过期）—— 认 [`docs/PROJECT.md`](docs/PROJECT.md) §1.2 的资产表（逐行带证据时点）。已知的两条：**动捕链路 2026-09-28 已在 z0 上飞成**（[`phase1/issues/09`](.scratch/phase1/issues/09-track-mission-script.md)）；**MPC（模型预测控制）仍未上机**（只在 SITL 里跑）—— 判据是 Phase 4（上实机）还没开始，认 [`.scratch/phase4/spec.md`](.scratch/phase4/spec.md) 的 `Status:` 行。 |
+| ★ **z0** | **本项目这台无人机的正式名称。** 构型 = OddityRC XI35 Pro 机架（152 mm 轴距）+ 微空 NxtPX4v2 飞控 + Jetson Orin NX 8GB。**全部文档中一律写 `z0`**，不再用"新机/本机/这台机"等代称。★ **状态不写死在本行**（写死的会过期）—— 认 [`docs/PROJECT.md`](docs/PROJECT.md) §1.2 的资产表（逐行带证据时点）。已知的两条：**动捕链路 2026-09-28 已在 z0 上飞成**（[`phase1/issues/09`](.scratch/phase1/issues/09-track-mission-script.md)）；**MPC 2026-10-17 已上 z0 实机**（Phase 4 `spec` 已 `done`；三趟自由飞 = 悬停 / 正方形 / 八字，见 [`phase4/issues/10`](.scratch/phase4/issues/10-ladder-closed-loop-and-free-flight.md) 与 `bag/6_free__20261017-*`）。 |
 | **旧机** | 超维空间 S2-F290（PX4 **1.13.3** + 树莓派 4B）。**动捕定点飞行最早是在它上面验证通过的** —— z0 上的一切动捕经验都源自它；★ **z0 上 2026-09-28 已重做一遍**（见上面 `z0` 行）。见 `docs/PROJECT.md` 1.2。 |
 | **NxtPX4v2 / Nxt-FC** | 微空科技（MicoAir）量产的 PX4 飞控，也被 HKUST 的 OmniNxt 采用。PX4 目标板名 `hkust_nxt-dual`。**z0 用的是它。** |
 | **XI35 Pro** | 怪象（OddityRC）的 3.5 英寸涵道机架，轴距 152 mm。**z0 的机架。** |
-| **`z0.params`** | **z0 的飞控参数文件**（`assets/z0.params`，928 行，其中 914 条参数）。内容逐字来自上游 `Huan-qun/Sim2real-UAV-Params-` 的 `S2R/assets/param/uav1.params`（那台机器叫 "Vehicle 1"）。★ **已于 2026-09-21 与 z0 飞控真身逐条对账**（914/915 条名字全对上，见 [`.scratch/phase1/issues/15`](.scratch/phase1/issues/15-fcu-param-reconciliation.md)）⟹ **它就是飞机上跑的那份配置**。⚠️ 但"对账一致"恰恰意味着文档里那些"X 是默认值/可疑"**真的在飞机上** —— **不等于它们是实测值**。见 `docs/reference/params-analysis.md`。 |
+| **`z0.params`** | **z0 的飞控参数文件**（`assets/z0.params`；★ 行数/条数随现场重导出变化，**要数就现算**：`wc -l < docs/assets/z0.params` 与 `grep -cE '^[A-Z0-9_]+[[:space:]]' docs/assets/z0.params`）。内容来自上游 `Huan-qun/Sim2real-UAV-Params-` 的 `S2R/assets/param/uav1.params`（那台机器叫 "Vehicle 1"），**2026-10-10 又用 QGC 从 z0 飞控重导出**了一次（见文件头）。★ **2026-09-21 那一版**已与 z0 飞控真身逐条对账（914/915 条名字全对上，见 [`.scratch/phase1/issues/15`](.scratch/phase1/issues/15-fcu-param-reconciliation.md)）⟹ **它就是飞机上跑的那份配置**；2026-10-10 的重导出**没有重做**这项逐条对账。⚠️ 但"对账一致"恰恰意味着文档里那些"X 是默认值/可疑"**真的在飞机上** —— **不等于它们是实测值**。见 `docs/reference/params-analysis.md`。 |
 | **动捕定点飞行** | 用动捕位姿闭环、让飞机自主保持位置悬停的飞行状态。**旧机（S2-F290）上最早实现；z0 上 2026-09-28 已飞成**（[`.scratch/phase1/issues/09`](.scratch/phase1/issues/09-track-mission-script.md)）。 |
 
 ## 七、测试与台架

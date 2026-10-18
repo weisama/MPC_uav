@@ -40,9 +40,9 @@
    · ★ 两条**都不代做"起飞"**：选轨迹是在让出去的前台里敲 1/2/3/4，起飞是**遥控器开始键**。
    · 第 9 项的两档（**两档都带 `traj`** —— "轨迹必须起"是结构上的事实，不是提示语）：
      **1 offboard 控制**（`control` 自己发 PX4 setpoint，`traj → control`，**默认档**）/
-     **2 MPC（模型预测控制）**（`mpc_node.py` 作为 `control` 的输出后端，`traj → mpc → control`）。
+     **2 MPC**（`mpc_node.py` 作为 `control` 的输出后端，`traj → mpc → control`）。
      ★ 这个词有歧义（见 `CONTEXT.md` 第一节：PX4 的 `MPC_*` 参数是**位置控制器**的，不是这个）
-     ⟹ 指代本项目的控制器时写 `MPC（模型预测控制）` 或全称「模型预测控制」，**不写裸词**。
+     ⟹ 指代本项目的控制器时一律写 `MPC`（首次出现可写 `Model Predictive Control（MPC）`）。
      ★★ **两档的现场动作逐字相同**：`control` 始终是任务总管（开始键、解锁、切 OFFBOARD、起飞、
      判稳、轨迹原点、`/traj/start`、降落）；第 2 档只是把「谁最后给 PX4 发指令」换成 `mpc_node`。
      第 2 档的命令带三条开关（`reference_source_control` / `offboard_prestream` /
@@ -579,7 +579,7 @@ ACTIONS: Tuple[Action, ...] = (
            #   ⚠️ 传的是 **launch 参数**（不是 `--ros-args -p`）：这条命令走的是 `ros2 launch`。
            optionals=(OptionalArg(
                "output_mode_external",
-               "要让外部控制器（模型预测控制）发执行器指令吗？"
+               "要让外部控制器（MPC）发执行器指令吗？"
                "（y ⟹ 追加 output_mode:=external；本节点只发 /control/target）",
                "output_mode:=external"),)),
     Action("up_manual", "★ 一键启动（动捕+mavros，手动遥控飞）", None,
@@ -587,7 +587,7 @@ ACTIONS: Tuple[Action, ...] = (
            "没有任何程序在上位控制飞机，起完**直接遥控器手动起飞**"),
     Action("up", "★ 一键启动全部（起前选控制器；默认 offboard 控制）", None,
            "mavros → vrpn → mocap 逐段等判据，**尾巴由起链前那一句选**："
-           "1 offboard 控制（**默认**，+traj+control）/ 2 模型预测控制（+traj+mpc+control，"
+           "1 offboard 控制（**默认**，+traj+control）/ 2 MPC（+traj+mpc+control，"
            "mpc 当 control 的输出后端）；两档**都带 traj 与 control**，起完把**终端让给操作台**"
            "选轨迹，然后你按**遥控器开始键**（第 1 次 = 解锁起飞、第 2 次 = 进 TRACK）；"
            "Ctrl-C 一起停"),
@@ -629,7 +629,7 @@ ACTIONS: Tuple[Action, ...] = (
            "**不猜**）并重算清单；已入账的包一个字节都不碰，包内容也不改",
            menu=False),
 
-    # ★★ 模型预测控制那一条（ticket 14，2026-10-16）—— **不进菜单**（`menu=False`，不占菜单号）：
+    # ★★ MPC 那一条（ticket 14，2026-10-16）—— **不进菜单**（`menu=False`，不占菜单号）：
     #   它的入口是第 9 项起链前那一句「谁在上位控制飞机」的第 2 档（二定：只剩两档）。
     #   ★ 为什么**能**进这张表（"没有任何让飞机动的入口"那条边界）：闸门关着时它**一帧都不发**
     #     —— `_tick` 在 `cycle.x0 is None` 时直接 return（不求解、不发 setpoint，见
@@ -641,10 +641,10 @@ ACTIONS: Tuple[Action, ...] = (
     # ★ `env ACADOS_ENV` 那个前缀**必须在**：`mpc_node.py` 起来的头一秒就建求解器，
     #   两个变量缺一个就是 `OSError: lib*.so: cannot open shared object file`（见 `ACADOS_ENV`）。
     #   它是"起不来"，不是"飞错了"——所以放在**命令里**，`--dry-run` 也看得见。
-    Action("mpc", "起 MPC（模型预测控制）节点 —— nmpc 的 mpc_node.py",
+    Action("mpc", "起 MPC 节点 —— nmpc 的 mpc_node.py",
            f"env {ACADOS_ENV} ros2 run nmpc mpc_node.py",
            "★ 四条可选参数（默认一条都不带）—— 两条定参考源（互斥），后两条是开关。"
-           "第 9 项的模型预测控制档打开 `reference_source_control` + `offboard_prestream`；"
+           "第 9 项的 MPC 档打开 `reference_source_control` + `offboard_prestream`；"
            "`output_mode_external` 加在 **control** 那一条上，不在本动作里。"
            "★ 它在 **armed + OFFBOARD 之前一帧都不发**（闸门关着连心跳都没了 —— setpoint 就是心跳）"
            "⟹ 起它 ≠ 飞；解锁/切 OFFBOARD **由 control 做**（本动作里没有这类入口），见 `operation_manual.md`",
@@ -656,7 +656,7 @@ ACTIONS: Tuple[Action, ...] = (
                OptionalArg(
                "reference_source_control",
                "参考由 control 给吗？（y ⟹ 追加 --ros-args -p reference_source:=control）"
-               "—— 第 9 项的模型预测控制档用它：`/control/target` 是**绝对目标**，"
+               "—— 第 9 项的 MPC 档用它：`/control/target` 是**绝对目标**，"
                "开始键/解锁/轨迹原点/降落全部由 control 负责",
                "--ros-args -p reference_source:=control"),
                OptionalArg(
@@ -1022,7 +1022,7 @@ MANUAL_CHOICES: Tuple[ControllerChoice, ...] = (
 )
 
 
-#: 模型预测控制档那几句（票 15 之后：**`control` 在场，开始键照常有效**）。
+#: MPC 档那几句（票 15 之后：**`control` 在场，开始键照常有效**）。
 #: ⛔ **不含任何命令**（"在哪手打"只指文档）：`z0.py` 里不许出现 `ros2 service call` 那类字样
 #: （`FORBIDDEN_IN_COMMANDS` + 那条 AST 用例扫的正是全文件的字符串字面量）。
 #: ★★ 票 15 把这一档从"`control` 不在场、解锁/切模式/开始键全要手打"改成**与 offboard 档同流程**：
@@ -1030,7 +1030,7 @@ MANUAL_CHOICES: Tuple[ControllerChoice, ...] = (
 #:   降落），`mpc_node` 只是它的**输出后端** —— 订 `/control/target` 求解，发姿态 setpoint。
 #: ⟹ 操作员看到的两条链**只剩输出那一层不同**，手上的动作完全一样。
 _MPC_CLOSING: Tuple[str, ...] = (
-    "★★ 选到模型预测控制档：**开始键与 offboard 档完全一样** —— 两种控制只是输出后端不同：",
+    "★★ 选到 MPC 档：**开始键与 offboard 档完全一样** —— 两种控制只是输出后端不同：",
     "   · `control` 仍是唯一任务总管：开始键 → 解锁 + 切 OFFBOARD + 起飞 + 判稳 + 轨迹原点"
     " + 发 `/traj/start` + 轨迹超时/降落，全部由它负责；",
     "   · `mpc_node` 只做一件事：订 `/control/target`（**绝对目标**，位置 + 速度 + yaw）并求解，"
@@ -1052,7 +1052,7 @@ _MPC_CLOSING: Tuple[str, ...] = (
 
 #: 菜单 9（`up`）**两档** —— ★★ **两档的尾巴都含 `traj`**：操作者 2026-10-16 的原话是
 #: 「轨迹必须起没得选」⟹ "必起 traj"是**结构上的事实**（写在 `tail` 里），不是提示语；
-#: 一版那条"模型预测控制 + `hold`、不起 traj"的路（第 3 档）按同一次裁定**删掉**。
+#: 一版那条"MPC + `hold`、不起 traj"的路（第 3 档）按同一次裁定**删掉**。
 #: ★★ 票 15 起**两档的尾巴也都含 `control`**（第 2 档是 `traj → mpc → control`）：
 #:   任务流程只写一遍，`mpc` 退化成 `control` 的一个输出后端 —— 将来的新控制方式照同样形状接。
 UP_CHOICES: Tuple[ControllerChoice, ...] = (
@@ -1068,7 +1068,7 @@ UP_CHOICES: Tuple[ControllerChoice, ...] = (
         "      ⚠️ 起飞前置里有一条「遥控在线」⟹ 台上没接遥控接收机时**永远解不了锁**（刻意如此）。",
     ), handoff=UP_HANDOFF),
     ControllerChoice("mpc",
-                     "MPC（模型预测控制）—— mpc_node.py 作为 control 的输出后端；"
+                     "MPC—— mpc_node.py 作为 control 的输出后端；"
                      "**起 traj + mpc + control**，起完选轨迹"
                      "（阶梯 4 飞轨迹用这档）",
                      ("traj", "mpc", "control"), _MPC_CLOSING,
@@ -1608,11 +1608,11 @@ DOWN_TARGETS: Tuple[DownTarget, ...] = (
                r"ros2 launch traj |(/| )traj_node( |$)"),
     DownTarget("control", "control（状态机）",
                r"ros2 launch control |(/| )control_node( |$)"),
-    #: ★ ticket 14：第 9 项的第 2 档（模型预测控制）会起它（`ros2 run nmpc mpc_node.py`）⟹
+    #: ★ ticket 14：第 9 项的第 2 档（MPC）会起它（`ros2 run nmpc mpc_node.py`）⟹
     #: 起链能起的，清除就必须能扫到（判据是下面那条用例：`UP_CHAIN` 每一条都在这里）。
     #: ★ 它是个**可执行文件**（`install(PROGRAMS)`），不是 launch ⟹ 模式里认的是
     #: `lib/nmpc/mpc_node.py` 那个路径尾巴（`(/| )mpc_node.py( |$)`），与 control 那行同形。
-    DownTarget("mpc", "mpc（模型预测控制节点）",
+    DownTarget("mpc", "mpc 节点",
                r"ros2 run nmpc mpc_node.py|(/| )mpc_node.py( |$)"),
     DownTarget("bringup", "bringup 一键（launch 壳）",
                r"ros2 launch bringup "),

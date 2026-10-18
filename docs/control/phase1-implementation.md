@@ -20,10 +20,10 @@
 | H3 | 动捕数据源 | **`vrpn_listener.zip`（`Huan-qun/Sim2real-UAV-Params-`）** | 用户 Q9：「这是经过实机验证的」，**vendored 原样复用** |
 | H4 | 动捕原点 | **未起飞时静止帧为原点**；姿态**仅归零 yaw** | 用户 Q16 / Q21(b) |
 | H5 | 参考轨迹 | **脚本启动后输入数字选择**：①起飞 1 m 悬停 ②边长 1 m 正方形 ③半径 0.5 m 八字<br>★ 2026-10-08 操作者裁定③的 8 字放大到 **1 m**（原本的 2 倍），见 §5.2 | 用户 Q15 |
-| H6 | SITL | **跳过**（Phase 1 无 MPC（模型预测控制），实机试错代价可接受） | 用户 Q8(b)；Phase 2 **不跳** |
+| H6 | SITL | **跳过**（Phase 1 无 MPC，实机试错代价可接受） | 用户 Q8(b)；Phase 2 **不跳** |
 | H7 | 固件 | **留在 PX4 1.14.3 系（真身 = `Minderring/PX4-Autopilot` @ `4a0e65f2`），不刷固件** ✅ 2026-09-21 已飞控实测确认（`flight_sw_version = 1.14.3`） | 用户 Q12 + [`refs-manifest.md`](../reference/refs-manifest.md) §2.5(d) |
 
-**★ 指导思想：Phase 1 只引入一个新变量（动捕 + offboard 链路），把模型预测控制 / acados / uXRCE-DDS 全部推迟。** ☠️ **2026-10-13**：其中 **uXRCE-DDS 最终没有引入**（另两个引入了；(C) 级下行改走 mavros）。
+**★ 指导思想：Phase 1 只引入一个新变量（动捕 + offboard 链路），把 MPC / acados / uXRCE-DDS 全部推迟。** ☠️ **2026-10-13**：其中 **uXRCE-DDS 最终没有引入**（另两个引入了；(C) 级下行改走 mavros）。
 Phase 2 的所有新东西**追加**在这套骨架上，**不推翻**它 —— 见 [`phase2-implementation.md`](phase2-implementation.md) §3.4。
 
 ---
@@ -113,7 +113,7 @@ src/
 | `/mavros/local_position/velocity_local` | `geometry_msgs/TwistStamped` | EKF2 融合速度 | ★ 稳定判据的 `|v|` 来源 |
 | `/mavros/rc/in` | `mavros_msgs/RCIn` | **开始按键** | ★ 通道号是参数，实飞时确认。✅ **ticket 09 起做判据了**（`start_channel` 的第 1 次上升沿 = 解锁起飞、第 2 次 = 进 `TRACK`，§H.5）；ticket 05/06 只订阅 |
 | `/mavros/battery` | `sensor_msgs/BatteryState` | 低电压保护 | ⚠️ 见 §8.2。⚠️ ticket 05 只订阅、不做判据 |
-| `/mocap/pose_enu` | `geometry_msgs/PoseStamped` | 相对位姿（**ENU，原生**） | Phase 1 用于记录（Q23）**以及 ticket 05 的守卫**（它的新鲜度决定发不发 setpoint）；**Phase 2 的模型预测控制拿它当状态源** |
+| `/mocap/pose_enu` | `geometry_msgs/PoseStamped` | 相对位姿（**ENU，原生**） | Phase 1 用于记录（Q23）**以及 ticket 05 的守卫**（它的新鲜度决定发不发 setpoint）；**Phase 2 的 MPC 拿它当状态源** |
 | `/traj/reference` | `mavros_msgs/PositionTarget` | ★ 参考轨迹（**相对轨迹原点**，不是绝对位置） | ✅ ticket 09 已落地：`TRACK` 里**加上轨迹原点**再发给 PX4。⚠️ **绝不能把这条直接 remap 到 `/mavros/setpoint_raw/local`** ：轨迹原点是 1 m 高度上的悬停点，直接转发 = 先掉到地面附近。原点的记录见 §3.3 |
 | `/traj/progress` | `std_msgs/Float32` | 轨迹完成度 0–1 | ★ 驱动 §4.2 的 `TRACK → LAND`（`≥ 1.0`）。✅ ticket 09 已落地：`/control/traj_progress` 就是它的**逐字转发**（`Float32`），所以 `fly.py` 那侧只认 `/control/*` |
 
@@ -175,7 +175,7 @@ src/
 | 订阅 | `/vrpn/<刚体>/pose` | `geometry_msgs/PoseStamped` | 来自 `vrpn_listener` |
 | 订阅 | `/mavros/state` | `mavros_msgs/State` | ★ 检测**解锁上升沿** |
 | 发布 | `/mavros/vision_pose/pose` | `geometry_msgs/PoseStamped` | → PX4 EKF2（**ENU/FLU，mavros 负责转换** —— 已读 mavros 源码确认，见 §3.5） |
-| 发布 | `/mocap/pose_enu` | `geometry_msgs/PoseStamped` | → 仅**记录**（Q23）+ Phase 2 模型预测控制状态源。**动捕原生 ENU，不做任何转换** |
+| 发布 | `/mocap/pose_enu` | `geometry_msgs/PoseStamped` | → 仅**记录**（Q23）+ Phase 2 MPC 状态源。**动捕原生 ENU，不做任何转换** |
 
 > ★ **`mocap` 节点不做任何坐标系转换（Q14=a）。** 它做三件事：
 > **⓪ 刚体原点 → IMU 中心**（动捕外参，按该帧姿态旋转；2026-10-09 加）+ **① 减原点** + **② yaw 归零**，
@@ -189,7 +189,7 @@ src/
 > ⚠️ **本文旧版曾让本节点额外发布一条 `/mocap/pose_ned`（NED/FRD）给"本项目控制器"用，
 > 并警告"两路约定不一样、搞反了会飘"。该话题已按 Q14=a 删除** —— 理由：
 > ① Phase 1 的控制器工作在 **EKF2 的局部系**里（§3.3；★ 该系在 ROS 侧**就是 ENU**，见 §3.1 的更正），
-> 位置直接读 `/mavros/local_position/*`，**不需要** mocap 再发一份；② Phase 2 的 MPC（模型预测控制）用 ENU（§3.2 / G3）。
+> 位置直接读 `/mavros/local_position/*`，**不需要** mocap 再发一份；② Phase 2 的 MPC 用 ENU（§3.2 / G3）。
 > 即**没有任何消费者**。删掉它同时消灭了"转两次 / 一次都没转"这一整类 bug。
 
 > ✅ **已实现（2026-09-21，[ticket 04](../../.scratch/phase1/issues/04-mocap-relative-pose.md)）= [`src/mocap/`](../../src/mocap/)。**
@@ -260,7 +260,7 @@ z_ned = -z_enu
 **→ 所以轨迹原点取"HOVER 稳定时 EKF2 报的位置"**，这样：
 - **偏移被自动吸收**——我们是在同一个坐标系里"以当前点为 0"发指令
 - **mocap 节点的原点怎么定都不影响 Phase 1**（它只影响喂给 EKF2 的 vision_pose）
-- Phase 2 的模型预测控制改用 `/mocap/pose_enu`，那时才需要动捕原点
+- Phase 2 的 MPC 改用 `/mocap/pose_enu`，那时才需要动捕原点
 
 > 📌 **这个设计让 Phase 1 与 Phase 2 的原点问题彻底解耦，是降低 Phase 1 风险的关键一步。**
 
@@ -357,7 +357,7 @@ auto rpy = ftf::quaternion_to_rpy(
 > ✅ **这证实了 [`mocap-setup.md`](../reference/mocap-setup.md) 7.3 的旧节点"直接透传"的做法是对的**——它当年能跑通不是巧合。
 > 📌 **旧版这里还有一条 `/mocap/pose_ned`（"给本项目控制器用，我们自己做 ENU→NED"）—— 已按 Q14=a 删除。**
 > 因为两条链**都用不上它**：喂 EKF2 的这条（本节）由 mavros 负责转换；
-> Phase 2 的模型预测控制直接用 ENU（§3.2 / G3）。**→ `mocap` 节点是全栈唯一一个不做坐标转换、只做
+> Phase 2 的 MPC 直接用 ENU（§3.2 / G3）。**→ `mocap` 节点是全栈唯一一个不做坐标转换、只做
 > 「⓪ 刚体原点→IMU 平移 + ① 减原点 + ② yaw 归零」的节点，这是本项目故意保持的简洁性。**
 > （⓪ 也不是坐标转换：它是**同一个刚体上两个点**的平移，见 §3.4bis。）
 
@@ -373,7 +373,7 @@ if (last_transform_stamp == stamp) { /* dropped */ return; }
 
 `VehicleRatesSetpoint.thrust` 与 `AttitudeTarget.thrust` 都是 **`[-1, 1]` 归一化**，**不是 `0–1`**、**不是牛顿**、**不是"相对悬停"**。<br>☠️ **2026-10-13 核出冲突（本行待订正）**：这半句**对 `AttitudeTarget` 是错的** —— 票 13 §二 的映射表（[`mpc-node-seam1.md`](mpc-node-seam1.md) §N1 与 [`sign-map.md`](sign-map.md) §2.2）逐字写着：`VehicleRatesSetpoint.thrust_body_z` 才是**负号**（`[-1, 0]`），而 **`AttitudeTarget.thrust` 是正号的 `0…1` 归一化**（`sign_map.mavros_attitude_target` 交出去的就是**正号**推力，一手见 `src/nmpc/nmpc/sign_map.py` 模块 docstring）。⟹ **这一行归这份文档订正**，⛔ 本轮只点出、不改数。
 
-**数值约定错了，模型预测控制算得再对，飞机也不会飞。** 见 [`px4-interface.md`](../reference/px4-interface.md) 3.3。
+**数值约定错了，MPC 算得再对，飞机也不会飞。** 见 [`px4-interface.md`](../reference/px4-interface.md) 3.3。
 
 ### 3.7 ☠️ 更正：Phase 1 的 setpoint「时间戳单位」**不是微秒**（ticket 05 第一手核实）
 
@@ -1033,11 +1033,11 @@ z0 走 **(A) 级**：推力由 PX4 生成，我们发的是**位置/速度 setpo
 | `COM_OF_LOSS_T` | `1.0` | ✅ 对 | Offboard 掉线 1 s 后触发 failsafe |
 | `MAV_1_CONFIG` / `MAV_1_MODE` | `102` / `2` | ✅ 对 | TELEM2 = Onboard，**mavros 走这个口** |
 | ⚠️ **`EKF2_EVP_NOISE`** | **`0.061`** | ⚠️ **偏小，需重调** | 用户实测笔记：**1.0 可用，0.1 过小**（过小 → `LOCAL_POSITION_NED` 发散）。**0.061 比 0.1 还小。** Phase 1 前按笔记的建议从 **1.0** 起步往下调。★ **2026-09-22 裁定：留到飞行阶段判定** —— ticket 13 台架静止 ~30 min **未发散**、`pos_horiz_abs` 稳定 True ⟹ **台架证不了它过小**（见 [`params-changes.md`](../reference/params-changes.md) §I 第 8 条） |
-| ⚠️ **`MPC_XY_VEL_MAX`** | **`12.0`** | ★ **已裁定：改 `2.0`**（**待写入**） | 12 m/s 对 152 mm 涵道机是失控速度。Phase 1 建议降到 **1.0–2.0**，与 ≤0.5 m/s 的轨迹匹配 —— ★ **2026-09-22 裁定取上界 `2.0`**（留 4× 余量），见 [`params-changes.md`](../reference/params-changes.md) §I |
+| ⚠️ **`MPC_XY_VEL_MAX`** | **`12.0`** | ★ **已裁定并落地：改 `2.0`**（✅ 2026-09-23 写入并读回，§I.1） | 12 m/s 对 152 mm 涵道机是失控速度。Phase 1 建议降到 **1.0–2.0**，与 ≤0.5 m/s 的轨迹匹配 —— ★ **2026-09-22 裁定取上界 `2.0`**（留 4× 余量），见 [`params-changes.md`](../reference/params-changes.md) §I |
 | ⚠️ **`BAT1_N_CELLS`** | `6` | ✅ 对（6S） | 但**同平台的板级默认是 4**，说明这份参数已按 z0 改过 |
-| ⚠️ **`MPC_THR_HOVER`** | `0.50` | ⚠️ **需标定** | 悬停推力 50%。XI35 的实测值是 0.45。**这直接决定高度控制的好坏**，用 `thrust_calibrate` 流程标定。★ **2026-09-22 裁定：留到推力标定**（里程碑 2），与 `THR_MDL_FAC` 一并定（§I 第 5/6 条） |
-| `THR_MDL_FAC` | `0.45` | ✅ 对 | 与 XI35 的 `K3: 0.6786` **不同**，★ 两个值至少有一个是错的，**标定时一并确认** |
-| `MC_ROLLRATE_MAX` / `MC_PITCHRATE_MAX` | `220` | 🔶 记录 | Phase 2 的模型预测控制角速率上限不得越过它 |
+| ⚠️ **`MPC_THR_HOVER`** | `0.50`（2026-10-10 导出快照；飞控活值已改为 `0.1589`） | ✅ **已量并已写入飞控** | z0 实测 **`0.1589`**（2026-10-09，满电 25.2 V 口径）；模型侧同日回填，飞控侧 **2026-10-13** 已写入并读回（mavros `param set`，见 [`phase4/02`](../../.scratch/phase4/issues/02-hover-thrust-backfill.md)）。☠️ 原写"需标定 / XI35 实测 0.45" —— XI35 那个数是**另一台机**的，且 z0 早已量完 |
+| `THR_MDL_FAC` | `0.45` | ✅ 对 | ★ 2026-10-09 用两条真机日志扫 `fac ∈ [0,1]`，r² argmax = **`0.455` / `0.450`** ⟹ **`0.45` 被 z0 数据支持、保留**；XI35 的 `K3: 0.6786` 是**另一台机**的数，不构成"至少一个错" |
+| `MC_ROLLRATE_MAX` / `MC_PITCHRATE_MAX` | `220` | 🔶 记录 | Phase 2 的 MPC 角速率上限不得越过它 |
 | `COM_RC_IN_MODE` | `3` | 🔶 **待核实** | 含义与 z0 的遥控器接法要对上（见 [`params-analysis.md`](../reference/params-analysis.md) 3.9） |
 | `RC_MAP_FLTMODE` | `6` | 🔶 **待核实** | ★ **开始按键所选的通道不能和它冲突**，见 §8.4 |
 
@@ -1299,6 +1299,6 @@ IGNORE_VX|IGNORE_VY|IGNORE_VZ|IGNORE_AFX|IGNORE_AFY|IGNORE_AFZ|IGNORE_YAW_RATE
 | 理论 | 无 → 6 篇论文 |
 | 内环 | PX4 的 `MPC_*` PID → 同一套 → 之后考虑 **INDI** |
 
-⚠️ **Phase 2 上线前必须先做 SITL 验证**（Phase 1 跳过了 SITL，Phase 2 不跳）—— 因为模型预测控制的代价函数、约束、符号约定在实机上试错代价太高。
+⚠️ **Phase 2 上线前必须先做 SITL 验证**（Phase 1 跳过了 SITL，Phase 2 不跳）—— 因为 MPC 的代价函数、约束、符号约定在实机上试错代价太高。
 
 **详见 [`phase2-implementation.md`](phase2-implementation.md)。**

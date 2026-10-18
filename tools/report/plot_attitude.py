@@ -2,7 +2,7 @@
 """票 04：三条轨迹的 roll / pitch / yaw 姿态角图（四源叠加）。
 
 每张图（悬停 / 正方形 / 8 字）三行，分别是 roll、pitch、yaw；每行画四个源：
-目标、offboard 实飞、模型预测控制仿真、模型预测控制实飞。单位 deg，横轴
+目标、offboard 实飞、MPC 仿真、MPC 实飞。单位 deg，横轴
 `t [s]` 相对 `/traj/start`，窗口取票 01 的公共窗。
 
 口径（票面钉死，改之前先看票）：
@@ -145,8 +145,8 @@ def _caption(scene: str, meta: dict, xlim: Tuple[float, float],
         "pitch、yaw，单位为 deg；三行纵轴各自按该轴数据范围，不共用。",
         "- 来源：目标来自 " + _source_description("target", meta) + "；"
         "offboard 来自 " + _source_description("offboard", meta) + "；"
-        "模型预测控制仿真来自 " + _source_description("mpc_sim", meta) + "；"
-        "模型预测控制实飞来自 " + _source_description("mpc_real", meta) + "。",
+        "MPC 仿真来自 " + _source_description("mpc_sim", meta) + "；"
+        "MPC 实飞来自 " + _source_description("mpc_real", meta) + "。",
         "- 目标姿态口径：按控制器约定取「水平 + 纯偏航」，"
         "即 roll = pitch = yaw = 0；这不是用参考加速度反解出的理想倾角，"
         "理由见第 8 章。",

@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""票 05 图 2：控制量（只画模型预测控制仿真与实飞两源）。
+"""票 05 图 2：控制量（只画 MPC 仿真与实飞两源）。
 
 每张图（悬停 / 正方形 / 8 字）四行：
 
 1. 总推力 `F [N]`；
 2. 机体角速率 `wx`、`wy`、`wz [rad/s]`（FLU，机体系）。
 
-⛔ **只画两源**：模型预测控制仿真（`mpc_sim`）与模型预测控制实飞
+⛔ **只画两源**：MPC 仿真（`mpc_sim`）与 MPC 实飞
 （`mpc_real`）。offboard 的 `/mavros/setpoint_raw/local` 是**位置设定点**，
 与“推力 + 角速率”不是同一层；画在一起会造成“看起来可比”的假象。
 
@@ -150,7 +150,7 @@ def _caption(scene: str, meta: dict, xlim: Tuple[float, float],
     reason = meta["grid"]["window_trim_reason"]
     lines = [
         f"### C{SCENES.index(scene) + 1} {plot_traj.SCENE_TITLE_CN[scene]}"
-        f"（{scene}）控制量：模型预测控制仿真 vs 实飞",
+        f"（{scene}）控制量：MPC 仿真 vs 实飞",
         "",
         f"- 文件：`figures/fig-control-{scene}.png`、"
         f"`figures/fig-control-{scene}.svg`（300 dpi）",
@@ -158,8 +158,8 @@ def _caption(scene: str, meta: dict, xlim: Tuple[float, float],
         f"- 窗口：0.0000 - {end:.4f} s（{reason}）",
         "- 四行：总推力 `F [N]`、机体角速率 `wx`、`wy`、`wz [rad/s]`"
         "（FLU，机体系指令）；横轴 `t [s]` 相对 `/traj/start`。",
-        "- 只有两源：模型预测控制仿真（" + _source_description("mpc_sim", meta)
-        + "）与模型预测控制实飞（" + _source_description("mpc_real", meta)
+        "- 只有两源：MPC 仿真（" + _source_description("mpc_sim", meta)
+        + "）与 MPC 实飞（" + _source_description("mpc_real", meta)
         + "）。",
         "- 为什么没有 offboard：offboard 的控制量是 "
         "`/mavros/setpoint_raw/local` 的**位置设定点**，与“推力 + 角速率”"

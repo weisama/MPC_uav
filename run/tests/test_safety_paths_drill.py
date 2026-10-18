@@ -51,8 +51,10 @@ RE_Z0_ACTION = re.compile(r"run/z0\.py ([A-Za-z_]+)")
 RE_RUN_SH = re.compile(r"run/([\w.-]+\.sh)")
 RE_LINK = re.compile(r"\[[^\]]*\]\(([^)]+)\)")
 
-#: `CONTEXT.md` 的全仓清扫命令（逐字搬，不自创）。
-RE_BARE_MPC = re.compile(r"(?<![A-Za-z_/\-])MPC(?![A-Za-z_（\-\d])")
+#: `CONTEXT.md` 的术语规则（2026-10-18 起）：正文一律写 `MPC`，不再写旧全称。
+RE_OLD_TERM = re.compile("模型预测控制")
+#: 唯一豁免：代码里的启动日志字面串，它是运行时判据。
+OLD_TERM_ALLOW = "MPC（模型预测控制）节点启动："
 
 
 def _doc() -> str:
@@ -285,13 +287,13 @@ def test_相对链接都解得到():
     assert not bad, "相对链接解不到：\n  " + "\n  ".join(bad)
 
 
-def test_不裸用_MPC():
-    """★ 术语纪律（`CONTEXT.md` 开头那条）：指代本项目的控制器时**禁止单独用裸词 `MPC`**。
+def test_不用旧术语_模型预测控制():
+    """★ 术语纪律（`CONTEXT.md`，2026-10-18 起）：正文一律写 `MPC`，不再写旧全称。
 
-    正则逐字搬自 `CONTEXT.md` 的全仓清扫命令；`MPC（模型预测控制）` / `MPC_*` 参数名
-    都不算命中（否定环视已经把这两种排除掉了）。
+    唯一豁免是代码里的启动日志字面串 `MPC（模型预测控制）节点启动：` ——
+    它是运行时判据，改了会红。
     """
     hits = [(i + 1, line) for i, line in enumerate(_doc().split("\n"))
-            if RE_BARE_MPC.search(line)]
-    assert not hits, "裸用 `MPC`（要写成 `MPC（模型预测控制）` 或全称）：\n  " + "\n  ".join(
+            if RE_OLD_TERM.search(line) and OLD_TERM_ALLOW not in line]
+    assert not hits, "正文出现旧术语「模型预测控制」，应统一写 `MPC`：\n  " + "\n  ".join(
         f"第 {n} 行：{line.strip()}" for n, line in hits)

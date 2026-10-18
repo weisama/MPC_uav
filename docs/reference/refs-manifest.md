@@ -136,7 +136,7 @@
 > **全是破坏性的**。所以**不能用** release/1.14。
 >
 > ☠️ **2026-10-13（票 13 收口轮）：上面这条"巧合"今天不再涉及 (C) 级下行** ——
-> 模型预测控制节点 2026-10-12 起走 **mavros 的 `/mavros/setpoint_raw/attitude`**（`mavros_msgs`，
+> MPC 节点 2026-10-12 起走 **mavros 的 `/mavros/setpoint_raw/attitude`**（`mavros_msgs`，
 > 不经 `px4_msgs`），心跳那条流也整条删了（[`px4-interface.md`](px4-interface.md) §4.3）。
 > ⚠️ **但下面那句结论"不能用 release/1.14"照旧成立，且今天只服务于另一批对象**：
 > `src/bench` 的假 PX4 夹具（`fake_px4.py` 发 `/fmu/*`）与 `tools/px4-sitl/` 那条链**仍然 import `px4_msgs`**

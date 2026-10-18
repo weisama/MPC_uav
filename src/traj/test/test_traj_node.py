@@ -375,7 +375,7 @@ def test_起飞_在话题上是一条斜坡_到顶后停住():
             assert v == pytest.approx(speed, abs=SPEED_TOL), (
                 f"第 {i} 帧（z = {zs[i]:.4f}）的实际爬升速度是 {v:.3f} m/s，不是 {speed}")
             # ★ 差分只是位置的说法；**上报的 velocity** 是另一份、且是下游真正吃进去的那份
-            #   （模型预测控制档把它当速度参考）⟹ 两份都要对，不能只对一份。
+            #   （MPC 档把它当速度参考）⟹ 两份都要对，不能只对一份。
             assert refs[i][1].velocity.z == pytest.approx(speed, abs=SPEED_TOL), (
                 f"第 {i} 帧上报的 velocity.z = {refs[i][1].velocity.z}，不是 {speed}"
                 "（位置对了、速度参考却是 0 或别的值）")

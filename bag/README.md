@@ -99,13 +99,13 @@ setpoint 并请求 OFFBOARD，与手动飞行冲突）⟹ 前两个走菜单 8�
 
 | 目录 | 轨迹 | 控制方式 | 包内 `/traj/reference` 的形状（第一手） |
 |---|---|---|---|
-| `6_free__20261017-020757` | 4 起飞 | 模型预测控制（独立档 `reference_source=traj`） | x/y 恒 0，z 0 → 0.20 m |
-| `6_free__20261017-070103` | 1 悬停 60 s | 模型预测控制（`control` 输出后端，`output_mode=external`） | x/y/z 恒 0 |
+| `6_free__20261017-020757` | 4 起飞 | MPC（独立档 `reference_source=traj`） | x/y 恒 0，z 0 → 0.20 m |
+| `6_free__20261017-070103` | 1 悬停 60 s | MPC（`control` 输出后端，`output_mode=external`） | x/y/z 恒 0 |
 | `6_free__20261017-070446` | 2 1 m 正方形 | 同上 | x/y 0 → 1.00 m，z 恒 0 |
 | `6_free__20261017-070935` | 3 1 m 八字 | 同上 | x ±1.00 m、y ±0.50 m，z 恒 0 |
 
 ★ 四份都**仍按场景 6（自由录）归档**，目录名不改：场景 3/4/5 的 `expect` 目前写的是
-`/mavros/setpoint_raw/local`（offboard 档的话题），而这四份是模型预测控制档 —— 写的是
+`/mavros/setpoint_raw/local`（offboard 档的话题），而这四份是 MPC 档 —— 写的是
 `/control/target` + `/mavros/setpoint_raw/attitude`。改用场景 3/4/5 会在收口核对里
 **假报“缺话题”**（票 15「本轮没做」第 5 条）。轨迹编号与控制方式记在各包
 `session.json` 的 `flight` 字段里，`MANIFEST.md` 的「场景」列也带上了。
@@ -185,7 +185,7 @@ MANUAL/STANDBY →(12.9 s) AUTO/STANDBY → AUTO/TAKEOFF →(19.7 s) AUTO/HOVER
 ★ 位置设定点就是 `traj` 节点那条参考（两者的 xy 包络逐位相同，时间差中位 7 ms）。
 ⚠️ `≤ 15 cm` 这条线是 [11 号票](../.scratch/phase2/issues/11-sitl-tier-b-seam3.md) 给
 **SITL B 档（我们自己的控制器）**定的，这里是 **PX4 内置 PID** 在飞，两者不能互相印证 ——
-这份数字的价值是**同一架真机的基线**：MPC（模型预测控制）接管后要拿它比，不是拿它交差。
+这份数字的价值是**同一架真机的基线**：MPC 接管后要拿它比，不是拿它交差。
 
 ### ④ 八字那一趟（场景 4）：**明显跟不上**（这份数据的重点）
 
@@ -202,7 +202,7 @@ MANUAL/STANDBY →(12.9 s) AUTO/STANDBY → AUTO/TAKEOFF →(19.7 s) AUTO/HOVER
 
 - 它**不能**用来判"控制器跟得上轨迹"（那是 11 号票判据 2 要问的）；
 - 它能用来当**回归基线**：0.5 m/s 的八字对现在这套（PX4 内置 PID + 现在的参数）就是太快了，
-  MPC（模型预测控制）接管后如果这个数不掉下来，说明没变好。
+  MPC 接管后如果这个数不掉下来，说明没变好。
 
 ⚠️ 只有一趟、只有一个速度（`max_speed_ms: 0.5`），**别从这一份外推到"控制器不行"** ——
 它说明的是**这一点上**跟不上。

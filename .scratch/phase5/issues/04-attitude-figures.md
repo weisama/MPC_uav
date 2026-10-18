@@ -1,6 +1,6 @@
 # 04: 3 张姿态角图（roll / pitch / yaw × 四源）
 
-Status: ready-for-human
+Status: done
 Type: task
 
 **What to build:** 三条轨迹各一张姿态角图，3 行 × 四源叠加。
@@ -12,7 +12,7 @@ Type: task
 每张图（悬停 / 正方形 / 8 字）：
 
 - 3 行：roll、pitch、yaw；
-- 每行四源：目标、offboard 话题包、模型预测控制仿真、模型预测控制话题包；
+- 每行四源：目标、offboard 话题包、MPC 仿真、MPC 话题包；
 - 单位 deg；t 相对 `/traj/start`；窗口 = 票 01 的公共窗；
 - 目标姿态按控制器约定：**roll ≡ 0、pitch ≡ 0、yaw ≡ 0**；
 - 图注写明：实飞姿态取 `/mavros/vision_pose/pose`；它与 30 Hz EKF 姿态有约 **+0.03 rad**
@@ -91,3 +91,7 @@ Type: task
 
 - 没有改票 01 的数据与口径，没有碰控制代码，没有读原始包。
 - 只生成票面要求的三张图；9 张 pitch/roll 图由票 03 负责，本票未改。
+
+### 2026-10-18 —— 操作者裁定收工
+
+操作者 2026-10-18 指令「全部 tickets 收工」，并对 README 修订与装配结果放行；本票按「做完了」义把 `Status` 转 `done`。收口过程见 [票 20](20-closeout-and-v5.md)。

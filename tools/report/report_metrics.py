@@ -13,7 +13,7 @@
   本脚本算完与 `data/<scene>.json` 的 `metrics_vs_target.position` 逐值比对，
   不一致就报错，避免表格与管线各说一套；
 - 姿态误差取四元数最小旋转角，并与同名 JSON 的 `metrics_vs_target.attitude` 比对；
-- 控制量只统计模型预测控制两源；饱和阈值直接读 `src/nmpc/nmpc/params.py`
+- 控制量只统计 MPC 两源；饱和阈值直接读 `src/nmpc/nmpc/params.py`
   （不另抄一份数），判据复刻 `node_core.saturated_bounds` 的 `SAT_TOL_REL=1e-3`；
 - 仿真的饱和拍数取 `solver-summary.json` 的 `saturation.frames_with_sat`（第 9 章 9.7.3）；
   实飞在 100 Hz 网格上按同一判据逐拍计数。

@@ -58,7 +58,7 @@ MPC_TOPICS = (
     "/control/state",
     "/traj/reference",
     "/traj/progress",
-    "/control/target",                  # 模型预测控制的原点 / 前馈
+    "/control/target",                  # MPC 的原点 / 前馈
     "/mavros/setpoint_raw/attitude",    # 推力（归一化）× t_max、角速率
     "/mavros/vision_pose/pose",
     "/mavros/local_position/velocity_local",
@@ -262,7 +262,7 @@ def read_offboard_bag(bag_dir: Path, workdir: Path) -> BagExtract:
 
 
 def read_mpc_bag(bag_dir: Path, workdir: Path) -> BagExtract:
-    """模型预测控制实飞包：原点取 `/control/target` 的 WAIT_START 恒定值。"""
+    """MPC 实飞包：原点取 `/control/target` 的 WAIT_START 恒定值。"""
     return _read_bag(bag_dir, workdir, kind="mpc")
 
 
@@ -372,7 +372,7 @@ def _read_bag(bag_dir: Path, workdir: Path, kind: str) -> BagExtract:
         # 票 01 要求这里记的是**反馈**来源，不是指令话题。
         feedback_source=("/mavros/local_position/pose（PX4 内置 PID 的反馈，EKF 30 Hz）"
                          if kind == "offboard" else
-                         "/mocap/pose_enu（模型预测控制的反馈，原始动捕）"),
+                         "/mocap/pose_enu（MPC 的反馈，原始动捕）"),
     )
 
 
@@ -389,7 +389,7 @@ def sim_reference_start(summary: dict, ref_delay_s: float) -> Tuple[float, str]:
     ★ 还要再减 `ref_delay_s`：模型参考的时间轴以**首条 `/traj/reference` 的 header**
       为零（`mocap_model.read_reference` 做 `t - t[0]`），而票 01 的 t=0 是
       `/traj/start` 的**记录**时间戳，两者差 7.7–15.6 ms。不减就相当于把
-      模型预测控制仿真整体后移约 10 ms（0.5 m/s 下约 5 mm，且与 spec §3 不符）。
+      MPC 仿真整体后移约 10 ms（0.5 m/s 下约 5 mm，且与 spec §3 不符）。
       `ref_delay_s` 由同一场景的实飞包给出：`ref_first_stamp_abs - t0_abs`。
 
     ⚠️ 不用 `move_first_s`（第一帧在动）—— 参考在 `bag` 段前段本来就可以不动

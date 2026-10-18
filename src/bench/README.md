@@ -28,7 +28,7 @@
 | 假 | 不假 |
 |---|---|
 | **mavros 的行为**：话题名、频率、**QoS**、`/mavros/state` 1 Hz、`mode_sent` 的语义、服务的应答、`/mavros/estimator_status` 自报的 `pos_horiz_abs` | **PX4 的行为**：`COM_OF_LOSS_T` 超时退 OFFBOARD、EKF2 融合、模式需求检查 |
-| **PX4 的行为**（`FakePx4`，ticket 06，仅 `Scenario(px4=True)` 时起）：`/fmu/out/vehicle_status` 的**话题名、QoS、字段语义、2 Hz 定频 + 变化即刻发**；`/fmu/in/*` 的**订阅侧** QoS（决定 DUT 的发布方接不接得上）；`armed` / `nav_state` / `pre_flight_checks_pass` 的**注入**；PX4 反序列化器对 `timestamp` 的读法（`stamp_age_s()` 把它**报告**成一个有物理含义的数，**不据此行动**） | **飞控内部的一切**：夹具只把 DUT 发来的 `/fmu/in/*` 帧**记进列表**（`_on_frame`），没有任何动力学 ⟹ **姿态环 / 混控 / 位置控制都不假**。同样不假：`COM_OF_LOSS_T` 超时退 OFFBOARD、EKF2 **怎么**融合、模式需求检查、prearm 的**具体**检查项、时钟同步的真实滞后 Δ、`vehicle_command` 的处理（MPC（模型预测控制）节点是纯控制器，不发命令） |
+| **PX4 的行为**（`FakePx4`，ticket 06，仅 `Scenario(px4=True)` 时起）：`/fmu/out/vehicle_status` 的**话题名、QoS、字段语义、2 Hz 定频 + 变化即刻发**；`/fmu/in/*` 的**订阅侧** QoS（决定 DUT 的发布方接不接得上）；`armed` / `nav_state` / `pre_flight_checks_pass` 的**注入**；PX4 反序列化器对 `timestamp` 的读法（`stamp_age_s()` 把它**报告**成一个有物理含义的数，**不据此行动**） | **飞控内部的一切**：夹具只把 DUT 发来的 `/fmu/in/*` 帧**记进列表**（`_on_frame`），没有任何动力学 ⟹ **姿态环 / 混控 / 位置控制都不假**。同样不假：`COM_OF_LOSS_T` 超时退 OFFBOARD、EKF2 **怎么**融合、模式需求检查、prearm 的**具体**检查项、时钟同步的真实滞后 Δ、`vehicle_command` 的处理（MPC 节点是纯控制器，不发命令） |
 | EKF2 的**位置输出**（`local_position`，可被 `set_position` 搬动） | EKF2 **怎么算出**这个位置 |
 | EKF2 的**速度输出**（`local_position/velocity_local`，可被 `set_velocity` 搬动；与位置**解耦**，两条独立话题） | 速度**怎么融合**出来的（TRIAD/差动，与它的噪声） |
 | PX4 **接受 SET_MODE 之后 mode 会变**（`follow_set_mode`，默认开） | PX4 **为什么可能拒绝**某个模式 |
