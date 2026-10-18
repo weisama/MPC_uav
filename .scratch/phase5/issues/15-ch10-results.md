@@ -92,7 +92,7 @@ Type: task
 
 | 文件 | 角色 |
 |---|---|
-| `docs/report/chapters/10-results.md` | 正文，15,490 字、307 行、18 个二/三级标题、14 个叶子小节、12 张图、6 张表 |
+| `docs/report/chapters/10-results.md` | 正文，12,514 字、285 行、18 个二/三级标题、14 个叶子小节、12 张图、6 张表 |
 | `docs/report/generated/metrics.md` | 六张表（window / position / hover-steady / attitude / control / solver） |
 | `tools/report/report_metrics.py` | 现算脚本；同时替换 `generated/` 与第 10 章的 `phase5-metrics:*` 块 |
 | `tools/report/test_report_ch10.py` | 15 条测试 |
@@ -153,3 +153,10 @@ Type: task
 - 没有改其他章（尤其第 9 章）、没有改票 03/04/05 的图与口径；
 - 没有把 Tier A/T0 数值并入结果表；
 - 没有新增票。
+
+### 2026-10-18 —— 按操作者要求压缩正文
+
+正文从 15,490 字降到 12,514 字（−19%），删的是重复解释与逐图复述；
+图、表、图注、每节一句话总结、边界条目与未验证项全部保留。
+图注中去掉了“完整图注见……”的重复指针，场景/窗口/来源/生成命令仍在。
+`test_report_ch10.py` 15 条仍全绿。
