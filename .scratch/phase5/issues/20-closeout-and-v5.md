@@ -71,3 +71,11 @@ Type: task
   `tools/report/export_pdf.py` 属并行会话在制的 PDF 导出，**不在本票范围、未提交**；
   待其完成后由该会话自行入库。
 - 本票 `Status` → `done`；Phase 5 全部收口。
+
+### 2026-10-19 —— PDF 产物入库，`v5.0` 前移
+
+- 并行会话的 PDF 导出已定稿：`docs/report/report.pdf`（88 页、A4、6,659,630 字节）与
+  `tools/report/export_pdf.py`（8,304 字节）；首版遗留的 `report.export.html` 已由该会话删除。
+- 操作者裁定：**入库，并把 `v5.0` 前移**。本提交纳入这两个文件，`main` 与 `v5.0` 重指到同一提交；
+  `v4.0` 仍为 `f137472`。
+- 上一条「未提交、待该会话自行入库」的表述由本节取代。
